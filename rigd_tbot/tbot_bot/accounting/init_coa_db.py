@@ -29,7 +29,7 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
         bot_identity_data = json.loads(plaintext.decode("utf-8"))
         identity = bot_identity_data.get("BOT_IDENTITY_STRING")
         entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
-    coa_db_path = resolve_coa_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    coa_db_path = resolve_coa_db_path(entity_code, jurisdiction_code, broker_code, bot_id, coa_version)
     coa_template_path = resolve_coa_template_path()
     print(f"[init_coa_db] COA DB path: {coa_db_path}")
     print(f"[init_coa_db] COA template path: {coa_template_path}")
@@ -43,15 +43,15 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
         print(f"[init_coa_db] Number of COA accounts in template: {len(coa_accounts)}")
         conn = sqlite3.connect(coa_db_path)
         conn.execute(
-            "CREATE TABLE coa_metadata (currency_code TEXT NOT NULL, entity_code TEXT NOT NULL, jurisdiction_code TEXT NOT NULL, coa_version TEXT NOT NULL, created_at_utc TEXT NOT NULL, last_updated_utc TEXT NOT NULL)"
+            "CREATE TABLE coa_metadata (currency_code TEXT NOT NULL, entity_code TEXT NOT NULL, jurisdiction_code TEXT NOT NULL, broker_code TEXT NOT NULL, bot_id TEXT NOT NULL, coa_version TEXT NOT NULL, created_at_utc TEXT NOT NULL, last_updated_utc TEXT NOT NULL)"
         )
         conn.execute(
             "CREATE TABLE coa_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, account_json TEXT NOT NULL)"
         )
         now = utc_now()
         conn.execute(
-            "INSERT INTO coa_metadata (currency_code, entity_code, jurisdiction_code, coa_version, created_at_utc, last_updated_utc) VALUES (?, ?, ?, ?, ?, ?)",
-            (currency_code, entity_code, jurisdiction_code, coa_version, now, now),
+            "INSERT INTO coa_metadata (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, coa_version, created_at_utc, last_updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, coa_version, now, now),
         )
         for acc in coa_accounts:
             conn.execute("INSERT INTO coa_accounts (account_json) VALUES (?)", (json.dumps(acc),))
