@@ -3,6 +3,6 @@
 #tools/server_template.txt
 
 
-HOSTNAME=LOCAL
-HOST_IP=192.168.1.67                    
+HOSTNAME=REMOTE
+HOST_IP=45.55.150.216                    
 PORT=6900             

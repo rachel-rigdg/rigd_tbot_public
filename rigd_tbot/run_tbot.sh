@@ -8,22 +8,21 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_UNIT_PATH="$ROOT_DIR/systemd_units"
 LOG_TAG="[run_tbot_webui_launcher]"
 
-echo "$LOG_TAG Copying all systemd unit files for TradeBot..."
+echo "$LOG_TAG Killing any existing TradeBot systemd processes..."
+sudo systemctl stop tbot_web.service tbot_provisioning.service tbot_bot.service || true
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
 
-# Copy all core unit files (no harm if already present)
+echo "$LOG_TAG Copying all systemd unit files for TradeBot..."
 sudo cp "$SYSTEMD_UNIT_PATH"/tbot_web.service "$SYSTEMD_UNIT_PATH"/tbot_provisioning.service "$SYSTEMD_UNIT_PATH"/tbot_bot.service "$SYSTEMD_UNIT_PATH"/tbot.target /etc/systemd/system/
 sudo systemctl daemon-reload
 
-# Enable all services for auto-restart on reboot (safe to re-run)
 sudo systemctl enable tbot_web.service tbot_provisioning.service tbot_bot.service
-
-# Start only the Flask web UI for user configuration/provisioning
 sudo systemctl start tbot_web.service
 
 echo "$LOG_TAG TradeBot Web UI launched using systemd (tbot_web.service)."
 echo "$LOG_TAG Proceed to configure the bot using the web UI."
 
-# Auto-open web UI in default browser (optional)
 PYTHON_BIN="python3"
 WEB_DIR="$ROOT_DIR/tbot_web"
 HOST=$($PYTHON_BIN - <<EOF

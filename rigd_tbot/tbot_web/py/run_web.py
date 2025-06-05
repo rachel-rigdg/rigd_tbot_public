@@ -23,4 +23,4 @@ PORT = get_port()
 
 if __name__ == "__main__":
     print(f"[run_web.py] Launching Flask app on {HOST}:{PORT} (network_config loaded via encrypted secrets)")
-    app.run(host=HOST, port=PORT)
+    app.run(host="0.0.0.0", port=PORT)
