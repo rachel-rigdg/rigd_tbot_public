@@ -4,6 +4,7 @@
 import sys
 import sqlite3
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tbot_bot.support.path_resolver import get_schema_path
 from tbot_bot.support.utils_log import log_event
 
