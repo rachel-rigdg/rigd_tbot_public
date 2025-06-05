@@ -9,11 +9,12 @@ import sys
 import traceback
 import os
 
-# Paths
+# Inject root to sys.path to fix module resolution
 if "RIGD_TBOT_ROOT" in os.environ:
     ROOT = Path(os.environ["RIGD_TBOT_ROOT"]).resolve()
 else:
     ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
 SUPPORT_PATH = ROOT / "tbot_bot" / "support"
 CONFIG_PATH = ROOT / "tbot_bot" / "config"
@@ -24,10 +25,10 @@ STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "provisioning_status.jso
 
 # Provisioning step modules
 sys.path.insert(0, str(CONFIG_PATH))
-from key_manager import main as key_manager_main
-from provisioning_helper import main as provisioning_helper_main
-from bootstrapping_helper import main as bootstrapping_helper_main
-from db_bootstrap import main as db_bootstrap_main
+from tbot_bot.config.key_manager import main as key_manager_main
+from tbot_bot.config.provisioning_helper import main as provisioning_helper_main
+from tbot_bot.config.bootstrapping_helper import main as bootstrapping_helper_main
+from tbot_bot.config.db_bootstrap import main as db_bootstrap_main
 
 def write_status(status_file, state, detail=""):
     status = {
