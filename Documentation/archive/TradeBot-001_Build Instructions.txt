@@ -1,0 +1,437 @@
+
+
+
+
+
+
+
+
+
+
+==============================
+Objective
+==============================
+
+
+Automatically identify securities in a bi-directional manner in any market conditions, and place trades using long equity (up), and long put OR Inverse ETF (down), on any trading platform that supports these types of trades.
+
+
+
+==============================
+System Instructions
+==============================
+
+/system
+
+ChatGPT’s long-term memory is unreliable, and OpenAI may wipe cached data or downloadable files without warning.
+
+To prevent loss of critical project data during development:
+
+1. Print the **full contents of every file** from provided ZIP archives in a series of chat windows before performing any deep analysis.
+
+2. Write a **comprehensive summary of necessary fixes**, along with a **clear list of tasks** required to build a fully functional stock trading bot based on the available documentation.
+
+3. Except for login authentication handled via `index.html` and `tbot_api`, all modules must remain **independent, self-contained, and fully operational on their own**.
+
+4. During the entire process, **print all generated or modified code in full** to the chat window as a form of verbose logging. This ensures nothing is lost due to memory resets or caching failures.
+
+5. When generating or modifying any script, include **clear inline comments** in plain English to explain the purpose and function of each code section.
+
+6. If a file needs to be rebuilt, **regenerate and display the full content** in the chat—never partial patches—so that each version can be reviewed and preserved.
+
+7. Once development is complete, **print all final, complete files** to individual chat windows before creating a downloadable ZIP archive.
+
+This ensures we can always recreate the full system from chat history, even if OpenAI’s long-term memory fails.
+
+8. When testing or debugging, no assumptions are made, and no code is abridged, modified or pruned, without explicit instructions to do so.
+
+9 When testing or debugging, All instructions to the human operator will be given a single step at a time, with confirmation that each step has been successfully completed before continuing on to the next step.
+
+10. Before placing any trades, a "dry-run" build will be executed, using live data but without order execution. All signals will be printed to strategy-specific logs for review.
+
+11. A `.env_bot.template` file must be generated, listing all required keys with sample values and inline comments.
+
+12. All trade logs and GnuCash exports must include a `strategy_name` field to enable post-trade performance analysis.
+
+13. Each strategy must expose a `self_check()` method that returns True/False for readiness based on the current environment.
+
+14. The system must print a version banner on startup, pulled from `version.py`, to track deployment.
+
+15. The `env_bot.py` loader must perform a full config audit and return readable error messages if any required keys are invalid or missing.
+
+==============================
+🧩 Deployment Notes
+==============================
+
+- All paths should be relative and platform-agnostic.
+- Logging and GnuCash export must continue functioning even when web/api modules are disabled.
+- Start with one broker (Alpaca or IBKR) live-tested and the other disabled during initial build validation.
+- Ensure `.env_bot.template` reflects all known toggles and default values, with inline comments for each.
+- All real-money trades must be preceded by a volume + slippage check.
+- System must never trade tickers with spreads > 1.5% of price or zero bid/ask volume.
+
+
+
+==============================
+Current platforms
+==============================
+
+Local testing and manual version control on Mac osx 15.2
+Digital Ocean droplet to serve the bot.
+FastAPI for bot functionality.
+slowapi for rate limiting login requests, and DDOS prevention
+Gnucash for ledgers and accounting
+cryptography for password protection.
+
+==============================
+Current Variables
+==============================
+
+==============================
+.env – Top-Level Environment File
+==============================
+
+ENVIRONMENT="production"
+LOCAL=true
+LOCAL_IP=""
+LOCAL_PORT="6900"
+REMOTE_IP=""
+REMOTE_PORT="6900"
+
+# Authentication
+USERNAME=""
+PASSWORD=""
+ENCRYPTED_PASSWORD=""
+ENCRYPTION_KEY=""
+
+# API Keys
+FINNHUB_API_KEY=""
+
+# Alpaca
+ALPACA_PAPER_API_KEY=""
+ALPACA_PAPER_SECRET_KEY=""
+ALPACA_LIVE_API_KEY=""
+ALPACA_LIVE_SECRET_KEY=""
+ALPACA_PAPER_URL=https://paper-api.alpaca.markets
+ALPACA_LIVE_URL=https://api.alpaca.markets
+
+# IBKR
+IBKR_PAPER_USERNAME=""
+IBKR_PAPER_ACCOUNT_NUMBER=""
+IBKR_PAPER_PASSWORD=""
+IBKR_LIVE_API_KEY=""
+IBKR_LIVE_SECRET_KEY=""
+
+# Notifications
+ALERT_EMAIL=tb@tb.rgdnn.com
+SMTP_USER=tb@tb.rgdnn.com
+SMTP_PASS=MyTPassIs5^
+SMTP_HOST=smtp.dreamhost.com
+SMTP_PORT=486
+
+
+==============================
+.env_bot – Trading Bot Environment File
+==============================
+
+# General + Debugging
+VERSION_TAG=v1.0.0
+BUILD_MODE=release
+DISABLE_ALL_TRADES=false
+TEST_MODE=true
+DEBUG_LOG_LEVEL=verbose
+ENABLE_LOGGING=true
+LOG_FORMAT=csv
+
+# Trade Controls
+TRADE_CONFIRMATION_REQUIRED=false
+API_RETRY_LIMIT=3
+FRACTIONAL=true
+TOTAL_ALLOCATION=0.02
+MAX_TRADES=4
+WEIGHTS=0.4,0.2,0.2,0.2
+DAILY_LOSS_LIMIT=0.05
+MAX_RISK_PER_TRADE=0.025
+MAX_OPEN_POSITIONS=5
+
+# Filters
+MIN_PRICE=2
+MAX_PRICE=100
+MIN_VOLUME_THRESHOLD=1000000
+
+# Broker & Routing
+BROKER=alpaca
+ALPACA_MODE=paper
+IBKR_MODE=paper
+STRATEGY_SEQUENCE=open,mid,close
+STRATEGY_OVERRIDE=null
+
+# Timing
+START_TIME=9:30am EST
+ANALYSIS_TIME=20
+MONITORING_TIME=30
+SLEEP_TIME=1s
+
+# Notifications
+NOTIFY_ON_FILL=true
+NOTIFY_ON_EXIT=true
+
+# Reporting + Exporting
+GNC_EXPORT_MODE=auto
+STRAT_OPEN_BUFFER=0.02
+STRAT_MID_VWAP_THRESHOLD=0.02
+STRAT_CLOSE_VIX_THRESHOLD=15
+
+# Shorting
+SHORT_TYPE=disabled  # Options: ShortSell, LongPut, disabled
+
+
+==============================
+Other considerations
+==============================
+
+API services, Bot Functionality and Web Interface should remain as Functionally Independent as possible.
+Bot should be entirely self contained, and be able to function independently without need for API and Web modules.
+
+
+==============================
+🧠 TradeBot Strategy Logic Spec v1.0
+==============================
+
+▶️ Overview:
+TradeBot will automatically identify securities and place trades in a bi-directional manner, using:
+- ✅ Long equity for bullish setups
+- ✅ Long put OR Inverse ETF for bearish setups
+- ❌ No shorting or leveraged ETFs
+
+Supports any broker platform with compatible APIs:
+Alpaca, IBKR, Webull, Tastytrade, Robinhood
+
+==============================
+🚦 Runtime Modes
+==============================
+
+🧪 TEST MODE:
+- 1-minute analysis + 1-minute monitoring
+- Skips volume filters
+- Paper trades only (logged to `gnu_paper.gnucash`)
+- Used for logic verification and debug
+
+✅ LIVE MODE:
+- Full strategy execution with volume/volatility filters
+- Executes via live broker APIs
+- Trades logged to `gnu_live.gnucash`
+- Kill switch, watchdogs, and drawdown enforcement active
+
+==============================
+💸 Capital Risk Controls
+==============================
+
+- MAX_RISK_PER_TRADE: 2–3% of capital
+- MAX_OPEN_RISK: All trades = max 5% capital exposure
+- DAILY_LOSS_LIMIT: Auto-kill triggers if hit (default: 5%)
+
+==============================
+🧠 Strategy Modules
+==============================
+
+1️⃣ strategy_open.py – Opening Range Breakout
+----------------------------------------------
+- Time: 9:30–10:20 AM EST
+- Direction: Long only
+- Instrument: Stock/ETF
+- Logic:
+  - Track high/low for 20 min post-open
+  - Breakout + buffer + volume confirmation
+- Allocation:
+  - 1 = 100%
+  - 2 = 60/40
+  - 3 = 40/30/30
+  - 4 = 40/20/20/20
+- Exit: Stop loss (2%) or 10:20 AM hard exit
+- Log: open.log, trade_history.csv, gnu_paper/live.gnucash
+
+2️⃣ strategy_mid.py – VWAP Mean Reversion
+----------------------------------------------
+- Time: 10:30 AM–2:30 PM
+- Direction: Long or Inverse
+- Instrument: Stock, Inverse ETF
+- Logic:
+  - Price deviation ±2% from VWAP
+  - Reversal signals + optional filters
+- Enhancements:
+  - ADX filter
+  - Bollinger Band confluence
+- Allocation: Max 5 positions, equal or priority-weighted
+- Exit: VWAP touch, 45 min timeout, or stop loss (1.5%)
+- Log: mid.log, trade_history.csv, gnu_paper/live.gnucash
+
+3️⃣ strategy_close.py – EOD Momentum/Fade
+----------------------------------------------
+- Time: 2:30–4:00 PM
+- Direction: Long or Bearish (put/inverse)
+- Instrument: Stock, Inverse ETF, Long Put
+- Modes:
+  - trend: momentum breakout continuation
+  - fade: spike reversal, exhaustion signal
+- Enhancements:
+  - VIX volatility gate
+  - IBKR imbalance scanner
+  - Blocklist to skip repeated tickers
+- Allocation: 30–40% max capital
+- Exit: Stop loss (2%) or hard close at 3:55 PM
+- Log: close.log, trade_history.csv, gnu_paper/live.gnucash
+
+==============================
+🔧 Optional Enhancements (Toggleable)
+==============================
+
+- adx_filter.py → Skip VWAP trades in strong trends
+- bollinger_confluence.py → Confirm overbought/oversold zones
+- vix_gatekeeper.py → Skip EOD in low volatility
+- imbalance_scanner_ibkr.py → Detect final-hour pressure via IBKR
+- ticker_blocklist.py → Prevent re-trading same ticker
+
+==============================
+📘 GnuCash Integration
+==============================
+
+- gnu_exporter.py auto-writes to:
+  - gnu_paper.gnucash (TEST_MODE)
+  - gnu_live.gnucash (LIVE_MODE)
+- gnu_transaction.py builds XML transactions
+- gnu_config.py holds account layout
+- gnu_backup.py auto-backups ledgers before changes
+- Each trade includes:
+  - ID, broker, strategy, entry/exit, profit/loss
+
+==============================
+📊 Logging & Reporting
+==============================
+
+- trade_history.csv → all trades, strategies, timestamps
+- open.log / mid.log / close.log → individual strategy logs
+- unresolved_orders.log → API rejections or partials
+- daily_summary.json for snapshot audit
+- Each log entry should include: timestamp, strategy_name, ticker, side, size, entry/exit price, PnL, broker, mode (paper/live)
+- If LOG_FORMAT=json, ensure all fields are human-readable and easily parseable by external tools (e.g., GnuCash XML, dashboards).
+
+
+==============================
+🔐 Safety Systems
+==============================
+
+- kill_switch.py → Halts trading + exits all positions on max loss
+- watchdog_bot.py → Detects broker API failure or disconnection
+- risk_bot.py → Validates capital allocation constraints per trade
+- security_bot.py → (Optional) Encrypt .env_bot for deployment security
+- gnu_backup.py → Saves daily snapshot before ledger write
+
+==============================
+Overall Directory Structure Diagram
+==============================
+
+TradeBot-001/
+├── .env                                  # Global .env for FastAPI or deployment config (does not include trading variables)
+├── .scpignore                            # Prevents local dev files (keys, backups) from being uploaded to server
+├── encrypt_password.py                   # CLI utility to encrypt web/API passwords (used by tbot_api/auth.py)
+├── generate_key.py                       # Generates AES encryption key used to secure password storage
+├── requirements.txt                      # Full dependency list for bot, broker APIs, GnuCash XML handling, and FastAPI
+
+├── tbot_api/                             # 🌐 Optional FastAPI interface to control the bot remotely (start, stop, settings)
+│   ├── __init__.py                       # Marks this directory as a Python module for clean imports
+│   ├── env_api.py                        # Loads global .env config for use in API (not trading logic)
+│   ├── logs_api.py                       # Tracks API-side logs: settings changes, login attempts, start/stop commands
+│   ├── main_api.py                       # Defines FastAPI routes for web control (start/stop, status, etc.)
+│   ├── auth.py                           # Handles encrypted login authentication for the web interface
+
+├── tbot_bot/                             # 🧠 Primary logic engine for live/paper trading, strategy switching, and broker execution
+│   ├── .env_bot                          # Core config file for trading: strategy toggles, API keys, risk settings, export flags
+│   ├── env_bot.py                        # Loads .env_bot values, enforces types and structure for all modules
+│   ├── main_bot.py                       # Master controller: handles strategy selection, runtime lifecycle, monitoring
+│   ├── start_bot.py                      # CLI or web-triggered entry point to start the bot loop
+│   ├── stop_bot.py                       # Cleanly shuts down the bot and exits any open positions
+│   ├── service_bot.py                    # Optional: enables persistent running via cron or system supervisor
+│   ├── status_bot.py                     # Reports runtime state: idle, analyzing, trading, complete, error
+│   ├── settings_bot.py                   # Allows programmatic updates to .env_bot without overwriting file manually
+│   ├── logs_bot.py                       # Logs bot events: trades placed, fills, exits, errors, runtime messages
+│   ├── notifier_bot.py                   # Sends notifications (email, Slack, etc.) when trades are executed or bot crashes
+
+│   ├── kill_switch.py                    # Stops all trading and exits all positions if drawdown exceeds DAILY_LOSS_LIMIT
+│   ├── watchdog_bot.py                   # Monitors broker API + network connectivity; retries or halts on error
+│   ├── security_bot.py                   # Encrypts/decrypts .env_bot values for secure local storage
+
+│   ├── broker_api.py                     # Unified interface to route orders to selected broker module based on config
+│   ├── broker_robinhood.py              # Robinhood-specific logic (unofficial API, test-only, U.S. sandbox use)
+│   ├── broker_webull.py                 # Webull-specific logic (unofficial API, low-cost test fills)
+│   ├── broker_tastytrade.py             # Tastytrade official API client (for U.S. live/options trading)
+│   ├── broker_ibkr.py                   # IBKR official API integration for live or paper global trading
+│   ├── orders_bot.py                     # Manages order submission, modification, cancellation, and verification
+│   ├── reporting_bot.py                  # Finalizes trade logs and triggers export to GnuCash or CSV
+│   ├── risk_bot.py                       # Calculates risk per trade; ensures total capital exposure stays within 2–3%
+│   ├── utils_bot.py                      # Utility functions (timestamping, currency rounding, string formatting)
+
+│   ├── finnhub_screener.py               # Connects to Finnhub API, scans top stock candidates based on criteria
+│   ├── strategy_router.py                # Routes to the correct strategy module based on time of day or manual override
+│   ├── strategy_open.py                  # Implements 20-minute breakout strategy (9:30–10:20 AM)
+│   ├── strategy_mid.py                   # Implements VWAP mean reversion strategy (10:30–2:30 PM)
+│   ├── strategy_close.py                 # Implements end-of-day momentum or fade strategy (2:30–4:00 PM)
+│   ├── strategy_meta.py                  # Central repository for thresholds, toggles, filters per strategy
+
+│   ├── gnu_paper.gnucash                 # GnuCash XML ledger file for paper-mode trades only. Do not reuse the same output filename (trade_history.csv, gnu_live.gnucash) without a session or timestamp backup unless GNC_EXPORT_MODE=off
+│   ├── gnu_live.gnucash                  # GnuCash XML ledger file for live-mode trades only. Do not reuse the same output filename (trade_history.csv, gnu_live.gnucash) without a session or timestamp backup unless GNC_EXPORT_MODE=off
+│   ├── gnu_exporter.py                   # Converts completed trades into GnuCash-compliant XML transactions and inserts into correct ledger
+│   ├── gnu_transaction.py                # Builds XML elements for GnuCash: accounts, splits, entries, metadata
+│   ├── gnu_config.py                     # Defines GnuCash account structure: Assets, Equity, Income, and Expense categories
+│   ├── gnu_backup.py                     # Automatically backs up ledger before writing new transactions
+│   ├── trade_history.csv                 # Full exportable log of every trade (live or paper), including ID, strategy, result, timestamps
+│   ├── unresolved_orders.log             # Logs any trades that failed, filled partially, or experienced API-side issues
+│   ├── daily_summary.json		  # daily summary
+
+│   ├── enhancements/                     # Optional add-ons for higher accuracy or conditional filtering
+│   │   ├── adx_filter.py                # Skips VWAP reversion if ADX indicates a strong trend
+│   │   ├── bollinger_confluence.py     # Confirms mean reversion using Bollinger Band extremes
+│   │   ├── vix_gatekeeper.py           # Disables EOD strategy if VIX (market volatility index) is too low
+│   │   ├── imbalance_scanner_ibkr.py   # Scans IBKR order book for late-day imbalance pressure
+│   │   ├── ticker_blocklist.py         # Prevents re-trading the same ticker more than once per day
+│   │   ├── build_check.py		# Verifies structure, file presence, required env vars, and folder permissions before starting bot.
+
+
+├── tbot_web/                             # Web dashboard for remote bot control and status viewing
+│   ├── assets/                           # Static UI resources
+│   │   ├── fnt/                          # Fonts used by frontend
+│   │   └── css/                          # Styling for frontend
+│   │       ├── main.css                 # Base layout and component styling
+│   │       └── theme.css                # Optional dark/light theme overrides
+│   ├── favicon.ico / favicon.gif         # Web browser icons
+│   ├── index.html                        # Login interface for web control (uses auth from API)
+│   ├── main.html                         # Dashboard container layout
+│   ├── logs.html                         # UI view to show trade logs and bot activity
+│   ├── settings.html                     # Interface to adjust .env_bot values
+│   ├── status.html                       # Displays bot status (active strategy, uptime, trades placed)
+│   ├── robots.txt                        # Prevents search engine indexing of web interface
+│   ├── py/                               # Backend Python scripts used by the frontend
+│   │   ├── login_web.py                 # Handles login request from UI to API
+│   │   ├── main_web.py                  # Router for frontend page loads
+│   │   ├── logs_web.py                  # Pulls logs from disk or DB and feeds logs.html
+│   │   ├── start_stop_web.py           # Launches or halts bot from dashboard
+│   │   ├── status_web.py               # Returns live runtime state for display in status.html
+
+
+==============================
+📦 Final Build Checklist
+==============================
+
+✅ All `.env` and `.env_bot` variables parsed and validated (via env_bot.py)
+✅ Strategies pass `self_check()` before first run
+✅ Full dry-run executed before live orders allowed
+✅ GnuCash output tested and backed up before write
+✅ Logs print per-strategy outputs, time window, broker, and mode
+✅ Web, API, and Bot can operate independently
+✅ Version banner from version.py printed at startup
+✅ All generated files printed in full to chat (no deltas or patches)
+✅ All logic tested using TEST_MODE=true, GNC_EXPORT_MODE=paper
+
+🚨 If any unexpected error occurs, `watchdog_bot.py` must trigger shutdown and write to `unresolved_orders.log`.
+
+

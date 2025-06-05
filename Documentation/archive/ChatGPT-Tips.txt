@@ -1,0 +1,72 @@
+What Triple Backticks Do:
+Keep all spacing and line breaks intact
+
+Prevent ChatGPT from auto-formatting quotes, dashes, or symbols
+
+Make it easier to copy/paste directly into code editors or .env files
+
+Use them especially when pasting:
+
+Python scripts
+
+YAML or JSON blocks
+
+.env or .ini config files
+
+Shell commands or CLI examples
+
+Let me know if you want a pre-wrapped starter chunk for your next session.
+
+
+
+
+
+
+You said:
+I'm still not comprehending - please provide an example of the command syntax
+
+
+ChatGPT said:
+Got it. Here's exactly what you would type or paste into the chat input field to preserve formatting using triple backticks.
+
+Example: Exact Input You’d Type Into Chat
+plaintext
+Copy
+Edit
+Please analyze the following config block:
+
+```
+# .env_bot - Trading Bot Environment File
+
+VERSION_TAG=v1.0.0
+BUILD_MODE=release
+TEST_MODE=true
+DEBUG_LOG_LEVEL=verbose
+ENABLE_LOGGING=true
+LOG_FORMAT=json
+
+TOTAL_ALLOCATION=0.02
+MAX_TRADES=4
+WEIGHTS=0.4,0.2,0.2,0.2
+DAILY_LOSS_LIMIT=0.05
+MAX_RISK_PER_TRADE=0.025
+MAX_OPEN_POSITIONS=5
+
+BROKER=alpaca
+ALPACA_MODE=paper
+IBKR_MODE=paper
+STRATEGY_SEQUENCE=open,mid,close
+STRATEGY_OVERRIDE=null
+```
+
+
+
+Breakdown:
+
+Start and end the code block with triple backticks: ``` (no spaces before or after).
+
+You can optionally add a language after the first triple backtick (like python, json, or env) to trigger syntax highlighting. Example: ```env.
+
+Anything inside stays exactly as you typed it—ChatGPT won't reformat quotes, equal signs, or spacing.
+
+Let me know if you want a template for a specific file (like main_bot.py or settings_bot.py)!

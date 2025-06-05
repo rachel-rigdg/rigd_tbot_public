@@ -1,0 +1,179 @@
+# tbot_bot/strategy/strategy_open.py
+# summary: Implements opening range breakout strategy with full bi-directional support and updated env references
+
+import time
+from datetime import datetime, timedelta
+from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.time_utils import utc_now                      # UPDATED: from time_utils
+from tbot_bot.support.logging_utils import log_event                 # UPDATED: from logging_utils
+from tbot_bot.support.etf_utils import get_inverse_etf               # UPDATED: from etf_utils
+from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
+from tbot_bot.trading.orders_bot import create_order
+from tbot_bot.trading.kill_switch import trigger_shutdown
+from tbot_bot.strategy.strategy_meta import StrategyResult
+from tbot_bot.risk.risk_bot import validate_trade
+from tbot_bot.reporting.error_handler import handle_error
+from tbot_bot.trading.instruments import resolve_bearish_instrument
+
+config = get_bot_config()
+
+TEST_MODE = config["TEST_MODE"]
+STRAT_OPEN_ENABLED = config["STRAT_OPEN_ENABLED"]
+STRAT_OPEN_BUFFER = float(config["STRAT_OPEN_BUFFER"])
+OPEN_ANALYSIS_TIME = int(config["OPEN_ANALYSIS_TIME"])
+OPEN_BREAKOUT_TIME = int(config["OPEN_BREAKOUT_TIME"])
+OPEN_MONITORING_TIME = int(config["OPEN_MONITORING_TIME"])
+SHORT_TYPE_OPEN = config["SHORT_TYPE_OPEN"]
+ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
+MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
+DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
+SLEEP_TIME_STR = config["SLEEP_TIME"]
+
+def parse_sleep_time(sleep_str):
+    try:
+        if sleep_str.endswith("s"):
+            return float(sleep_str[:-1])
+        elif sleep_str.endswith("ms"):
+            return float(sleep_str[:-2]) / 1000.0
+        else:
+            return float(sleep_str)
+    except Exception:
+        return 1.0
+
+SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
+
+range_data = {}
+
+def self_check():
+    return STRAT_OPEN_ENABLED and STRAT_OPEN_BUFFER > 0
+
+def analyze_opening_range(start_time):
+    log_event("strategy_open", "Starting opening range analysis...")
+    deadline = start_time + timedelta(minutes=OPEN_ANALYSIS_TIME)
+    scan_cutoff = utc_now() + timedelta(minutes=1) if TEST_MODE else None
+
+    while utc_now() < deadline:
+        try:
+            candidates = get_filtered_stocks()
+        except Exception as e:
+            handle_error("strategy_open", "LogicError", e)
+            break
+
+        if not candidates:
+            log_event("strategy_open", "No valid symbols returned — triggering fallback shutdown")
+            trigger_shutdown("No symbols passed screener during open analysis")
+            return {}
+
+        for stock in candidates:
+            symbol = stock["symbol"]
+            price = float(stock["price"])
+            if symbol not in range_data:
+                range_data[symbol] = {"high": price, "low": price}
+            else:
+                range_data[symbol]["high"] = max(range_data[symbol]["high"], price)
+                range_data[symbol]["low"] = min(range_data[symbol]["low"], price)
+
+        if scan_cutoff and utc_now() > scan_cutoff:
+            break
+
+        time.sleep(SLEEP_TIME)
+
+    log_event("strategy_open", f"Range data collected for {len(range_data)} symbols.")
+    return range_data
+
+def detect_breakouts(start_time):
+    log_event("strategy_open", "Monitoring for breakouts...")
+    trades = []
+    deadline = start_time + timedelta(minutes=OPEN_BREAKOUT_TIME)
+
+    while utc_now() < deadline:
+        try:
+            candidates = get_filtered_stocks()
+        except Exception as e:
+            handle_error("strategy_open", "LogicError", e)
+            break
+
+        if not candidates:
+            log_event("strategy_open", "No valid symbols returned during breakout monitoring")
+            break
+
+        for stock in candidates:
+            symbol = stock["symbol"]
+            price = float(stock["price"])
+
+            if symbol not in range_data:
+                continue
+
+            high = range_data[symbol]["high"]
+            low = range_data[symbol]["low"]
+            long_trigger = high * (1 + STRAT_OPEN_BUFFER)
+            short_trigger = low * (1 - STRAT_OPEN_BUFFER)
+
+            # Long breakout
+            if price > long_trigger:
+                if validate_trade(symbol, "buy", DEFAULT_CAPITAL_PER_TRADE):
+                    try:
+                        result = create_order(
+                            ticker=symbol,
+                            side="buy",
+                            capital=DEFAULT_CAPITAL_PER_TRADE,
+                            price=price,
+                            stop_loss_pct=0.02,
+                            strategy_name="open"
+                        )
+                        if result:
+                            trades.append(result)
+                            log_event("strategy_open", f"LONG breakout for {symbol} at {price}")
+                    except Exception as e:
+                        handle_error("strategy_open", "BrokerError", e)
+                range_data.pop(symbol, None)
+                time.sleep(SLEEP_TIME)
+                continue
+
+            # Short breakout
+            if price < short_trigger:
+                if SHORT_TYPE_OPEN == "disabled":
+                    log_event("strategy_open", f"Short skipped for {symbol} (SHORT_TYPE disabled)")
+                else:
+                    if validate_trade(symbol, "sell", DEFAULT_CAPITAL_PER_TRADE):
+                        try:
+                            if SHORT_TYPE_OPEN == "InverseETF":
+                                instrument = get_inverse_etf(symbol)
+                                if not instrument:
+                                    log_event("strategy_open", f"No inverse ETF mapping for {symbol}, skipping short trade")
+                                    continue
+                                side = "buy"  # Inverse ETF is long position
+                            else:
+                                instrument = resolve_bearish_instrument(symbol, SHORT_TYPE_OPEN)
+                                side = "sell"
+
+                            result = create_order(
+                                ticker=instrument,
+                                side=side,
+                                capital=DEFAULT_CAPITAL_PER_TRADE,
+                                price=price,
+                                stop_loss_pct=0.02,
+                                strategy_name="open"
+                            )
+                            if result:
+                                trades.append(result)
+                                log_event("strategy_open", f"SHORT breakout for {symbol} at {price} using {instrument}")
+                        except Exception as e:
+                            handle_error("strategy_open", "BrokerError", e)
+                range_data.pop(symbol, None)
+                time.sleep(SLEEP_TIME)
+
+        time.sleep(SLEEP_TIME)
+
+    return trades
+
+def run_open_strategy():
+    if not self_check():
+        log_event("strategy_open", "Strategy self_check() failed — skipping.")
+        return StrategyResult(skipped=True)
+
+    start_time = utc_now()
+    analyze_opening_range(start_time)
+    trades = detect_breakouts(start_time)
+    log_event("strategy_open", f"Open strategy completed: {len(trades)} trades placed")
+    return StrategyResult(trades=trades, skipped=False)

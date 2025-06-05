@@ -1,0 +1,55 @@
+# .scpignore_enc – Sync ONLY the encrypted .env_bot.enc file
+
+# === All Python & Strategy Code ===
+*.py
+tbot_bot/
+tbot_web/
+scripts/
+docs/
+
+# === Secrets & Plaintext Configs ===
+.env
+tbot_bot/.env_bot
+
+# === Virtual Environment ===
+venv/
+
+# === Logs and Reports ===
+logs/
+logs_web/
+*.log
+*.csv
+*.json
+*.zip
+daily_summary_*.json
+trade_history_*.json
+trade_history_*.csv
+*_paper.log
+*_live.log
+unresolved_orders_*.log
+
+# === Visual Builder/Project Clutter ===
+.DS_Store
+_pgbackup/
+_pginfo/
+pinegrow.json
+Thumbs.db
+tbot_web/.flux/
+tbot-web/_pgbackup/
+tbot-web/_pginfo/
+tbot-web/pinegrow.json
+tbot-web/.DS_Store
+
+# === Ledgers & Backups ===
+
+backups/
+
+# === Setup Scripts ===
+tools/
+
+# === Backtest & Output ===
+backtest_results/
+*.png
+*.svg
+*.html
+tbot_bot/tests/__pycache__/

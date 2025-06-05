@@ -1,0 +1,67 @@
+================================================================================
+Document: 025_Broker_API_Integration
+Version: v041
+Date: UTC:2025-06-02 23:54
+================================================================================
+Overview:
+Defines broker API integration specifications for Alpaca, IBKR, and Tradier within TradeBot {CURRENT_VERSION}. Enforces unified interface, error handling, compliance, and auditability.
+
+Core Principles:
+- Single active broker per bot instance.
+- API credentials loaded securely from encrypted secrets at bootstrap.
+- No hardcoded credentials or fallback keys.
+- All API communication uses secure HTTPS connections.
+- All broker events logged with UTC timestamps and strategy context.
+- Retry logic capped by `API_RETRY_LIMIT` in `.env_bot`.
+- Self-check ensures connectivity and credential validity.
+
+Broker-Specific Details:
+
+Alpaca:
+- Supports REST and WebSocket.
+- Enables long equity and inverse ETFs.
+- Fractional shares supported if enabled in `.env_bot`.
+- Supports order types: market, limit, stop.
+- Rate-limited per Alpaca API policy; backoff used on 429 errors.
+
+IBKR:
+- Supports TWS/Gateway client with async fallback.
+- Supports long equity, inverse ETFs, long puts.
+- Requires client ID and port configured securely.
+- Implements order management, fills, and position sync.
+- Supports delayed market data, real-time updates.
+- Rate limits respected; errors logged and notified.
+
+Tradier:
+- REST-only broker integration.
+- Supports long equity and inverse ETFs.
+- Order lifecycle fully managed via REST API calls.
+- No websocket support.
+- Position sync via polling.
+- Suitable for test or smaller deployments.
+
+Common Interface Requirements:
+- All brokers must implement:
+  - connect()
+  - submit_order()
+  - cancel_order()
+  - get_positions()
+  - get_account_info()
+  - self_check()
+
+- Broker adapters reside in `tbot_bot/broker/brokers/`.
+- Broker selection and toggles in `.env_bot`: e.g., `ALPACA_ENABLED=true`.
+- Fallback and failover handled via `FAILOVER_ENABLED` and `FAILOVER_LOG_TAG`.
+
+Error Handling & Logging:
+- All broker exceptions caught, logged with detailed context.
+- Fatal connection failures trigger `kill_switch.py`.
+- Partial failures retried per `API_RETRY_LIMIT`.
+- Order rejects recorded in `unresolved_orders.log`.
+
+Audit & Compliance:
+- All broker API requests and responses logged in structured format.
+- Sensitive info redacted in logs.
+- Compliance with broker TOS enforced.
+
+End of Document

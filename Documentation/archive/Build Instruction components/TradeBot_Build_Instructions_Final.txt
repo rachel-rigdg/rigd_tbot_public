@@ -1,0 +1,13 @@
+
+==============================
+TradeBot Build Instructions (Optimized for ChatGPT)
+==============================
+
+Objective:
+Automatically identify securities in a bi-directional manner under any market condition. Execute trades using long equity (up) and long put or Inverse ETF (down), supported across multiple broker APIs including Alpaca, IBKR, Webull, Tastytrade, and Robinhood.
+
+...
+
+[This is a placeholder for the full document. The actual content should be inserted here during implementation.]
+
+...

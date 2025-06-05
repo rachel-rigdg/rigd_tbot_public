@@ -1,0 +1,48 @@
+================================================================================
+Document: 015_Optional_Expansion_Modules
+Version: v041
+Date: UTC:2025-06-02 23:54
+================================================================================
+Overview:
+This document defines optional expansion modules for TradeBot, fully compliant with core architecture {CURRENT_VERSION}. Modules are independently testable, maintain strict separation of concerns, and must be toggled exclusively via `.env_bot`.
+
+Modules Included:
+
+1. Backtesting and Strategy Optimization
+- Backtesting framework in `tbot_bot/backtest/`
+- Supports simulation of historical trade data, slippage, latency
+- Must adhere to `.env_bot.test` config schema
+- Produces JSON/CSV summaries for tuning, stored in `backtest_results/`
+- Optimization supports grid, bayesian, genetic methods; results versioned in Web UI
+
+2. Detailed Broker API Integration
+- Includes advanced adapters for Alpaca, IBKR, Tradier
+- Handles REST/WebSocket, order lifecycle, retry, error management
+- Implements `.self_check()` with connection, credential validation
+- Supports fallback routing and failover per `.env_bot` toggles
+- Logs all API events for audit; rate limits strictly enforced
+
+3. Encryption & Key Management Enhancements
+- Key rotation tooling (`tools/rotate_keys.py`)
+- Automated config encryption/decryption workflows (`tools/encrypt_env_bot.py`)
+- Secure ephemeral key storage strategies for container/cloud deployments
+- Audit trails for key usage and config changes
+
+4. Reporting & Compliance Extensions
+- Extended reporting API for tax, regulatory filings
+- Custom OFX export formats
+- Automated backup rotation and cloud sync scripts
+- Fine-grained alerting and escalation policies
+
+Implementation Notes:
+- All optional modules must NOT interfere with core runtime if disabled.
+- Modules must implement `.self_check()` to integrate with system health.
+- Any config toggles required must be clearly documented in `.env_bot` schema.
+- Use strict logging standards and audit trails.
+
+Compliance:
+- Modules adhere strictly to {CURRENT_VERSION} build instructions and audit requirements.
+- No runtime config or credential leaks permitted.
+- Must operate independently of Web UI unless explicitly integrated.
+
+End of Document

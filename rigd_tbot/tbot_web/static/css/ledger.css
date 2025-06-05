@@ -1,0 +1,33 @@
+.ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 2em;
+    font-size: 1em;
+}
+.ledger-table th, .ledger-table td {
+    border: 1px solid #444;
+    padding: 0.6em;
+    text-align: center;
+}
+.ledger-table th {
+    background: #333333;
+    color: #ffffff;
+}
+.ledger-table tr.ok {
+    background: #222d22;
+    color: #aaffaa;
+}
+.ledger-table tr.mismatch {
+    background: #2a1818;
+    color: #ffaaaa;
+}
+.ledger-table tr.pending {
+    background: #222244;
+    color: #aaaaff;
+}
+.reconcile-container {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2em 0;
+}

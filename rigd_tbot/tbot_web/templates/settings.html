@@ -1,0 +1,52 @@
+<!-- tbot_web/templates/settings.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>TradeBot Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}" />
+</head>
+
+<body class="settings-page">
+    <header class="dashboard-header">
+        <h1>TradeBot Settings</h1>
+    </header>
+
+    <main class="dashboard-main">
+        <!-- Editable form generated from decrypted .env_bot values -->
+        <form id="settings-form" action="{{ url_for('settings.update_settings') }}" method="POST" novalidate>
+            <h2>Update .env_bot Parameters</h2>
+            {% for key, value in config.items() %}
+                <div class="form-group">
+                    <label for="{{ key }}">{{ key }}</label>
+                    <input 
+                        type="text" 
+                        id="{{ key }}" 
+                        name="{{ key }}" 
+                        value="{{ value }}" 
+                        autocomplete="off" 
+                        required
+                    />
+                </div>
+            {% endfor %}
+            <button type="submit">Save Changes</button>
+        </form>
+
+        {% if status %}
+        <p class="update-status">{{ status }}</p>
+        {% endif %}
+    </main>
+
+    <footer class="dashboard-footer">
+        <p>&copy; 2025 RIGD Group LLC – Bot Settings Interface</p>
+    </footer>
+
+    <script>
+        // Optional: Enhance UX with client-side validation or AJAX submit in future
+        // Current form uses standard POST submit
+    </script>
+</body>
+</html>

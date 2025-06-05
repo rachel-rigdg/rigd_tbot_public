@@ -1,0 +1,22 @@
+# INSTRUCTION SET: Control Signals & Lifecycle
+
+This chat will focus **only** on Control Signals & Lifecycle.
+
+Scope includes:
+- tbot_bot/control/, runtime/start_bot.py, stop_bot.py, watchdog_bot.py, tbot_runner_supervisor.py
+
+Build rules:
+- Lifecycle driven by control_start.txt and control_stop.txt
+- Watchdog enforces broker connectivity checks
+- Supervisor handles retries, timeouts, global aborts
+
+Chat behavior:
+- Address one control or lifecycle file at a time
+- Explicit user direction for next steps
+- Print full scripts, labeled properly
+
+Focus:
+- Clean start/stop control
+- Reliable session supervision
+- Safe shutdown on failure
+

@@ -1,0 +1,80 @@
+<!-- tbot_web/status.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TradeBot Status Dashboard</title>
+    <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="stylesheet" href="assets/css/theme.css">
+    <script>
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+
+                document.getElementById('timestamp').textContent = data.timestamp || 'N/A';
+                document.getElementById('state').textContent = data.state || 'N/A';
+                document.getElementById('strategy').textContent = data.active_strategy || 'N/A';
+                document.getElementById('trade_count').textContent = data.trade_count || 0;
+                document.getElementById('error_count').textContent = data.error_count || 0;
+                document.getElementById('test_mode').textContent = data.test_mode ? 'True' : 'False';
+                document.getElementById('version').textContent = data.version || 'N/A';
+
+                document.getElementById('open_enabled').textContent = data.enabled_strategies.open ? 'Enabled' : 'Disabled';
+                document.getElementById('mid_enabled').textContent = data.enabled_strategies.mid ? 'Enabled' : 'Disabled';
+                document.getElementById('close_enabled').textContent = data.enabled_strategies.close ? 'Enabled' : 'Disabled';
+
+                document.getElementById('alpaca_mode').textContent = data.broker_mode.alpaca || 'N/A';
+                document.getElementById('ibkr_mode').textContent = data.broker_mode.ibkr || 'N/A';
+                document.getElementById('force_paper').textContent = data.force_paper_export ? 'True' : 'False';
+
+                document.getElementById('risk_per_trade').textContent = data.max_risk_per_trade;
+                document.getElementById('daily_loss_limit').textContent = data.daily_loss_limit;
+            } catch (error) {
+                console.error('Failed to load status:', error);
+            }
+        }
+
+        setInterval(fetchStatus, 3000);  // Refresh every 3 seconds
+        window.onload = fetchStatus;
+    </script>
+<link href="css/main.css" rel="stylesheet" media="all" type="text/css" >
+</head>
+<body>
+    <div class="main-container">
+        <div style="width:70%; margin-left:auto;margin-right:auto;">
+        <h1>TradeBot Status</h1>
+        <div class="status-grid">
+            <div><strong>Timestamp:</strong> <span id="timestamp"></span></div>
+            <div><strong>Bot State:</strong> <span id="state"></span></div>
+            <div><strong>Active Strategy:</strong> <span id="strategy"></span></div>
+            <div><strong>Trade Count:</strong> <span id="trade_count"></span></div>
+            <div><strong>Error Count:</strong> <span id="error_count"></span></div>
+            <div><strong>Test Mode:</strong> <span id="test_mode"></span></div>
+            <div><strong>Version:</strong> <span id="version"></span></div>
+        </div>
+        
+        <hr>
+        <h2>Strategy Toggles</h2>
+        <div class="status-grid">
+            <div><strong>Open:</strong> <span id="open_enabled"></span></div>
+            <div><strong>Mid:</strong> <span id="mid_enabled"></span></div>
+            <div><strong>Close:</strong> <span id="close_enabled"></span></div>
+        </div>
+        <hr>
+        <h2>Broker Modes</h2>
+        <div class="status-grid">
+            <div><strong>Alpaca:</strong> <span id="alpaca_mode"></span></div>
+            <div><strong>IBKR:</strong> <span id="ibkr_mode"></span></div>
+            <div><strong>Force Paper Export:</strong> <span id="force_paper"></span></div>
+        </div>
+        <hr>
+        <h2>Risk Controls</h2>
+        <div class="status-grid">
+            <div><strong>Max Risk per Trade:</strong> <span id="risk_per_trade"></span></div>
+            <div><strong>Daily Loss Limit:</strong> <span id="daily_loss_limit"></span></div>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

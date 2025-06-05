@@ -1,0 +1,129 @@
+<!-- tbot_web/templates/configuration.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bot Configuration</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+   <!-- <link rel="stylesheet" href="../static/css/main.css" /> -->
+</head>
+<body>
+    <div class="container">
+        <div class="title">
+        <h1>T-BOT Initial Configuration</h1>  
+        </div>
+        
+        <!-- Route points to configuration_web.save_configuration -->
+        <form method="POST" action="{{ url_for('configuration_web.save_configuration') }}">
+            <!-- Entity / Bot Identity -->
+            <div class="fieldblock">
+            <fieldset >
+                <legend>Identity Settings</legend>
+                <label for="entity_code">ENTITY_CODE</label>
+                <input type="text" id="entity_code" name="entity_code" maxlength="6" required value="{{ config.entity_code or 'TEST' }}" />
+                
+                <label for="jurisdiction_code">JURISDICTION_CODE</label>
+                <input type="text" id="jurisdiction_code" name="jurisdiction_code" maxlength="4" required value="{{ config.jurisdiction_code or 'USA' }}" />
+                
+                <label for="bot_id">BOT_ID</label>
+                <input type="text" id="bot_id" name="bot_id" maxlength="6" required value="{{ config.bot_id or 'TB01' }}" />
+            </fieldset>
+            </div>
+            <div class="fieldblock">
+            <!-- User Credentials -->
+            <fieldset >
+                <legend>User Credentials</legend>
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" maxlength="32" required value="{{ config.username or 'admin' }}" />
+                
+                <label for="userpassword">Password</label>
+                <input type="password" id="userpassword" name="userpassword" value="" placeholder="Enter new password or leave blank to keep existing" />
+            </fieldset>
+        </div>
+        <div class="fieldblock">
+            <!-- Alert Email & SMTP -->
+            <fieldset >
+                <legend>Alert & Email Settings</legend>
+                <label for="alert_email">Alert Email</label>
+                <input type="email" id="alert_email" name="alert_email" required value="{{ config.alert_email or 'alerts@example.com' }}" />
+              
+                <label for="smtp_user">SMTP User</label>
+                <input type="text" id="smtp_user" name="smtp_user" required value="{{ config.smtp_user or 'smtpuser' }}" />
+              
+                <label for="smtp_pass">SMTP Password</label>
+                <input type="password" id="smtp_pass" name="smtp_pass" value="" placeholder="Enter new password or leave blank to keep existing" />
+               
+                <label for="smtp_host">SMTP Host</label>
+                <input type="text" id="smtp_host" name="smtp_host" required value="{{ config.smtp_host or 'smtp.example.com' }}" />
+              
+                <label for="smtp_port">SMTP Port</label>
+                <input type="number" id="smtp_port" name="smtp_port" min="1" max="65535" required value="{{ config.smtp_port or '465' }}" />
+            </fieldset>
+        </div>
+        <div class="fieldblock">
+            <!-- Network Settings -->
+            <fieldset >
+                <legend>Network Settings</legend>
+                <label for="network_name">Network Name</label>
+                <input type="text" id="network_name" name="network_name" maxlength="64" required value="{{ config.network_name or 'LOCAL' }}" />
+             
+                <label for="ip">IP Address</label>
+                <input type="text" id="ip" name="ip" pattern="^(\d{1,3}\.){3}\d{1,3}$" placeholder="e.g. 192.168.1.67" required value="{{ config.ip or '192.168.1.67' }}" />
+               
+                <label for="port">Port</label>
+                <input type="number" id="port" name="port" min="1" max="65535" required value="{{ config.port or '6900' }}" />
+            </fieldset>
+        </div>
+        <div class="fieldblock">
+            <!-- Screener Settings -->
+            <fieldset >
+                <legend>Screener Settings</legend>
+                <label for="screener_name">Screener Name</label>
+                <input type="text" id="screener_name" name="screener_name" maxlength="64"  value="{{ config.screener_name or 'finnhub' }}" />
+               
+                <label for="screener_api_key">Screener API Key</label>
+                <input type="text" id="screener_api_key" name="screener_api_key"  value="{{ config.screener_api_key or '' }}" />
+            </fieldset>
+        </div>
+        <div class="fieldblock">
+            <!-- Broker Settings -->
+            <fieldset >
+                <legend>Broker Settings</legend>
+                <label for="broker_name">Broker Name / Broker Code</label>
+                <input type="text" id="broker_name" name="broker_name" maxlength="32" required value="{{ config.broker_name or 'ALPACA' }}" />
+              
+                <label for="broker_url">Broker URL</label>
+                <input type="text" id="broker_url" name="broker_url"  value="{{ config.broker_url or '' }}" />
+               
+                <label for="broker_api_key">Broker API Key</label>
+                <input type="text" id="broker_api_key" name="broker_api_key"  value="{{ config.broker_api_key or '' }}" />
+                
+                <label for="broker_secret_key">Broker Secret Key</label>
+                <input type="text" id="broker_secret_key" name="broker_secret_key"  value="{{ config.broker_secret_key or '' }}" />
+               
+                <label for="broker_username">Broker Username</label>
+                <input type="text" id="broker_username" name="broker_username"  value="{{ config.broker_username or '' }}" />
+                
+                <label for="broker_account_number">Broker Account Number</label>
+                <input type="text" id="broker_account_number" name="broker_account_number"  value="{{ config.broker_account_number or '' }}" />
+                
+                <label for="broker_password">Broker Password</label>
+                <input type="password" id="broker_password" name="broker_password" value="" placeholder="Enter new password or leave blank to keep existing" />
+            </fieldset>
+        </div>
+        <div class="fieldblock">
+            <!-- Alert Channels -->
+            <fieldset>
+                <legend>Alert Channels</legend>
+                <label for="alert_channels">Alert Channels (comma-separated)</label>
+                <input type="text" id="alert_channels" name="alert_channels" placeholder="e.g. email, slack, sms" value="{{ config.alert_channels or 'email' }}" />
+            </fieldset>
+            <br>
+            <button type="submit">Save Configuration & Start Bot</button>
+        </div>
+        </form>
+        <br><br><br><br><br><br><br>
+    </div>
+</body>
+</html>

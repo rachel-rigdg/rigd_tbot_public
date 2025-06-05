@@ -1,0 +1,132 @@
+==============================
+🧠 TradeBot Strategy Logic Spec v1.0
+==============================
+
+▶️ Overview:
+TradeBot will automatically identify securities and place trades in a bi-directional manner, using:
+- ✅ Long equity for bullish setups
+- ✅ Long put OR Inverse ETF for bearish setups
+- ❌ No shorting or leveraged ETFs
+
+Supports any broker platform with compatible APIs:
+Alpaca, IBKR, Webull, Tastytrade, Robinhood
+
+
+==============================
+🚦 Runtime Modes
+==============================
+
+🧪 TEST MODE:
+- 1-minute analysis + 1-minute monitoring
+- Skips volume filters
+- Paper trades only (logged to `gnu_paper.gnucash`)
+- Used for logic verification and debug
+
+✅ LIVE MODE:
+- Full strategy execution with volume/volatility filters
+- Executes via live broker APIs
+- Trades logged to `gnu_live.gnucash`
+- Kill switch, watchdogs, and drawdown enforcement active
+
+==============================
+💸 Capital Risk Controls
+==============================
+
+- MAX_RISK_PER_TRADE: 2–3% of capital
+- MAX_OPEN_RISK: All trades = max 5% capital exposure
+- DAILY_LOSS_LIMIT: Auto-kill triggers if hit (default: 5%)
+
+==============================
+🧠 Strategy Modules
+==============================
+
+1️⃣ strategy_open.py – Opening Range Breakout
+----------------------------------------------
+- Time: 9:30–10:20 AM EST
+- Direction: Long only
+- Instrument: Stock/ETF
+- Logic:
+  - Track high/low for 20 min post-open
+  - Breakout + buffer + volume confirmation
+- Allocation:
+  - 1 = 100%
+  - 2 = 60/40
+  - 3 = 40/30/30
+  - 4 = 40/20/20/20
+- Exit: Stop loss (2%) or 10:20 AM hard exit
+- Log: open.log, trade_history.csv, gnu_paper/live.gnucash
+
+2️⃣ strategy_mid.py – VWAP Mean Reversion
+----------------------------------------------
+- Time: 10:30 AM–2:30 PM
+- Direction: Long or Inverse
+- Instrument: Stock, Inverse ETF
+- Logic:
+  - Price deviation ±2% from VWAP
+  - Reversal signals + optional filters
+- Enhancements:
+  - ADX filter
+  - Bollinger Band confluence
+- Allocation: Max 5 positions, equal or priority-weighted
+- Exit: VWAP touch, 45 min timeout, or stop loss (1.5%)
+- Log: mid.log, trade_history.csv, gnu_paper/live.gnucash
+
+3️⃣ strategy_close.py – EOD Momentum/Fade
+----------------------------------------------
+- Time: 2:30–4:00 PM
+- Direction: Long or Bearish (put/inverse)
+- Instrument: Stock, Inverse ETF, Long Put
+- Modes:
+  - trend: momentum breakout continuation
+  - fade: spike reversal, exhaustion signal
+- Enhancements:
+  - VIX volatility gate
+  - IBKR imbalance scanner
+  - Blocklist to skip repeated tickers
+- Allocation: 30–40% max capital
+- Exit: Stop loss (2%) or hard close at 3:55 PM
+- Log: close.log, trade_history.csv, gnu_paper/live.gnucash
+
+==============================
+🔧 Optional Enhancements (Toggleable)
+==============================
+
+- adx_filter.py → Skip VWAP trades in strong trends
+- bollinger_confluence.py → Confirm overbought/oversold zones
+- vix_gatekeeper.py → Skip EOD in low volatility
+- imbalance_scanner_ibkr.py → Detect final-hour pressure via IBKR
+- ticker_blocklist.py → Prevent re-trading same ticker
+
+==============================
+📘 GnuCash Integration
+==============================
+
+- gnu_exporter.py auto-writes to:
+  - gnu_paper.gnucash (TEST_MODE)
+  - gnu_live.gnucash (LIVE_MODE)
+- gnu_transaction.py builds XML transactions
+- gnu_config.py holds account layout
+- gnu_backup.py auto-backups ledgers before changes
+- Each trade includes:
+  - ID, broker, strategy, entry/exit, profit/loss
+
+==============================
+📊 Logging & Reporting
+==============================
+
+- trade_history.csv → all trades, strategies, timestamps
+- open.log / mid.log / close.log → individual strategy logs
+- unresolved_orders.log → API rejections or partials
+- (future) daily_summary.json for snapshot audit
+
+==============================
+🔐 Safety Systems
+==============================
+
+- kill_switch.py → Halts trading + exits all positions on max loss
+- watchdog_bot.py → Detects broker API failure or disconnection
+- risk_bot.py → Validates capital allocation constraints per trade
+- security_bot.py → (Optional) Encrypt .env_bot for deployment security
+- gnu_backup.py → Saves daily snapshot before ledger write
+
+==============================

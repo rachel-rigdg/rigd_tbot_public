@@ -1,0 +1,33 @@
+# requirements.txt
+
+
+# === Trading APIs ===
+alpaca-trade-api==3.2.0           # Alpaca trading integration
+ib_insync==0.9.83                 # Interactive Brokers trading integration
+finnhub-python==2.4.17            # Finnhub stock screener & data
+
+# === Networking & Requests ===
+requests==2.31.0                  # HTTP requests (used by Finnhub, others)
+
+# === Time & Configuration ===
+pytz==2024.1                      # Timezone handling
+python-dotenv==1.0.1              # Load .env variables
+
+# === Security & Encryption ===
+bcrypt==4.1.2                     # Password hashing (optional use)
+cryptography==42.0.5              # General encryption tools
+pycryptodome==3.20.0              # AES encryption (used in password system)
+
+# === Web Interface (Flask-based) ===
+flask==3.0.2                      # Web framework replacing FastAPI
+flask-limiter==3.5.1              # Rate limiting for login security
+
+# === Database ===
+sqlalchemy==2.0.30                # DB ORM for possible expansion/compatibility
+flask_sqlalchemy==3.1.1           # Flask SQLAlchemy support (if any SQLAlchemy used in web UI)
+
+# === Password & Session Management ===
+passlib==1.7.4                    # (Optional) Used by some bcrypt/Flask setups
+
+# === Miscellaneous Utilities ===
+gunicorn==21.2.0                  # (Optional) For production Flask serving, if not using built-in Flask server

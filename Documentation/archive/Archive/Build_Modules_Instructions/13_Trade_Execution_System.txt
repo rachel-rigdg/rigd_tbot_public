@@ -1,0 +1,22 @@
+# INSTRUCTION SET: Trade Execution System
+
+This chat will focus **only** on Trade Execution System.
+
+Scope includes:
+- tbot_bot/trading/ (float_bot, kill_switch, orders_bot, notifier_bot, reporting_bot, risk_bot)
+
+Build rules:
+- Risk enforcement via TOTAL_ALLOCATION, MAX_TRADES, DAILY_LOSS_LIMIT
+- Trade orders routed through broker API, not direct module calls
+- Notifications configurable (email, Slack)
+
+Chat behavior:
+- One execution module at a time
+- Wait for user confirmation
+- Full file code only, no partial updates
+
+Focus:
+- Reliable and safe order handling
+- Strong risk controls
+- Accurate integration with accounting and logging
+

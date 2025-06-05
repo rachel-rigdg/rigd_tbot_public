@@ -1,0 +1,112 @@
+<!-- tbot_web/settings.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TradeBot Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="stylesheet" href="assets/css/theme.css">
+    <script>
+        async function loadSettings() {
+            const response = await fetch('/main_web/settings');
+            const data = await response.json();
+            const settingsContainer = document.getElementById('settings-form');
+            settingsContainer.innerHTML = '';
+
+            for (const [key, value] of Object.entries(data)) {
+                const label = document.createElement('label');
+                label.textContent = key;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.name = key;
+                input.value = value;
+                input.className = 'setting-input';
+                settingsContainer.appendChild(label);
+                settingsContainer.appendChild(input);
+            }
+        }
+
+        async function saveSettings(event) {
+            event.preventDefault();
+            const form = document.getElementById('settings-form');
+            const formData = new FormData(form);
+            const settings = {};
+
+            for (const [key, value] of formData.entries()) {
+                settings[key] = value;
+            }
+
+            const response = await fetch('/main_web/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+
+            const result = await response.json();
+            alert(result.message || 'Settings updated.');
+        }
+
+        window.onload = loadSettings;
+    </script>
+<link href="css/main.css" rel="stylesheet" media="all" type="text/css" >
+</head>
+<body class="settings-page">
+    <header class="dashboard-header">
+        <h1>TradeBot Settings</h1>
+
+    </header>
+
+    <main class="dashboard-main">
+        <form id="settings-form" onsubmit="saveSettings(event)">
+            <h2>Update .env_bot Parameters</h2>
+            <!-- Settings loaded dynamically here -->
+            <button type="submit">Save Changes</button>
+        </form>
+    </main>
+     <div class="formcontent center">
+            <div class="content formContainer center">
+                <h1>Edit Bot Settings</h1>
+                <form method="post" action="/settings">
+                    <label for="TEST_MODE">Test Mode</label>
+                    <input type="text" id="TEST_MODE" name="TEST_MODE" value="{{ settings.get('TEST_MODE', '') }}" required><br>
+                    <label for="DEBUG_LOG_LEVEL">Debug Log Level</label>
+                    <input type="text" id="DEBUG_LOG_LEVEL" name="DEBUG_LOG_LEVEL" value="{{ settings.get('DEBUG_LOG_LEVEL', '') }}" required><br>
+                    <label for="BROKER">Broker</label>
+                    <input type="text" id="BROKER" name="BROKER" value="{{ settings.get('BROKER', '') }}" required><br>
+                    <label for="ALPACA_MODE">Alpaca Mode</label>
+                    <input type="text" id="ALPACA_MODE" name="ALPACA_MODE" value="{{ settings.get('ALPACA_MODE', '') }}" required><br>
+                    <label for="IBKR_MODE">Ibkr Mode</label>
+                    <input type="text" id="IBKR_MODE" name="IBKR_MODE" value="{{ settings.get('IBKR_MODE', '') }}" required><br>
+                    <label for="START_TIME">Start Time</label>
+                    <input type="text" id="START_TIME" name="START_TIME" value="{{ settings.get('START_TIME', '') }}" required><br>
+                    <label for="ANALYSIS_TIME">Analysis Time</label>
+                    <input type="text" id="ANALYSIS_TIME" name="ANALYSIS_TIME" value="{{ settings.get('ANALYSIS_TIME', '') }}" required><br>
+                    <label for="MONITORING_TIME">Monitoring Time</label>
+                    <input type="text" id="MONITORING_TIME" name="MONITORING_TIME" value="{{ settings.get('MONITORING_TIME', '') }}" required><br>
+                    <label for="SLEEP_TIME">Sleep Time</label>
+                    <input type="text" id="SLEEP_TIME" name="SLEEP_TIME" value="{{ settings.get('SLEEP_TIME', '') }}" required><br>
+                    <label for="TOTAL_ALLOCATION">Total Allocation</label>
+                    <input type="text" id="TOTAL_ALLOCATION" name="TOTAL_ALLOCATION" value="{{ settings.get('TOTAL_ALLOCATION', '') }}" required><br>
+                    <label for="FRACTIONAL">Fractional</label>
+                    <input type="text" id="FRACTIONAL" name="FRACTIONAL" value="{{ settings.get('FRACTIONAL', '') }}" required><br>
+                    <label for="MAX_TRADES">Max Trades</label>
+                    <input type="text" id="MAX_TRADES" name="MAX_TRADES" value="{{ settings.get('MAX_TRADES', '') }}" required><br>
+                    <label for="WEIGHTS">Weights</label>
+                    <input type="text" id="WEIGHTS" name="WEIGHTS" value="{{ settings.get('WEIGHTS', '') }}" required><br>
+                    <label for="BUFFER_GAP_HIGH">Buffer Gap High</label>
+                    <input type="text" id="BUFFER_GAP_HIGH" name="BUFFER_GAP_HIGH" value="{{ settings.get('BUFFER_GAP_HIGH', '') }}" required><br>
+                    <label for="BUFFER_GAP_LOW">Buffer Gap Low</label>
+                    <input type="text" id="BUFFER_GAP_LOW" name="BUFFER_GAP_LOW" value="{{ settings.get('BUFFER_GAP_LOW', '') }}" required><br>
+                    <label for="SHORT_TYPE">Short Type</label>
+                    <input type="text" id="SHORT_TYPE" name="SHORT_TYPE" value="{{ settings.get('SHORT_TYPE', '') }}" required><br>
+                    <button type="submit">Save Settings</button>
+                </form>
+            </div>
+        </div>
+
+    <footer class="dashboard-footer">
+        <p>&copy; 2025 RIGD Group LLC – Bot Settings Interface</p>
+    </footer>
+</body>
+</html>

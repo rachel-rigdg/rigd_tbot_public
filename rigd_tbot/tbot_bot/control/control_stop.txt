@@ -1,0 +1,2 @@
+# tbot_bot/control/control_start.txt
+ # Start flag file created by web/CLI to trigger bot launch

@@ -1,0 +1,64 @@
+
+  Overall Directory Structure Diagram  TradeBot-001/
+├── .env                             # Global environment variables (used by API + web, not the bot itself)
+├── .scpignore                       # Local-only files excluded from upload (keys, passwords, etc.)
+├── encrypt_password.py             # Encrypts login passwords for secure storage (local only)
+├── generate_key.py                 # Generates encryption keys used by encrypt_password.py
+├── requirements.txt                # Dependency list for full project environment (pip install -r)
+
+├── tbot_api/                       # API backend for remote control of the bot (login, settings, logs)
+│   ├── __init__.py                 # Marks this folder as a Python module
+│   ├── env_api.py                  # Loads top-level .env for API-related config
+│   ├── logs_api.py                 # Logs API-specific events (errors, access, updates)
+│   ├── main_api.py                 # Orchestrates FastAPI endpoints and control logic
+│   ├── auth.py                     # Handles authentication, encryption, and password checks
+
+├── tbot_bot/                       # Core trading bot engine – fully independent of tbot_api/ and tbot_web/
+│   ├── .env_bot                    # Bot-specific settings (TEST_MODE, strategy toggles, broker keys, etc.)
+│   ├── env_bot.py                  # Loads .env_bot and makes values available to internal modules
+│   ├── main_bot.py                 # Central controller that runs the bot and coordinates strategies
+│   ├── start_bot.py                # Entry point to start the bot (can be triggered by web or CLI)
+│   ├── stop_bot.py                 # Cleanly shuts down all bot processes
+│   ├── service_bot.py              # (Optional) Supervises lifecycle (redundant with start/stop logic)
+│   ├── status_bot.py              # Reports runtime status (used by status.html in web)
+│   ├── settings_bot.py             # Updates .env_bot from web interface or CLI inputs
+│   ├── logs_bot.py                 # Records performance and trade logs to disk or database
+│   ├── notifier_bot.py             # Sends alerts (email, Slack, etc.) on fills, exits, or failures
+
+│   ├── broker_api.py               # Unified broker interface (routes to sub-brokers based on .env_bot)
+│   ├── broker_alpaca.py           # Alpaca-specific order logic (buy/sell, cancel, check status)
+│   ├── broker_ibkr.py             # Interactive Brokers (IBKR) specific logic (live/paper supported)
+
+│   ├── orders_bot.py               # Handles order placement, monitoring, modification, and cancellation
+│   ├── reporting_bot.py            # Logs trade history in structured format for tax/accounting/GnuCash
+│   ├── risk_bot.py                 # Calculates position sizing, stop loss, trailing stop rules
+│   ├── utils_bot.py                # General helper functions shared across modules
+
+│   ├── finnhub_screener.py         # Screens stock candidates using Finnhub data (volume, price, volatility)
+│   ├── strategy_router.py          # 🔁 NEW: Routes logic to appropriate strategy module (open/mid/close)
+│   ├── strategy_open.py            # 🔁 NEW: 20-Min Opening Range Breakout strategy logic
+│   ├── strategy_mid.py             # 🔁 NEW: VWAP Mean Reversion strategy logic
+│   ├── strategy_close.py           # 🔁 NEW: End-of-day Momentum or Fade strategy logic
+│   ├── strategy_meta.py            # (Optional) JSON/dict with per-strategy configs (useful for tuning/testing)
+
+├── tbot_web/                       # Lightweight frontend for controlling and monitoring the bot
+│   ├── assets/                     # UI assets (fonts, stylesheets, icons)
+│   │   ├── fnt/                    # Custom fonts used by the dashboard
+│   │   ├── css/
+│   │   │   ├── main.css            # Base styles for the web interface
+│   │   │   ├── theme.css           # Optional dark/light theme definitions
+
+│   ├── favicon.gif / favicon.ico   # Browser icons for branding
+│   ├── index.html                  # Login page (requires valid API authentication)
+│   ├── main.html                   # Dashboard container iframe layout
+│   ├── logs.html                   # Displays logs from `logs_bot.py` and `logs_api.py`
+│   ├── robots.txt                  # Blocks search engine indexing
+│   ├── settings.html               # UI to modify .env_bot settings via tbot_api
+│   ├── status.html                 # Shows live status from `status_bot.py`
+
+│   ├── py/                         # Python scripts linking front-end buttons to API or bot functions
+│   │   ├── login_web.py            # Interfaces with auth.py for login validation (API auth)
+│   │   ├── main_web.py             # Central logic router for UI actions (start/stop/status updates)
+│   │   ├── logs_web.py             # Retrieves and renders logs into logs.html
+│   │   ├── start_stop_web.py       # Connects start/stop buttons to bot execution scripts
+│   │   ├── status_web.py           # Retrieves status from status_bot and displays it on UI

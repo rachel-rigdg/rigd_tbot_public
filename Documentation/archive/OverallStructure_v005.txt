@@ -1,0 +1,87 @@
+
+
+Overall Directory Structure Diagram
+
+
+TradeBot-001/
+├── .env                                  # Global .env for FastAPI or deployment config (does not include trading variables)
+├── .scpignore                            # Prevents local dev files (keys, backups) from being uploaded to server
+├── encrypt_password.py                   # CLI utility to encrypt web/API passwords (used by tbot_api/auth.py)
+├── generate_key.py                       # Generates AES encryption key used to secure password storage
+├── requirements.txt                      # Full dependency list for bot, broker APIs, GnuCash XML handling, and FastAPI
+
+├── tbot_api/                             # 🌐 Optional FastAPI interface to control the bot remotely (start, stop, settings)
+│   ├── __init__.py                       # Marks this directory as a Python module for clean imports
+│   ├── env_api.py                        # Loads global .env config for use in API (not trading logic)
+│   ├── logs_api.py                       # Tracks API-side logs: settings changes, login attempts, start/stop commands
+│   ├── main_api.py                       # Defines FastAPI routes for web control (start/stop, status, etc.)
+│   ├── auth.py                           # Handles encrypted login authentication for the web interface
+
+├── tbot_bot/                             # 🧠 Primary logic engine for live/paper trading, strategy switching, and broker execution
+│   ├── .env_bot                          # Core config file for trading: strategy toggles, API keys, risk settings, export flags
+│   ├── env_bot.py                        # Loads .env_bot values, enforces types and structure for all modules
+│   ├── main_bot.py                       # Master controller: handles strategy selection, runtime lifecycle, monitoring
+│   ├── start_bot.py                      # CLI or web-triggered entry point to start the bot loop
+│   ├── stop_bot.py                       # Cleanly shuts down the bot and exits any open positions
+│   ├── service_bot.py                    # Optional: enables persistent running via cron or system supervisor
+│   ├── status_bot.py                     # Reports runtime state: idle, analyzing, trading, complete, error
+│   ├── settings_bot.py                   # Allows programmatic updates to .env_bot without overwriting file manually
+│   ├── logs_bot.py                       # Logs bot events: trades placed, fills, exits, errors, runtime messages
+│   ├── notifier_bot.py                   # Sends notifications (email, Slack, etc.) when trades are executed or bot crashes
+
+│   ├── kill_switch.py                    # Stops all trading and exits all positions if drawdown exceeds DAILY_LOSS_LIMIT
+│   ├── watchdog_bot.py                   # Monitors broker API + network connectivity; retries or halts on error
+│   ├── security_bot.py                   # Encrypts/decrypts .env_bot values for secure local storage
+
+│   ├── broker_api.py                     # Unified interface to route orders to selected broker module based on config
+│   ├── broker_robinhood.py              # Robinhood-specific logic (unofficial API, test-only, U.S. sandbox use)
+│   ├── broker_webull.py                 # Webull-specific logic (unofficial API, low-cost test fills)
+│   ├── broker_tastytrade.py             # Tastytrade official API client (for U.S. live/options trading)
+│   ├── broker_ibkr.py                   # IBKR official API integration for live or paper global trading
+│   ├── orders_bot.py                     # Manages order submission, modification, cancellation, and verification
+│   ├── reporting_bot.py                  # Finalizes trade logs and triggers export to GnuCash or CSV
+│   ├── risk_bot.py                       # Calculates risk per trade; ensures total capital exposure stays within 2–3%
+│   ├── utils_bot.py                      # Utility functions (timestamping, currency rounding, string formatting)
+
+│   ├── finnhub_screener.py               # Connects to Finnhub API, scans top stock candidates based on criteria
+│   ├── strategy_router.py                # Routes to the correct strategy module based on time of day or manual override
+│   ├── strategy_open.py                  # Implements 20-minute breakout strategy (9:30–10:20 AM)
+│   ├── strategy_mid.py                   # Implements VWAP mean reversion strategy (10:30–2:30 PM)
+│   ├── strategy_close.py                 # Implements end-of-day momentum or fade strategy (2:30–4:00 PM)
+│   ├── strategy_meta.py                  # Central repository for thresholds, toggles, filters per strategy
+
+│   ├── gnu_paper.gnucash                 # GnuCash XML ledger file for paper-mode trades only
+│   ├── gnu_live.gnucash                  # GnuCash XML ledger file for live-mode trades only
+│   ├── gnu_exporter.py                   # Converts completed trades into GnuCash-compliant XML transactions and inserts into correct ledger
+│   ├── gnu_transaction.py                # Builds XML elements for GnuCash: accounts, splits, entries, metadata
+│   ├── gnu_config.py                     # Defines GnuCash account structure: Assets, Equity, Income, and Expense categories
+│   ├── gnu_backup.py                     # Automatically backs up ledger before writing new transactions
+│   ├── trade_history.csv                 # Full exportable log of every trade (live or paper), including ID, strategy, result, timestamps
+│   ├── unresolved_orders.log             # Logs any trades that failed, filled partially, or experienced API-side issues
+
+│   ├── enhancements/                     # Optional add-ons for higher accuracy or conditional filtering
+│   │   ├── adx_filter.py                # Skips VWAP reversion if ADX indicates a strong trend
+│   │   ├── bollinger_confluence.py     # Confirms mean reversion using Bollinger Band extremes
+│   │   ├── vix_gatekeeper.py           # Disables EOD strategy if VIX (market volatility index) is too low
+│   │   ├── imbalance_scanner_ibkr.py   # Scans IBKR order book for late-day imbalance pressure
+│   │   ├── ticker_blocklist.py         # Prevents re-trading the same ticker more than once per day
+
+├── tbot_web/                             # Web dashboard for remote bot control and status viewing
+│   ├── assets/                           # Static UI resources
+│   │   ├── fnt/                          # Fonts used by frontend
+│   │   └── css/                          # Styling for frontend
+│   │       ├── main.css                 # Base layout and component styling
+│   │       └── theme.css                # Optional dark/light theme overrides
+│   ├── favicon.ico / favicon.gif         # Web browser icons
+│   ├── index.html                        # Login interface for web control (uses auth from API)
+│   ├── main.html                         # Dashboard container layout
+│   ├── logs.html                         # UI view to show trade logs and bot activity
+│   ├── settings.html                     # Interface to adjust .env_bot values
+│   ├── status.html                       # Displays bot status (active strategy, uptime, trades placed)
+│   ├── robots.txt                        # Prevents search engine indexing of web interface
+│   ├── py/                               # Backend Python scripts used by the frontend
+│   │   ├── login_web.py                 # Handles login request from UI to API
+│   │   ├── main_web.py                  # Router for frontend page loads
+│   │   ├── logs_web.py                  # Pulls logs from disk or DB and feeds logs.html
+│   │   ├── start_stop_web.py           # Launches or halts bot from dashboard
+│   │   ├── status_web.py               # Returns live runtime state for display in status.html

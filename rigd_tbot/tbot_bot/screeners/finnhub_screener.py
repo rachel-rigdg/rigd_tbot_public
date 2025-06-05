@@ -1,0 +1,188 @@
+# tbot_bot/screeners/finnhub_screener.py
+# summary: Screens symbols using Finnhub price, volume, and VWAP data (strategy-specific filters)
+
+import os
+import requests
+import time
+import json
+from datetime import datetime
+from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.time_utils import utc_now               # UPDATED: from time_utils
+from tbot_bot.support.logging_utils import log_event           # UPDATED: from logging_utils
+from tbot_bot.support.decrypt_secrets import get_decrypted_json  # [SURGICAL] Use secure API key access
+
+config = get_bot_config()
+
+# [SURGICAL] Securely fetch API key from decrypted secrets
+FINNHUB_API_KEY = get_decrypted_json("storage/secrets/screener_api.json.enc").get("FINNHUB_API_KEY", "")
+TEST_MODE = config["TEST_MODE"]
+LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
+
+EXCHANGES = config.get("EXCHANGES", "US").split(",")
+STRIKE_FILE = config.get("STRIKE_FILE", "exclusion_strikes.json")
+HARD_EXCLUSION_FILE = config.get("HARD_EXCLUSION_FILE", "hard_exclusion_list.json")
+STRIKE_THRESHOLD = int(config.get("STRIKE_THRESHOLD", 5))
+API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
+
+MIN_PRICE = float(config.get("MIN_PRICE", 5))
+MAX_PRICE = float(config.get("MAX_PRICE", 100))
+FRACTIONAL = config.get("FRACTIONAL", True)
+
+session_exclusions = set()
+strike_counts = {}
+hard_exclusions = set()
+
+def log(msg):
+    if LOG_LEVEL == "verbose":
+        print(msg)
+
+def load_state():
+    global strike_counts, hard_exclusions
+    try:
+        with open(STRIKE_FILE, "r") as f:
+            strike_counts = json.load(f)
+    except:
+        strike_counts = {}
+    try:
+        with open(HARD_EXCLUSION_FILE, "r") as f:
+            hard_exclusions = set(json.load(f))
+    except:
+        hard_exclusions = set()
+
+def save_state():
+    with open(STRIKE_FILE, "w") as f:
+        json.dump(strike_counts, f, indent=2)
+    with open(HARD_EXCLUSION_FILE, "w") as f:
+        json.dump(list(hard_exclusions), f, indent=2)
+
+def mark_failed(symbol):
+    session_exclusions.add(symbol)
+    strike_counts[symbol] = strike_counts.get(symbol, 0) + 1
+    if strike_counts[symbol] >= STRIKE_THRESHOLD:
+        hard_exclusions.add(symbol)
+
+def get_symbol_list():
+    url = f"https://finnhub.io/api/v1/stock/symbol?exchange={','.join(EXCHANGES)}&token={FINNHUB_API_KEY}"
+    try:
+        resp = requests.get(url, timeout=API_TIMEOUT)
+        if resp.status_code != 200:
+            raise Exception("Failed to get symbols from Finnhub")
+        return [s["symbol"] for s in resp.json() if "." not in s["symbol"]]
+    except Exception as e:
+        log(f"Error fetching symbol list: {e}")
+        return []
+
+def get_quote(symbol):
+    url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_API_KEY}"
+    try:
+        resp = requests.get(url, timeout=API_TIMEOUT)
+        if resp.status_code != 200:
+            mark_failed(symbol)
+            return None
+        data = resp.json()
+        if "c" in data and "o" in data and "vwap" in data and data["c"] and data["o"] and data["vwap"]:
+            return data
+        else:
+            mark_failed(symbol)
+            return None
+    except Exception as e:
+        mark_failed(symbol)
+        log(f"Error fetching quote for {symbol}: {e}")
+        return None
+
+def get_market_cap(symbol):
+    url = f"https://finnhub.io/api/v1/stock/profile2?symbol={symbol}&token={FINNHUB_API_KEY}"
+    try:
+        resp = requests.get(url, timeout=API_TIMEOUT)
+        if resp.status_code == 200:
+            return resp.json().get("marketCapitalization", None)
+        else:
+            mark_failed(symbol)
+            return None
+    except Exception as e:
+        mark_failed(symbol)
+        log(f"Error fetching market cap for {symbol}: {e}")
+        return None
+
+def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
+    load_state()
+    all_symbols = get_symbol_list()
+    log(f"Fetched {len(all_symbols)} total symbols")
+    results = []
+    start_time = datetime.utcnow()
+
+    # Strategy-specific filters
+    gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
+    min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
+    max_cap_key = f"MAX_MARKET_CAP_{strategy.upper()}"
+
+    max_gap = float(config.get(gap_key, 0.1))
+    min_cap = float(config.get(min_cap_key, 2e9))
+    max_cap = float(config.get(max_cap_key, 1e10))
+
+    for idx, symbol in enumerate(all_symbols):
+        if TEST_MODE and (datetime.utcnow() - start_time).total_seconds() >= 60:
+            log_event("screener", f"Test mode cutoff triggered at {idx} symbols.")
+            break
+
+        if symbol in session_exclusions or symbol in hard_exclusions:
+            log_event("screener", f"Excluded symbol: {symbol}")
+            continue
+
+        quote = get_quote(symbol)
+        if not quote:
+            log_event("screener", f"Rejected: No valid quote for {symbol}")
+            continue
+
+        current = float(quote["c"])
+        open_ = float(quote["o"])
+        vwap = float(quote["vwap"])
+
+        if current <= 0 or open_ <= 0 or vwap <= 0:
+            log_event("screener", f"Rejected: Invalid quote data for {symbol}")
+            continue
+
+        if current < MIN_PRICE:
+            log_event("screener", f"Rejected: Price below MIN_PRICE for {symbol} = {current}")
+            continue
+        if current > MAX_PRICE and not FRACTIONAL:
+            log_event("screener", f"Rejected: Price exceeds MAX_PRICE and FRACTIONAL disabled for {symbol} = {current}")
+            continue
+
+        if TEST_MODE:
+            results.append({
+                "symbol": symbol,
+                "price": current,
+                "vwap": vwap
+            })
+        else:
+            market_cap = get_market_cap(symbol)
+            if not (market_cap and min_cap <= market_cap <= max_cap):
+                log_event("screener", f"Rejected: Market cap out of range for {symbol} = {market_cap}")
+                continue
+
+            gap = abs((current - open_) / open_)
+            if gap > max_gap:
+                log_event("screener", f"Rejected: Gap {gap:.2%} > max {max_gap:.2%} for {symbol}")
+                continue
+
+            momentum = abs(current - open_) / open_
+            results.append({
+                "symbol": symbol,
+                "price": current,
+                "vwap": vwap,
+                "momentum": momentum
+            })
+
+        if idx % 50 == 0:
+            log(f"Checked {idx} symbols...")
+        time.sleep(1.0)
+
+    if TEST_MODE:
+        results.sort(key=lambda x: x["price"], reverse=True)
+    else:
+        results.sort(key=lambda x: x["momentum"], reverse=True)
+
+    top = results[:limit]
+    log_event("screener", f"Selected top {len(top)} candidates from {len(all_symbols)}")
+    return top

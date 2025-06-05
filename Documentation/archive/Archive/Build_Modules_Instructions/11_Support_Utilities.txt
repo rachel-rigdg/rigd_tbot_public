@@ -1,0 +1,21 @@
+# INSTRUCTION SET: Support Utilities
+
+This chat will focus **only** on Support Utilities.
+
+Scope includes:
+- tbot_bot/support/ (utils_bot.py, service_bot.py, encrypted configs)
+
+Build rules:
+- Provide shared helper functions for time, math, file ops
+- Service daemon listens for start/stop signals if systemd used
+
+Chat behavior:
+- Handle one utility file at a time
+- Explicit user approval before next file
+- Print entire file contents
+
+Focus:
+- Reusable, clean utility code
+- Minimal dependencies
+- Clear role separation
+

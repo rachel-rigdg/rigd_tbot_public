@@ -1,0 +1,16 @@
+# systemd_units/tbot_web.service
+# Launches the Flask web UI as a standalone service
+[Unit]
+Description=RIGD TradeBot Web UI (Flask)
+After=network.target
+
+[Service]
+Type=simple
+User=tbot
+WorkingDirectory=/home/tbot/rigd_tbot      # Project root directory
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_web/py/run_web.py  # Start Flask UI
+Restart=on-failure                        # Auto-restart on crash
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

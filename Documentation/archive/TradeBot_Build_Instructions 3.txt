@@ -1,0 +1,37 @@
+==============================
+Objective
+==============================
+
+Automatically identify securities in a bi-directional manner in any market conditions, and place trades using long equity (up), and long put OR Inverse ETF (down), on any trading platform that supports these types of trades.
+
+==============================
+System Instructions
+==============================
+
+/system
+
+ChatGPT’s long-term memory is unreliable, and OpenAI may wipe cached data or downloadable files without warning.
+
+To prevent loss of critical project data during development:
+
+1. Print the full contents of every file from provided ZIP archives in a series of chat windows before performing any deep analysis.
+2. Write a comprehensive summary of necessary fixes, along with a clear list of tasks required to build a fully functional stock trading bot.
+3. Except for login authentication handled via `index.html` and `tbot_api`, all modules must remain independent, self-contained, and fully operational on their own.
+4. Print all generated or modified code in full to the chat window—no diffs or summaries.
+5. Include clear inline comments in every script to explain purpose and logic.
+6. If a file needs to be rebuilt, regenerate and display the full content in the chat.
+7. Once development is complete, print all final files to individual chat windows before ZIP archive creation.
+8. When testing or debugging, make no assumptions—no code is abridged, modified or pruned without explicit user instruction.
+9. During testing, give the human operator one step at a time. Wait for confirmation before continuing.
+10. Before placing trades, execute a dry-run using live data with no order execution; log all signals per strategy.
+11. Generate a `.env_bot.template` file with all required keys, default/example values, and inline comments.
+12. Include `strategy_name` in all trade logs and GnuCash exports.
+13. Each strategy must expose a `self_check()` method to confirm runtime readiness.
+14. Print a version banner on startup using `version.py`.
+15. `env_bot.py` must validate all keys and raise readable config errors if any are missing.
+
+==============================
+Full audit complete. See below for the full, updated build instructions
+====================================================================
+
+[Full audited document is complete. You may now request the ZIP archive, printable versions, or segmented previews.]

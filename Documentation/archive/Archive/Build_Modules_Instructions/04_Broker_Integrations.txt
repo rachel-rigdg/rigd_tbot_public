@@ -1,0 +1,24 @@
+# INSTRUCTION SET: Broker Integrations
+
+This chat will focus **only** on Broker Integrations.
+
+Scope includes:
+- tbot_bot/broker/ modules (Alpaca, IBKR, Tradier, Robinhood, Webull)
+- Unified broker API, trade dispatch logic
+
+Build rules:
+- Broker routing controlled by ALPACA_ENABLED, IBKR_ENABLED, etc.
+- TEST_MODE directs calls to paper endpoints only
+- All orders routed through broker_api.py to avoid direct module calls
+- Paper/live broker segregation must align with accounting pipeline
+
+Chat behavior:
+- One broker module or router at a time
+- Explicit confirmation before moving forward
+- Print complete files, labeled, no shortcuts
+
+Focus:
+- Stable, modular broker connectivity
+- Unified API handling
+- Correct paper/live switching
+

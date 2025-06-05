@@ -1,0 +1,16 @@
+# systemd_units/tbot_bot.service
+# Launches the main TradeBot core bot process
+[Unit]
+Description=RIGD TradeBot Core Bot Process
+After=network.target tbot_provisioning.service
+
+[Service]
+Type=simple
+User=tbot
+WorkingDirectory=/home/tbot/rigd_tbot      # Project root directory
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/runtime/main.py  # Start main bot
+Restart=on-failure                        # Auto-restart on crash
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

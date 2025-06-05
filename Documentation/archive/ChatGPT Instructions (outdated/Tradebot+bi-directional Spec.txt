@@ -1,0 +1,127 @@
+# ============================================================
+# TradeBot Strategy Logic – Bi-Directional Execution (MANDATORY)
+# ============================================================
+
+# THIS INSTRUCTION SET APPLIES TO ALL STRATEGIES (open, mid, close).
+# ChatGPT MUST NEVER remove or prune short-side logic even when disabled.
+# Disabling = SKIP EXECUTION, not SKIP LOGIC.
+
+# -----------------------------
+# UNIVERSAL BEHAVIOR
+# -----------------------------
+
+# Every strategy must implement:
+# - Long entry logic
+# - Short entry logic
+# - Execution conditional on SHORT_TYPE_* values
+
+# SHORT_TYPE_* may be:
+#   - "disabled"
+#   - "InverseETF"
+#   - "LongPut"
+#   - "ShortSell"
+
+# If SHORT_TYPE_* == "disabled":
+# → Short logic is still evaluated
+# → Order is NOT placed
+# → Log event must be recorded:
+#       log_event(module, f"Short skipped for {symbol} (SHORT_TYPE disabled)")
+
+# If SHORT_TYPE_* is one of the other valid values:
+# → Full short-side logic MUST be executed and evaluated
+# → Order is placed if filters pass
+
+# ABSOLUTELY NO EXCEPTIONS OR CODE PRUNING.
+
+# -----------------------------
+# STRATEGY: OPEN
+# -----------------------------
+
+# Long Logic:
+#   - If price > high * (1 + STRAT_OPEN_BUFFER)
+#   - Place long order immediately
+#   - Start trade management window for that position
+
+# Short Logic:
+#   - If price < low * (1 - STRAT_OPEN_BUFFER)
+#   - Proceed only if SHORT_TYPE_OPEN != "disabled"
+#   - Use appropriate instrument (InverseETF or LongPut)
+#   - Log if disabled
+#   - If enabled: place bearish trade, then enter trade management
+
+# Short Entry Block (Example):
+# if price < low * (1 - STRAT_OPEN_BUFFER):
+#     if SHORT_TYPE_OPEN == "disabled":
+#         log_event("strategy_open", f"Short skipped for {symbol} (SHORT_TYPE disabled)")
+#     else:
+#         side = "sell"
+#         instrument = resolve_bearish_instrument(symbol, SHORT_TYPE_OPEN)
+#         create_order(...)
+
+# -----------------------------
+# STRATEGY: MID
+# -----------------------------
+
+# Long Logic:
+#   - If price deviates below VWAP by threshold
+#   - Confirm via ADX and Bollinger
+#   - Enter long position
+
+# Short Logic:
+#   - If price deviates above VWAP by threshold
+#   - Confirm via ADX and Bollinger
+#   - If SHORT_TYPE_MID == "disabled":
+#         Skip and log
+#   - Else: enter inverse ETF or put trade
+
+# Short Entry Block (Example):
+# if deviation > VWAP_THRESHOLD:
+#     if SHORT_TYPE_MID == "disabled":
+#         log_event("strategy_mid", f"Short skipped for {symbol} (SHORT_TYPE disabled)")
+#     else:
+#         side = "sell"
+#         instrument = resolve_bearish_instrument(symbol, SHORT_TYPE_MID)
+#         create_order(...)
+
+# -----------------------------
+# STRATEGY: CLOSE
+# -----------------------------
+
+# Long Logic:
+#   - Price > session high * 0.995 → momentum
+#   - Confirm with VIX
+#   - Enter long position
+
+# Short Logic:
+#   - Price < midpoint * 0.9 → fade
+#   - Confirm with VIX
+#   - If SHORT_TYPE_CLOSE == "disabled":
+#         Skip and log
+#   - Else: place bearish trade
+
+# Short Entry Block (Example):
+# if price < range_mid * 0.9:
+#     if SHORT_TYPE_CLOSE == "disabled":
+#         log_event("strategy_close", f"Short skipped for {symbol} (SHORT_TYPE disabled)")
+#     else:
+#         side = "sell"
+#         instrument = resolve_bearish_instrument(symbol, SHORT_TYPE_CLOSE)
+#         create_order(...)
+
+# -----------------------------
+# MANDATORY STRUCTURE
+# -----------------------------
+
+# 1. DO NOT omit short blocks if SHORT_TYPE is disabled.
+# 2. DO NOT inline skip logic that prevents execution entirely.
+# 3. ALWAYS log skipped actions.
+# 4. ALWAYS include trade decision context in log:
+#       f"Short skipped for {symbol} due to SHORT_TYPE={SHORT_TYPE_CLOSE}"
+# 5. Long and short logic must be independently traceable.
+# 6. StrategyResult must reflect all evaluated paths (even if no trades were made).
+
+# If any of the above rules are violated:
+# → Strategy implementation is INVALID.
+# → ChatGPT MUST STOP and ask for clarification instead of guessing.
+
+# DO NOT VIOLATE THIS STRUCTURE UNDER ANY CIRCUMSTANCE.

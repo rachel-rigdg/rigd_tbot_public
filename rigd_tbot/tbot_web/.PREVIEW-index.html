@@ -1,0 +1,48 @@
+<!-- tbot_web/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TradeBot Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="stylesheet" href="assets/css/theme.css">
+<link href="css/main.css" rel="stylesheet" media="all" type="text/css" >
+</head>
+<body class="login-page">
+    <div class="main-container content">
+        <div><h1>TradeBot Login</h1></div><br>
+        <form id="login-form" method="POST" action="/login">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" required autofocus>
+
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" required>
+
+            <button type="submit">Login</button>
+        </form>
+        <div id="login-error" class="error-message"></div>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (response.ok) {
+                window.location.href = '/main.html';
+            } else {
+                const error = await response.text();
+                document.getElementById('login-error').innerText = error || "Login failed.";
+            }
+        });
+    </script>
+</body>
+</html>

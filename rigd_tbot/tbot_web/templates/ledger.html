@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ledger Reconciliation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ledger.css') }}">
+</head>
+<body>
+    <div class="header">
+        <h1>Ledger Reconciliation</h1>
+    </div>
+    <div class="main-container">
+        <form id="brokerUploadForm" method="post" enctype="multipart/form-data" action="{{ url_for('ledger_reconcile') }}">
+            <label for="broker_csv">Upload Broker CSV Statement:</label>
+            <input type="file" name="broker_csv" accept=".csv" required>
+            <button type="submit">Upload</button>
+        </form>
+        <div class="reconcile-container">
+            <h2>Reconciliation Table</h2>
+            <table class="ledger-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Symbol</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for entry in entries %}
+                    <tr class="{{ entry.status }}">
+                        <td>{{ entry.date }}</td>
+                        <td>{{ entry.symbol }}</td>
+                        <td>{{ entry.type }}</td>
+                        <td>{{ entry.amount }}</td>
+                        <td>{{ entry.status }}</td>
+                        <td>
+                            {% if entry.status == "mismatch" %}
+                            <form method="post" action="{{ url_for('resolve_ledger_entry', entry_id=entry.id) }}">
+                                <button type="submit">Mark as Resolved</button>
+                            </form>
+                            {% else %}
+                            <span>OK</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,8 @@
+
+
+#tools/server_template.txt
+
+
+HOSTNAME=LOCAL
+HOST_IP=192.168.1.67                    
+PORT=6900             

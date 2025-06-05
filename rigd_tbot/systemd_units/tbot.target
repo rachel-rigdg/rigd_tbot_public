@@ -1,0 +1,9 @@
+# systemd_units/tbot.target
+# Orchestration unit that ensures all TradeBot services run as a group
+[Unit]
+Description=RIGD TradeBot Orchestration Target
+Requires=tbot_web.service tbot_provisioning.service tbot_bot.service
+After=network.target
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+# INSTRUCTION SET: Web Dashboard & Control Interface
+
+This chat will focus **only** on Web Dashboard & Control Interface.
+
+Scope includes:
+- tbot_web/ Flask backend, live monitoring, control panel
+
+Build rules:
+- Web interface is optional, must not affect headless bot operation
+- AES-encrypted login credentials
+- Routes include logs, settings, status, start/stop
+
+Chat behavior:
+- One web module at a time
+- User explicitly signals next step
+- Provide complete, labeled code
+
+Focus:
+- Lightweight, secure web observability
+- Accurate status reflection
+- Safe manual controls without core logic interference
+

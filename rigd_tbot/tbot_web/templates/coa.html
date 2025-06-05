@@ -1,0 +1,139 @@
+<!-- tbot_web/templates/coa.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TradeBot Chart of Accounts (COA) Management</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/static/css/main.css" rel="stylesheet">
+    <link href="/static/css/theme.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Chart of Accounts (COA) Management</h1>
+            <nav>
+                <a href="/main">Dashboard</a> |
+                <a href="/settings">Bot Settings</a> |
+                <a href="/logs">Logs</a> |
+                <a href="/coa">COA</a>
+            </nav>
+        </header>
+        <section>
+            <h2>COA Metadata</h2>
+            <table id="coa-metadata-table">
+                <tbody>
+                    <tr><td>Currency Code</td><td id="currency_code"></td></tr>
+                    <tr><td>Entity Code</td><td id="entity_code"></td></tr>
+                    <tr><td>Jurisdiction Code</td><td id="jurisdiction_code"></td></tr>
+                    <tr><td>COA Version</td><td id="coa_version"></td></tr>
+                    <tr><td>Created (UTC)</td><td id="created_at_utc"></td></tr>
+                    <tr><td>Last Updated (UTC)</td><td id="last_updated_utc"></td></tr>
+                </tbody>
+            </table>
+        </section>
+        <section>
+            <h2>Account Hierarchy</h2>
+            <div id="coa-tree">
+                <!-- Account hierarchy table will be populated by JavaScript -->
+            </div>
+            <div id="coa-export-controls">
+                <form method="get" action="/coa/export/markdown">
+                    <button type="submit">Export as Markdown</button>
+                </form>
+                <form method="get" action="/coa/export/csv">
+                    <button type="submit">Export as CSV</button>
+                </form>
+            </div>
+            {% if user_is_admin %}
+            <div id="coa-edit-controls">
+                <button id="edit-coa-btn" onclick="toggleEditMode()">Edit COA</button>
+                <form id="coa-edit-form" method="post" action="/coa/edit" style="display:none;">
+                    <textarea name="coa_json" id="coa_json" rows="18" cols="120">{{ coa_json }}</textarea>
+                    <button type="submit">Submit Changes</button>
+                </form>
+            </div>
+            {% endif %}
+        </section>
+        <section>
+            <h2>COA Change History (Audit Log)</h2>
+            <div id="coa-history">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Timestamp (UTC)</th>
+                            <th>User</th>
+                            <th>Change Summary</th>
+                            <th>Diff Preview</th>
+                        </tr>
+                    </thead>
+                    <tbody id="coa-history-table">
+                        <!-- Change log will be rendered here -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <footer>
+            <small>RIGD GROUP LLC — TradeBot v038 | UTC <span id="utc-time"></span></small>
+        </footer>
+    </div>
+    <script>
+        // UTC clock
+        function updateUTC() {
+            const now = new Date();
+            document.getElementById("utc-time").textContent = now.toISOString().replace("T", " ").slice(0,19);
+        }
+        setInterval(updateUTC, 1000);
+        updateUTC();
+
+        // COA tree rendering
+        document.addEventListener("DOMContentLoaded", function() {
+            fetch('/coa/api')
+                .then(response => response.json())
+                .then(data => {
+                    // Metadata
+                    document.getElementById("currency_code").textContent = data.metadata.currency_code;
+                    document.getElementById("entity_code").textContent = data.metadata.entity_code;
+                    document.getElementById("jurisdiction_code").textContent = data.metadata.jurisdiction_code;
+                    document.getElementById("coa_version").textContent = data.metadata.coa_version;
+                    document.getElementById("created_at_utc").textContent = data.metadata.created_at_utc;
+                    document.getElementById("last_updated_utc").textContent = data.metadata.last_updated_utc;
+
+                    // Account Hierarchy
+                    const coaTree = document.getElementById("coa-tree");
+                    coaTree.innerHTML = buildCoaTreeHtml(data.accounts);
+                    
+                    // Audit log
+                    const historyTable = document.getElementById("coa-history-table");
+                    historyTable.innerHTML = data.history.map(item => `
+                        <tr>
+                            <td>${item.timestamp_utc}</td>
+                            <td>${item.user}</td>
+                            <td>${item.summary}</td>
+                            <td><pre>${item.diff}</pre></td>
+                        </tr>
+                    `).join('');
+                });
+        });
+
+        // Render COA account tree
+        function buildCoaTreeHtml(accounts) {
+            function render(accounts, depth=0) {
+                return accounts.map(acc => `
+                    <div style="margin-left: ${depth * 20}px;">
+                        <strong>${acc.code}</strong> — ${acc.name}
+                        ${acc.children ? render(acc.children, depth + 1) : ''}
+                    </div>
+                `).join('');
+            }
+            return render(accounts);
+        }
+
+        // COA edit controls (admin only)
+        function toggleEditMode() {
+            const form = document.getElementById('coa-edit-form');
+            form.style.display = (form.style.display === 'none') ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>

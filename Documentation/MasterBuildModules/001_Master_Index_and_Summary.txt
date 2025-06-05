@@ -1,0 +1,37 @@
+================================================================================
+Document: 001_Master_Index_and_Summary
+Version: v041
+Date: UTC:2025-06-02 23:54
+================================================================================
+
+This master index provides a comprehensive reference to all TradeBot system specification documents. Each entry includes document number, filename, title, version, timestamp, summary of contents, and cross-reference notes for quick lookup and navigation.
+
+---------------------------------------------------------------------------------------------------
+| Filename                               | Title/Subject                           | Version | Date               | Summary & Key Contents                                           | Cross-Refs                 |
+---------------------------------------------------------------------------------------------------
+| 000_chatKick-off.txt                   | Initial Chat Kickoff & Setup Overview  | v038    | UTC:2025-05-30 01:16| Introductory context, user objectives, workflow guidelines       | —                         |
+| 005_Version_and_ChangeLog_v038.txt    | Version Control & Change Log             | v038    | UTC:2025-05-30 01:16| Version history, schema changes, behavior deltas, build notes    | —                         |
+| 010_Objective_and_Overview_v038.txt   | TradeBot Objective & System Overview    | v038    | UTC:2025-05-30 01:16| System objective, high-level architecture, instructions, deployment notes, time zone standards | —                         |
+| 015_Optional_Expansion_Modules_v038.txt | Optional Expansion Modules Overview     | v038    | UTC:2025-05-30 01:16| Backtesting, optimization, alerting, slippage modeling, future enhancements | —                         |
+| 020_Env_Config_and_Security_v038.txt  | Environment Configuration & Security     | v038    | UTC:2025-05-30 01:16| Secure config files, encrypted deployment, environment variables, decryption workflows | —                         |
+| 025_Broker_API_Integration_v038.txt   | Broker API Integration Details             | v038    | UTC:2025-05-30 01:16| Broker-specific adapters, API contracts, error handling, connection management | —                         |
+| 030_User Credential & Configuration Lifecycle Blueprint_v038.txt | User Credential & Configuration Lifecycle | v038 | UTC:2025-05-30 01:16| User auth lifecycle, encrypted storage, broker credential import, local Web UI control | —                         |
+| 035_Encryption_and_Key_Management_v038.txt | Encryption & Key Management Policies      | v038    | UTC:2025-05-30 01:16| Fernet key usage, rotation, secure storage, ephemeral config handling | —                         |
+| 040_Directory_Structure_v038.txt       | Directory Structure & Module Layout      | v038    | UTC:2025-05-31 22:33| Project directory hierarchy, updated module names and file roles | —                         |
+| 050_Trading_Bot_Core_Specs_v038.txt   | Core Trading Bot Specifications          | v038    | UTC:2025-05-30 01:16| Trading logic, strategy modules, broker enablement, float handling, ledger routing rules | —                         |
+| 060_Enhancements_and_Safety_v038.txt  | Safety Systems & Enhancement Modules     | v038    | UTC:2025-05-30 01:16| Risk controls, kill switch, watchdog, enhancements like filters and gating | —                         |
+| 070_Accounting_Integration_v038.txt   | Accounting System Integration             | v038    | UTC:2025-05-30 01:16| Ledger schema, double-entry enforcement, OFX export, audit compliance; references renamed COA utility modules (`coa_utils_ledger.py`, `utils_coa_web.py`) for clarity | —                         |
+| 080_Logging_and_Reporting_v038.txt    | Logging, Reporting & Audit Format         | v038    | UTC:2025-05-30 01:16| Structured logs, trade history formats, summary metrics, compliance | —                         |
+| 090_Runtime_and_Lifecycle_v038.txt    | Runtime Flow & Bot Lifecycle               | v038    | UTC:2025-05-30 01:16| Session phases, validation checks, shutdown procedures, float usage | —                         |
+| 100_Testing_and_Validation_v038.txt   | Testing & Validation Suite                  | v038    | UTC:2025-05-30 01:16| Unit tests, integration tests, backtest engine, CI compatibility  | —                         |
+| 110_Web_Interface_and_Dashboard_v038.txt | Web UI & Dashboard Specifications          | v038    | UTC:2025-05-30 01:16| Flask backend, UI components, RBAC, COA management, live status; all COA management via `utils_coa_web.py` | Cross-ref: 120_WebInterfaceStatus Design |
+| 120_WebInterfaceStatus Design_v038.txt | Detailed Dashboard Status Panel Design      | v038    | UTC:2025-05-30 01:16| Status panel fields, operational notes, visual states, API sources | Cross-ref: 110_Web_Interface_and_Dashboard |
+---------------------------------------------------------------------------------------------------
+
+Usage Notes:
+- Always reference document numbers and filenames for consistent tracking.
+- Use version and timestamps to verify currency and update status.
+- Cross-reference columns highlight closely linked documents to consult in tandem.
+- This index supports ChatGPT’s long-term context retention and rapid content retrieval during development.
+
+*End of Document*  

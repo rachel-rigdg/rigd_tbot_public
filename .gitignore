@@ -1,0 +1,11 @@
+*.pyc
+__pycache__/
+logs/
+backups/
+.env
+.env_bot
+*.enc
+*.bak
+.DS_Store
+*.sqlite
+*.log

@@ -1,0 +1,46 @@
+<!-- tbot_web/templates/status.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TradeBot Status Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+</head>
+<body>
+    <div class="main-container">
+        <div style="width:70%; margin-left:auto; margin-right:auto;">
+            <h1>TradeBot Status</h1>
+
+            {% if status.error %}
+                <p class="error">{{ status.error }}</p>
+            {% else %}
+                <div class="status-grid">
+                    <div><strong>Timestamp:</strong> {{ status.timestamp }}</div>
+                    <div><strong>Bot State:</strong> {{ status.state }}</div>
+                    <div><strong>Active Strategy:</strong> {{ status.active_strategy }}</div>
+                    <div><strong>Trade Count:</strong> {{ status.trade_count }}</div>
+                    <div><strong>Error Count:</strong> {{ status.error_count }}</div>
+                    <div><strong>Version:</strong> {{ status.version }}</div>
+                </div>
+
+                <hr>
+                <h2>Strategy Toggles</h2>
+                <div class="status-grid">
+                    <div><strong>Open:</strong> {{ status.enabled_strategies.open }}</div>
+                    <div><strong>Mid:</strong> {{ status.enabled_strategies.mid }}</div>
+                    <div><strong>Close:</strong> {{ status.enabled_strategies.close }}</div>
+                </div>
+
+                <hr>
+                <h2>Risk Controls</h2>
+                <div class="status-grid">
+                    <div><strong>Max Risk per Trade:</strong> {{ status.max_risk_per_trade }}</div>
+                    <div><strong>Daily Loss Limit:</strong> {{ status.daily_loss_limit }}</div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

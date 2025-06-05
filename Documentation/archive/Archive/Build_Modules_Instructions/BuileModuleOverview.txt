@@ -1,0 +1,44 @@
+# Major Sections (Instruction Categories) for TradeBot-001
+
+1. Core Metadata & Environment
+   - VERSION, CHANGELOG, README, .env, .env_bot, encryption tools
+
+2. Accounting Integration
+   - accounting/, entities/, ledger schema, accounting API, double-entry enforcement
+
+3. Backtesting & Research
+   - backtest engine, historical data loader, performance metrics, plotting
+
+4. Broker Integrations
+   - Alpaca, IBKR, Tradier, Robinhood, Webull modules, unified broker API
+
+5. Configuration & Security
+   - env_bot, error handler, security encryption, runtime settings
+
+6. Control Signals & Lifecycle
+   - control start/stop, start_bot, stop_bot, watchdog supervisor
+
+7. Enhancements & Filters
+   - ADX filter, Bollinger, imbalance scanner, ticker blocklist, VIX gatekeeper
+
+8. Logging & Reporting
+   - log rotation, daily summary, trade logger, session reports, backups
+
+9. Screener & Symbol Selection
+   - finnhub screener, symbol filters, pre-trade validation
+
+10. Strategy Logic
+    - strategy_open, strategy_mid, strategy_close, strategy_router, thresholds
+
+11. Support Utilities
+    - utils_bot, service_bot, encrypted configs, shared helper functions
+
+12. Test Suite & Validation
+    - integration tests, unit tests, CI-ready scripts, test harness
+
+13. Trade Execution System
+    - float_bot, kill_switch, orders_bot, reporting_bot, notifier_bot, risk_bot
+
+14. Web Dashboard & Control Interface
+    - Flask backend, status monitoring, web start/stop, web logs, settings updates
+

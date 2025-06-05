@@ -1,0 +1,2 @@
+# tbot_bot/control/control_stop.txt
+# Stop flag file created by web/CLI to trigger safe shutdown

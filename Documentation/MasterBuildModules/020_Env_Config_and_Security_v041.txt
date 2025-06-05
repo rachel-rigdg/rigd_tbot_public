@@ -1,0 +1,370 @@
+================================================================================
+Document: 020_Env_Config_and_Security
+Version: v041
+Date: UTC:2025-06-02 23:54
+================================================================================
+
+This module defines environment variable configurations and security protocols for the TradeBot system.
+
+Contents:
+- .env / .env_enc – Top-Level Environment Configuration
+- .env_bot / env_bot.enc – Trading Bot Configuration File
+- Secure Environment Variables (UPDATED – Ephemeral Encrypted Deployment)
+- Encryption and Secret Management Modules Location Update
+
+Strict encryption, key management, and runtime validation requirements apply as detailed herein.
+
+============================================================
+.env / .env_enc – Top-Level Environment Configuration
+============================================================
+
+# This file is parsed by tbot_bot/, tbot_web/, and related utility scripts.
+# It references secure decryption keys only — no raw credentials are stored here.
+
+# Core Environment Settings
+ENVIRONMENT=production
+CONTROL_DIR=control
+ENV_BOT_PATH=.env_bot
+
+# Encrypted Credential Keys (Paths relative to project root)
+ENV_KEY_PATH=storage/keys/env.key
+ENV_ENC_KEY_PATH=storage/keys/env_enc.key
+LOGIN_KEY_PATH=storage/keys/login.key
+BROKER_KEY_PATH=storage/keys/broker.key
+SMTP_KEY_PATH=storage/keys/smtp.key
+SCREENER_API_KEY_PATH=storage/keys/screener_api.key
+ACCT_API_KEY_PATH=storage/keys/acct_api.key
+ALERT_KEY_PATH=storage/keys/alert.key
+
+# Encrypted Secrets (Resolved at Runtime)
+BROKER_CREDENTIALS_PATH=storage/secrets/broker_credentials.json.enc
+SMTP_CREDENTIALS_PATH=storage/secrets/smtp_credentials.json.enc
+SCREENER_API_PATH=storage/secrets/screener_api.json.enc
+ACCT_API_CREDENTIALS_PATH=storage/secrets/acct_api_credentials.json.enc
+NETWORK_CONFIG_PATH=storage/secrets/network_config.json.enc
+ALERT_CHANNELS_PATH=storage/secrets/alert_channels.json.enc
+BOT_IDENTITY_PATH=storage/secrets/bot_identity.json.enc
+
+# Session / Login Controls
+SESSION_TIMEOUT=3000
+LOGIN_ATTEMPT_LIMIT=10
+LOGIN_LOCKOUT_MINUTES=15
+SESSION_TIMEOUT_MINUTES=120
+
+================================================================================
+ .env_bot / env_bot.enc – Trading Bot Configuration File
+================================================================================
+
+# .env_bot – TradeBot Configuration v1.0.0+
+# All strategy logic, broker routing, and runtime behavior are driven by this file.
+# Time values are specified in UTC. Comments indicate usage and system impact.
+# -----------------------------------------
+# General & Debugging
+# -----------------------------------------
+# Version tag (must match VERSION.md)
+VERSION_TAG=v1.0.0
+# debug or release – sets internal behavior and logging verbosity
+BUILD_MODE=release
+# Master kill switch to block all trading activity
+DISABLE_ALL_TRADES=false
+# Logging level: quiet, info, or verbose
+DEBUG_LOG_LEVEL=verbose
+# Enable writing log files to /logs and /backups
+ENABLE_LOGGING=true
+# json (structured) or csv (flat) log output format
+LOG_FORMAT=json
+# -----------------------------------------
+# Trade Execution & Risk Controls
+# -----------------------------------------
+# If true, bot will wait for manual confirmation before sending trades
+TRADE_CONFIRMATION_REQUIRED=false
+# Number of times to retry failed broker API calls      
+API_RETRY_LIMIT=3
+# how many seconds before timeout 
+API_TIMEOUT=30
+# Allow fractional shares (broker must support)
+FRACTIONAL=true
+# Total capital allocated per strategy session (e.g., 2% of account)
+TOTAL_ALLOCATION=0.02
+# Max number of trades allowed per strategy window
+MAX_TRADES=4
+# Trade weight percentages based on number of triggered trades
+WEIGHTS=0.4,0.2,0.2,0.2
+# Absolute loss limit (e.g., 5% of capital); triggers shutdown
+DAILY_LOSS_LIMIT=0.05
+# Maximum allocation per trade based on account value (2.5%)
+MAX_RISK_PER_TRADE=0.025
+# Cap on total simultaneous positions across all strategies
+MAX_OPEN_POSITIONS=5                   
+# -----------------------------------------
+# Price & Volume Filters
+# -----------------------------------------
+# Minimum price allowed per trade
+MIN_PRICE=5
+# Maximum price allowed per trade
+MAX_PRICE=100
+# Minimum volume filter 
+MIN_VOLUME_THRESHOLD=1000000       
+# Finnhub Guard filter 
+ENABLE_FUNNHUB_FUNDAMENTALS_FILTER=true
+MAX_PE_RATIO=50
+MAX_DEBT_EQUITY=2.5
+# -----------------------------------------
+# Strategy Routing & Broker Mode
+# -----------------------------------------
+# Broker Name (Options: ALPACA, IBKR, TRADIER, etc.)
+BROKER_NAME="ALPACA"  
+# Strategy run order; values: open, mid, close
+STRATEGY_SEQUENCE=open,mid,close
+# Optional: override normal order and run only one strategy
+STRATEGY_OVERRIDE=
+# -----------------------------------------
+# Automated Rebalance Triggers
+# -----------------------------------------
+# Master toggle for automated rebalancing
+REBALANCE_ENABLED=true     
+# Trigger threshold (fractional, e.g., 0.10 = 10% deviation)              
+REBALANCE_THRESHOLD=0.10     
+# Check interval in seconds (default: 3600s = 1 hour)            
+REBALANCE_CHECK_INTERVAL=3600           
+# -----------------------------------------
+# Failover Broker Routing
+# -----------------------------------------
+# Master toggle for failover routing
+FAILOVER_ENABLED=true                
+# Tag applied to rerouted trades in logs/ledgers
+FAILOVER_LOG_TAG=FAILOVER_ACTIVE         
+# -----------------------------------------
+# Global Time & Polling
+# -----------------------------------------
+# Days allowed for trading (UTC-based control logic)
+TRADING_DAYS=mon,tue,wed,thu,fri
+# Interval between polling cycles for runtime monitoring
+SLEEP_TIME=1s
+# -----------------------------------------
+# OPEN Strategy Configuration (20 min trading)
+# -----------------------------------------
+# Maximum gap allowed from open to current price (used in screener)
+MAX_GAP_PCT_OPEN=0.1
+# Minimum and maximum market cap allowed for OPEN strategy candidates
+MIN_MARKET_CAP_OPEN=2000000000
+MAX_MARKET_CAP_OPEN=10000000000
+# Enable or disable OPEN strategy
+STRAT_OPEN_ENABLED=true
+# UTC start time (market open = 9:30 AM EST)
+START_TIME_OPEN=14:30
+# Minutes to track high/low range before breakout
+OPEN_ANALYSIS_TIME=20
+# Minutes to for breakout to happen
+OPEN_BREAKOUT_TIME=10
+# Minutes to monitor active positions
+OPEN_MONITORING_TIME=30
+# Breakout threshold above high/low range (e.g., 2%)
+STRAT_OPEN_BUFFER=0.02
+# Shorting method: InverseETF, disabled, ShortSell, LongPut,
+SHORT_TYPE_OPEN= InverseETF               
+# -----------------------------------------
+# MID Strategy Configuration (VWAP Reversion)
+# -----------------------------------------
+# Maximum gap allowed from open to current price (used in screener)
+MAX_GAP_PCT_MID=0.1
+# Minimum and maximum market cap allowed for MID strategy candidates
+MIN_MARKET_CAP_MID=2000000000
+MAX_MARKET_CAP_MID=10000000000
+# Enable or disable MID strategy
+STRAT_MID_ENABLED=true
+# UTC start time (10:30 AM EST)
+START_TIME_MID=15:30
+# Minutes before trade signal is evaluated
+MID_ANALYSIS_TIME=15
+# Minutes to for breakout to happen
+MID_BREAKOUT_TIME=10
+# Maximum hold time after entry
+MID_MONITORING_TIME=30
+# VWAP deviation required to enter trade
+STRAT_MID_VWAP_THRESHOLD=0.02
+# Shorting method: InverseETF, ShortSell, LongPut,  or disabled
+SHORT_TYPE_MID= InverseETF              
+# -----------------------------------------
+# CLOSE Strategy Configuration (EOD Momentum/Fade)
+# -----------------------------------------
+# Maximum gap allowed from open to current price (used in screener)
+MAX_GAP_PCT_CLOSE=0.1
+# Minimum and maximum market cap allowed for CLOSE strategy candidates
+MIN_MARKET_CAP_CLOSE=2000000000
+MAX_MARKET_CAP_CLOSE=10000000000
+# Enable or disable CLOSE strategy
+STRAT_CLOSE_ENABLED=true
+# UTC start time (2:30 PM EST)
+START_TIME_CLOSE=19:30
+# Minutes to detect signal
+CLOSE_ANALYSIS_TIME=5
+# Minutes to for breakout to happen
+CLOSE_BREAKOUT_TIME=5
+# Duration to manage position after entry
+CLOSE_MONITORING_TIME=25
+# Min VIX level required to allow entry
+STRAT_CLOSE_VIX_THRESHOLD=15
+# Shorting method: InverseETF, ShortSell, LongPut, or disabled
+SHORT_TYPE_CLOSE= InverseETF               
+# -----------------------------------------
+# Notifications
+# -----------------------------------------
+# Send email alert on trade entry
+NOTIFY_ON_FILL=true
+# Send email alert on trade exit
+NOTIFY_ON_EXIT=true                    
+# -----------------------------------------
+# Reporting & Ledger Export
+# -----------------------------------------
+# auto = export after each trade, off = no export
+LEDGER_EXPORT_MODE=auto
+# -----------------------------------------
+# Defense Mode (Disaster Risk Reduction)
+# -----------------------------------------
+# Set true if Disaster Protocol triggers; resets to false on recovery
+DEFENSE_MODE_ACTIVE=false
+# Percentage of normal MAX_CONCURRENT_TRADES allowed (rounded down)
+DEFENSE_MODE_TRADE_LIMIT_PCT=66
+# Maximum session allocation allowed during Defense Mode (e.g., 1%)
+DEFENSE_MODE_TOTAL_ALLOCATION=0.01
+# -----------------------------------------
+# ENHANCEMENT MODULE TOGGLES 
+# -----------------------------------------
+# --- Rebalance Notification ---
+ENABLE_REBALANCE_NOTIFIER=true
+# Notify accounting if float deviates ±10% from target
+REBALANCE_TRIGGER_PCT=10                         
+# --- Role-Based Web Access ---
+# Enable multi-user roles in web dashboard
+RBAC_ENABLED=true
+# Default role for new users                                
+DEFAULT_USER_ROLE=viewer
+# --- Strategy Optimizer ---
+ENABLE_STRATEGY_OPTIMIZER=true
+# Historical days for parameter tuning
+OPTIMIZER_BACKTEST_LOOKBACK_DAYS=30
+# Options: grid_search, bayesian, genetic              
+OPTIMIZER_ALGORITHM=grid_search                
+OPTIMIZER_OUTPUT_DIR=backtest_results/strategy_tuning/
+# --- Real-Time Alerts ---
+NOTIFY_ON_FILL=true
+NOTIFY_ON_EXIT=true
+NOTIFY_ON_FAILURE=true
+ # Options: email, slack, sms, pagerduty
+CRITICAL_ALERT_CHANNEL=pagerduty
+# Options: email, slack                
+ROUTINE_ALERT_CHANNEL=email
+# --- Backtest Slippage Modeling ---
+ENABLE_SLIPPAGE_MODEL=true
+# Options: none, rule_based, randomized
+SLIPPAGE_SIMULATION_TYPE=randomized
+ # Average slippage %              
+SLIPPAGE_MEAN_PCT=0.15 
+# Standard deviation                         
+SLIPPAGE_STDDEV_PCT=0.10
+ # Artificial delay (in milliseconds) per order                         
+SIMULATED_LATENCY_MS=500                        
+# --- black_scholes_filter Enhancements (if applicable) ---
+ENABLE_BSM_FILTER=true
+# Reject if >15% over/under priced
+MAX_BSM_DEVIATION=0.15
+# Used in BSM if not supplied dynamically              
+RISK_FREE_RATE=0.045
+# Options: static, dynamic — dynamic adjusts by JURISDICTION_CODE via bot_identity                
+RISK_FREE_RATE_SOURCE=dynamic       
+
+
+
+=============================================================================================================================================
+Secure Environment Variables (UPDATED – Ephemeral Encrypted Deployment)
+=============================================================================================================================================
+
+Overview:
+TradeBot separates runtime configuration into two environment files:
+- `.env` contains global config, API keys, encryption keys, and paths to encrypted credential files — **never raw credentials**.
+- `.env_bot` defines all trading logic, risk controls, and strategy parameters — **never stored in version control**.
+
+Security Goals:
+- `.env_bot` and all sensitive config data are encrypted at rest using AES-256 (Fernet).
+- Encrypted config files reside under `tbot_bot/support/` as `.env_bot.enc` and other category-specific encrypted files (`.bot_identity.enc`, `.broker.enc`, etc.).
+- Corresponding encryption keys reside under `tbot_bot/storage/keys/`.
+- Decryption keys and encrypted files are **never committed to source control** (enforced by `.gitignore` and `.scpignore`).
+- The system performs **runtime decryption in-memory only**, avoiding persistent plaintext files on disk.
+- Post-decryption, sensitive data is immediately overwritten or discarded after use.
+- All decryption errors are logged securely for audit purposes.
+
+Module Locations & Responsibilities:
+- Encryption and decryption logic centralized in:
+  - `tbot_bot/support/encrypt_secrets.py`
+  - `tbot_bot/support/decrypt_secrets.py`
+  - `tbot_bot/config/security_bot.py` (manages bot config encryption, key validation, and secret writes)
+- The Web UI configuration module (`tbot_web/py/configuration_web.py`) handles:
+  - Writing encrypted secret category files into `tbot_bot/support/`.
+  - Initializing core databases.
+  - Encrypting `.env_bot` in-memory and saving `.env_bot.enc`.
+- `tbot_bot/config/env_bot.py` loads and validates decrypted bot config at runtime.
+- All secret keys and encrypted files are accessed via absolute paths resolved by `tbot_bot/support/path_resolver.py`.
+
+Ephemeral .env.enc Support:
+- For container or cloud deployment, `.env` may be distributed as `.env.enc`.
+- On startup, `.env.enc` is decrypted in-memory using the key at `storage/keys/env_enc.key`.
+- No plaintext `.env` is ever persisted on disk in production.
+- `.env_bot` follows similar ephemeral encrypted deployment, ensuring sensitive bot config is protected.
+
+Encryption/Decryption Workflow:
+1. Populate plaintext `.env_bot` with required variables.
+2. Encrypt `.env_bot` using `tools/encrypt_env_bot.py` to produce `.env_bot.enc`.
+3. Upload `.env_bot.enc` and corresponding keys (`env.key`, `env_enc.key`, etc.) to deployment servers.
+4. At runtime, decrypt `.env_bot.enc` **in memory**; load and validate keys.
+5. All category-specific encrypted JSON files (`bot_identity.json.enc`, `broker.json.enc`, etc.) are written and read from `tbot_bot/support/` during Web UI config lifecycle.
+6. The bootstrap process initializes missing secret category files from Web UI input.
+
+Validation and Error Handling:
+- Decryption failures or missing required environment variables cause fatal startup errors.
+- All such errors are logged with timestamps and module context.
+- Clear human-readable error messages are displayed to operators without revealing secrets.
+- Access to encryption keys must be strictly restricted in production environments.
+
+Recovery:
+- Restore encrypted secrets and keys from secure backups if files are lost or corrupted.
+- Re-encrypt plaintext secrets if needed using `tools/encrypt_env_bot.py` and related scripts.
+- Rotate encryption keys on personnel changes or compromise.
+
+Best Practices:
+- Never store plaintext secrets in version control or on persistent disk.
+- Use ephemeral decrypted configs only in RAM or secure temporary storage.
+- Exclude all decrypted secrets and encryption keys via `.gitignore` and `.scpignore`.
+- Log all secret access and decryption events for audit trails.
+- Perform thorough staging environment testing before production deployment.
+
+Compliance and Verification:
+- The `build_check.py` tool verifies presence, integrity, and consistency of all required encrypted config and key files before session start.
+- Runtime config loads are monitored and audited by the logging subsystem.
+
+---
+
+**Summary Table:**
+
+| File                | Type           | Storage Location                     | Deployment State       | Encryption Key Location              |
+|---------------------|----------------|------------------------------------|-----------------------|------------------------------------|
+| `.env`              | Global config  | Project root                       | Optional (plaintext)   | -                                  |
+| `.env.enc`          | Global config  | Project root                       | Recommended (encrypted)| `storage/keys/env_enc.key`          |
+| `.env_bot`          | Bot config     | Project root (temp only)           | Forbidden (prod)       | -                                  |
+| `.env_bot.enc`      | Bot config     | `tbot_bot/support/`                | Required (encrypted)   | `storage/keys/env.key`              |
+| `bot_identity.json.enc` | Bot identity  | `tbot_bot/support/`               | Created during bootstrap | `storage/keys/bot_identity.key`  |
+| `broker.json.enc`       | Broker creds  | `tbot_bot/support/`                | Created during bootstrap | `storage/keys/broker.key`         |
+| `smtp.json.enc`         | SMTP creds    | `tbot_bot/support/`                | Created during bootstrap | `storage/keys/smtp.key`           |
+| `screener_api.json.enc` | Screener API  | `tbot_bot/support/`                | Created during bootstrap | `storage/keys/screener_api.key`   |
+| `network_config.json.enc` | Network config | `tbot_bot/support/`              | Created during bootstrap | `storage/keys/network.key`        |
+| `alert_channels.json.enc` | Alert channels | `tbot_bot/support/`              | Created during bootstrap | `storage/keys/alert.key`          |
+
+---
+
+**NOTE:**
+- All encrypted secret category files under `tbot_bot/support/` are generated and managed exclusively by the Web UI configuration bootstrap process.
+- No plaintext secrets should be stored outside the Web UI input or staging environment files.
+- The bot runtime relies exclusively on the encrypted `.env_bot.enc` and the category files to operate securely.
+- Encrypted files and keys must never be committed to any version control system.
+
+---

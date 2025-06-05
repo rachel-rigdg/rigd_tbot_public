@@ -1,0 +1,30 @@
+<!-- tbot_web/templates/logs.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TradeBot Logs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+</head>
+<body class="logs-page">
+    <header class="dashboard-header">
+        <h1>TradeBot Logs</h1>
+    </header>
+
+    <main class="dashboard-main content">
+        <section>
+            <h2>Runtime Log Stream</h2>
+            <!-- Escaped preformatted log output -->
+            <div class="log-stream">
+                <pre>{{ log_text | e }}</pre>
+            </div>
+        </section>
+    </main>
+
+    <footer class="dashboard-footer">
+        <p>&copy; 2025 RIGD Holdings Inc – Live Log Monitor</p>
+    </footer>
+</body>
+</html>
