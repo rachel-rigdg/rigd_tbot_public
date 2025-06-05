@@ -7,9 +7,14 @@ import subprocess
 from pathlib import Path
 import sys
 import traceback
+import os
 
 # Paths
-ROOT = Path(__file__).resolve().parents[2]
+if "RIGD_TBOT_ROOT" in os.environ:
+    ROOT = Path(os.environ["RIGD_TBOT_ROOT"]).resolve()
+else:
+    ROOT = Path(__file__).resolve().parents[2]
+
 SUPPORT_PATH = ROOT / "tbot_bot" / "support"
 CONFIG_PATH = ROOT / "tbot_bot" / "config"
 OUTPUT_BASE = ROOT / "tbot_bot" / "output"
