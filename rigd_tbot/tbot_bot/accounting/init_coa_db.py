@@ -12,7 +12,10 @@ import sqlite3
 from datetime import datetime, timezone
 
 from cryptography.fernet import Fernet
-from tbot_bot.support.path_resolver import resolve_coa_db_path, resolve_coa_template_path
+from tbot_bot.support.path_resolver import resolve_coa_db_path
+
+def resolve_coa_template_path():
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa.json")
 
 def utc_now():
     return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
