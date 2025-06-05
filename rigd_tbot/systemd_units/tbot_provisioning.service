@@ -7,9 +7,11 @@ After=network.target
 [Service]
 Type=simple
 User=tbot
-WorkingDirectory=/home/tbot/rigd_tbot      # Project root directory
-ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/config/provisioning_runner.py  # Start provisioning runner
-Restart=on-failure                        # Auto-restart on crash
+WorkingDirectory=/home/tbot/rigd_tbot
+ExecStartPre=/bin/echo "[systemd:tbot_provisioning] Starting provisioning runner..."
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/config/provisioning_runner.py
+ExecStartPost=/bin/echo "[systemd:tbot_provisioning] Provisioning runner launched."
+Restart=on-failure
 RestartSec=2
 
 [Install]

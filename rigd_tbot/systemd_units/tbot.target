@@ -5,5 +5,10 @@ Description=RIGD TradeBot Orchestration Target
 Requires=tbot_web.service tbot_provisioning.service tbot_bot.service
 After=network.target
 
+[Service]
+Type=oneshot
+ExecStart=/bin/echo "[systemd:tbot.target] All core TradeBot services orchestrated."
+RemainAfterExit=yes
+
 [Install]
 WantedBy=multi-user.target
