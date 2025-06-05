@@ -49,11 +49,16 @@ def get_output_path(bot_identity: str = None, category: str = None, filename: st
     """
     identity = get_bot_identity(bot_identity)
     validate_bot_identity(identity)
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
     if category not in CATEGORIES:
         raise ValueError(f"[path_resolver] Invalid output category: {category}")
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
     subdir = base_output_dir / CATEGORIES[category]
-    return str(subdir if output_subdir else (subdir / filename))
+    if output_subdir:
+        subdir.mkdir(parents=True, exist_ok=True)
+        return str(subdir)
+    else:
+        subdir.mkdir(parents=True, exist_ok=True)
+        return str(subdir / filename) if filename else str(subdir)
 
 def resolve_category_path(category: str, filename: str = None, bot_identity: str = None, output_subdir: bool = False) -> str:
     """
@@ -109,6 +114,39 @@ def resolve_coa_audit_log_path() -> str:
     """
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_audit.log")
 
+def resolve_ledger_schema_path():
+    """
+    Returns the absolute path to the ledger schema file in /accounting/ledger_schema.sql
+    """
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "ledger_schema.sql")
+
+def resolve_coa_schema_path():
+    """
+    Returns the absolute path to the COA schema file in /accounting/coa_schema.sql
+    """
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "coa_schema.sql")
+
+def resolve_output_folder_path(bot_identity: str) -> str:
+    """
+    Returns the absolute path to the bot-specific output folder.
+    """
+    validate_bot_identity(bot_identity)
+    return str(PROJECT_ROOT / "tbot_bot" / "output" / bot_identity)
+
+def resolve_ledger_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
+    """
+    Returns the absolute path to the ledger DB for the specified bot.
+    """
+    bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
+    return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_ledger.db")
+
+def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
+    """
+    Returns the absolute path to the COA DB for the specified bot.
+    """
+    bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
+    return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_COA_v1.0.0.db")
+
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -118,7 +156,12 @@ __all__ = [
     "get_secret_path",
     "get_schema_path",
     "get_cache_path",
+    "resolve_output_folder_path",
+    "resolve_ledger_db_path",
+    "resolve_coa_db_path",
     "resolve_coa_json_path",
     "resolve_coa_metadata_path",
-    "resolve_coa_audit_log_path"
+    "resolve_coa_audit_log_path",
+    "resolve_ledger_schema_path",
+    "resolve_coa_schema_path"
 ]

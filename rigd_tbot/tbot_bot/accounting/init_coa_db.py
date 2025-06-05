@@ -1,11 +1,16 @@
 # tbot_bot/accounting/init_coa_db.py
 # Bootstrap script: initializes new COA DB at output/IDENTITY/ledgers/ using tbot_ledger_coa.json as hierarchy/template
 
+import sys
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 import os
 import json
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
+
 from cryptography.fernet import Fernet
 from tbot_bot.support.path_resolver import resolve_coa_db_path, resolve_coa_template_path
 

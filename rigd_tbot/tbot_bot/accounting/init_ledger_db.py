@@ -1,11 +1,15 @@
 # tbot_bot/accounting/init_ledger_db.py
 # Bootstrap script: initializes a new bot ledger DB file using tbot_ledger_schema.sql (called only at provisioning/reset)
 
+import sys
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 import os
 import sqlite3
 import json
 from cryptography.fernet import Fernet
-from pathlib import Path
 from tbot_bot.support.path_resolver import (
     resolve_ledger_db_path,
     resolve_ledger_schema_path,
