@@ -12,8 +12,13 @@ import json
 from cryptography.fernet import Fernet
 from tbot_bot.support.path_resolver import (
     resolve_ledger_db_path,
-    resolve_ledger_schema_path,
 )
+
+def resolve_ledger_schema_path():
+    """
+    Returns the absolute path to tbot_ledger_schema.sql.
+    """
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_schema.sql")
 
 def init_ledger_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None):
     """
