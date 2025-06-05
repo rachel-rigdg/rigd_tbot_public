@@ -102,6 +102,12 @@ def resolve_coa_json_path() -> str:
     """
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa.json")
 
+def resolve_coa_template_path() -> str:
+    """
+    Resolves absolute path to tbot_bot/accounting/tbot_ledger_coa.json
+    """
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa.json")
+
 def resolve_coa_metadata_path() -> str:
     """
     Resolves absolute path to tbot_bot/accounting/tbot_ledger_coa_metadata.json
@@ -116,9 +122,9 @@ def resolve_coa_audit_log_path() -> str:
 
 def resolve_ledger_schema_path():
     """
-    Returns the absolute path to the ledger schema file in /accounting/ledger_schema.sql
+    Returns the absolute path to the ledger schema file in /accounting/tbot_ledger_schema.sql
     """
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "ledger_schema.sql")
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_schema.sql")
 
 def resolve_coa_schema_path():
     """
@@ -160,6 +166,7 @@ __all__ = [
     "resolve_ledger_db_path",
     "resolve_coa_db_path",
     "resolve_coa_json_path",
+    "resolve_coa_template_path",
     "resolve_coa_metadata_path",
     "resolve_coa_audit_log_path",
     "resolve_ledger_schema_path",
