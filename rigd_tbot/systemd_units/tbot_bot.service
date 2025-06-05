@@ -1,16 +1,16 @@
-# systemd_units/tbot_bot.service
-# Launches the main TradeBot core bot process
+# systemd_units/tbot_provisioning.service
+# Launches the provisioning_runner for bootstrap/setup
 [Unit]
-Description=RIGD TradeBot Core Bot Process
-After=network.target tbot_provisioning.service
+Description=RIGD TradeBot Provisioning Runner
+After=network.target
 
 [Service]
 Type=simple
 User=tbot
 WorkingDirectory=/home/tbot/rigd_tbot
-ExecStartPre=/bin/echo "[systemd:tbot_bot] Launching TradeBot core runtime..."
-ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/runtime/main.py
-ExecStartPost=/bin/echo "[systemd:tbot_bot] TradeBot core process started."
+ExecStartPre=/bin/echo [systemd:tbot_provisioning] Starting provisioning runner...
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/config/provisioning_runner.py
+ExecStartPost=/bin/echo [systemd:tbot_provisioning] Provisioning runner launched.
 Restart=on-failure
 RestartSec=2
 

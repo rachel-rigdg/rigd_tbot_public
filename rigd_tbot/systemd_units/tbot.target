@@ -7,7 +7,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/echo "[systemd:tbot.target] All core TradeBot services orchestrated."
+ExecStart=/bin/echo [systemd:tbot.target] All core TradeBot services orchestrated.
 RemainAfterExit=yes
 
 [Install]
