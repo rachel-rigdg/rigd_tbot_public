@@ -166,6 +166,9 @@ def main():
             if not identity_dir.is_dir():
                 continue
             identity = identity_dir.name
+            # Skip {bot_identity} and bootstrap
+            if identity in ("{bot_identity}", "bootstrap"):
+                continue
             if not re.match(IDENTITY_PATTERN, identity):
                 continue
             try:
@@ -189,8 +192,13 @@ def main():
     # Check COA/ledger database files for each identity output directory
     print("\nChecking COA/ledger output database files...")
     for identity_dir in base_output_dir.iterdir():
-        if identity_dir.is_dir() and "_" in identity_dir.name:
+        if identity_dir.is_dir():
             identity = identity_dir.name
+            # Skip {bot_identity} and bootstrap
+            if identity in ("{bot_identity}", "bootstrap"):
+                continue
+            if "_" not in identity:
+                continue
             ledgers_dir = identity_dir / "ledgers"
             coa_db = ledgers_dir / f"{identity}_BOT_COA_v1.0.0.db"
             ledger_db = ledgers_dir / f"{identity}_BOT_ledger.db"
@@ -200,7 +208,6 @@ def main():
             if not ledger_db.exists():
                 print(f"[ERROR] Missing ledger DB: {ledger_db}")
                 errors_found = True
-
 
     print("\n=== Build check complete ===")
     if errors_found:

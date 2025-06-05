@@ -19,9 +19,11 @@ sys.path.insert(0, str(ROOT))
 SUPPORT_PATH = ROOT / "tbot_bot" / "support"
 CONFIG_PATH = ROOT / "tbot_bot" / "config"
 OUTPUT_BASE = ROOT / "tbot_bot" / "output"
+BOOTSTRAP_LOGS_PATH = OUTPUT_BASE / "bootstrap" / "logs"
 TMP_CONFIG_PATH = SUPPORT_PATH / "tmp" / "bootstrap_config.json"
 PROVISION_FLAG_PATH = CONFIG_PATH / "PROVISION_FLAG"
 STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "provisioning_status.json"
+STATUS_BOOTSTRAP_PATH = BOOTSTRAP_LOGS_PATH / "provisioning_status.json"
 
 # Provisioning step modules
 sys.path.insert(0, str(CONFIG_PATH))
@@ -46,7 +48,7 @@ def get_bot_identity_string():
             config = json.load(f)
         return config["bot_identity"]["BOT_IDENTITY_STRING"]
     except Exception:
-        return "undefined"
+        return None
 
 def clear_provision_flag():
     try:
@@ -69,25 +71,23 @@ def main():
     while True:
         if PROVISION_FLAG_PATH.exists():
             bot_identity = get_bot_identity_string()
-            status_path = STATUS_PATH_TEMPLATE.with_name(bot_identity).parent / "provisioning_status.json"
+            # Write provisioning status to bootstrap/logs/ until bot_identity is available
+            if bot_identity and bot_identity != "undefined":
+                status_path = OUTPUT_BASE / bot_identity / "provisioning_status.json"
+            else:
+                status_path = STATUS_BOOTSTRAP_PATH
             try:
                 write_status(status_path, "pending", "Provisioning started.")
-                # 1. Generate Fernet keys for all categories
                 write_status(status_path, "running", "Key generation.")
                 key_manager_main()
-                # 2. Provision secrets and minimal config
                 write_status(status_path, "running", "Provisioning secrets and minimal config.")
                 provisioning_helper_main()
-                # 3. Run bootstrapping logic for required DBs, COA, etc.
                 write_status(status_path, "running", "Running bootstrapping helper.")
                 bootstrapping_helper_main()
-                # 4. Initialize all system DBs and tables
                 write_status(status_path, "running", "Database initialization.")
                 db_bootstrap_main()
-                # 5. Launch tbot_bot.service via systemd (not as subprocess)
                 write_status(status_path, "running", "Triggering tbot_bot.service via systemd.")
                 trigger_tbot_bot_service()
-                # 6. Mark provisioning complete
                 write_status(status_path, "complete", "Provisioning complete, bot launched via systemd.")
                 clear_provision_flag()
             except Exception as e:
