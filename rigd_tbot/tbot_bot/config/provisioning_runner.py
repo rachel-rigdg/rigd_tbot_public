@@ -22,7 +22,7 @@ OUTPUT_BASE = ROOT / "tbot_bot" / "output"
 BOOTSTRAP_LOGS_PATH = OUTPUT_BASE / "bootstrap" / "logs"
 TMP_CONFIG_PATH = SUPPORT_PATH / "tmp" / "bootstrap_config.json"
 PROVISION_FLAG_PATH = CONFIG_PATH / "PROVISION_FLAG"
-STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "provisioning_status.json"
+STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "logs" / "provisioning_status.json"
 STATUS_BOOTSTRAP_PATH = BOOTSTRAP_LOGS_PATH / "provisioning_status.json"
 
 # Provisioning step modules
@@ -73,7 +73,7 @@ def main():
             bot_identity = get_bot_identity_string()
             # Write provisioning status to bootstrap/logs/ until bot_identity is available
             if bot_identity and bot_identity != "undefined":
-                status_path = OUTPUT_BASE / bot_identity / "provisioning_status.json"
+                status_path = OUTPUT_BASE / bot_identity / "logs" / "provisioning_status.json"
             else:
                 status_path = STATUS_BOOTSTRAP_PATH
             try:
