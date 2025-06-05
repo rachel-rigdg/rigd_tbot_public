@@ -69,22 +69,27 @@ echo ""
 case "$direction" in
   1)
     rsync -avn $RSYNC_OPTS --exclude-from="$IGNORE_FILE" "$DEV_PATH/" "$LIVE_PATH"
+    sleep 1
     rsync -avn $RSYNC_OPTS "$DEV_PATH/$SYSTEMD_PATH/" "$LIVE_PATH/$SYSTEMD_PATH/"
     ;;
   2)
     rsync -avn $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$LIVE_PATH/" "$TO"
+    sleep 1
     rsync -avn $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LIVE_PATH/$SYSTEMD_PATH/" "$TO$SYSTEMD_PATH/"
     ;;
   3)
     rsync -avn $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$FROM" "$LIVE_PATH/"
+    sleep 1
     rsync -avn $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$FROM$SYSTEMD_PATH/" "$LIVE_PATH/$SYSTEMD_PATH/"
     ;;
   4)
     rsync -avn $RSYNC_OPTS --exclude-from="$IGNORE_FILE" "$LIVE_PATH/" "$DEV_PATH/"
+    sleep 1
     rsync -avn $RSYNC_OPTS "$LIVE_PATH/$SYSTEMD_PATH/" "$DEV_PATH/$SYSTEMD_PATH/"
     ;;
   5)
     rsync -avn $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$DEV_PATH/" "$TO"
+    sleep 1
     rsync -avn $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$DEV_PATH/$SYSTEMD_PATH/" "$TO$SYSTEMD_PATH/"
     ;;
 esac
