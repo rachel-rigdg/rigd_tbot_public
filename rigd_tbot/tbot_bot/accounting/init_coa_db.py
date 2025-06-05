@@ -12,10 +12,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from cryptography.fernet import Fernet
-from tbot_bot.support.path_resolver import resolve_coa_db_path
-
-def resolve_coa_template_path():
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa.json")
+from tbot_bot.support.path_resolver import resolve_coa_db_path, resolve_coa_template_path
 
 def utc_now():
     return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
@@ -32,7 +29,7 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
         bot_identity_data = json.loads(plaintext.decode("utf-8"))
         identity = bot_identity_data.get("BOT_IDENTITY_STRING")
         entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
-    coa_db_path = resolve_coa_db_path(entity_code, jurisdiction_code, broker_code, bot_id, coa_version)
+    coa_db_path = resolve_coa_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     coa_template_path = resolve_coa_template_path()
     print(f"[init_coa_db] COA DB path: {coa_db_path}")
     print(f"[init_coa_db] COA template path: {coa_template_path}")
