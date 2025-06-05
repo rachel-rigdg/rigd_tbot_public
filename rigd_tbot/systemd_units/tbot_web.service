@@ -8,9 +8,9 @@ After=network.target
 Type=simple
 User=tbot
 WorkingDirectory=/home/tbot/rigd_tbot
-ExecStartPre=/bin/echo [systemd:tbot_web] Launching Flask web UI...
+ExecStartPre=/bin/echo "[systemd:tbot_web] Launching Flask web UI..."
 ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_web/py/run_web.py
-ExecStartPost=/bin/echo [systemd:tbot_web] Flask web UI started.
+ExecStartPost=/bin/echo "[systemd:tbot_web] Flask web UI started."
 Restart=always
 RestartSec=2
 

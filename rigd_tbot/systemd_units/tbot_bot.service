@@ -8,9 +8,10 @@ After=network.target
 Type=simple
 User=tbot
 WorkingDirectory=/home/tbot/rigd_tbot
-ExecStartPre=/bin/echo [systemd:tbot_provisioning] Starting provisioning runner...
+Environment=PYTHONPATH=/home/tbot/rigd_tbot
+ExecStartPre=/bin/echo "[systemd:tbot_provisioning] Starting provisioning runner..."
 ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/config/provisioning_runner.py
-ExecStartPost=/bin/echo [systemd:tbot_provisioning] Provisioning runner launched.
+ExecStartPost=/bin/echo "[systemd:tbot_provisioning] Provisioning runner launched."
 Restart=on-failure
 RestartSec=2
 

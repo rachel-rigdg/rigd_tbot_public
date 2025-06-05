@@ -9,6 +9,7 @@ import json
 configuration_blueprint = Blueprint("configuration_web", __name__)
 
 TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" / "tmp" / "bootstrap_config.json"
+PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
 
 @configuration_blueprint.route("/configuration", methods=["GET"])
 def show_configuration():
@@ -74,6 +75,9 @@ def save_configuration():
     TMP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(TMP_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+
+    # Create provisioning flag for runner
+    PROVISION_FLAG_PATH.touch()
 
     print("[configuration_web] Configuration saved. Triggering provisioning on redirect.")
     session["trigger_provisioning"] = True

@@ -1,6 +1,6 @@
 # tbot_bot/config/bootstrapping_helper.py
 
-from tbot_bot.support.db_bootstrap import initialize_all
+from tbot_bot.config.db_bootstrap import initialize_all
 from pathlib import Path
 
 BOOTSTRAP_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / ".bootstrapped"
