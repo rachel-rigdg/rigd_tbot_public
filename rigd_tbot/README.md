@@ -1,173 +1,206 @@
-# TradeBot v1.0.0
 
-README.md – System Overview and Developer Reference
+==============================
+Objective (UPDATED)
+==============================
 
-Overview:
-TradeBot is a modular, headless trading automation engine designed for high-speed intraday trade execution, real-time risk enforcement, and audit-compliant reporting via GnuCash. It supports long equity, inverse ETFs, and long put options. Strategies include Opening Range Breakout, VWAP Mean Reversion, and EOD Momentum/Fade.
+TradeBot (TBot) executes bi-directional trades using long equity for bullish signals and inverse ETFs or long puts for bearish signals, strictly determined by SHORT_TYPE_* values in .env_bot. Brokers must support long equity and at least one approved bearish instrument (long put or inverse ETF) per assignment.
 
-Core Components:
-- tbot_bot/ – Main runtime logic and broker execution
-- tbot_api/ – FastAPI server for remote config and control
-- tbot_web/ – Optional HTML frontend for live monitoring
-- logs/, backups/, and GnuCash ledgers for traceability
+The system operates intraday strategies in real time with fully automated, risk-weighted execution. All risk controls are enforced exclusively via .env_bot parameters (DAILY_LOSS_LIMIT, MAX_RISK_PER_TRADE, TOTAL_ALLOCATION, MAX_OPEN_POSITIONS, etc.). **All trade output is logged immutably to OFX-compliant, entity-scoped SQLite ledgers with double-entry enforcement and UTC timestamps.**
 
----
+**Bot bootstrap is initiated solely through a required Web UI submission (`configuration.html`), which invokes `configuration_web.py` and the required init scripts.** This is the exclusive entry point for creating users, credentials, system logs, identity metadata, and initial Chart of Accounts (COA)—CLI-based initialization is explicitly forbidden.
 
-Quick Start (Paper Mode Only)
+**COA Management and Editing:**
+- The bot's Chart of Accounts (COA) is self-contained and managed entirely within the bot instance.
+- **All COA creation, updates, and human-readable exports are performed via a dedicated COA Management page in the tbot_web UI.**
+- The default COA is generated on initial bootstrap and can be viewed or modified only through the Web UI. CLI or accounting system pushes are not permitted.
+- COA metadata is stored in the `coa_metadata` table with all required versioning and extensibility fields.
+- **All Web UI/admin logic for COA must utilize `utils_coa_web.py`, and all ledger/schema integration must utilize `coa_utils_ledger.py`, per the current directory specification.**
 
-1. Install Dependencies:
-   pip install -r requirements.txt
+**Accounting System Role (Post-Session Only):**
+- The accounting system may read/export ledgers and trade data after session completion for audit, reporting, or reconciliation.
+- All float injections, reserves, and transfers are executed externally after notification or on operator schedule; the bot only logs float deviation/rebalance events and does not manage any funds transfer.
+- All entity, broker, float, and config metadata used by the bot at runtime must be present in the locally decrypted config files (`.env_bot.enc`, `bot_identity.json.enc`) at session start. No runtime injection or modification by any external system is permitted.
 
-2. Configure .env and .env_bot with your credentials and parameters
+**Ledger and trade routing rules:**
+- All execution toggles are set via `.env_bot` (`ALPACA_ENABLED`, `IBKR_ENABLED`, etc.), with per-strategy toggles (`STRAT_OPEN_ENABLED`, `STRAT_MID_ENABLED`, `STRAT_CLOSE_ENABLED`).
+- **All trades and PnL activity must write to `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`**, with all ledger paths and metadata defined by internal config loaded at session start.
+- **The bot does not read, manage, or calculate float or ledger updates from any external system during runtime; all provisioning occurs during Web UI bootstrap or by manual config update only.**
 
-3. Encrypt your .env_bot:
-   python tbot_bot/security_bot.py encrypt
+PnL, float tracking, and revenue movements are ingested, reconciled, and logged by the accounting system only after session completion. TEST_MODE is deprecated and fully removed; all test routines are executed strictly via tbot_bot/test/ modules only.
 
-4. Run a paper session:
-   python tbot_bot/start_bot.py
+==============================
+System Instructions 
+==============================
 
-5. Monitor logs in logs/bot/paper/
-   View export in gnu_paper.gnucash
+1. All environment-specific values MUST be sourced ONLY from `.env`, `.env_enc`, `.env_bot`, `.env_bot.enc`. No hardcoded API keys, thresholds, credentials, toggles, file paths, or mode flags. `DISABLED ≠ OMITTED`: All logic must explicitly evaluate suppressed (disabled) states.
 
----
+2. Inline comments REQUIRED in all generated code: logic branches, `.env_bot` references, and all condition paths must be clearly explained.
 
-Live Trading Mode
+3. All file paths must be relative and platform-agnostic. Code must run unmodified on macOS, Linux, and all prod servers.
 
-1. In .env_bot:
-   - Set TEST_MODE=false
-   - Set ALPACA_MODE=live or IBKR_MODE=live
-   - Ensure FORCE_PAPER_EXPORT=false
+4. Ledger routing: All trade activity writes to the OFX-compliant, entity-scoped SQLite ledger. Ledger filename: `{ENTITY_CODE}_{JURISDICTION_CODE}_{account_name}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db` (account_name = lowercase ledger tag). **Ledger path, float, and all metadata are resolved at session start from internal config files; the bot NEVER receives runtime injection or push from any external system.** All ledger writes must be preceded by a backup. Test modules under `tbot_bot/test/` may simulate trade placement but **must NEVER alter or bypass production ledger logic**.
 
-2. Confirm API credentials are valid and risk settings are configured
+5. NO re-ingestion of `.csv` or `.json` logs permitted: external audit artifacts only.
 
-3. Start the bot:
-   python tbot_bot/start_bot.py
+6. Every strategy module must implement `.self_check()`. `main.py` must halt if any `.self_check()` fails. Failures must log strategy, reason, error context, with UTC timestamp.
 
-4. Outputs go to:
-   - logs/bot/live/
-   - gnu_live.gnucash
-   - daily_summary_live.json
+7. `env_bot.py` must validate all required keys from `.env_bot.enc`, decrypted using `storage/keys/env.key`. Missing/malformed keys must raise a fatal, human-readable startup error.
 
----
+8. Logs and ledger outputs must include: `timestamp`, `strategy_name`, `ticker`, `side`, `size`, `entry_price`, `exit_price`, `PnL`, `broker`, `error_code` (if applicable). Logs must use global `LOG_FORMAT` (CSV/JSON) from `.env_bot`.
 
-Web Dashboard (Optional)
+9. `VERSION.md` is mandatory: must include version tag, structural changes, logic differences, and behavior deltas.
 
-1. Launch API Server:
-   uvicorn tbot_api.main_api:app --host 0.0.0.0 --port 6900 --reload
+10. All modules must remain executable independently. Core logic (`tbot_bot/`) must NEVER import from Flask or `tbot_web/`. Web UI is independent and must not affect trading logic or risk controls. **Bootstrap scripts (`init_system_users.py`, `init_system_logs.py`, etc.) are executed ONLY via the Web UI upon `configuration.html` form submission, triggered by `configuration_web.py`. CLI-based bootstrap of user/credential/log systems is no longer supported.**
 
-2. Visit in browser:
-   http://localhost:6900/index.html
+11. Strategy routing and broker enablement must be toggled ONLY via `.env_bot`: `ALPACA_ENABLED`, `IBKR_ENABLED`, `STRAT_OPEN_ENABLED`, `STRAT_MID_ENABLED`, `STRAT_CLOSE_ENABLED`.
 
-3. Use AES-encrypted login credentials from .env
+12. **The Chart of Accounts (COA) for the bot is fully self-contained and managed solely through a dedicated COA Management page in the tbot_web UI. All creation, modification, and export of the COA must occur via the Web UI. No CLI utilities, accounting system pushes, or external edits are permitted. The COA must be versioned, validated at runtime, and stored as both a JSON structure and a SQLite metadata table. All Web UI COA operations must use `utils_coa_web.py` and all ledger/schema operations must use `coa_utils_ledger.py`.**
 
----
+13. Improvisation is FORBIDDEN. Clarify ambiguities before code changes. STRICT deterministic, auditable logic only.
 
-Configuration Files
+================================================================================
+Deployment Notes 
+================================================================================
 
-.env:
-- Broker keys
-- Finnhub API
-- SMTP settings
-- Encryption key
+- All paths must be relative and cross-platform compatible (macOS, Linux, cloud).
+- `tbot_bot/` must run independently of `tbot_web/`; core trading must continue if web UI is disabled.
+- Logs, ledger exports, and backup behavior remain active regardless of web interface state.
+- Only one broker should be enabled (`BROKER_NAME=ALPACA`, `ALPACA_ENABLED=true`, etc.).
+- Broker API keys from `.env` must validate at startup—failure causes immediate shutdown.
+- Strategy toggles: `STRAT_OPEN_ENABLED`, `STRAT_MID_ENABLED`, `STRAT_CLOSE_ENABLED`.
+- Pre-trade validation includes:
+  - Market spread ≤ 1.5% of entry price
+  - Volume ≥ `MIN_VOLUME_THRESHOLD`
+  - No violations of `MAX_RISK_PER_TRADE` or `DAILY_LOSS_LIMIT`
+- Auto-shutdown triggers:
+  - Broker API failure (`watchdog_bot.py`)
+  - Critical runtime error (`error_handler.py`)
+  - Loss breach (`kill_switch.py`)
+- Ledger write format: `entities/{ENTITY}_{JURIS}_{account}_{BROKER}_{BOT_ID}_BOT_ledger.db`
+- Each ledger write is preceded by a timestamped backup (`backup_ledgers.py`): `entities/{ENTITY}_{JURIS}/backups/`
+- OFX exports are generated only by `/export/generate_ofx.py`
+- Log files: `/output/logs/open.log`, `/mid.log`, `/close.log`, `/unresolved_orders.log`
+- Post-session logs may be zipped/archived (`auto_backup.py`)
+- Optional cloud sync: `scripts/upload_backups_to_cloud.sh`
+- Backups must not block live ledger writes; all archives are timestamped
+- Session timing: `.env_bot` defines `START_TIME_*`, `[STRAT]_ANALYSIS_TIME`, `[STRAT]_MONITORING_TIME`
+- Respect `TRADING_DAYS`—block execution on weekends/holidays
 
-.env_bot:
-- Strategy logic
-- Trade timing
-- Capital allocation
-- Risk limits
-- Logging and mode control
+--------------------------------------------------------------------------------
+COA/Schema Enforcement 
+--------------------------------------------------------------------------------
 
-Encrypted:
-- Run security_bot.py to encrypt/decrypt .env_bot
+- All bot ledger files **must** match the schema defined in `tbot_bot/accounting/tbot_ledger_schema.sql` and the COA defined in `tbot_bot/accounting/tbot_ledger_coa.json`.
+- The COA must be present in each bot ledger as a dedicated table (`coa_metadata`) containing: `currency_code`, `entity_code`, `jurisdiction_code`, `coa_version`, `created_at_utc`, `last_updated_utc`.
+- Any schema or COA mismatch at runtime (detected by `build_check.py` or ledger init scripts) must block execution and log a fatal error.
+- The bot’s COA is self-contained and managed exclusively via the tbot_web UI (`coa_web.py`, `coa.html`). All edits and exports are performed here; no external push/pull from accounting.
+- Human-readable COA exports are generated by the web UI and stored in `/output/ledgers/` for reference/audit.
+- On new ledger creation, the COA table is initialized from the internal COA (default or UI-edited version) and locked for double-entry enforcement.
+- All account transactions are validated against the COA at time of entry.
+- **COA operations in the UI must use `utils_coa_web.py`; ledger and schema checks must use `coa_utils_ledger.py`.**
 
----
+================================================================================
+Current Platforms (Single Broker)
+================================================================================
 
-File Output Summary
+Development:
+- Local dev on macOS 15.2, Python 3.11+
+- macOS/Linux compatible only (no platform-specific code)
+- Use VS Code, Black/Ruff for linting/formatting
+- Scripts run via terminal or cron, not GUI
+- Test logs/export saved to `logs/bot/sessions/`, `backups/`
 
-Paper Mode:
-- open_paper.log
-- mid_paper.log
-- close_paper.log
-- trade_history_paper.csv / .json
-- daily_summary_paper.json
-- gnu_paper.gnucash
+Production:
+- Runs on Ubuntu 22.04 LTS (DigitalOcean)
+- Deployed via SCP/SFTP or `git pull` to prod branch
+- Run modes:
+  - `start_bot.py` (manual/cron)
+  - `service_bot.py` (systemd optional)
+- Logs:
+  - `output/logs/*.log` – strategy + unresolved
+  - `output/summaries/` – session summaries
+  - `output/trades/` – CSV/JSON
 
-Live Mode:
-- open_live.log
-- mid_live.log
-- close_live.log
-- trade_history_live.csv / .json
-- daily_summary_live.json
-- gnu_live.gnucash
+Brokers:
+- One active broker per bot
+- Broker, float, and related metadata assigned by internal config loaded at bootstrap (`.env_bot.enc`, `bot_identity.json.enc`)
+- Modular integrations:
+  - Alpaca (default equities)
+  - IBKR (ETFs, puts)
+  - Tradier/Webull (test only)
+- Each must pass `.self_check()`
 
----
+Market Data:
+- Finnhub API via `screeners/finnhub_screener.py`
+- Pre/intraday/afterhours scan modes
+- Filters: volume, float, price, gap via `.env_bot`
 
-Key Features
+Accounting:
+- All trades and ledgers are available for post-session ingestion/export by the accounting system for audit, reporting, and reconciliation.
+- Ledger format: `{ENTITY}_{JURIS}_{BROKER}_{BOT_ID}_BOT_ledger.db`
+- Structure in `ledger_schema.py`, OFX-compliant
+- **COA required:** Each ledger is initialized and validated against `tbot_ledger_schema.sql` and `tbot_ledger_coa.json`, with a `coa_metadata` table and account hierarchy included at creation.
+- OFX exports only via `generate_ofx.py`
+- TradeBot does not emit CSV for ledgers; all CSV/JSON outputs are for human audit only
 
-- Broker Support: Alpaca, IBKR (live + paper)
-- Strategy Modules: open, mid, close (toggle independently)
-- Risk Management: stop-loss, allocation caps, daily loss limits
-- Trade Direction: long and bearish (put/ETF)
-- Log Format: JSON or CSV (configurable)
-- Failover: kill switch, error handler, watchdog
-- GnuCash: double-entry exports with backups
-- Enhancements: ADX, Bollinger, VIX, imbalance scanner
-- Test Mode: safe API-only test of entire system
-- Web UI: optional control and monitoring interface
-- Backtesting: fully compatible with strategy logic
+Web Interface:
+- `tbot_web/` Flask dashboard
+- Features:
+  - AES login (key in `.env`)
+  - Config UI
+  - Logs/status via `status.json`
+  - Start/Stop: `control_start.txt`, `control_stop.txt`
+  - **COA management:** COA can be viewed and edited exclusively through a dedicated tbot_web UI page. Human-readable COA export available for reference.
 
----
+Alerts:
+- Optional SMTP email via `.env`:
+  - `NOTIFY_ON_FILL=true`, `NOTIFY_ON_EXIT=true`
+- SMTP creds from DreamHost/etc. in `.env`
 
-Testing & Validation
+Security:
+- `.env_bot` encrypted → `.env_bot.enc` via `tools/encrypt_env_bot.py`
+- AES key in `.env` as `ENV_BOT_KEY`
+- All encrypted files ignored via `.scpignore_*`
+- All core configuration and COA management is handled exclusively through the Web UI; no CLI-based COA/credential initialization.
 
-1. Run Unit Tests:
-   pytest tbot_bot/tests/
+Backup:
+- Logs + ledgers archived via `auto_backup.py`
+- Stored under `backups/`, upload via `upload_backups_to_cloud.sh`
+- Secondary replication recommended (FTP/S3/ProtonVault)
 
-2. Confirm integration:
-   python tbot_bot/tests/integration_test_runner.py
+Deployment Verification:
+- Dry-run test required pre-live
+- Must confirm:
+  - Broker API up
+  - Trade logs written
+  - Ledger writes (COA present and schema validated)
+  - Strategy triggers
+  - Alerts (if configured)
 
-3. Verify:
-   - Paper trade logs
-   - GnuCash export
-   - No errors or invalid trades
+Recovery:
+- Backups must be timestamped + encrypted
+- Mirror logs/ledgers to vault at EOD
+- Regular integrity checks on `backups/` for audit/failure recovery
 
----
+================================================================================
+Time Zone Standards
+================================================================================
 
-Security Best Practices
+- All time variables, logs, strategy triggers, ledger entries, and alerts use **UTC (Coordinated Universal Time)**—this is enforced system-wide.
+- Strategy start times in `.env_bot` (e.g., `START_TIME_OPEN`, `START_TIME_MID`, `START_TIME_CLOSE`) must be specified in UTC.
+- Ledger writes (e.g., `entities/{ENTITY}_{JURIS}_{BROKER}_{BOT_ID}_BOT_ledger.db`) **must set `DTPOSTED` and all OFX timestamps in UTC**.
+- All COA/ledger metadata tables (`coa_metadata`) include `created_at_utc` and `last_updated_utc` fields, set in UTC at creation/update.
+- Internal comparisons in `strategy_router.py`, `status_bot.py`, and time utilities must always convert or standardize to UTC before decision logic or log writes.
+- **Rationale:** UTC eliminates ambiguity from DST, local zones, or server environments; ensures OFX compliance, reliable cross-entity reconciliation, and robust scheduling for distributed deployments.
+- **Example mapping:**
+  - 14:30 UTC → 9:30 AM EST (Market Open)
+  - 15:30 UTC → 10:30 AM EST (Midday)
+  - 19:30 UTC → 2:30 PM EST (Close)
+- **Local debugging:** Always convert between UTC and {JURIS} zone before interpreting logs or DB entries.
+- **Best practice:** Implement and use in `utils_time.py` (not `utils_bot.py`):
 
-- Always encrypt .env_bot before deployment
-- Exclude .env, .env_bot, and *.gnucash from git/SCP
-- Never write to gnu_live.gnucash while TEST_MODE=true
-- Use FORCE_PAPER_EXPORT=true to test live trades safely
-- Use GNC_EXPORT_MODE=auto for automatic ledger writes
+```python
+from datetime import datetime, timezone
 
----
-
-Supported Assets
-
-- Long equity (Alpaca, IBKR)
-- Inverse ETFs (all brokers)
-- Long puts (IBKR only)
-- Shorting disabled unless explicitly configured
-
----
-
-Compatible Platforms
-
-- macOS 15.2+
-- Ubuntu 22.04 LTS (DigitalOcean)
-- Python 3.11+
-- FastAPI, Uvicorn, Pydantic, requests, cryptography
-
----
-
-Version
-
-VERSION=v1.0.0
-See VERSION.md for full changelog
-
----
-
-License
-
-© 2025 Knetoscope Inc. Internal use only. All rights reserved.
+def utc_now():
+    return datetime.utcnow().replace(tzinfo=timezone.utc)

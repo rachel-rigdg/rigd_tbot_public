@@ -28,7 +28,7 @@ sys.path.insert(0, str(CONFIG_PATH))
 from tbot_bot.config.key_manager import main as key_manager_main
 from tbot_bot.config.provisioning_helper import main as provisioning_helper_main
 from tbot_bot.config.bootstrapping_helper import main as bootstrapping_helper_main
-from tbot_bot.config.db_bootstrap import main as db_bootstrap_main
+from tbot_bot.config.db_bootstrap import initialize_all as db_bootstrap_main
 
 def write_status(status_file, state, detail=""):
     status = {
