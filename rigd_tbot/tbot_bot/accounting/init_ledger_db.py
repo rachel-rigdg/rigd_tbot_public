@@ -24,6 +24,7 @@ def init_ledger_db(entity_code=None, jurisdiction_code=None, broker_code=None, b
     """
     Creates a new OFX-compliant ledger DB for this bot instance using the project schema.
     If arguments are None, use decrypted bot_identity.
+    If ledger DB already exists, skip creation and return.
     """
     if not all([entity_code, jurisdiction_code, broker_code, bot_id]):
         key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
@@ -38,7 +39,8 @@ def init_ledger_db(entity_code=None, jurisdiction_code=None, broker_code=None, b
     ledger_db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     schema_path = resolve_ledger_schema_path()
     if os.path.exists(ledger_db_path):
-        raise FileExistsError(f"Ledger DB already exists: {ledger_db_path}")
+        print(f"[init_ledger_db] Ledger DB already exists: {ledger_db_path}, skipping creation.")
+        return
     with open(schema_path, "r", encoding="utf-8") as schema_file:
         schema_sql = schema_file.read()
     os.makedirs(os.path.dirname(ledger_db_path), exist_ok=True)

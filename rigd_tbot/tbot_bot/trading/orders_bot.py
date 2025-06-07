@@ -6,7 +6,7 @@ Creates and sends orders through the broker API interface.
 Handles both market and stop-loss logic based on config.
 """
 
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.broker.broker_api import place_order, close_position
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event

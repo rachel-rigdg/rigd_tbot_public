@@ -10,8 +10,8 @@ import time
 from datetime import datetime
 from threading import Lock, Thread
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now          # UPDATED: Import from time_utils
-from tbot_bot.support.utils_log import log_event     # UPDATED: Import from logging_utils
+from tbot_bot.support.utils_time import utc_now          # UPDATED: Import from utils_time
+from tbot_bot.support.utils_log import log_event     # UPDATED: Import from utils_log
 
 # Thread-safe singleton class to hold live bot status
 class BotStatus:

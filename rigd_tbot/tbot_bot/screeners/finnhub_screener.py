@@ -7,15 +7,15 @@ import time
 import json
 from datetime import datetime
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.time_utils import utc_now               # UPDATED: from time_utils
-from tbot_bot.support.logging_utils import log_event           # UPDATED: from logging_utils
-from tbot_bot.support.decrypt_secrets import get_decrypted_json  # [SURGICAL] Use secure API key access
+from tbot_bot.support.utils_time import utc_now               # UPDATED: from utils_time
+from tbot_bot.support.utils_log import log_event           # UPDATED: from utils_log
+from tbot_bot.support.decrypt_secrets import decrypt_json  # [SURGICAL] Use secure API key access
 
 config = get_bot_config()
 
 # [SURGICAL] Securely fetch API key from decrypted secrets
-FINNHUB_API_KEY = get_decrypted_json("storage/secrets/screener_api.json.enc").get("FINNHUB_API_KEY", "")
-TEST_MODE = config["TEST_MODE"]
+FINNHUB_API_KEY = decrypt_json("screener_api").get("FINNHUB_API_KEY", "")
+TEST_MODE = config.get("TEST_MODE", False)
 LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 
 EXCHANGES = config.get("EXCHANGES", "US").split(",")

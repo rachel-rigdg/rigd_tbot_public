@@ -76,9 +76,13 @@ def save_configuration():
     with open(TMP_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
 
-    # Create provisioning flag for runner
-    PROVISION_FLAG_PATH.touch()
-
+   # Create provisioning flag for runner
+    try:
+        PROVISION_FLAG_PATH.touch()
+        print(f"[configuration_web] PROVISION_FLAG written: {PROVISION_FLAG_PATH}")
+    except Exception as e:
+        print(f"[configuration_web] ERROR writing PROVISION_FLAG: {e}")
+        
     print("[configuration_web] Configuration saved. Triggering provisioning on redirect.")
     session["trigger_provisioning"] = True
     session.modified = True

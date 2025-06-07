@@ -4,9 +4,9 @@
 import time
 from datetime import datetime, timedelta
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.time_utils import utc_now                      # UPDATED: from time_utils
-from tbot_bot.support.logging_utils import log_event                 # UPDATED: from logging_utils
-from tbot_bot.support.etf_utils import get_inverse_etf               # UPDATED: from etf_utils
+from tbot_bot.support.utils_time import utc_now                      # UPDATED: from utils_time
+from tbot_bot.support.utils_log import log_event                 # UPDATED: from utils_log
+from tbot_bot.support.utils_etf import get_inverse_etf               # UPDATED: from utils_etf
 from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.strategy.strategy_meta import StrategyResult

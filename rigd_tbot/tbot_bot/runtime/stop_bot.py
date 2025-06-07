@@ -9,8 +9,8 @@ Triggered manually or via the API/web interface to ensure safe shutdown.
 from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.runtime.status_bot import bot_status
-from tbot_bot.support.utils_time import utc_now              # UPDATED: from time_utils
-from tbot_bot.support.utils_log import log_event         # UPDATED: from logging_utils
+from tbot_bot.support.utils_time import utc_now              # UPDATED: from utils_time
+from tbot_bot.support.utils_log import log_event         # UPDATED: from utils_log
 from tbot_bot.reporting.summary_bot import generate_session_summary
 from tbot_bot.broker.broker_api import get_broker_interface  # Unified broker interface loader
 

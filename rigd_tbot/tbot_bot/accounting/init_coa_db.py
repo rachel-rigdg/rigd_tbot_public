@@ -35,8 +35,8 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
     print(f"[init_coa_db] COA template path: {coa_template_path}")
     os.makedirs(os.path.dirname(coa_db_path), exist_ok=True)
     if os.path.exists(coa_db_path):
-        print(f"[init_coa_db] Removing existing COA DB: {coa_db_path}")
-        os.remove(coa_db_path)
+        print(f"[init_coa_db] COA DB already exists: {coa_db_path}, skipping creation.")
+        return
     try:
         with open(coa_template_path, "r", encoding="utf-8") as template_file:
             coa_accounts = json.load(template_file)

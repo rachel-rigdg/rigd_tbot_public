@@ -8,8 +8,8 @@ Intended for systemd, supervisor, or other job schedulers to launch the bot.
 import time
 import subprocess
 from pathlib import Path
-from tbot_bot.support.time_utils import utc_now         # UPDATED: from time_utils
-from tbot_bot.support.logging_utils import log_event    # UPDATED: from logging_utils
+from tbot_bot.support.utils_time import utc_now         # UPDATED: from utils_time
+from tbot_bot.support.utils_log import log_event    # UPDATED: from utils_log
 
 # Path to bot runtime entry
 MAIN_BOT_PATH = Path(__file__).resolve().parents[1] / "runtime" / "main.py"

@@ -6,7 +6,7 @@ import time
 import subprocess
 from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_log import log_event  # UPDATED: from logging_utils
+from tbot_bot.support.utils_log import log_event  # UPDATED: from utils_log
 from tbot_bot.support.path_resolver import get_output_path
 
 # Load configuration (post-v1.0.0 — single-broker compliant)

@@ -4,7 +4,7 @@
 import time
 import requests
 from tbot_bot.config.env_bot import env_config
-from tbot_bot.support.utils_log import log_event   # UPDATED: from logging_utils
+from tbot_bot.support.utils_log import log_event   # UPDATED: from utils_log
 from tbot_bot.trading.kill_switch import trigger_shutdown
 
 BROKER_NAME = env_config.get("BROKER_NAME", "").lower()

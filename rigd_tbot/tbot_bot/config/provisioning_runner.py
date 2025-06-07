@@ -59,7 +59,7 @@ def clear_provision_flag():
 def trigger_tbot_bot_service():
     try:
         subprocess.run(
-            ["systemctl", "start", "tbot_bot.service"],
+            ['sudo', 'systemctl', 'start', 'tbot_bot.service'],
             check=True
         )
         print("[provisioning_runner] tbot_bot.service triggered via systemd.")

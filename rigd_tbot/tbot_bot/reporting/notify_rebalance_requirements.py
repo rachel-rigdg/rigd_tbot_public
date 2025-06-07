@@ -4,7 +4,7 @@
 import time
 from tbot_bot.config.env_bot import env_config
 from tbot_bot.support.utils_time import utc_now
-from tbot_bot.support.identity_utils import get_bot_identity
+from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
 from tbot_bot.accounting.accounting_api import post_rebalance_entry

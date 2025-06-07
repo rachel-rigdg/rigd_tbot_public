@@ -19,6 +19,7 @@ sudo systemctl daemon-reload
 
 sudo systemctl enable tbot_web.service tbot_provisioning.service tbot_bot.service
 sudo systemctl start tbot_web.service
+sudo systemctl start tbot_provisioning.service
 
 echo "$LOG_TAG TradeBot Web UI launched using systemd (tbot_web.service)."
 echo "$LOG_TAG Proceed to configure the bot using the web UI."

@@ -8,8 +8,8 @@ from tbot_bot.strategy.strategy_open import run_open_strategy
 from tbot_bot.strategy.strategy_mid import run_mid_strategy
 from tbot_bot.strategy.strategy_close import run_close_strategy
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.time_utils import utc_now                 # UPDATED: from time_utils
-from tbot_bot.support.logging_utils import log_event            # UPDATED: from logging_utils
+from tbot_bot.support.utils_time import utc_now                 # UPDATED: from utils_time
+from tbot_bot.support.utils_log import log_event            # UPDATED: from utils_log
 
 # Load strategy config
 config = get_bot_config()
