@@ -68,7 +68,7 @@ def start_watchdog():
 
     if not ok:
         log_event("watchdog_bot", "Connectivity check failed — initiating shutdown.")
-        trigger_shutdown()
+        trigger_shutdown(reason="Broker connectivity failure detected by watchdog")
     else:
         log_event("watchdog_bot", "Broker API connectivity OK")
 

@@ -1,5 +1,5 @@
 # tbot_bot/strategy/strategy_router.py
-# Routes execution to correct strategy based on UTC time
+# Routes execution to correct strategy based on UTC time with market hours gating and strategy start times
 
 import time
 from datetime import datetime, time as dt_time
@@ -29,6 +29,9 @@ START_TIME_OPEN = parse_start_time(config.get("START_TIME_OPEN", "14:30"))
 START_TIME_MID = parse_start_time(config.get("START_TIME_MID", "15:30"))
 START_TIME_CLOSE = parse_start_time(config.get("START_TIME_CLOSE", "19:30"))
 
+MARKET_OPEN_TIME = parse_start_time(config.get("MARKET_OPEN_TIME", "14:30"))  # e.g. 9:30 AM EST in UTC
+MARKET_CLOSE_TIME = parse_start_time(config.get("MARKET_CLOSE_TIME", "20:00"))  # e.g. 4:00 PM EST in UTC
+
 SLEEP_TIME_STR = config.get("SLEEP_TIME", "1s")
 def parse_sleep_time(sleep_str):
     if sleep_str.endswith("s"):
@@ -40,15 +43,24 @@ def parse_sleep_time(sleep_str):
 
 SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
+def is_market_open(now: dt_time) -> bool:
+    return MARKET_OPEN_TIME <= now <= MARKET_CLOSE_TIME
+
 def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
-    Main router to select and execute strategy based on UTC time or manual override.
+    Main router to select and execute strategy based on UTC time or manual override,
+    enforcing market hours and individual strategy start times.
     """
     now = current_utc_time or utc_now().time()
 
     if override:
         log_event("router", f"Manual strategy override: {override}")
         return execute_strategy(override.strip().lower())
+
+    if not is_market_open(now):
+        log_event("router", f"Market closed at {now}, skipping all strategies.")
+        time.sleep(SLEEP_TIME)
+        return StrategyResult(skipped=True)
 
     for s in STRATEGY_SEQUENCE:
         if s == "open" and STRAT_OPEN_ENABLED and now >= START_TIME_OPEN:

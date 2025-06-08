@@ -55,6 +55,7 @@ def safe_exit():
 def close_all_positions_immediately():
     # Placeholder for immediate close logic; integrate actual close routine here
     print("[main_bot] Immediate kill detected. Closing all positions now.")
+    log_event("main_bot", "Immediate kill detected. Closing all positions now.")
     update_bot_state("emergency_closing_positions")
     # TODO: Insert real close positions logic here
 
@@ -81,6 +82,7 @@ def main():
         # Step 5: Determine strategy execution order (overridden or default)
         strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
         print(f"[main_bot] Strategy sequence: {strategies}")
+        log_event("main_bot", f"Strategy sequence: {strategies}")
 
         print("[main_bot] TradeBot startup successful — main runtime active.")
         log_event("main_bot", "TradeBot startup successful — main runtime active.")
@@ -99,6 +101,7 @@ def main():
 
             if DISABLE_ALL_TRADES:
                 print(f"[main_bot] Trading disabled. Skipping {strat_name}")
+                log_event("main_bot", f"Trading disabled. Skipping {strat_name}")
                 continue
 
             run_strategy(override=strat_name)
@@ -108,12 +111,14 @@ def main():
             # After each strategy, check for stop flag (graceful exit after current)
             if STOP_FLAG.exists():
                 print("[main_bot] Graceful stop detected. Will shut down after current strategy.")
+                log_event("main_bot", "Graceful stop detected. Will shut down after current strategy.")
                 graceful_stop = True
                 break
 
         # Step 7: Close all positions after graceful stop or kill, then shutdown state logging
         if graceful_stop:
             print("[main_bot] Executing graceful shutdown after strategy completion. Closing positions.")
+            log_event("main_bot", "Executing graceful shutdown after strategy completion. Closing positions.")
             update_bot_state("graceful_closing_positions")
             # TODO: Insert real close positions logic here
 
