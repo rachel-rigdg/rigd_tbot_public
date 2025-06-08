@@ -1,21 +1,18 @@
 # tbot_bot/screeners/finnhub_screener.py
 # summary: Screens symbols using Finnhub price, volume, and VWAP data (strategy-specific filters)
 
-import os
 import requests
 import time
 import json
 from datetime import datetime
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now               # UPDATED: from utils_time
-from tbot_bot.support.utils_log import log_event           # UPDATED: from utils_log
-from tbot_bot.support.decrypt_secrets import decrypt_json  # [SURGICAL] Use secure API key access
+from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_log import log_event
+from tbot_bot.support.decrypt_secrets import decrypt_json
 
 config = get_bot_config()
 
-# [SURGICAL] Securely fetch API key from decrypted secrets
 FINNHUB_API_KEY = decrypt_json("screener_api").get("FINNHUB_API_KEY", "")
-TEST_MODE = config.get("TEST_MODE", False)
 LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 
 EXCHANGES = config.get("EXCHANGES", "US").split(",")
@@ -109,9 +106,7 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
     all_symbols = get_symbol_list()
     log(f"Fetched {len(all_symbols)} total symbols")
     results = []
-    start_time = datetime.utcnow()
 
-    # Strategy-specific filters
     gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
     min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
     max_cap_key = f"MAX_MARKET_CAP_{strategy.upper()}"
@@ -121,10 +116,6 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
     max_cap = float(config.get(max_cap_key, 1e10))
 
     for idx, symbol in enumerate(all_symbols):
-        if TEST_MODE and (datetime.utcnow() - start_time).total_seconds() >= 60:
-            log_event("screener", f"Test mode cutoff triggered at {idx} symbols.")
-            break
-
         if symbol in session_exclusions or symbol in hard_exclusions:
             log_event("screener", f"Excluded symbol: {symbol}")
             continue
@@ -149,40 +140,29 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
             log_event("screener", f"Rejected: Price exceeds MAX_PRICE and FRACTIONAL disabled for {symbol} = {current}")
             continue
 
-        if TEST_MODE:
-            results.append({
-                "symbol": symbol,
-                "price": current,
-                "vwap": vwap
-            })
-        else:
-            market_cap = get_market_cap(symbol)
-            if not (market_cap and min_cap <= market_cap <= max_cap):
-                log_event("screener", f"Rejected: Market cap out of range for {symbol} = {market_cap}")
-                continue
+        market_cap = get_market_cap(symbol)
+        if not (market_cap and min_cap <= market_cap <= max_cap):
+            log_event("screener", f"Rejected: Market cap out of range for {symbol} = {market_cap}")
+            continue
 
-            gap = abs((current - open_) / open_)
-            if gap > max_gap:
-                log_event("screener", f"Rejected: Gap {gap:.2%} > max {max_gap:.2%} for {symbol}")
-                continue
+        gap = abs((current - open_) / open_)
+        if gap > max_gap:
+            log_event("screener", f"Rejected: Gap {gap:.2%} > max {max_gap:.2%} for {symbol}")
+            continue
 
-            momentum = abs(current - open_) / open_
-            results.append({
-                "symbol": symbol,
-                "price": current,
-                "vwap": vwap,
-                "momentum": momentum
-            })
+        momentum = abs(current - open_) / open_
+        results.append({
+            "symbol": symbol,
+            "price": current,
+            "vwap": vwap,
+            "momentum": momentum
+        })
 
         if idx % 50 == 0:
             log(f"Checked {idx} symbols...")
         time.sleep(1.0)
 
-    if TEST_MODE:
-        results.sort(key=lambda x: x["price"], reverse=True)
-    else:
-        results.sort(key=lambda x: x["momentum"], reverse=True)
-
+    results.sort(key=lambda x: x["momentum"], reverse=True)
     top = results[:limit]
     log_event("screener", f"Selected top {len(top)} candidates from {len(all_symbols)}")
     return top
