@@ -41,10 +41,6 @@ REQUIRED_KEYS = [
     "LEDGER_EXPORT_MODE"
 ]
 
-OPTIONAL_KEYS = [
-    "BROKER_NAME", "BROKER_URL", "BROKER_API_KEY", "BROKER_SECRET_KEY",
-    "FINNHUB_API_KEY"
-]
 
 def decrypt_env_bot(encryption_key: str) -> Dict[str, Any]:
     """

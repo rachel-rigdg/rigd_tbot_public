@@ -18,15 +18,17 @@ from tbot_bot.enhancements.ticker_blocklist import is_ticker_blocked
 from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.trading.risk_bot import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
+from tbot_bot.support.decrypt_secrets import decrypt_json
 
 config = get_bot_config()
+broker_creds = decrypt_json("broker_credentials")
+BROKER_CODE = broker_creds.get("BROKER_CODE", "").lower()
 
 STRAT_CLOSE_ENABLED = config["STRAT_CLOSE_ENABLED"]
 CLOSE_ANALYSIS_TIME = int(config["CLOSE_ANALYSIS_TIME"])
 CLOSE_MONITORING_TIME = int(config["CLOSE_MONITORING_TIME"])
 VIX_THRESHOLD = float(config["STRAT_CLOSE_VIX_THRESHOLD"])
 SHORT_TYPE_CLOSE = config["SHORT_TYPE_CLOSE"]
-BROKER_NAME = config.get("BROKER_NAME", "").lower()
 ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
@@ -140,7 +142,7 @@ def monitor_closing_trades(signals, start_time):
                         if not instrument:
                             log_event("strategy_close", f"No inverse ETF mapping for {symbol}, skipping short trade")
                             continue
-                        side_exec = "buy"  # Inverse ETF is long position
+                        side_exec = "buy"
 
                     elif SHORT_TYPE_CLOSE == "LongPut":
                         instrument = get_put_option(symbol)
@@ -150,9 +152,9 @@ def monitor_closing_trades(signals, start_time):
                         side_exec = "buy"
 
                     elif SHORT_TYPE_CLOSE in ("Short", "Synthetic"):
-                        short_spec = get_short_instrument(symbol, BROKER_NAME, short_type=SHORT_TYPE_CLOSE)
+                        short_spec = get_short_instrument(symbol, BROKER_CODE, short_type=SHORT_TYPE_CLOSE)
                         if not short_spec:
-                            log_event("strategy_close", f"No valid short method for {symbol} on {BROKER_NAME}")
+                            log_event("strategy_close", f"No valid short method for {symbol} on {BROKER_CODE}")
                             continue
                         instrument = short_spec.get("symbol", symbol)
                         side_exec = short_spec.get("side", "sell")

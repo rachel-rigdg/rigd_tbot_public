@@ -9,11 +9,12 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.trading.instruments import resolve_bearish_instrument
 from tbot_bot.support.utils_log import log_event
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.decrypt_secrets import decrypt_json
 
-# Load config
+# Load config and broker credentials
 config = get_bot_config()
-BROKER_NAME = config.get("BROKER_NAME", "ALPACA").upper()
+broker_creds = decrypt_json("broker_credentials")
+BROKER_CODE = broker_creds.get("BROKER_CODE", "").upper()
 ACCOUNT_BALANCE = float(config.get("ACCOUNT_BALANCE", 100000))
 MAX_RISK_PER_TRADE = float(config.get("MAX_RISK_PER_TRADE", 0.01))
 CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE

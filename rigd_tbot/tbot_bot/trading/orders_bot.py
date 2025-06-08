@@ -10,16 +10,17 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.broker.broker_api import place_order, close_position
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
+from tbot_bot.support.decrypt_secrets import decrypt_json
 
-# Load config from get_bot_config for single broker mode
 config = get_bot_config()
 MAX_RISK_PER_TRADE = config.get("MAX_RISK_PER_TRADE", 0.025)
 FRACTIONAL = config.get("FRACTIONAL", True)
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
 
-# Use single BROKER_NAME from config (mandatory)
-BROKER_NAME = config.get("BROKER_NAME", "ALPACA").lower()
+# Retrieve BROKER_CODE (BROKER_NAME) from broker_credentials.json.enc (not .env_bot)
+broker_creds = decrypt_json("broker_credentials")
+BROKER_NAME = broker_creds.get("BROKER_CODE", "ALPACA").lower()
 
 def create_order(symbol, side, capital, price, stop_loss_pct=0.02, strategy=None):
     """
@@ -59,11 +60,11 @@ def create_order(symbol, side, capital, price, stop_loss_pct=0.02, strategy=None
         "timestamp": utc_now().isoformat(),
         "trailing_stop_pct": stop_loss_pct,
         "broker": BROKER_NAME,
-        "account": "live"  # Single mode: no live/paper split
+        "account": "live"
     }
 
-    success, response = place_order(order)
-    if not success:
+    response = place_order(order)
+    if isinstance(response, dict) and response.get("error"):
         log_event("orders_bot", f"Order failed for {symbol}: {response}")
         return None
 
@@ -87,11 +88,11 @@ def exit_order(symbol, side, qty, strategy=None):
         "strategy": strategy,
         "timestamp": utc_now().isoformat(),
         "broker": BROKER_NAME,
-        "account": "live"  # Single mode only
+        "account": "live"
     }
 
-    success, response = close_position(order)
-    if not success:
+    response = close_position(order)
+    if isinstance(response, dict) and response.get("error"):
         log_event("orders_bot", f"Exit order failed for {symbol}: {response}")
         return None
 

@@ -9,17 +9,23 @@ Triggered manually or via the API/web interface to ensure safe shutdown.
 from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.runtime.status_bot import bot_status
-from tbot_bot.support.utils_time import utc_now              # UPDATED: from utils_time
-from tbot_bot.support.utils_log import log_event         # UPDATED: from utils_log
+from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_log import log_event
 from tbot_bot.reporting.summary_bot import generate_session_summary
-from tbot_bot.broker.broker_api import get_active_broker  # Unified broker interface loader
+from tbot_bot.broker.broker_api import get_active_broker
+from tbot_bot.support.decrypt_secrets import decrypt_json
 
 def stop_bot_session():
     config = get_bot_config()
-
-    # Load broker using unified adapter (no longer uses BROKER_CODE/_MODE logic)
     try:
-        broker = get_active_broker()  # Handles adapter selection based on BROKER_NAME
+        broker_creds = decrypt_json("broker_credentials")
+    except Exception as e:
+        log_event("stop_bot", f"Failed to decrypt broker credentials: {e}")
+        bot_status.increment_error_count()
+        return
+
+    try:
+        broker = get_active_broker()
     except Exception as e:
         log_event("stop_bot", f"Failed to initialize broker interface: {e}")
         bot_status.increment_error_count()
@@ -59,7 +65,6 @@ def stop_bot_session():
     log_event("stop_bot", f"Shutdown complete at {utc_now().isoformat()}")
     bot_status.set_state("idle")
 
-    # Write shutdown flag to control file
     CONTROL_DIR = config.get("CONTROL_DIR", "control")
     CONTROL_STOP_FILE = Path(CONTROL_DIR) / "control_stop.txt"
     CONTROL_STOP_FILE.parent.mkdir(parents=True, exist_ok=True)

@@ -15,8 +15,11 @@ from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.trading.risk_bot import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
+from tbot_bot.support.decrypt_secrets import decrypt_json
 
 config = get_bot_config()
+broker_creds = decrypt_json("broker_credentials")
+BROKER_CODE = broker_creds.get("BROKER_CODE", "").lower()
 
 STRAT_OPEN_ENABLED = config["STRAT_OPEN_ENABLED"]
 STRAT_OPEN_BUFFER = float(config["STRAT_OPEN_BUFFER"])
@@ -24,7 +27,6 @@ OPEN_ANALYSIS_TIME = int(config["OPEN_ANALYSIS_TIME"])
 OPEN_BREAKOUT_TIME = int(config["OPEN_BREAKOUT_TIME"])
 OPEN_MONITORING_TIME = int(config["OPEN_MONITORING_TIME"])
 SHORT_TYPE_OPEN = config["SHORT_TYPE_OPEN"]
-BROKER_NAME = config.get("BROKER_NAME", "").lower()
 ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
@@ -149,9 +151,9 @@ def detect_breakouts(start_time):
                         side = "buy"
 
                     elif SHORT_TYPE_OPEN in ("Short", "Synthetic"):
-                        short_spec = get_short_instrument(symbol, BROKER_NAME, short_type=SHORT_TYPE_OPEN)
+                        short_spec = get_short_instrument(symbol, BROKER_CODE, short_type=SHORT_TYPE_OPEN)
                         if not short_spec:
-                            log_event("strategy_open", f"No valid short method for {symbol} on {BROKER_NAME}")
+                            log_event("strategy_open", f"No valid short method for {symbol} on {BROKER_CODE}")
                             continue
                         instrument = short_spec.get("symbol", symbol)
                         side = short_spec.get("side", "sell")

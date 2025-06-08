@@ -50,8 +50,7 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         log_event("router", f"Manual strategy override: {override}")
         return execute_strategy(override.strip().lower())
 
-    for strat in STRATEGY_SEQUENCE:
-        s = strat.strip().lower()
+    for s in STRATEGY_SEQUENCE:
         if s == "open" and STRAT_OPEN_ENABLED and now >= START_TIME_OPEN:
             return execute_strategy("open")
         elif s == "mid" and STRAT_MID_ENABLED and now >= START_TIME_MID:

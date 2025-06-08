@@ -10,8 +10,9 @@ import time
 from datetime import datetime
 from threading import Lock, Thread
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now          # UPDATED: Import from utils_time
-from tbot_bot.support.utils_log import log_event     # UPDATED: Import from utils_log
+from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_log import log_event
+from tbot_bot.support.decrypt_secrets import decrypt_json
 
 # Thread-safe singleton class to hold live bot status
 class BotStatus:
@@ -31,23 +32,24 @@ class BotStatus:
                 "mid": False,
                 "close": False
             }
-            self.broker_code = "undefined"  # Placeholder; injected via config
-            self.broker_mode = "single"     # PAPER mode removed in v1.0.0
-            self.is_live_mode = True        # Always true under single-broker architecture
+            self.broker_code = "undefined"
+            self.broker_mode = "single"
+            self.is_live_mode = True
             self.version = "v1.0.0"
             self.daily_loss_limit = 0.05
             self.max_risk_per_trade = 0.025
 
-    def update_config(self, config: dict):
+    def update_config(self, config: dict, broker_creds: dict = None):
         with self.lock:
             self.enabled_strategies["open"] = config.get("STRAT_OPEN_ENABLED", False)
             self.enabled_strategies["mid"] = config.get("STRAT_MID_ENABLED", False)
             self.enabled_strategies["close"] = config.get("STRAT_CLOSE_ENABLED", False)
-
-            self.broker_code = config.get("BROKER_NAME", "undefined").lower()  # Replaces deprecated BROKER_CODE
-            self.broker_mode = "single"  # All bots now run in unified live mode (see doc 04)
-            self.is_live_mode = True     # Legacy PAPER_MODE logic removed
-
+            if broker_creds and broker_creds.get("BROKER_CODE"):
+                self.broker_code = broker_creds.get("BROKER_CODE", "undefined").lower()
+            else:
+                self.broker_code = config.get("BROKER_NAME", "undefined").lower()
+            self.broker_mode = "single"
+            self.is_live_mode = True
             self.version = config.get("VERSION_TAG", "v1.0.0")
             self.daily_loss_limit = config.get("DAILY_LOSS_LIMIT", 0.05)
             self.max_risk_per_trade = config.get("MAX_RISK_PER_TRADE", 0.025)
@@ -89,9 +91,13 @@ class BotStatus:
 # Global instance
 bot_status = BotStatus()
 
-# Initialize with decrypted config
+# Initialize with decrypted config and broker creds
 config = get_bot_config()
-bot_status.update_config(config)
+try:
+    broker_creds = decrypt_json("broker_credentials")
+except Exception:
+    broker_creds = {}
+bot_status.update_config(config, broker_creds)
 
 def update_bot_state(state: str = None, strategy: str = None, error: bool = False, trade: bool = False):
     """

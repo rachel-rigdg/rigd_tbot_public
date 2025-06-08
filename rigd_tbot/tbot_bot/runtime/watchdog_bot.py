@@ -4,17 +4,23 @@
 import time
 import requests
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.trading.kill_switch import trigger_shutdown
 
 config = get_bot_config()
-BROKER_NAME = str(config.get("BROKER_NAME", "")).strip().lower()
+try:
+    broker_creds = decrypt_json("broker_credentials")
+except Exception:
+    broker_creds = {}
+
+BROKER_CODE = str(broker_creds.get("BROKER_CODE", "")).strip().lower()
 API_TIMEOUT = int(config.get("API_TIMEOUT", 3))
 
 def check_alpaca():
-    base_url = config.get("BROKER_URL")
-    api_key = config.get("BROKER_API_KEY")
-    secret_key = config.get("BROKER_SECRET_KEY")
+    base_url = broker_creds.get("BROKER_URL")
+    api_key = broker_creds.get("BROKER_API_KEY")
+    secret_key = broker_creds.get("BROKER_SECRET_KEY")
 
     log_event("watchdog_bot", f"Checking Alpaca at {base_url}")
 
@@ -35,7 +41,7 @@ def check_alpaca():
     return False
 
 def check_ibkr():
-    health_url = config.get("BROKER_HOST")
+    health_url = broker_creds.get("BROKER_HOST")
     log_event("watchdog_bot", f"Checking IBKR at {health_url}")
 
     try:
@@ -50,15 +56,15 @@ def check_ibkr():
     return False
 
 def start_watchdog():
-    log_event("watchdog_bot", f"Starting broker connectivity check for \"{BROKER_NAME}\"")
+    log_event("watchdog_bot", f"Starting broker connectivity check for \"{BROKER_CODE}\"")
 
     ok = False
-    if BROKER_NAME == "alpaca":
+    if BROKER_CODE == "alpaca":
         ok = check_alpaca()
-    elif BROKER_NAME == "ibkr":
+    elif BROKER_CODE == "ibkr":
         ok = check_ibkr()
     else:
-        log_event("watchdog_bot", f"Unsupported BROKER_NAME: \"{BROKER_NAME}\"")
+        log_event("watchdog_bot", f"Unsupported BROKER_CODE: \"{BROKER_CODE}\"")
 
     if not ok:
         log_event("watchdog_bot", "Connectivity check failed — initiating shutdown.")
