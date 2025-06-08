@@ -16,6 +16,9 @@ from tbot_bot.enhancements.build_check import run_build_check
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.runtime.watchdog_bot import start_watchdog
 from tbot_bot.trading.kill_switch import check_daily_loss_limit
+from pathlib import Path
+import sys
+import os
 
 # Load and validate bot config from decrypted .env_bot.enc
 config = get_bot_config()
@@ -23,6 +26,11 @@ DISABLE_ALL_TRADES = config.get("DISABLE_ALL_TRADES", False)
 SLEEP_TIME_STR = config.get("SLEEP_TIME", "1s")
 STRATEGY_SEQUENCE = config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")
 STRATEGY_OVERRIDE = config.get("STRATEGY_OVERRIDE")
+
+CONTROL_DIR = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[2] / "control"))
+START_FLAG = CONTROL_DIR / "control_start.txt"
+STOP_FLAG = CONTROL_DIR / "control_stop.txt"
+KILL_FLAG = CONTROL_DIR / "control_kill.txt"
 
 # Convert SLEEP_TIME string into float seconds
 def parse_sleep_time(s):
@@ -38,6 +46,17 @@ def parse_sleep_time(s):
 
 SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
+def safe_exit():
+    # Final shutdown state logging and cleanup
+    update_bot_state("shutdown")
+    sys.exit(0)
+
+def close_all_positions_immediately():
+    # Placeholder for immediate close logic; integrate actual close routine here
+    print("[main_bot] Immediate kill detected. Closing all positions now.")
+    update_bot_state("emergency_closing_positions")
+    # TODO: Insert real close positions logic here
+
 def main():
     try:
         # Step 1: Validate build integrity and required structure
@@ -50,19 +69,29 @@ def main():
         start_heartbeat()
         start_watchdog()
 
-        # Step 4: Abort session if DAILY_LOSS_LIMIT already breached
+        # Step 4: Abort session if DAILY_LOSS_LIMIT already breached or kill triggered
         if check_daily_loss_limit():
             update_bot_state("shutdown_triggered")
             return
+        if KILL_FLAG.exists():
+            close_all_positions_immediately()
+            safe_exit()
 
         # Step 5: Determine strategy execution order (overridden or default)
         strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
         print(f"[main_bot] Strategy sequence: {strategies}")
 
+        graceful_stop = False
+
         # Step 6: Execute each strategy phase in sequence
         for strat_name in strategies:
             strat_name = strat_name.strip().lower()
             update_bot_state(f"analyzing_{strat_name}")
+
+            # Check for kill before each strategy (immediate override)
+            if KILL_FLAG.exists():
+                close_all_positions_immediately()
+                safe_exit()
 
             if DISABLE_ALL_TRADES:
                 print(f"[main_bot] Trading disabled. Skipping {strat_name}")
@@ -72,7 +101,18 @@ def main():
             update_bot_state(f"completed_{strat_name}")
             time.sleep(SLEEP_TIME)
 
-        # Step 7: Final shutdown state logging
+            # After each strategy, check for stop flag (graceful exit after current)
+            if STOP_FLAG.exists():
+                print("[main_bot] Graceful stop detected. Will shut down after current strategy.")
+                graceful_stop = True
+                break
+
+        # Step 7: Close all positions after graceful stop or kill, then shutdown state logging
+        if graceful_stop:
+            print("[main_bot] Executing graceful shutdown after strategy completion. Closing positions.")
+            update_bot_state("graceful_closing_positions")
+            # TODO: Insert real close positions logic here
+
         update_bot_state("shutdown")
 
     except Exception as e:

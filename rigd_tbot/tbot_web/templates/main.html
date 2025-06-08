@@ -7,6 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    
 </head>
 <body class="dashboard-page">
     <div class="formcontent center">
@@ -17,6 +18,21 @@
     </div>
 
     <footer class="footer">
+
+          <!-- Start/Stop/Kill control buttons spaced evenly -->
+          <div class="startKillContainer center">
+            <form action="{{ url_for('start_stop.trigger_start') }}" method="post" target="viewFrame">
+                <button type="submit" id="start-bot">Start Bot</button>
+            </form>
+            <form action="{{ url_for('start_stop.trigger_stop') }}" method="post" target="viewFrame">
+                <button type="submit" id="stop-bot">Stop Bot</button>
+            </form>
+            <form action="{{ url_for('start_stop.trigger_kill') }}" method="post" target="viewFrame">
+                <button type="submit" id="kill-bot">Kill Now</button>
+            </form>
+        </div>
+
+
         <!-- Tab-style navigation within iframe as button forms (spec-compliant, accessible) -->
         <div class="tab-container">
             <form action="{{ url_for('settings.settings_page') }}" method="get" target="viewFrame" style="display:inline;">
@@ -36,15 +52,6 @@
             </form>
         </div>
 
-        <!-- Start/Stop control buttons -->
-        <div class="startKillContainer center" style="display:flex; justify-content:center;">
-            <form action="{{ url_for('start_stop.trigger_start') }}" method="post" target="viewFrame" style="display:inline;">
-                <button type="submit" id="start-bot">Start Bot</button>
-            </form>
-            <form action="{{ url_for('start_stop.trigger_stop') }}" method="post" target="viewFrame" style="display:inline;">
-                <button type="submit" id="kill-bot">Stop Bot</button>
-            </form>
-        </div>
 
         <p>&copy; 2025 RIGD Group LLC – TradeBot Monitoring Interface</p>
     </footer>
