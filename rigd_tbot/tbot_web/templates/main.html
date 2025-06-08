@@ -7,18 +7,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
-  
 </head>
 <body class="dashboard-page">
     <div class="formcontent center">
         <div class="content">
+            <!-- Bot state banner above iframe -->
+            <div class="bot-state-banner" style="margin-bottom: 18px; padding: 8px 0;">
+                <strong>Current Bot State:</strong>
+                <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
+            </div>
             <!-- Embedded strategy/status/log UI -->
             <iframe src="{{ url_for('status.status_page') }}" width="100%" height="100%" frameborder="0" name="viewFrame" id="viewFrame"></iframe>
         </div>
     </div>
 
     <footer class="footer">
-
         <!-- Start/Stop/Kill control buttons spaced evenly -->
         <div class="startKillContainer center">
             <form action="{{ url_for('start_stop.trigger_start') }}" method="post" target="viewFrame">
@@ -33,7 +36,6 @@
             <form action="{{ url_for('logout_web.logout') }}" method="get" style="display:inline;">
                 <button type="submit" id="logout-btn">Log Out</button>
             </form>
-            
         </div>
 
         <!-- Tab-style navigation within iframe as button forms (spec-compliant, accessible) -->

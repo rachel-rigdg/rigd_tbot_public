@@ -25,6 +25,7 @@ CONTROL_DIR = ROOT / "tbot_bot" / "control"
 CONTROL_START_PATH = CONTROL_DIR / "control_start.txt"
 STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "logs" / "provisioning_status.json"
 STATUS_BOOTSTRAP_PATH = BOOTSTRAP_LOGS_PATH / "provisioning_status.json"
+BOT_STATE_FILE = CONTROL_DIR / "bot_state.txt"
 
 sys.path.insert(0, str(CONFIG_PATH))
 from tbot_bot.config.key_manager import main as key_manager_main
@@ -61,16 +62,23 @@ def create_control_start_flag():
     CONTROL_START_PATH.touch(exist_ok=True)
     print(f"[provisioning_runner] Created control start flag: {CONTROL_START_PATH}")
 
+def set_bot_state(state):
+    BOT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(BOT_STATE_FILE, "w", encoding="utf-8") as f:
+        f.write(state)
+
 def main():
     print("[provisioning_runner] Runner started; monitoring provisioning flag.")
+    already_provisioned = False
     while True:
-        if PROVISION_FLAG_PATH.exists():
+        if PROVISION_FLAG_PATH.exists() and not already_provisioned:
             bot_identity = get_bot_identity_string()
             if bot_identity and bot_identity != "undefined":
                 status_path = OUTPUT_BASE / bot_identity / "logs" / "provisioning_status.json"
             else:
                 status_path = STATUS_BOOTSTRAP_PATH
             try:
+                set_bot_state("provisioning")
                 write_status(status_path, "pending", "Provisioning started.")
                 write_status(status_path, "running", "Key generation.")
                 key_manager_main()
@@ -80,16 +88,20 @@ def main():
                 bootstrapping_helper_main()
                 write_status(status_path, "running", "Database initialization.")
                 db_bootstrap_main()
-                # Ensure decrypted config is flushed before clearing flag
                 time.sleep(0.5)
                 clear_provision_flag()
                 write_status(status_path, "running", "Creating control_start.txt to launch bot via systemd.")
                 create_control_start_flag()
+                set_bot_state("idle")
                 write_status(status_path, "complete", "Provisioning complete, control_start.txt created for bot launch.")
+                already_provisioned = True
             except Exception as e:
                 tb = traceback.format_exc()
+                set_bot_state("error")
                 write_status(status_path, "error", f"Error: {e}\nTraceback:\n{tb}")
                 clear_provision_flag()
+        elif not PROVISION_FLAG_PATH.exists():
+            already_provisioned = False
         time.sleep(2)
 
 if __name__ == "__main__":

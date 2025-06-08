@@ -7,6 +7,14 @@ from pathlib import Path
 
 main_blueprint = Blueprint("main", __name__)
 TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" / "tmp" / "bootstrap_config.json"
+BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+
+def get_current_bot_state():
+    try:
+        with open(BOT_STATE_PATH, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return "unknown"
 
 @main_blueprint.route("/", methods=["GET"])
 def root_router():
@@ -24,11 +32,12 @@ def provisioning_route():
     print(f"[main_web] provisioning_route called from {request.path}")
     print(f"[main_web] session keys: {list(session.keys())}")
     print(f"[main_web] session trigger_provisioning (before pop): {session.get('trigger_provisioning')}")
-    # Always show wait screen while external runner handles provisioning/bootstrapping
     session.pop("trigger_provisioning", None)
-    return render_template("wait_for_bot.html")
+    state = get_current_bot_state()
+    return render_template("wait_for_bot.html", bot_state=state)
 
 @main_blueprint.route("/main", methods=["GET"])
 def main_page():
     print(f"[main_web] main_page called from {request.path}")
-    return render_template("main.html")
+    state = get_current_bot_state()
+    return render_template("main.html", bot_state=state)

@@ -7,6 +7,7 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.trading.kill_switch import trigger_shutdown
+from tbot_bot.runtime.status_bot import update_bot_state
 
 config = get_bot_config()
 try:
@@ -56,6 +57,7 @@ def check_ibkr():
     return False
 
 def start_watchdog():
+    update_bot_state("monitoring")
     log_event("watchdog_bot", f"Starting broker connectivity check for \"{BROKER_CODE}\"")
 
     ok = False
@@ -67,6 +69,7 @@ def start_watchdog():
         log_event("watchdog_bot", f"Unsupported BROKER_CODE: \"{BROKER_CODE}\"")
 
     if not ok:
+        update_bot_state("error")
         log_event("watchdog_bot", "Connectivity check failed — initiating shutdown.")
         trigger_shutdown(reason="Broker connectivity failure detected by watchdog")
     else:

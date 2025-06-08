@@ -71,17 +71,12 @@ def is_market_open(now_time=None):
 
 def main():
     try:
-        # Step 1: Validate build integrity and required structure
-        run_build_check()
-
-        # Step 2: Set initial bot state to idle
         update_bot_state("idle")
-
-        # Step 3: Launch status heartbeat and broker watchdog
+        run_build_check()
+        update_bot_state("monitoring")
         start_heartbeat()
         start_watchdog()
 
-        # Step 4: Abort session if DAILY_LOSS_LIMIT already breached or kill triggered
         if check_daily_loss_limit():
             update_bot_state("shutdown_triggered")
             return
@@ -89,7 +84,6 @@ def main():
             close_all_positions_immediately()
             safe_exit()
 
-        # Step 5: Determine strategy execution order (overridden or default)
         strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
         print(f"[main_bot] Strategy sequence: {strategies}")
         log_event("main_bot", f"Strategy sequence: {strategies}")
@@ -99,17 +93,14 @@ def main():
 
         graceful_stop = False
 
-        # Step 6: Execute each strategy phase in sequence
         for strat_name in strategies:
             strat_name = strat_name.strip().lower()
             update_bot_state(f"analyzing_{strat_name}")
 
-            # Check for kill before each strategy (immediate override)
             if KILL_FLAG.exists():
                 close_all_positions_immediately()
                 safe_exit()
 
-            # Market hours gating: skip if outside market hours and no manual override
             now_dt = datetime.utcnow()
             if not is_market_open(now_dt) and not STRATEGY_OVERRIDE:
                 print(f"[main_bot] Outside market hours. Skipping {strat_name}.")
@@ -121,18 +112,17 @@ def main():
                 log_event("main_bot", f"Trading disabled. Skipping {strat_name}")
                 continue
 
+            update_bot_state("trading", strategy=strat_name)
             run_strategy(override=strat_name)
             update_bot_state(f"completed_{strat_name}")
             time.sleep(SLEEP_TIME)
 
-            # After each strategy, check for stop flag (graceful exit after current)
             if STOP_FLAG.exists():
                 print("[main_bot] Graceful stop detected. Will shut down after current strategy.")
                 log_event("main_bot", "Graceful stop detected. Will shut down after current strategy.")
                 graceful_stop = True
                 break
 
-        # Step 7: Close all positions after graceful stop or kill, then shutdown state logging
         if graceful_stop:
             print("[main_bot] Executing graceful shutdown after strategy completion. Closing positions.")
             log_event("main_bot", "Executing graceful shutdown after strategy completion. Closing positions.")
@@ -142,7 +132,7 @@ def main():
         update_bot_state("shutdown")
 
     except Exception as e:
-        # Log fatal exception via error_handler
+        update_bot_state("error")
         handle_error(e, strategy_name="main", broker="n/a", category="LogicError")
 
 if __name__ == "__main__":

@@ -25,8 +25,14 @@ import json
 TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" / "tmp" / "bootstrap_config.json"
 KEYS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys"
 SECRETS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets"
+STATE_FILE = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 KEYS_DIR.mkdir(parents=True, exist_ok=True)
 SECRETS_DIR.mkdir(parents=True, exist_ok=True)
+
+def set_bot_state(state):
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        f.write(state)
 
 def provision_keys_and_secrets(config: dict = None) -> None:
     """
@@ -35,6 +41,7 @@ def provision_keys_and_secrets(config: dict = None) -> None:
     """
     print("[provisioning_helper] Starting provisioning process...")
     try:
+        set_bot_state("provisioning")
         # Load config from tmp if not provided
         if config is None or not config:
             if TMP_CONFIG_PATH.exists():
@@ -75,12 +82,13 @@ def provision_keys_and_secrets(config: dict = None) -> None:
         print("[provisioning_helper] All secrets written.")
 
         log_event("provisioning", "Provisioning completed: keys generated and secrets written.")
+        set_bot_state("bootstrapping")
         print("[provisioning_helper] Provisioning completed successfully.")
     except Exception as e:
         log_event("provisioning", f"Provisioning failed: {e}", level="error")
+        set_bot_state("error")
         print(f"[provisioning_helper] Provisioning failed: {e}")
         raise
 
 def main():
     provision_keys_and_secrets()
-

@@ -10,6 +10,15 @@ from tbot_web.py.bootstrap_utils import is_first_bootstrap  # Use utility module
 
 status_blueprint = Blueprint("status", __name__)
 
+BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+
+def get_current_bot_state():
+    try:
+        with open(BOT_STATE_PATH, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return "unknown"
+
 @status_blueprint.route("/status")
 @login_required
 def status_page():
@@ -44,4 +53,5 @@ def status_page():
     except Exception as e:
         status_data = {"error": str(e)}
 
-    return render_template("status.html", status=status_data)
+    bot_state = get_current_bot_state()
+    return render_template("status.html", status=status_data, bot_state=bot_state)

@@ -8,6 +8,7 @@ from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_log import log_event  # UPDATED: from utils_log
 from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.runtime.status_bot import update_bot_state
 
 # Load configuration (post-v1.0.0 — single-broker compliant)
 config = get_bot_config()
@@ -57,6 +58,7 @@ def main():
             # Launch bot if START_FILE is present and no bot is running
             if START_FILE.exists() and not bot_process:
                 log("START signal detected.")
+                update_bot_state("idle")
                 clear_flags()
                 bot_process = subprocess.Popen(
                     ["python3", str(BOT_ENTRY)],
@@ -70,6 +72,7 @@ def main():
             # Terminate bot if STOP_FILE is present
             elif STOP_FILE.exists() and bot_process:
                 log("STOP signal detected.")
+                update_bot_state("shutdown")
                 clear_flags()
                 bot_process.terminate()
                 try:
@@ -84,6 +87,7 @@ def main():
             if bot_process and bot_process.poll() is not None:
                 exit_code = bot_process.returncode
                 log(f"Bot exited with code {exit_code}")
+                update_bot_state("idle")
                 bot_process = None
 
         except Exception as e:

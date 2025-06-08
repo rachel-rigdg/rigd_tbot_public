@@ -13,6 +13,11 @@
         <div style="width:70%; margin-left:auto; margin-right:auto;">
             <h1>TradeBot Status</h1>
 
+            <div class="bot-state-banner" style="margin-bottom: 18px; padding: 8px 0;">
+                <strong>Current Bot State:</strong>
+                <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
+            </div>
+
             {% if status.error %}
                 <p class="error">{{ status.error }}</p>
             {% else %}
