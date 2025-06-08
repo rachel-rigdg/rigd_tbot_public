@@ -7,7 +7,7 @@
 import os
 import sys
 from pathlib import Path
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import get_bot_identity, get_output_path
 
 REQUIRED_FILES = [
     ".env",
@@ -22,13 +22,15 @@ REQUIRED_FOLDERS = [
     "backups/"
 ]
 
-REQUIRED_LOG_FILES = [
-    get_output_path("logs", "open.log"),
-    get_output_path("logs", "mid.log"),
-    get_output_path("logs", "close.log"),
-    get_output_path("logs", "unresolved_orders.log"),
-    get_output_path("logs", "error_tracebacks.log")
-]
+def build_required_log_files():
+    bot_identity = get_bot_identity()
+    return [
+        get_output_path(bot_identity, "logs", "open.log"),
+        get_output_path(bot_identity, "logs", "mid.log"),
+        get_output_path(bot_identity, "logs", "close.log"),
+        get_output_path(bot_identity, "logs", "unresolved_orders.log"),
+        get_output_path(bot_identity, "logs", "error_tracebacks.log"),
+    ]
 
 def check_file_exists(path):
     return Path(path).is_file()
@@ -47,7 +49,7 @@ def run_build_check():
         if not check_folder_exists(folder):
             errors.append(f"Missing required folder: {folder}")
 
-    for log_file in REQUIRED_LOG_FILES:
+    for log_file in build_required_log_files():
         if not check_file_exists(log_file):
             try:
                 os.makedirs(Path(log_file).parent, exist_ok=True)
