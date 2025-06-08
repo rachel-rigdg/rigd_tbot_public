@@ -33,21 +33,12 @@
     </style>
     <script>
         async function checkProvisioningStatus() {
-            // Derive BOT_IDENTITY from the server, or inject as a global JS variable if needed
-            let statusUrl = "{{ url_for('static', filename='') }}";
-            // Fallback to template variable or XHR route to get provisioning status path
-            // For pure static, assume the backend serves the correct output path to JS
-            {% if session.get('bot_identity_string') %}
-                statusUrl = "/static/output/{{ session['bot_identity_string'] }}/provisioning_status.json";
-            {% else %}
-                statusUrl = "/static/output/<BOT_IDENTITY>/provisioning_status.json";
-            {% endif %}
-
+            let statusUrl = "/output/provisioning_status.json";
             try {
                 const resp = await fetch(statusUrl, { cache: "no-store" });
                 if (!resp.ok) throw new Error("Status file not available yet");
                 const data = await resp.json();
-                if (data.status === "complete") {
+                if (data.status === "complete" || data.status === "ready" || data.status === "success") {
                     window.location.href = "{{ url_for('main.main_page') }}";
                 } else if (data.status === "error") {
                     document.querySelector(".msg").innerText =
