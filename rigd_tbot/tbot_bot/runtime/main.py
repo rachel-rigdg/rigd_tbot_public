@@ -8,7 +8,7 @@ Performs environment validation and ensures readiness before trading.
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.strategy.strategy_router import run_strategy
 from tbot_bot.runtime.status_bot import update_bot_state, start_heartbeat
@@ -32,6 +32,10 @@ CONTROL_DIR = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[2] 
 START_FLAG = CONTROL_DIR / "control_start.txt"
 STOP_FLAG = CONTROL_DIR / "control_stop.txt"
 KILL_FLAG = CONTROL_DIR / "control_kill.txt"
+
+# Define market hours gating (UTC time)
+MARKET_OPEN_TIME = dt_time(hour=13, minute=30)   # 09:30 EST in UTC
+MARKET_CLOSE_TIME = dt_time(hour=20, minute=0)   # 16:00 EST in UTC
 
 # Convert SLEEP_TIME string into float seconds
 def parse_sleep_time(s):
@@ -58,6 +62,10 @@ def close_all_positions_immediately():
     log_event("main_bot", "Immediate kill detected. Closing all positions now.")
     update_bot_state("emergency_closing_positions")
     # TODO: Insert real close positions logic here
+
+def is_market_open(now_time):
+    """Return True if current UTC time is within market hours."""
+    return MARKET_OPEN_TIME <= now_time <= MARKET_CLOSE_TIME
 
 def main():
     try:
@@ -98,6 +106,13 @@ def main():
             if KILL_FLAG.exists():
                 close_all_positions_immediately()
                 safe_exit()
+
+            # Market hours gating: skip if outside market hours and no manual override
+            now_time = datetime.utcnow().time()
+            if not is_market_open(now_time) and not STRATEGY_OVERRIDE:
+                print(f"[main_bot] Outside market hours. Skipping {strat_name}.")
+                log_event("main_bot", f"Outside market hours. Skipping {strat_name}.")
+                continue
 
             if DISABLE_ALL_TRADES:
                 print(f"[main_bot] Trading disabled. Skipping {strat_name}")
