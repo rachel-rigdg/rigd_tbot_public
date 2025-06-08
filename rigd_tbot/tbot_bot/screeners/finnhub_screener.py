@@ -9,6 +9,7 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.decrypt_secrets import decrypt_json
+from tbot_bot.support.path_resolver import get_output_path
 
 config = get_bot_config()
 
@@ -16,8 +17,15 @@ FINNHUB_API_KEY = decrypt_json("screener_api").get("FINNHUB_API_KEY", "")
 LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 
 EXCHANGES = config.get("EXCHANGES", "US").split(",")
-STRIKE_FILE = config.get("STRIKE_FILE", "exclusion_strikes.json")
-HARD_EXCLUSION_FILE = config.get("HARD_EXCLUSION_FILE", "hard_exclusion_list.json")
+BOT_ID = None
+try:
+    from tbot_bot.support.utils_identity import get_bot_identity
+    BOT_ID = get_bot_identity()
+except Exception:
+    BOT_ID = None
+
+STRIKE_FILE = get_output_path(bot_identity=BOT_ID, category="screeners", filename="exclusion_strikes.json")
+HARD_EXCLUSION_FILE = get_output_path(bot_identity=BOT_ID, category="screeners", filename="hard_exclusion_list.json")
 STRIKE_THRESHOLD = int(config.get("STRIKE_THRESHOLD", 5))
 API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 

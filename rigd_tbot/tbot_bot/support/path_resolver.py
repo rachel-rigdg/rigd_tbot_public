@@ -22,7 +22,8 @@ CATEGORIES = {
     "logs": "logs",
     "ledgers": "ledgers",
     "summaries": "summaries",
-    "trades": "trades"
+    "trades": "trades",
+    "screeners": "screeners"
 }
 
 def get_bot_identity(explicit_identity: str = None) -> str:
