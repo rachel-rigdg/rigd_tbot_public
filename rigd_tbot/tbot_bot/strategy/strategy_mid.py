@@ -4,9 +4,11 @@
 import time
 from datetime import datetime, timedelta
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now                      # UPDATED: from utils_time
-from tbot_bot.support.utils_log import log_event                 # UPDATED: from utils_log
-from tbot_bot.support.utils_etf import get_inverse_etf               # UPDATED: from utils_etf
+from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_log import log_event
+from tbot_bot.trading.utils_etf import get_inverse_etf
+from tbot_bot.trading.utils_puts import get_put_option
+from tbot_bot.trading.utils_shorts import get_short_instrument
 from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.strategy.strategy_meta import StrategyResult
@@ -15,7 +17,6 @@ from tbot_bot.enhancements.bollinger_confluence import confirm_bollinger_touch
 from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.trading.risk_bot import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
-from tbot_bot.trading.instruments import resolve_bearish_instrument
 
 config = get_bot_config()
 
@@ -25,6 +26,7 @@ MID_ANALYSIS_TIME = int(config["MID_ANALYSIS_TIME"])
 MID_MONITORING_TIME = int(config["MID_MONITORING_TIME"])
 VWAP_THRESHOLD = float(config["STRAT_MID_VWAP_THRESHOLD"])
 SHORT_TYPE_MID = config["SHORT_TYPE_MID"]
+BROKER_NAME = config.get("BROKER_NAME", "").lower()
 ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
@@ -99,14 +101,17 @@ def execute_mid_trades(signals, start_time):
             break
 
         side = signal["side"]
+        symbol = signal["symbol"]
+        price = signal["price"]
+
         try:
             if side == "buy":
-                if validate_trade(signal["symbol"], "buy", DEFAULT_CAPITAL_PER_TRADE):
+                if validate_trade(symbol, "buy", DEFAULT_CAPITAL_PER_TRADE):
                     result = create_order(
-                        ticker=signal["symbol"],
+                        ticker=symbol,
                         side="buy",
                         capital=DEFAULT_CAPITAL_PER_TRADE,
-                        price=signal["price"],
+                        price=price,
                         stop_loss_pct=0.02,
                         strategy_name="mid"
                     )
@@ -114,23 +119,42 @@ def execute_mid_trades(signals, start_time):
                         trades.append(result)
             else:
                 if SHORT_TYPE_MID == "disabled":
-                    log_event("strategy_mid", f"SHORT skipped for {signal['symbol']} (SHORT_TYPE disabled)")
-                elif validate_trade(signal["symbol"], "sell", DEFAULT_CAPITAL_PER_TRADE):
+                    log_event("strategy_mid", f"SHORT skipped for {symbol} (SHORT_TYPE disabled)")
+                elif validate_trade(symbol, "sell", DEFAULT_CAPITAL_PER_TRADE):
+                    instrument = None
+                    side_exec = "sell"
+
                     if SHORT_TYPE_MID == "InverseETF":
-                        instrument = get_inverse_etf(signal["symbol"])
+                        instrument = get_inverse_etf(symbol)
                         if not instrument:
-                            log_event("strategy_mid", f"No inverse ETF mapping for {signal['symbol']}, skipping short trade")
+                            log_event("strategy_mid", f"No inverse ETF mapping for {symbol}, skipping short trade")
                             continue
                         side_exec = "buy"  # Inverse ETF is long position
+
+                    elif SHORT_TYPE_MID == "LongPut":
+                        instrument = get_put_option(symbol)
+                        if not instrument:
+                            log_event("strategy_mid", f"Put option contract unavailable for {symbol}, skipping short trade")
+                            continue
+                        side_exec = "buy"  # Buy put
+
+                    elif SHORT_TYPE_MID == "Short" or SHORT_TYPE_MID == "Synthetic":
+                        short_spec = get_short_instrument(symbol, BROKER_NAME, short_type=SHORT_TYPE_MID)
+                        if not short_spec:
+                            log_event("strategy_mid", f"No valid short method for {symbol} on {BROKER_NAME}")
+                            continue
+                        instrument = short_spec.get("symbol", symbol)
+                        side_exec = short_spec.get("side", "sell")
+
                     else:
-                        instrument = resolve_bearish_instrument(signal["symbol"], SHORT_TYPE_MID)
-                        side_exec = "sell"
+                        log_event("strategy_mid", f"Unsupported SHORT_TYPE_MID: {SHORT_TYPE_MID}")
+                        continue
 
                     result = create_order(
                         ticker=instrument,
                         side=side_exec,
                         capital=DEFAULT_CAPITAL_PER_TRADE,
-                        price=signal["price"],
+                        price=price,
                         stop_loss_pct=0.02,
                         strategy_name="mid"
                     )

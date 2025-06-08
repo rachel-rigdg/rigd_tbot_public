@@ -8,10 +8,9 @@ from tbot_bot.strategy.strategy_open import run_open_strategy
 from tbot_bot.strategy.strategy_mid import run_mid_strategy
 from tbot_bot.strategy.strategy_close import run_close_strategy
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now                 # UPDATED: from utils_time
-from tbot_bot.support.utils_log import log_event            # UPDATED: from utils_log
+from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_log import log_event
 
-# Load strategy config
 config = get_bot_config()
 
 STRATEGY_SEQUENCE = config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")
@@ -19,7 +18,6 @@ STRAT_OPEN_ENABLED = config.get("STRAT_OPEN_ENABLED", True)
 STRAT_MID_ENABLED = config.get("STRAT_MID_ENABLED", True)
 STRAT_CLOSE_ENABLED = config.get("STRAT_CLOSE_ENABLED", True)
 
-# Parse strategy window start times
 def parse_start_time(tstr):
     try:
         h, m = map(int, tstr.strip().split(":"))

@@ -6,14 +6,15 @@ from datetime import datetime, timedelta
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now                      # UPDATED: from utils_time
 from tbot_bot.support.utils_log import log_event                 # UPDATED: from utils_log
-from tbot_bot.support.utils_etf import get_inverse_etf               # UPDATED: from utils_etf
+from tbot_bot.trading.utils_etf import get_inverse_etf               # UPDATED: from trading/utils_etf.py
+from tbot_bot.trading.utils_puts import get_put_option               # UPDATED: from trading/utils_puts.py
+from tbot_bot.trading.utils_shorts import get_short_instrument       # UPDATED: from trading/utils_shorts.py
 from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.trading.risk_bot import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
-from tbot_bot.trading.instruments import resolve_bearish_instrument
 
 config = get_bot_config()
 
@@ -24,6 +25,7 @@ OPEN_ANALYSIS_TIME = int(config["OPEN_ANALYSIS_TIME"])
 OPEN_BREAKOUT_TIME = int(config["OPEN_BREAKOUT_TIME"])
 OPEN_MONITORING_TIME = int(config["OPEN_MONITORING_TIME"])
 SHORT_TYPE_OPEN = config["SHORT_TYPE_OPEN"]
+BROKER_NAME = config.get("BROKER_NAME", "").lower()
 ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
@@ -134,32 +136,50 @@ def detect_breakouts(start_time):
             if price < short_trigger:
                 if SHORT_TYPE_OPEN == "disabled":
                     log_event("strategy_open", f"Short skipped for {symbol} (SHORT_TYPE disabled)")
-                else:
-                    if validate_trade(symbol, "sell", DEFAULT_CAPITAL_PER_TRADE):
-                        try:
-                            if SHORT_TYPE_OPEN == "InverseETF":
-                                instrument = get_inverse_etf(symbol)
-                                if not instrument:
-                                    log_event("strategy_open", f"No inverse ETF mapping for {symbol}, skipping short trade")
-                                    continue
-                                side = "buy"  # Inverse ETF is long position
-                            else:
-                                instrument = resolve_bearish_instrument(symbol, SHORT_TYPE_OPEN)
-                                side = "sell"
+                elif validate_trade(symbol, "sell", DEFAULT_CAPITAL_PER_TRADE):
+                    instrument = None
+                    side = "sell"
 
-                            result = create_order(
-                                ticker=instrument,
-                                side=side,
-                                capital=DEFAULT_CAPITAL_PER_TRADE,
-                                price=price,
-                                stop_loss_pct=0.02,
-                                strategy_name="open"
-                            )
-                            if result:
-                                trades.append(result)
-                                log_event("strategy_open", f"SHORT breakout for {symbol} at {price} using {instrument}")
-                        except Exception as e:
-                            handle_error("strategy_open", "BrokerError", e)
+                    if SHORT_TYPE_OPEN == "InverseETF":
+                        instrument = get_inverse_etf(symbol)
+                        if not instrument:
+                            log_event("strategy_open", f"No inverse ETF mapping for {symbol}, skipping short trade")
+                            continue
+                        side = "buy"  # Inverse ETF is long position
+
+                    elif SHORT_TYPE_OPEN == "LongPut":
+                        instrument = get_put_option(symbol)
+                        if not instrument:
+                            log_event("strategy_open", f"Put option contract unavailable for {symbol}, skipping short trade")
+                            continue
+                        side = "buy"  # Buy put
+
+                    elif SHORT_TYPE_OPEN == "Short" or SHORT_TYPE_OPEN == "Synthetic":
+                        short_spec = get_short_instrument(symbol, BROKER_NAME, short_type=SHORT_TYPE_OPEN)
+                        if not short_spec:
+                            log_event("strategy_open", f"No valid short method for {symbol} on {BROKER_NAME}")
+                            continue
+                        instrument = short_spec.get("symbol", symbol)
+                        side = short_spec.get("side", "sell")
+
+                    else:
+                        log_event("strategy_open", f"Unsupported SHORT_TYPE_OPEN: {SHORT_TYPE_OPEN}")
+                        continue
+
+                    try:
+                        result = create_order(
+                            ticker=instrument,
+                            side=side,
+                            capital=DEFAULT_CAPITAL_PER_TRADE,
+                            price=price,
+                            stop_loss_pct=0.02,
+                            strategy_name="open"
+                        )
+                        if result:
+                            trades.append(result)
+                            log_event("strategy_open", f"SHORT breakout for {symbol} at {price} using {instrument}")
+                    except Exception as e:
+                        handle_error("strategy_open", "BrokerError", e)
                 range_data.pop(symbol, None)
                 time.sleep(SLEEP_TIME)
 
