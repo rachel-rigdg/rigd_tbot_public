@@ -13,7 +13,7 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.strategy.strategy_router import run_strategy
 from tbot_bot.runtime.status_bot import update_bot_state, start_heartbeat
 from tbot_bot.enhancements.build_check import run_build_check
-from tbot_bot.config.error_handler_bot import handle
+from tbot_bot.config.error_handler_bot import handle_error
 from tbot_bot.runtime.watchdog_bot import start_watchdog
 from tbot_bot.trading.kill_switch import check_daily_loss_limit
 
@@ -77,7 +77,7 @@ def main():
 
     except Exception as e:
         # Log fatal exception via error_handler
-        handle(e, strategy_name="main", broker="n/a", category="LogicError")
+        handle_error(e, strategy_name="main", broker="n/a", category="LogicError")
 
 if __name__ == "__main__":
     main()
