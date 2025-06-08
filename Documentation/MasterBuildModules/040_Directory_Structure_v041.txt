@@ -207,7 +207,7 @@ rigd_tbot/
 │   ├── screeners/			            	# Screener & Symbol Selection
 │   │   └── finnhub_screener.py          		# Symbol scanner via Finnhub API, filters symbols using fundamentals and real-time metrics
 │   │
-│   ├── storage/					            # Persistent runtime data: encrypted secrets, keys, backups, and exports
+│   ├── storage/				   # Persistent runtime data: encrypted secrets, keys, backups, and exports
 │   │   ├── backups/                                 # Daily encrypted ledger/config backups (UTC timestamped)
 │   │   │   └── {date}/                              # Subfolder for each backup snapshot date
 │   │   │
@@ -253,11 +253,10 @@ rigd_tbot/
 │   │   │   └── *.json                        # Temporary plain config (pre-encryption, pre-secrets); BOT_IDENTITY, etc.
 │   │   ├── utils_coa_web.py                  # Loads/validates/manages COA for bot exec and Web UI; called by coa_web.py, accounting_config.py
 │   │   ├── utils_config.py                   # Loads/validates all bot/env config files (.env, .env_bot, runtime envs)
-│   │   ├── utils_etf.py                      # Resolves ETF/inverse ETF tickers; validates eligible symbols for strategies
+
 │   │   ├── utils_identity.py                 # Computes/parses BOT_IDENTITY_STRING; manages all identity metadata for file/output routing
 │   │   ├── utils_log.py                      # Provides structured logging for system/trade/web/app events
 │   │   └── utils_time.py                     # Time and scheduling utilities (UTC conversion, timestamps, session windows)
-
 │   │
 │   ├── test/				           # Complete automated and manual test suite for all bot modules - All test scripts only read from secrets/keys created by Web UI; never modify config or secrets
 │   │   ├── integration_test_runner.py             # Simulates full bot bootstrap, strategy, and shutdown in end-to-end flow
@@ -280,7 +279,10 @@ rigd_tbot/
 │       ├── orders_bot.py                    # Handles order submission, modifies/fills, and broker feedback
 │       ├── reporting_bot.py                 # Pushes trades to accounting system; manages ledger output and COA compliance
 │       ├── risk_bot.py                      # Enforces all risk constraints (caps, allocations, Defense Mode, open trades)
-│       └── utils_coa.py                     # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa.json and supports Web UI editing
+│       ├── utils_coa.py                     # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa.json and supports Web UI editing
+│       ├── utils_etf.py                      # Resolves ETF and inverse ETF tickers for supported symbols (top 20+ ETFs, as per project specifications)
+│       ├── utils_puts.py                      # Returns put option contract specs for any supported broker
+│       └── utils_shorts.py                    # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives
 │   
 └── tbot_web/                                   # Web dashboard: bot monitoring, logs, user auth, control, and COA management
     ├── static/                                 # Static frontend resources
