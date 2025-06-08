@@ -22,6 +22,8 @@ OUTPUT_BASE = ROOT / "tbot_bot" / "output"
 BOOTSTRAP_LOGS_PATH = OUTPUT_BASE / "bootstrap" / "logs"
 TMP_CONFIG_PATH = SUPPORT_PATH / "tmp" / "bootstrap_config.json"
 PROVISION_FLAG_PATH = CONFIG_PATH / "PROVISION_FLAG"
+CONTROL_DIR = ROOT / "tbot_bot" / "control"
+CONTROL_START_PATH = CONTROL_DIR / "control_start.txt"
 STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "logs" / "provisioning_status.json"
 STATUS_BOOTSTRAP_PATH = BOOTSTRAP_LOGS_PATH / "provisioning_status.json"
 
@@ -56,15 +58,10 @@ def clear_provision_flag():
     except Exception:
         pass
 
-def trigger_tbot_bot_service():
-    try:
-        subprocess.run(
-            ['sudo', 'systemctl', 'start', 'tbot_bot.service'],
-            check=True
-        )
-        print("[provisioning_runner] tbot_bot.service triggered via systemd.")
-    except Exception as e:
-        raise RuntimeError(f"Failed to start tbot_bot.service: {e}")
+def create_control_start_flag():
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    CONTROL_START_PATH.touch(exist_ok=True)
+    print(f"[provisioning_runner] Created control start flag: {CONTROL_START_PATH}")
 
 def main():
     print("[provisioning_runner] Runner started; monitoring provisioning flag.")
@@ -86,9 +83,9 @@ def main():
                 bootstrapping_helper_main()
                 write_status(status_path, "running", "Database initialization.")
                 db_bootstrap_main()
-                write_status(status_path, "running", "Triggering tbot_bot.service via systemd.")
-                trigger_tbot_bot_service()
-                write_status(status_path, "complete", "Provisioning complete, bot launched via systemd.")
+                write_status(status_path, "running", "Creating control_start.txt to launch bot via systemd.")
+                create_control_start_flag()
+                write_status(status_path, "complete", "Provisioning complete, control_start.txt created for bot launch.")
                 clear_provision_flag()
             except Exception as e:
                 tb = traceback.format_exc()
