@@ -68,7 +68,7 @@ def main():
                 print(f"[main_bot] Trading disabled. Skipping {strat_name}")
                 continue
 
-            run_strategy(strat_name)
+            run_strategy(override=strat_name)
             update_bot_state(f"completed_{strat_name}")
             time.sleep(SLEEP_TIME)
 

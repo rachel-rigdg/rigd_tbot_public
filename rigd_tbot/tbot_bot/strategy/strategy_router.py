@@ -13,7 +13,7 @@ from tbot_bot.support.utils_log import log_event
 
 config = get_bot_config()
 
-STRATEGY_SEQUENCE = config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")
+STRATEGY_SEQUENCE = [s.strip().lower() for s in config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")]
 STRAT_OPEN_ENABLED = config.get("STRAT_OPEN_ENABLED", True)
 STRAT_MID_ENABLED = config.get("STRAT_MID_ENABLED", True)
 STRAT_CLOSE_ENABLED = config.get("STRAT_CLOSE_ENABLED", True)
@@ -48,14 +48,15 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
 
     if override:
         log_event("router", f"Manual strategy override: {override}")
-        return execute_strategy(override)
+        return execute_strategy(override.strip().lower())
 
     for strat in STRATEGY_SEQUENCE:
-        if strat == "open" and STRAT_OPEN_ENABLED and now >= START_TIME_OPEN:
+        s = strat.strip().lower()
+        if s == "open" and STRAT_OPEN_ENABLED and now >= START_TIME_OPEN:
             return execute_strategy("open")
-        elif strat == "mid" and STRAT_MID_ENABLED and now >= START_TIME_MID:
+        elif s == "mid" and STRAT_MID_ENABLED and now >= START_TIME_MID:
             return execute_strategy("mid")
-        elif strat == "close" and STRAT_CLOSE_ENABLED and now >= START_TIME_CLOSE:
+        elif s == "close" and STRAT_CLOSE_ENABLED and now >= START_TIME_CLOSE:
             return execute_strategy("close")
 
     time.sleep(SLEEP_TIME)
@@ -65,18 +66,19 @@ def execute_strategy(name: str) -> StrategyResult:
     """
     Dispatches control to the selected strategy module.
     """
+    n = name.strip().lower()
     try:
-        log_event("router", f"Executing strategy: {name}")
-        if name == "open":
+        log_event("router", f"Executing strategy: {n}")
+        if n == "open":
             return run_open_strategy()
-        elif name == "mid":
+        elif n == "mid":
             return run_mid_strategy()
-        elif name == "close":
+        elif n == "close":
             return run_close_strategy()
         else:
-            raise ValueError(f"Unknown strategy: {name}")
+            raise ValueError(f"Unknown strategy: {n}")
     except Exception as e:
-        log_event("router", f"Error executing {name}: {e}")
+        log_event("router", f"Error executing {n}: {e}")
         return StrategyResult(skipped=True, errors=[str(e)])
 
 # Entry point alias

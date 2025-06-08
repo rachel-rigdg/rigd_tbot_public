@@ -13,7 +13,6 @@ REQUIRED_FILES = [
     ".env",
     "tbot_bot/support/.env_bot.enc",
     "tbot_bot/config/env_bot.py",
-    "tbot_bot/accounting/tradebot_exporter.py",
     "tbot_bot/accounting/account_transaction.py",
     "tbot_bot/accounting/accounting_config.py"
 ]
