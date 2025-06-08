@@ -4,6 +4,9 @@ from pathlib import Path
 
 KEYS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys"
 SECRETS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets"
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
+BOOTSTRAP_FLAG = CONTROL_DIR / "BOOTSTRAP_FLAG"
+
 CONFIG_REQUIRED_FILES = [
     KEYS_DIR / "bot_identity.key",
     KEYS_DIR / "login.key",
@@ -14,9 +17,11 @@ CONFIG_REQUIRED_FILES = [
 
 def is_first_bootstrap() -> bool:
     """
-    Return True if any required key or secret config file is missing.
+    Return True if BOOTSTRAP_FLAG is missing, or any required key or secret config file is missing.
     Prevent provisioning before config is saved.
     """
+    if not BOOTSTRAP_FLAG.exists():
+        return True
     for file_path in CONFIG_REQUIRED_FILES:
         if not file_path.exists():
             return True

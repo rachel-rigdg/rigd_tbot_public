@@ -22,6 +22,10 @@ def root_router():
     if is_first_bootstrap():
         print("[main_web] is_first_bootstrap=True, redirecting to configuration_web.show_configuration")
         return redirect(url_for("configuration_web.show_configuration"))
+    state = get_current_bot_state()
+    if state in ("provisioning", "bootstrapping"):
+        print(f"[main_web] provisioning/bootstrapping detected, redirecting to provisioning_route (state={state})")
+        return redirect(url_for("main.provisioning_route"))
     if session.get("trigger_provisioning"):
         print("[main_web] trigger_provisioning=True, redirecting to provisioning_route")
         return redirect(url_for("main.provisioning_route"))
