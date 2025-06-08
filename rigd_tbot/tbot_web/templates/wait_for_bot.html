@@ -2,60 +2,65 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>TradeBot — Waiting for Bot Startup</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-    <style>
-        .spinner {
-            border: 6px solid #2d3748;
-            border-top: 6px solid #41c7b2;
-            border-radius: 50%;
-            width: 56px;
-            height: 56px;
-            animation: spin 1s linear infinite;
-            margin-bottom: 24px;
+  <meta charset="UTF-8">
+  <title>TradeBot — Waiting for Startup</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <style>
+    .spinner {
+      border: 6px solid #2d3748;
+      border-top: 6px solid #41c7b2;
+      border-radius: 50%;
+      width: 56px;
+      height: 56px;
+      animation: spin 1s linear infinite;
+      margin-bottom: 24px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .wait-center {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .msg {
+      color: #8ab4f8;
+      margin-bottom: 12px;
+    }
+  </style>
+  <script>
+    const bootstrapStates = ["provisioning", "bootstrapping"];
+
+    async function checkBotState() {
+      try {
+        const resp = await fetch("/main/state", { cache: "no-store" });
+        if (!resp.ok) throw new Error("Failed to fetch state");
+        const { bot_state } = await resp.json();
+        // Redirect to main only when out of bootstrap states
+        if (!bootstrapStates.includes(bot_state)) {
+          window.location.replace("{{ url_for('main.main_page') }}");
+        } else if (bot_state === "shutdown") {
+          window.location.replace("{{ url_for('main.main_page') }}");
+        } else {
+          setTimeout(checkBotState, 2000);
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg);}
-            100% { transform: rotate(360deg);}
-        }
-        .wait-center {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        .msg {
-            color: #8ab4f8;
-            margin-bottom: 12px;
-        }
-    </style>
-    <script>
-        async function checkControlFlag() {
-            try {
-                const resp = await fetch("/control_status/start", { cache: "no-store" });
-                if (!resp.ok) throw new Error("Status endpoint not available yet");
-                const data = await resp.json();
-                const state = data.status;
-                if (state === "provisioning" || state === "bootstrapping") {
-                    setTimeout(checkControlFlag, 2000);
-                } else {
-                    window.location.href = "{{ url_for('main.main_page') }}";
-                }
-            } catch (e) {
-                setTimeout(checkControlFlag, 2000);
-            }
-        }
-        window.onload = checkControlFlag;
-    </script>
+      } catch (e) {
+        setTimeout(checkBotState, 2000);
+      }
+    }
+
+    window.onload = checkBotState;
+  </script>
 </head>
 <body>
-    <div class="wait-center">
-        <div class="spinner"></div>
-        <h2>Waiting for TradeBot Startup…</h2>
-        <div class="msg">Please wait while the core engine initializes.</div>
-        <div class="msg">This page will refresh automatically.</div>
-    </div>
+  <div class="wait-center">
+    <div class="spinner"></div>
+    <h2>Waiting for TradeBot Startup…</h2>
+    <div class="msg">Initializing core services—this may take a moment.</div>
+    <div class="msg">The page will redirect once ready.</div>
+  </div>
 </body>
 </html>

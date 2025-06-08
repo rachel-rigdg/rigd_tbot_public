@@ -50,14 +50,21 @@ def create_app():
     def wait_for_bot():
         return render_template("wait_for_bot.html")
 
-    # Control status endpoint for polling control_start.txt
+    # Improved control status endpoint: polls tbot_bot/control/bot_state.txt
     @app.route("/control_status/start")
     def control_status_start():
-        control_path = Path(BASE_DIR) / ".." / "tbot_bot" / "control" / "control_start.txt"
-        if control_path.exists():
-            return jsonify({"status": "started"})
-        else:
-            return jsonify({"status": "pending"})
+        bot_state_path = Path(BASE_DIR) / ".." / "tbot_bot" / "control" / "bot_state.txt"
+        try:
+            if bot_state_path.exists():
+                state = bot_state_path.read_text(encoding="utf-8").strip()
+                # Treat any non-bootstrapping state as "started"
+                if state not in ("provisioning", "bootstrapping"):
+                    return jsonify({"status": "started", "bot_state": state})
+                return jsonify({"status": state, "bot_state": state})
+            else:
+                return jsonify({"status": "pending", "bot_state": "pending"})
+        except Exception:
+            return jsonify({"status": "error", "bot_state": "error"})
 
     # First-boot mode: redirect all requests to /configuration if not configured
     if is_first_bootstrap():
