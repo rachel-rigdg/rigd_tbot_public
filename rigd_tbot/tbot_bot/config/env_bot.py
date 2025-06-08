@@ -41,7 +41,6 @@ REQUIRED_KEYS = [
     "LEDGER_EXPORT_MODE"
 ]
 
-
 def decrypt_env_bot(encryption_key: str) -> Dict[str, Any]:
     """
     Decrypts the .env_bot.enc file using the provided Fernet key and parses JSON.
@@ -76,10 +75,6 @@ def load_env_bot(test_mode: bool = False) -> Dict[str, Any]:
     missing = [key for key in REQUIRED_KEYS if key not in config]
     if missing:
         raise KeyError(f"Missing required keys in .env_bot: {missing}")
-
-    for key in OPTIONAL_KEYS:
-        if key not in config:
-            config[key] = None
 
     # Convert booleans as needed
     for key, val in list(config.items()):
