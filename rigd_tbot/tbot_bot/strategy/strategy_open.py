@@ -2,13 +2,13 @@
 # summary: Implements opening range breakout strategy with full bi-directional support and updated env references
 
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now                      # UPDATED: from utils_time
-from tbot_bot.support.utils_log import log_event                 # UPDATED: from utils_log
-from tbot_bot.trading.utils_etf import get_inverse_etf               # UPDATED: from trading/utils_etf.py
-from tbot_bot.trading.utils_puts import get_put_option               # UPDATED: from trading/utils_puts.py
-from tbot_bot.trading.utils_shorts import get_short_instrument       # UPDATED: from trading/utils_shorts.py
+from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_log import log_event
+from tbot_bot.trading.utils_etf import get_inverse_etf
+from tbot_bot.trading.utils_puts import get_put_option
+from tbot_bot.trading.utils_shorts import get_short_instrument
 from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.trading.kill_switch import trigger_shutdown
@@ -18,7 +18,6 @@ from tbot_bot.config.error_handler_bot import handle as handle_error
 
 config = get_bot_config()
 
-TEST_MODE = config["TEST_MODE"]
 STRAT_OPEN_ENABLED = config["STRAT_OPEN_ENABLED"]
 STRAT_OPEN_BUFFER = float(config["STRAT_OPEN_BUFFER"])
 OPEN_ANALYSIS_TIME = int(config["OPEN_ANALYSIS_TIME"])
@@ -52,8 +51,6 @@ def self_check():
 def analyze_opening_range(start_time):
     log_event("strategy_open", "Starting opening range analysis...")
     deadline = start_time + timedelta(minutes=OPEN_ANALYSIS_TIME)
-    scan_cutoff = utc_now() + timedelta(minutes=1) if TEST_MODE else None
-
     while utc_now() < deadline:
         try:
             candidates = get_filtered_stocks()
@@ -74,9 +71,6 @@ def analyze_opening_range(start_time):
             else:
                 range_data[symbol]["high"] = max(range_data[symbol]["high"], price)
                 range_data[symbol]["low"] = min(range_data[symbol]["low"], price)
-
-        if scan_cutoff and utc_now() > scan_cutoff:
-            break
 
         time.sleep(SLEEP_TIME)
 
@@ -152,9 +146,9 @@ def detect_breakouts(start_time):
                         if not instrument:
                             log_event("strategy_open", f"Put option contract unavailable for {symbol}, skipping short trade")
                             continue
-                        side = "buy"  # Buy put
+                        side = "buy"
 
-                    elif SHORT_TYPE_OPEN == "Short" or SHORT_TYPE_OPEN == "Synthetic":
+                    elif SHORT_TYPE_OPEN in ("Short", "Synthetic"):
                         short_spec = get_short_instrument(symbol, BROKER_NAME, short_type=SHORT_TYPE_OPEN)
                         if not short_spec:
                             log_event("strategy_open", f"No valid short method for {symbol} on {BROKER_NAME}")

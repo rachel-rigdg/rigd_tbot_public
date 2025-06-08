@@ -4,11 +4,11 @@
 import time
 from datetime import timedelta
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now                   # UPDATED: from utils_time
-from tbot_bot.support.utils_log import log_event              # UPDATED: from utils_log
-from tbot_bot.trading.utils_etf import get_inverse_etf            # UPDATED: from trading/utils_etf.py
-from tbot_bot.trading.utils_puts import get_put_option            # UPDATED: from trading/utils_puts.py
-from tbot_bot.trading.utils_shorts import get_short_instrument    # UPDATED: from trading/utils_shorts.py
+from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_log import log_event
+from tbot_bot.trading.utils_etf import get_inverse_etf
+from tbot_bot.trading.utils_puts import get_put_option
+from tbot_bot.trading.utils_shorts import get_short_instrument
 from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.strategy.strategy_meta import StrategyResult
@@ -21,7 +21,6 @@ from tbot_bot.config.error_handler_bot import handle as handle_error
 
 config = get_bot_config()
 
-TEST_MODE = config["TEST_MODE"]
 STRAT_CLOSE_ENABLED = config["STRAT_CLOSE_ENABLED"]
 CLOSE_ANALYSIS_TIME = int(config["CLOSE_ANALYSIS_TIME"])
 CLOSE_MONITORING_TIME = int(config["CLOSE_MONITORING_TIME"])
@@ -52,14 +51,13 @@ def self_check():
 def analyze_closing_signals(start_time):
     log_event("strategy_close", "Starting EOD momentum/fade analysis...")
     deadline = start_time + timedelta(minutes=CLOSE_ANALYSIS_TIME)
-    cutoff = utc_now() + timedelta(minutes=1) if TEST_MODE else deadline
     signals = []
 
     if not is_vix_above_threshold(VIX_THRESHOLD):
         log_event("strategy_close", "VIX filter blocked strategy.")
         return signals
 
-    while utc_now() < cutoff:
+    while utc_now() < deadline:
         try:
             screener_data = get_filtered_stocks(limit=50)
         except Exception as e:
@@ -149,10 +147,9 @@ def monitor_closing_trades(signals, start_time):
                         if not instrument:
                             log_event("strategy_close", f"Put option contract unavailable for {symbol}, skipping short trade")
                             continue
-                        side_exec = "buy"  # Buying a put
+                        side_exec = "buy"
 
-                    elif SHORT_TYPE_CLOSE == "Short" or SHORT_TYPE_CLOSE == "Synthetic":
-                        # Use broker-agnostic short/synthetic logic
+                    elif SHORT_TYPE_CLOSE in ("Short", "Synthetic"):
                         short_spec = get_short_instrument(symbol, BROKER_NAME, short_type=SHORT_TYPE_CLOSE)
                         if not short_spec:
                             log_event("strategy_close", f"No valid short method for {symbol} on {BROKER_NAME}")

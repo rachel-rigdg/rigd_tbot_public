@@ -2,7 +2,7 @@
 # summary: Implements VWAP-based mid-day reversal strategy with full bi-directional logic and env-driven parameters
 
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
@@ -20,7 +20,6 @@ from tbot_bot.config.error_handler_bot import handle as handle_error
 
 config = get_bot_config()
 
-TEST_MODE = config["TEST_MODE"]
 STRAT_MID_ENABLED = config["STRAT_MID_ENABLED"]
 MID_ANALYSIS_TIME = int(config["MID_ANALYSIS_TIME"])
 MID_MONITORING_TIME = int(config["MID_MONITORING_TIME"])
@@ -52,9 +51,8 @@ def analyze_vwap_signals(start_time):
     log_event("strategy_mid", "Starting VWAP deviation analysis...")
     signals = []
     deadline = start_time + timedelta(minutes=MID_ANALYSIS_TIME)
-    cutoff = utc_now() + timedelta(minutes=1) if TEST_MODE else deadline
 
-    while utc_now() < cutoff:
+    while utc_now() < deadline:
         try:
             screener_data = get_filtered_stocks(limit=50)
         except Exception as e:
@@ -136,9 +134,9 @@ def execute_mid_trades(signals, start_time):
                         if not instrument:
                             log_event("strategy_mid", f"Put option contract unavailable for {symbol}, skipping short trade")
                             continue
-                        side_exec = "buy"  # Buy put
+                        side_exec = "buy"
 
-                    elif SHORT_TYPE_MID == "Short" or SHORT_TYPE_MID == "Synthetic":
+                    elif SHORT_TYPE_MID in ("Short", "Synthetic"):
                         short_spec = get_short_instrument(symbol, BROKER_NAME, short_type=SHORT_TYPE_MID)
                         if not short_spec:
                             log_event("strategy_mid", f"No valid short method for {symbol} on {BROKER_NAME}")
