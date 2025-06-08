@@ -5,10 +5,11 @@ import pytest
 import os
 import json
 from tbot_bot.runtime import main_bot
-from tbot_bot.config.env_bot import get_bot_config, env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.utils_identity import get_bot_identity
 
-BOT_ID = env_config["BOT_IDENTITY_STRING"]
+BOT_ID = get_bot_identity()
 
 LOG_FILES = [
     "open.log",

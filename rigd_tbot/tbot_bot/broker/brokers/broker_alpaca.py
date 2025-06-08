@@ -10,9 +10,9 @@ class AlpacaBroker:
         """
         Initializes Alpaca broker using credentials and endpoint from .env_bot config.
         """
-        self.api_key = env.get("ALPACA_API_KEY")
-        self.secret_key = env.get("ALPACA_SECRET_KEY")
-        self.base_url = env.get("ALPACA_API_URL")
+        self.api_key = env.get("BROKER_API_KEY")
+        self.secret_key = env.get("BROKER_SECRET_KEY")
+        self.base_url = env.get("BROKER_URL")
         self.headers = {
             "APCA-API-KEY-ID": self.api_key,
             "APCA-API-SECRET-KEY": self.secret_key

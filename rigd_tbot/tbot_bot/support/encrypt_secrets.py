@@ -44,7 +44,6 @@ def encrypt_json(name: str, data: dict) -> None:
 # Example direct usage
 if __name__ == "__main__":
     try:
-        # Example: re-encrypt an existing decrypted file
         from tbot_bot.support.decrypt_secrets import decrypt_json
 
         plaintext = decrypt_json("env")

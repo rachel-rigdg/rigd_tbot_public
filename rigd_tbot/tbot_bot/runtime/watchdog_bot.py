@@ -3,17 +3,18 @@
 
 import time
 import requests
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_log import log_event   # UPDATED: from utils_log
 from tbot_bot.trading.kill_switch import trigger_shutdown
 
-BROKER_NAME = env_config.get("BROKER_NAME", "").lower()
-API_TIMEOUT = int(env_config.get("API_TIMEOUT", 3))
+config = get_bot_config()
+BROKER_NAME = config.get("BROKER_NAME", "").lower()
+API_TIMEOUT = int(config.get("API_TIMEOUT", 3))
 
 def check_alpaca():
-    base_url = env_config.get("ALPACA_BASE_URL")
-    api_key = env_config.get("ALPACA_API_KEY")
-    secret_key = env_config.get("ALPACA_SECRET_KEY")
+    base_url = config.get("ALPACA_BASE_URL")
+    api_key = config.get("ALPACA_API_KEY")
+    secret_key = config.get("ALPACA_SECRET_KEY")
 
     log_event("watchdog_bot", f"Checking Alpaca at {base_url}")
 
@@ -34,7 +35,7 @@ def check_alpaca():
     return False
 
 def check_ibkr():
-    health_url = env_config.get("IBKR_HEALTH_URL")
+    health_url = config.get("IBKR_HEALTH_URL")
     log_event("watchdog_bot", f"Checking IBKR at {health_url}")
 
     try:

@@ -9,20 +9,20 @@ Triggered on order execution and exit.
 import json
 import csv
 import os
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.accounting.export_manager import export_trade_to_manager
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.utils_identity import get_bot_identity
 
-# Load configuration
-FORCE_PAPER_EXPORT = env_config.get("FORCE_PAPER_EXPORT", False)  # Should always be False in single broker mode
-ENABLE_LOGGING = env_config.get("ENABLE_LOGGING", True)
-LOG_FORMAT = env_config.get("LOG_FORMAT", "json").lower()
-GNC_EXPORT_MODE = env_config.get("GNC_EXPORT_MODE", "auto")
-BOT_IDENTITY = env_config["BOT_IDENTITY_STRING"]
+config = get_bot_config()
+FORCE_PAPER_EXPORT = config.get("FORCE_PAPER_EXPORT", False)
+ENABLE_LOGGING = config.get("ENABLE_LOGGING", True)
+LOG_FORMAT = config.get("LOG_FORMAT", "json").lower()
+GNC_EXPORT_MODE = config.get("GNC_EXPORT_MODE", "auto")
+BOT_IDENTITY = get_bot_identity()
 
-# Single mode only: export files named strictly per bot identity
 history_file = f"{BOT_IDENTITY}_BOT_trade_history.{LOG_FORMAT}"
 summary_file = f"{BOT_IDENTITY}_BOT_daily_summary.json"
 

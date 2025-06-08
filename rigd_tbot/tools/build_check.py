@@ -172,6 +172,7 @@ def main():
             if not re.match(IDENTITY_PATTERN, identity):
                 continue
             try:
+                # Fallback for identity: do not import get_bot_identity here
                 validate_bot_identity(identity)
             except Exception:
                 print(f"[ERROR] Invalid bot identity dir: {identity_dir}")

@@ -10,12 +10,14 @@ import os
 import json
 import csv
 from datetime import datetime
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.utils_identity import get_bot_identity
 
-LOG_FORMAT = env_config.get("LOG_FORMAT", "json").lower()
-ENABLE_LOGGING = env_config.get("ENABLE_LOGGING", True)
-BOT_ID = env_config["BOT_IDENTITY_STRING"]
+config = get_bot_config()
+LOG_FORMAT = config.get("LOG_FORMAT", "json").lower()
+ENABLE_LOGGING = config.get("ENABLE_LOGGING", True)
+BOT_ID = get_bot_identity()
 
 # ----------------------------
 # TRADE LOGGING

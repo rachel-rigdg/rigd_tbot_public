@@ -5,12 +5,12 @@ import os
 import zipfile
 from datetime import datetime
 import shutil
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.path_resolver import get_output_path
 
 # Constants
 BACKUP_DIR = "backups"
-BOT_IDENTITY = env_config.get("BOT_IDENTITY_STRING")
+BOT_IDENTITY = get_bot_identity()
 
 def get_timestamp():
     return datetime.utcnow().strftime("%Y%m%d_%H%M%S")

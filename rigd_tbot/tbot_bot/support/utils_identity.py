@@ -21,3 +21,9 @@ def get_bot_identity_string():
         return identity
     except Exception:
         return "UNKNOWN_BOT"
+
+def get_bot_identity():
+    """
+    Alias for get_bot_identity_string, for compatibility.
+    """
+    return get_bot_identity_string()

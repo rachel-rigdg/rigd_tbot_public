@@ -6,16 +6,16 @@ risk thresholds, blacklist logic, and strategy weightings before allowing entry.
 All trades must be routed through this module before execution.
 """
 
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.enhancements.ticker_blocklist import is_ticker_blocked
 
-# Load configuration from env_config (single-broker, no live/paper)
-TOTAL_ALLOCATION = float(env_config.get("TOTAL_ALLOCATION", 0.02))
-MAX_TRADES = int(env_config.get("MAX_TRADES", 4))
-WEIGHTS = [float(w) for w in str(env_config.get("WEIGHTS", "0.4,0.2,0.2,0.2")).split(",")]
-MAX_OPEN_POSITIONS = int(env_config.get("MAX_OPEN_POSITIONS", 5))
-MAX_RISK_PER_TRADE = float(env_config.get("MAX_RISK_PER_TRADE", 0.025))
+config = get_bot_config()
+TOTAL_ALLOCATION = float(config.get("TOTAL_ALLOCATION", 0.02))
+MAX_TRADES = int(config.get("MAX_TRADES", 4))
+WEIGHTS = [float(w) for w in str(config.get("WEIGHTS", "0.4,0.2,0.2,0.2")).split(",")]
+MAX_OPEN_POSITIONS = int(config.get("MAX_OPEN_POSITIONS", 5))
+MAX_RISK_PER_TRADE = float(config.get("MAX_RISK_PER_TRADE", 0.025))
 
 
 def get_trade_weight(index: int, active_count: int) -> float:

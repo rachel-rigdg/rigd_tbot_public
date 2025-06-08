@@ -2,8 +2,8 @@
 # Unified broker interface and trade dispatch router (single-broker mode)
 
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.broker.brokers.alpaca import AlpacaBroker
-from tbot_bot.broker.brokers.ibkr import IBKRBroker
+from tbot_bot.broker.brokers.broker_alpaca import AlpacaBroker
+from tbot_bot.broker.brokers.broker_ibkr import IBKRBroker
 from tbot_bot.trading.logs_bot import log_event
 
 # Always load config at runtime for fresh settings

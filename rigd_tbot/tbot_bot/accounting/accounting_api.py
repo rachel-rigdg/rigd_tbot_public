@@ -5,13 +5,14 @@ import json
 from cryptography.fernet import Fernet
 from pathlib import Path
 
-from tbot_bot.config.env_bot import env_config
-from tbot_bot.config.error_handler import handle_error
+from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.config.error_handler_bot import handle_error
 from tbot_bot.accounting.tradebot_exporter import TradeBotExporter
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 
 # Load configuration from .env_bot
-EXPORT_MODE = env_config.get("LEDGER_EXPORT_MODE", "auto").lower()  # Options: auto, off
+config = get_bot_config()
+EXPORT_MODE = config.get("LEDGER_EXPORT_MODE", "auto").lower()  # Options: auto, off
 
 # Decrypt BOT_IDENTITY_STRING from secret
 try:

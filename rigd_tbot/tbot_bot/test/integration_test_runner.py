@@ -14,9 +14,9 @@ from tbot_bot.support.path_resolver import get_output_path
 from tbot_bot.strategy.strategy_router import route_strategy
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.runtime.status_bot import bot_status
+from tbot_bot.support.utils_identity import get_bot_identity
 
-config = get_bot_config()
-BOT_IDENTITY = config["BOT_IDENTITY_STRING"]
+BOT_IDENTITY = get_bot_identity()
 
 def check_output_artifacts():
     """Verify output files exist after test session."""
@@ -61,6 +61,7 @@ def run_integration_test():
     """Run full strategy sequence and verify runtime artifacts."""
     log_event("integration_test", "Starting integration test runner...")
 
+    config = get_bot_config()
     try:
         sequence = config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")
         override = config.get("STRATEGY_OVERRIDE")

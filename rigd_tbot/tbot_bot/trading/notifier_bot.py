@@ -8,17 +8,17 @@ Uses SMTP settings from .env_bot or equivalent secure config.
 
 import smtplib
 from email.mime.text import MIMEText
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 
-# Load config from env_config (single-broker identity enforced)
-SMTP_USER = env_config.get("SMTP_USER")
-SMTP_PASS = env_config.get("SMTP_PASS")
-SMTP_HOST = env_config.get("SMTP_HOST", "localhost")
-SMTP_PORT = int(env_config.get("SMTP_PORT", 25))
-ALERT_EMAIL = env_config.get("ALERT_EMAIL")
-NOTIFY_ON_FILL = env_config.get("NOTIFY_ON_FILL", False)
-NOTIFY_ON_EXIT = env_config.get("NOTIFY_ON_EXIT", False)
+config = get_bot_config()
+SMTP_USER = config.get("SMTP_USER")
+SMTP_PASS = config.get("SMTP_PASS")
+SMTP_HOST = config.get("SMTP_HOST", "localhost")
+SMTP_PORT = int(config.get("SMTP_PORT", 25))
+ALERT_EMAIL = config.get("ALERT_EMAIL")
+NOTIFY_ON_FILL = config.get("NOTIFY_ON_FILL", False)
+NOTIFY_ON_EXIT = config.get("NOTIFY_ON_EXIT", False)
 
 def send_email(subject, message, override=False):
     """Send an email via SMTP if enabled or override is set"""
@@ -43,7 +43,6 @@ def notify_trade_fill(ticker, side, size, price, strategy, broker):
     if not NOTIFY_ON_FILL:
         return
     subject = f"TradeBot Fill Alert - {ticker}"
-    # Mode is unified now; no live/paper dichotomy
     body = (
         f"Trade Filled:\n"
         f"Time: {utc_now().isoformat()}\n"

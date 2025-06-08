@@ -2,7 +2,7 @@
 # Monitors current float and triggers rebalance notification if deviation exceeds threshold
 
 import time
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.utils_log import log_event
@@ -11,9 +11,10 @@ from tbot_bot.accounting.accounting_api import post_rebalance_entry
 from tbot_bot.risk.risk_bot import is_safe_mode
 from tbot_bot.float_bot import get_current_float  # Must be implemented in float_bot.py
 
-REBALANCE_ENABLED = env_config.get("REBALANCE_ENABLED", False)
-REBALANCE_THRESHOLD = float(env_config.get("REBALANCE_THRESHOLD", 0.10))
-REBALANCE_CHECK_INTERVAL = int(env_config.get("REBALANCE_CHECK_INTERVAL", 3600))  # Seconds
+config = get_bot_config()
+REBALANCE_ENABLED = config.get("REBALANCE_ENABLED", False)
+REBALANCE_THRESHOLD = float(config.get("REBALANCE_THRESHOLD", 0.10))
+REBALANCE_CHECK_INTERVAL = int(config.get("REBALANCE_CHECK_INTERVAL", 3600))  # Seconds
 
 def get_target_float() -> float:
     """

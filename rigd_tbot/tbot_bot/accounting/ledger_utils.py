@@ -7,6 +7,8 @@ import json
 from cryptography.fernet import Fernet
 from pathlib import Path
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
+from tbot_bot.support.utils_identity import get_bot_identity
+BOT_ID = get_bot_identity()
 
 ACCOUNT_MAP = {
     "cash":               "Assets:Brokerage Accounts – Equities:Cash",

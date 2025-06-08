@@ -14,8 +14,8 @@ from tbot_bot.enhancements.vix_gatekeeper import is_vix_above_threshold
 from tbot_bot.enhancements.imbalance_scanner_ibkr import is_trade_blocked_by_imbalance
 from tbot_bot.enhancements.ticker_blocklist import is_ticker_blocked
 from tbot_bot.trading.kill_switch import trigger_shutdown
-from tbot_bot.risk.risk_bot import validate_trade
-from tbot_bot.reporting.error_handler import handle_error
+from tbot_bot.trading.risk_bot import validate_trade
+from tbot_bot.config.error_handler import handle_error
 from tbot_bot.trading.instruments import resolve_bearish_instrument
 
 config = get_bot_config()

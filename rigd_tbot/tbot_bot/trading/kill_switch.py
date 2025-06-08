@@ -8,16 +8,18 @@ specified in decrypted config. Prevents further trades and logs the trigger even
 
 import os
 import json
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.path_resolver import get_output_path
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
+from tbot_bot.support.utils_identity import get_bot_identity
 
-DAILY_LOSS_LIMIT = float(env_config.get("DAILY_LOSS_LIMIT", 0.05))
-BOT_ID = env_config["BOT_IDENTITY_STRING"]
+config = get_bot_config()
+DAILY_LOSS_LIMIT = float(config.get("DAILY_LOSS_LIMIT", 0.05))
+BOT_ID = get_bot_identity()
 
-SUMMARY_PATH = get_output_path("summaries", f"{BOT_ID}_BOT_daily_summary.json")
-SHUTDOWN_FLAG = get_output_path("logs", "shutdown_triggered.txt")
+SUMMARY_PATH = get_output_path(category="summaries", filename=f"{BOT_ID}_BOT_daily_summary.json")
+SHUTDOWN_FLAG = get_output_path(category="logs", filename="shutdown_triggered.txt")
 
 def load_summary():
     """Load session summary JSON to access total PnL."""

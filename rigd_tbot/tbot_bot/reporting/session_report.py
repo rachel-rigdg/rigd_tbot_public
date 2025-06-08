@@ -4,14 +4,11 @@
 import os
 import json
 from datetime import datetime
-from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
 
-config = get_bot_config()
-
-# Construct filenames based on bot identity
-identity = config.get("BOT_IDENTITY_STRING")  # {ENTITY}_{JURIS}_{BROKER}_{BOT_ID}
+identity = get_bot_identity()  # {ENTITY}_{JURIS}_{BROKER}_{BOT_ID}
 summary_filename = f"{identity}_BOT_daily_summary.json"
 timestamped_filename = f"summary_{identity}_BOT_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
 

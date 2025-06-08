@@ -11,14 +11,15 @@ from tbot_bot.broker.broker_api import place_order, close_position
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 
-# Load config from env_config for single broker mode
-MAX_RISK_PER_TRADE = env_config.get("MAX_RISK_PER_TRADE", 0.025)
-FRACTIONAL = env_config.get("FRACTIONAL", True)
-MIN_PRICE = float(env_config.get("MIN_PRICE", 5))
-MAX_PRICE = float(env_config.get("MAX_PRICE", 100))
+# Load config from get_bot_config for single broker mode
+config = get_bot_config()
+MAX_RISK_PER_TRADE = config.get("MAX_RISK_PER_TRADE", 0.025)
+FRACTIONAL = config.get("FRACTIONAL", True)
+MIN_PRICE = float(config.get("MIN_PRICE", 5))
+MAX_PRICE = float(config.get("MAX_PRICE", 100))
 
-# Use single BROKER_NAME from env_config (mandatory)
-BROKER_NAME = env_config.get("BROKER_NAME", "ALPACA").lower()
+# Use single BROKER_NAME from config (mandatory)
+BROKER_NAME = config.get("BROKER_NAME", "ALPACA").lower()
 
 def create_order(symbol, side, capital, price, stop_loss_pct=0.02, strategy=None):
     """

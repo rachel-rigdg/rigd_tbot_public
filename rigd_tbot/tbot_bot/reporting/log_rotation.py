@@ -4,11 +4,11 @@
 import os
 import time
 from datetime import datetime
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
 
-BOT_IDENTITY = env_config.get("BOT_IDENTITY_STRING")
+BOT_IDENTITY = get_bot_identity()
 
 CATEGORIES = ["logs", "summaries", "trades"]
 

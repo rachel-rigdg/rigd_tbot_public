@@ -5,11 +5,11 @@ import os
 import json
 from datetime import datetime
 from typing import List, Dict
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
 
-BOT_IDENTITY = env_config.get("BOT_IDENTITY_STRING")
+BOT_IDENTITY = get_bot_identity()
 SUMMARY_FILE = f"{BOT_IDENTITY}_BOT_daily_summary.json"
 
 _summary_data = {

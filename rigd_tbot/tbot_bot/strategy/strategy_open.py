@@ -11,8 +11,8 @@ from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.strategy.strategy_meta import StrategyResult
-from tbot_bot.risk.risk_bot import validate_trade
-from tbot_bot.reporting.error_handler import handle_error
+from tbot_bot.trading.risk_bot import validate_trade
+from tbot_bot.config.error_handler import handle_error
 from tbot_bot.trading.instruments import resolve_bearish_instrument
 
 config = get_bot_config()

@@ -15,7 +15,7 @@ import pandas as pd
 from tbot_bot.backtest.load_historical_data import load_data
 from tbot_bot.backtest.performance_metrics import calculate_metrics
 from tbot_bot.backtest.plot_results import plot_equity_curve
-from tbot_bot.config.env_bot import env_config
+from tbot_bot.config.env_bot import get_bot_config
 
 from tbot_bot.strategy.strategy_open import simulate_open
 from tbot_bot.strategy.strategy_mid import simulate_mid
@@ -46,7 +46,8 @@ def backtest(strategy: str, data_path: str, start_date: str, end_date: str):
 
     print(f"[backtest_engine] Running backtest for {strategy} strategy...")
     simulate_func = STRATEGY_SIMULATORS[strategy]
-    trades = simulate_func(df, env_config)
+    config = get_bot_config()
+    trades = simulate_func(df, config)
 
     # Output log file
     timestamp = datetime.utcnow().replace(tzinfo=timezone.utc).strftime("%Y%m%d_%H%M%S")

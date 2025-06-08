@@ -4,13 +4,12 @@
 import json
 from pathlib import Path
 from tbot_bot.support.utils_time import utc_now
-from tbot_bot.support.utils_identity import get_bot_identity_string
 from tbot_bot.support.utils_config import get_bot_config
 
 def get_log_dir():
     """
     Dynamically resolve the log directory using the current bot identity.
-    Fallback to 'bootstrap' log dir if identity is missing.
+    Fallback to 'bootstrap' log dir if identity is missing or get_bot_identity import fails.
     """
     try:
         BASE_DIR = Path(__file__).resolve().parents[2]
@@ -18,12 +17,13 @@ def get_log_dir():
         from os import getcwd
         BASE_DIR = Path(getcwd())
     try:
-        BOT_IDENTITY_STRING = get_bot_identity_string()
-        if not BOT_IDENTITY_STRING or BOT_IDENTITY_STRING.upper() == "UNKNOWN_BOT":
-            BOT_IDENTITY_STRING = "bootstrap"
+        from tbot_bot.support.utils_identity import get_bot_identity
+        BOT_IDENTITY = get_bot_identity()
+        if not BOT_IDENTITY or BOT_IDENTITY.upper() == "UNKNOWN_BOT":
+            BOT_IDENTITY = "bootstrap"
     except Exception:
-        BOT_IDENTITY_STRING = "bootstrap"
-    return BASE_DIR / "tbot_bot" / "output" / BOT_IDENTITY_STRING / "logs"
+        BOT_IDENTITY = "bootstrap"
+    return BASE_DIR / "tbot_bot" / "output" / BOT_IDENTITY / "logs"
 
 def get_log_settings():
     """

@@ -6,11 +6,11 @@ import sys
 import json
 import sqlite3
 from tbot_bot.support.path_resolver import (
-    get_bot_identity,
     get_output_path,
     resolve_coa_db_path,
     resolve_coa_template_path
 )
+from tbot_bot.support.utils_identity import get_bot_identity
 
 def load_json(path):
     with open(path, "r", encoding="utf-8") as f:
