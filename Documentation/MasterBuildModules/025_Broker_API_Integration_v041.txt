@@ -64,4 +64,60 @@ Audit & Compliance:
 - Sensitive info redacted in logs.
 - Compliance with broker TOS enforced.
 
+
+================================================================================  
+Section: Broker Credential Variable Standardization  
+================================================================================
+
+**Unified Broker Credential Variables**  
+To ensure maintainability and avoid code drift, all broker integrations must consume credentials and endpoint settings from a standardized, broker-agnostic variable set. This applies to both the decrypted `.env_bot` and encrypted `broker_credentials.json.enc` files.
+
+**Mandatory Broker Credential Fields:**  
+BROKER_CODE=              # Internal identifier ("ALPACA", "IBKR", "TRADIER", etc.)
+BROKER_HOST=              # Broker API host address (if applicable)
+BROKER_USERNAME=          # Username or login credential (for brokers requiring authentication)
+BROKER_PASSWORD=          # Password or API passphrase (never stored in plaintext)
+BROKER_ACCOUNT_NUMBER=    # Account number or ID (if required by the broker)
+BROKER_API_KEY=           # Primary API key or token
+BROKER_SECRET_KEY=        # Secret key or secondary token (if required)
+BROKER_URL=               # Full API base URL (e.g., https://paper-api.alpaca.markets)
+
+**Broker Integration Requirements:**  
+- All broker adapters (e.g., `broker_alpaca.py`, `broker_ibkr.py`) must load only these variables from the config/environment, regardless of broker.
+- No broker-specific variable names (e.g., `ALPACA_API_KEY`, `IBKR_API_HOST`) are permitted in the config, adapters, or runtime logic.
+- Broker adapters are responsible for mapping these generic variables to the exact fields and authentication flows required by their respective APIs.
+- All secret fields must be sourced via secure decryption (never from plaintext `.env` in production).
+
+**Example Usage in Broker Adapter:**
+```python
+# Example (Alpaca)
+self.api_key    = env.get("BROKER_API_KEY")
+self.secret_key = env.get("BROKER_SECRET_KEY")
+self.base_url   = env.get("BROKER_URL")
+# ...etc.
+
+# Example (IBKR)
+self.host       = env.get("BROKER_HOST")
+self.username   = env.get("BROKER_USERNAME")
+self.password   = env.get("BROKER_PASSWORD")
+self.account    = env.get("BROKER_ACCOUNT_NUMBER")
+# ...etc.
+
+Enforcement:
+
+All new broker integrations, migrations, and maintenance updates must use the agnostic variable standard.
+
+The configuration bootstrap and web UI must write these variables into all new bot configs and encrypted secrets files.
+
+Build and test checks should verify that no deprecated broker-specific variables are referenced in any part of the codebase or configuration.
+
+Rationale:
+
+Enables easy switching between brokers and multi-broker expansion.
+
+Avoids codebase drift, brittle logic, and credential sprawl.
+
+Aligns with the overall system architecture and security design.
+
+
 End of Document
