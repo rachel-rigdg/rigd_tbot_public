@@ -13,13 +13,9 @@ ROOT = Path(__file__).resolve().parents[1] / "storage"
 KEY_DIR = ROOT / "keys"
 ENCRYPTED_DIR = ROOT / "secrets"
 
-# Throttle for missing identity warnings (per session)
 _warned_missing_identity = False
 
 def load_key(key_name: str) -> bytes:
-    """
-    Loads a Fernet key from the /storage/keys/ directory.
-    """
     key_path = KEY_DIR / f"{key_name}.key"
     if not key_path.is_file():
         raise FileNotFoundError(f"Missing key file: {key_path}")
@@ -34,7 +30,6 @@ def decrypt_json(name: str) -> Dict:
     fernet = Fernet(key)
     enc_path = ENCRYPTED_DIR / f"{name}.json.enc"
     if not enc_path.is_file():
-        # DEBUG: log the path being checked for troubleshooting initial bootstrap
         log_event("decrypt_secrets", f"DEBUG: Looking for encrypted file at: {enc_path}", level="warning")
         raise FileNotFoundError(f"Missing encrypted file: {enc_path}")
 
@@ -42,7 +37,6 @@ def decrypt_json(name: str) -> Dict:
         encrypted_data = enc_path.read_bytes()
         decrypted = fernet.decrypt(encrypted_data)
         parsed = json.loads(decrypted.decode("utf-8"))
-        # log_event("decrypt_secrets", f"Successfully decrypted {name}.json.enc at {utc_now().isoformat()}")
         return parsed
     except Exception as e:
         log_event("decrypt_secrets", f"Failed to decrypt {name}.json.enc: {e}", level="error")
@@ -69,13 +63,25 @@ def load_bot_identity(default: Optional[str] = None) -> Optional[str]:
             _warned_missing_identity = True
         return default
     except Exception:
-        # Catch all unexpected exceptions, but throttle logging to one warning
         if not _warned_missing_identity:
             log_event("decrypt_secrets", "bot_identity.json.enc or key not found; returning default", level="warning")
             _warned_missing_identity = True
         return default
 
-# Example direct usage
+def load_broker_credential(field: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Decrypts and returns a credential field from broker_credentials.json.enc.
+    Returns default if field is missing or file not found.
+    """
+    try:
+        data = decrypt_json("broker_credentials")
+        value = data.get(field)
+        if value is not None:
+            return value
+        return default
+    except Exception:
+        return default
+
 if __name__ == "__main__":
     try:
         data = decrypt_json("env")  # Example: decrypt env.json.enc using env.key

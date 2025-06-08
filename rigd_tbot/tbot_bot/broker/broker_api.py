@@ -1,39 +1,39 @@
 # tbot_bot/broker/broker_api.py
 # Unified broker interface and trade dispatch router (single-broker mode)
 
-from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.decrypt_secrets import load_broker_credential
 from tbot_bot.broker.brokers.broker_alpaca import AlpacaBroker
 from tbot_bot.broker.brokers.broker_ibkr import IBKRBroker
 from tbot_bot.trading.logs_bot import log_event
+from tbot_bot.config.env_bot import get_bot_config
 
-# Always load config at runtime for fresh settings
 def get_active_broker():
     """
-    Returns the initialized broker object based on BROKER_NAME in env_bot.
+    Returns the initialized broker object based on BROKER_CODE (BROKER_NAME) from broker_credentials.json.enc.
     """
+    broker_code = load_broker_credential("BROKER_CODE", "").lower()
     config = get_bot_config()
-    broker_name = config.get("BROKER_NAME", "").lower()
-    if broker_name == "alpaca":
-        return AlpacaBroker(config)
-    elif broker_name == "ibkr":
-        return IBKRBroker(config)
+    # Provide broker credentials from decrypted secrets
+    broker_credentials = {
+        "BROKER_CODE": broker_code,
+        "BROKER_HOST": load_broker_credential("BROKER_HOST", ""),
+        "BROKER_USERNAME": load_broker_credential("BROKER_USERNAME", ""),
+        "BROKER_PASSWORD": load_broker_credential("BROKER_PASSWORD", ""),
+        "BROKER_ACCOUNT_NUMBER": load_broker_credential("BROKER_ACCOUNT_NUMBER", ""),
+        "BROKER_API_KEY": load_broker_credential("BROKER_API_KEY", ""),
+        "BROKER_SECRET_KEY": load_broker_credential("BROKER_SECRET_KEY", ""),
+        "BROKER_URL": load_broker_credential("BROKER_URL", ""),
+        **config  # merge in runtime config for risk/strategy settings, etc.
+    }
+
+    if broker_code == "alpaca":
+        return AlpacaBroker(broker_credentials)
+    elif broker_code == "ibkr":
+        return IBKRBroker(broker_credentials)
     else:
-        raise RuntimeError(f"[broker_api] Unsupported or missing BROKER_NAME: {broker_name}")
+        raise RuntimeError(f"[broker_api] Unsupported or missing BROKER_CODE: {broker_code}")
 
 def place_order(order):
-    """
-    Submit an order to the active broker.
-    Args:
-        order (dict): {
-            'symbol': str,
-            'side': 'buy' or 'sell',
-            'qty': float,
-            'order_type': 'market' or 'limit',
-            'strategy': str
-        }
-    Returns:
-        dict: Order response or error details
-    """
     try:
         broker = get_active_broker()
         return broker.submit_order(order)

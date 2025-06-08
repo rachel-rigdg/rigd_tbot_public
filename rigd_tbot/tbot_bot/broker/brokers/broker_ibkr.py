@@ -48,7 +48,7 @@ class IBKRBroker:
     def get_position(self, symbol):
         try:
             return next((p for p in self.client.positions() if p.contract.symbol == symbol), None)
-        except:
+        except Exception:
             return None
 
     def submit_order(self, order):

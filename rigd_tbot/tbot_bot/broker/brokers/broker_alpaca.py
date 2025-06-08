@@ -8,7 +8,7 @@ from tbot_bot.trading.logs_bot import log_event
 class AlpacaBroker:
     def __init__(self, env):
         """
-        Initializes Alpaca broker using credentials and endpoint from .env_bot config.
+        Initializes Alpaca broker using credentials and endpoint from unified, agnostic config.
         """
         self.api_key = env.get("BROKER_API_KEY")
         self.secret_key = env.get("BROKER_SECRET_KEY")
@@ -43,7 +43,7 @@ class AlpacaBroker:
     def get_position(self, symbol):
         try:
             return self._request("GET", f"/v2/positions/{symbol}")
-        except:
+        except Exception:
             return None
 
     def submit_order(self, order):
@@ -81,5 +81,5 @@ class AlpacaBroker:
         try:
             account = self.get_account_info()
             return account.get("status", "").upper() == "ACTIVE"
-        except:
+        except Exception:
             return False
