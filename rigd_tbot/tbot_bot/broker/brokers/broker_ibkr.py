@@ -7,12 +7,18 @@ from tbot_bot.trading.logs_bot import log_event
 class IBKRBroker:
     def __init__(self, env):
         """
-        Initializes IBKR broker using values from env_bot.
+        Initializes IBKR broker using values from broker-agnostic env_bot.
         Expects TWS or IB Gateway running with API enabled.
         """
-        self.host = env.get("IBKR_API_HOST", "127.0.0.1")
-        self.port = int(env.get("IBKR_API_PORT", 7497))
-        self.client_id = int(env.get("IBKR_CLIENT_ID", 1))
+        self.host = env.get("BROKER_HOST", "127.0.0.1")
+        self.port = int(env.get("BROKER_PORT", 7497))
+        self.client_id = int(env.get("BROKER_CLIENT_ID", 1))
+        self.username = env.get("BROKER_USERNAME")
+        self.password = env.get("BROKER_PASSWORD")
+        self.account_number = env.get("BROKER_ACCOUNT_NUMBER")
+        self.api_key = env.get("BROKER_API_KEY")
+        self.secret_key = env.get("BROKER_SECRET_KEY")
+        self.url = env.get("BROKER_URL")
 
         self.client = IB()
         try:
