@@ -14,7 +14,7 @@ from tbot_bot.enhancements.adx_filter import adx_filter
 from tbot_bot.enhancements.bollinger_confluence import confirm_bollinger_touch
 from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.trading.risk_bot import validate_trade
-from tbot_bot.config.error_handler import handle_error
+from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.trading.instruments import resolve_bearish_instrument
 
 config = get_bot_config()

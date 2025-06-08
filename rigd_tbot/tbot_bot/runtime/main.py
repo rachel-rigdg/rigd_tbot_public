@@ -13,7 +13,7 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.strategy.strategy_router import run_strategy
 from tbot_bot.runtime.status_bot import update_bot_state, start_heartbeat
 from tbot_bot.enhancements.build_check import run_build_check
-from tbot_bot.config.error_handler_bot import handle_error
+from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.runtime.watchdog_bot import start_watchdog
 from tbot_bot.trading.kill_switch import check_daily_loss_limit
 

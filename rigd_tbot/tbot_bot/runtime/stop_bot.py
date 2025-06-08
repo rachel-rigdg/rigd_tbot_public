@@ -12,14 +12,14 @@ from tbot_bot.runtime.status_bot import bot_status
 from tbot_bot.support.utils_time import utc_now              # UPDATED: from utils_time
 from tbot_bot.support.utils_log import log_event         # UPDATED: from utils_log
 from tbot_bot.reporting.summary_bot import generate_session_summary
-from tbot_bot.broker.broker_api import get_broker_interface  # Unified broker interface loader
+from tbot_bot.broker.broker_api import get_active_broker  # Unified broker interface loader
 
 def stop_bot_session():
     config = get_bot_config()
 
     # Load broker using unified adapter (no longer uses BROKER_CODE/_MODE logic)
     try:
-        broker = get_broker_interface(config)  # Handles adapter selection based on BROKER_NAME
+        broker = get_active_broker()  # Handles adapter selection based on BROKER_NAME
     except Exception as e:
         log_event("stop_bot", f"Failed to initialize broker interface: {e}")
         bot_status.increment_error_count()
