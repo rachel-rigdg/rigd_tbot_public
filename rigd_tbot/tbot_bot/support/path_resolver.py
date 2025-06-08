@@ -95,6 +95,14 @@ def get_cache_path(filename: str) -> str:
     """
     return str(PROJECT_ROOT / "tbot_bot" / "data" / "cache" / filename)
 
+# === CONTROL PATH RESOLUTION ===
+
+def get_bot_state_path() -> str:
+    """
+    Returns the absolute path to bot_state.txt (rigd_tbot/tbot_bot/control/bot_state.txt)
+    """
+    return str(PROJECT_ROOT / "tbot_bot" / "control" / "bot_state.txt")
+
 # === COA support: JSON, metadata, and audit log resolution ===
 
 def resolve_coa_json_path() -> str:
@@ -163,6 +171,7 @@ __all__ = [
     "get_secret_path",
     "get_schema_path",
     "get_cache_path",
+    "get_bot_state_path",
     "resolve_output_folder_path",
     "resolve_ledger_db_path",
     "resolve_coa_db_path",
