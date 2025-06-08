@@ -113,59 +113,122 @@ TradeBot enforces dynamic float allocation and strict per-session risk controls 
 - *All controls are identical in test/live.*
 - **No manual overrides** except via `.env_bot` (Web UI).
 
-================================================================================
-TradeBot Strategy Logic Spec v1.1 (Self-Contained)
-================================================================================
+
+=============================================================================================================================================
+TradeBot Strategy Logic Spec v1.1 (Updated for Accounting System Integration)
+=============================================================================================================================================
 
 **Overview:**  
-TradeBot executes breakout and mean-reversion strategies using unified, dynamic config (from `.env_bot` only). No hardcoded logic.
+TBot executes intraday breakout and mean-reversion strategies using a unified logic pipeline. All trade entries are directional and follow structured risk, time, and allocation parameters as defined in `.env_bot`. All parameters, filters, and toggles must be dynamically sourced—no hardcoded logic.
 
 **Supported Instruments:**  
-- Long equity (stocks, ETFs)
+- Long equity (common stocks or ETFs)
 - Inverse ETFs (e.g., SH, SQQQ)
 - Long puts (IBKR only)
 
-**Direction/Shorting Rules:**  
-- Long: supported on all brokers
-- Bearish: executed if `SHORT_TYPE_*` not `disabled`
-- Puts: IBKR only, if `SHORT_TYPE_* = LongPut`
-- Inverse ETF: non-options brokers, if `SHORT_TYPE_* = InverseETF`
+**Trade Direction Rules:**  
+- Long trades: Supported on all brokers
+- Bearish trades: Executed only if corresponding `SHORT_TYPE_*` is not `disabled`
+- Puts: Used only if broker is IBKR and `SHORT_TYPE_* = LongPut`
+- Inverse ETFs: Used for non-options brokers when `SHORT_TYPE_* = InverseETF`
 
 **Supported Brokers:**  
-- Alpaca: long equity, inverse ETF
-- IBKR: long equity, inverse ETF, long puts
-- Tradier: long equity, inverse ETF
+- Alpaca: long equity, inverse ETFs
+- IBKR: long equity, inverse ETFs, long puts
+- Tradier: long equity, inverse ETFs
 
 **Execution Framework:**  
-- Strategy sequencing via `STRATEGY_SEQUENCE` (`.env_bot`)
-- Each module (`strategy_open.py`, `strategy_mid.py`, `strategy_close.py`) loaded by `strategy_router.py`
-- All timing/risk/config sourced from `.env_bot` (UTC enforced)
+- Strategy execution is sequenced via `STRATEGY_SEQUENCE` in `.env_bot`
+- Each strategy module (`strategy_open.py`, `strategy_mid.py`, `strategy_close.py`) is loaded independently by `strategy_router.py`
+- Runtime logic strictly observes UTC windows and `.env_bot` timing/config variables
 
-**Ledger and Accounting:**  
-- *All trade activities, allocations, and PnL updates are written directly to:*
-    - `output/{BOT_IDENTITY}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
-- *All ledger entries* comply with OFX schema:
-    - Fields: `TRNTYPE`, `DTPOSTED` (UTC), `FITID`, broker, strategy, ticker, side, size, entry/exit, PnL, audit
-- `.csv` or `.json` trade histories are for external audit only, not parsed by bot
-- Reporting/reconciliation is always local to bot; external export is operator-triggered
+**Ledger and Accounting Integration:**  
+- **All trade activities, allocations, and PnL updates are written directly to:**
+    - `output/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+- **All ledger entries** must comply with OFX schema:
+    - Required fields: `TRNTYPE`, `DTPOSTED` (UTC), `FITID`, broker, strategy, ticker, side, size, entry_price, exit_price, PnL, and audit references.
+- `.csv` or `.json` trade histories are external audit artifacts and not parsed for ledger ingestion.
+- All reporting and reconciliation flow through the accounting system’s ingestion modules.
 
 ---
 
-**Active Strategies:**  
-[All per-strategy details retained as written; no external accounting references.]
+**Active Strategies:**
+
+---------------------------------------------------------
+Strategy: strategy_open.py – Opening Range Breakout
+---------------------------------------------------------
+- **Time Window:**
+  - Start: `START_TIME_OPEN` (14:30 UTC = 9:30 AM EST)
+  - Analysis: `OPEN_ANALYSIS_TIME` (minutes)
+  - Breakout: `OPEN_BREAKOUT_TIME` (minutes)
+  - Monitoring: `OPEN_MONITORING_TIME` (minutes)
+- **Trade Direction:** Long by default; short only if `SHORT_TYPE_OPEN` ≠ `disabled`
+- **Entry Logic:**
+  - Track high/low during analysis window
+  - Enter if price > high * (1 + `STRAT_OPEN_BUFFER`) or < low * (1 - `STRAT_OPEN_BUFFER`)
+  - Entry must occur within breakout window
+- **Exit Logic:** 2% trailing stop or monitoring timeout
+- **Shorting:** Controlled by `SHORT_TYPE_OPEN`: InverseETF, LongPut, ShortSell, or disabled
+- **Logging:**
+  - Logs: `open.log`
+  - Ledger: `output/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+  - Trade History: `output/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
+
+---------------------------------------------------------
+Strategy: strategy_mid.py – VWAP Mean Reversion
+---------------------------------------------------------
+- **Time Window:**
+  - Start: `START_TIME_MID` (15:30 UTC = 10:30 AM EST)
+  - Analysis: `MID_ANALYSIS_TIME` (minutes)
+  - Breakout: `MID_BREAKOUT_TIME` (minutes)
+  - Monitoring: `MID_MONITORING_TIME` (minutes)
+- **Trade Direction:** Long or Bearish
+- **Entry Logic:**
+  - Enter on price deviation from VWAP ±`STRAT_MID_VWAP_THRESHOLD`
+  - Confirm with ADX and Bollinger filters
+  - Entry must be within breakout window
+- **Exit Logic:** VWAP touch, 1.5% stop loss, or timeout
+- **Shorting:** Controlled by `SHORT_TYPE_MID`: InverseETF, LongPut, ShortSell, or disabled
+- **Enhancements:** `adx_filter.py`, `bollinger_confluence.py`
+- **Logging:**
+  - Logs: `mid.log`
+  - Ledger: `output/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+  - Trade History: `output/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
+
+---------------------------------------------------------
+Strategy: strategy_close.py – End-of-Day Momentum / Fade
+---------------------------------------------------------
+- **Time Window:**
+  - Start: `START_TIME_CLOSE` (19:30 UTC = 2:30 PM EST)
+  - Analysis: `CLOSE_ANALYSIS_TIME` (minutes)
+  - Breakout: `CLOSE_BREAKOUT_TIME` (minutes)
+  - Monitoring: `CLOSE_MONITORING_TIME` (minutes)
+- **Trade Direction:** Long or Bearish
+- **Entry Logic:**
+  - Enter on momentum continuation or spike reversal
+  - Requires VIX > `STRAT_CLOSE_VIX_THRESHOLD`
+  - Entry must be within breakout window
+- **Exit Logic:** 2% stop loss or hard exit at session end
+- **Shorting:** Controlled by `SHORT_TYPE_CLOSE`: InverseETF, LongPut, ShortSell, or disabled
+- **Enhancements:** `vix_gatekeeper.py`, `imbalance_scanner_ibkr.py`, `ticker_blocklist.py`
+- **Logging:**
+  - Logs: `close.log`
+  - Ledger: `output/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+  - Trade History: `output/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
 
 ---
 
 **Strategy Failover Logic**
-- Any `.self_check()` failure disables that strategy; all failures logged UTC
-- If `STRATEGY_OVERRIDE` is set, only that strategy executes
-- Enforces:
+- Any `.self_check()` failure skips that strategy; all failures logged with UTC timestamp
+- If `STRATEGY_OVERRIDE` is set (e.g., `mid`), only the specified strategy executes
+- All execution strictly enforces:
   - `DISABLE_ALL_TRADES`
   - `DAILY_LOSS_LIMIT`
   - `MAX_OPEN_POSITIONS`
-  - `TOTAL_ALLOCATION`, `WEIGHTS`
-  - Broker status, float, account
-- All risk/execution config is sourced from `.env_bot`
+  - `TOTAL_ALLOCATION` and `WEIGHTS`
+  - Broker status, float, and account restrictions
+- All risk and execution constraints sourced dynamically from `.env_bot` (never hardcoded or inferred)
+
 
 ================================================================================
 InverseETF Integration Specification (Final v1.0)
