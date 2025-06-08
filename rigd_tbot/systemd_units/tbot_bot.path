@@ -7,6 +7,7 @@ Description=RIGD TradeBot Bot Start Trigger Path
 [Path]
 PathExists=/home/tbot/rigd_tbot/tbot_bot/control/control_start.txt
 Unit=tbot_bot.service
+Environment=CONTROL_DIR=/home/tbot/rigd_tbot/tbot_bot/control
 
 [Install]
 WantedBy=multi-user.target

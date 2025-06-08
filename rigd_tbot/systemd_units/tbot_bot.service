@@ -10,6 +10,7 @@ Type=simple
 User=tbot
 WorkingDirectory=/home/tbot/rigd_tbot
 Environment=PYTHONPATH=/home/tbot/rigd_tbot
+Environment=CONTROL_DIR=/home/tbot/rigd_tbot/tbot_bot/control
 ExecStartPre=/usr/bin/test -f /home/tbot/rigd_tbot/tbot_bot/control/control_start.txt
 ExecStartPre=/bin/echo "[systemd:tbot_bot] Starting main bot process..."
 ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/runtime/main.py
