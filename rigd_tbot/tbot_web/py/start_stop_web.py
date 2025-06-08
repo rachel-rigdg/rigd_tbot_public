@@ -56,6 +56,7 @@ def trigger_stop():
 def trigger_kill():
     """
     Writes control_kill.txt to signal immediate bot shutdown and deletes start/stop flags if they exist.
+    Only writes kill flag if explicitly requested by POST to this route.
     """
     if is_first_bootstrap():
         return redirect(url_for("configuration_web.show_configuration"))

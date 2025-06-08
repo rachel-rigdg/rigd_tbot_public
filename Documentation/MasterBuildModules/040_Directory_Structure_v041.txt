@@ -178,6 +178,8 @@ rigd_tbot/
 │   │       │   ├── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA_v1.0.0.db    	# Chart of Accounts (COA) for bot ledger, schema version v1.0.0
 │   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db        	# OFX-compliant ledger for live trading data per broker
 │   │       │
+│   │       ├── screeners/
+│   │       │
 │   │       ├── summaries/
 │   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_daily_summary.json  	# JSON performance summary for session (PnL, latency, counts, risk triggers)
 │   │       │

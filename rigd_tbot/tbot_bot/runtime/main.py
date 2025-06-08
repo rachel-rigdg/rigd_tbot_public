@@ -63,9 +63,11 @@ def close_all_positions_immediately():
     update_bot_state("emergency_closing_positions")
     # TODO: Insert real close positions logic here
 
-def is_market_open(now_time):
-    """Return True if current UTC time is within market hours."""
-    return MARKET_OPEN_TIME <= now_time <= MARKET_CLOSE_TIME
+def is_market_open(now_time=None):
+    now = now_time or datetime.utcnow()
+    if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
+        return False
+    return MARKET_OPEN_TIME <= now.time() <= MARKET_CLOSE_TIME
 
 def main():
     try:
@@ -108,8 +110,8 @@ def main():
                 safe_exit()
 
             # Market hours gating: skip if outside market hours and no manual override
-            now_time = datetime.utcnow().time()
-            if not is_market_open(now_time) and not STRATEGY_OVERRIDE:
+            now_dt = datetime.utcnow()
+            if not is_market_open(now_dt) and not STRATEGY_OVERRIDE:
                 print(f"[main_bot] Outside market hours. Skipping {strat_name}.")
                 log_event("main_bot", f"Outside market hours. Skipping {strat_name}.")
                 continue
