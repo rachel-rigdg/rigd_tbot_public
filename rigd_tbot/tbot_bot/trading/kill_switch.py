@@ -69,6 +69,7 @@ def trigger_shutdown(reason="DAILY_LOSS_LIMIT breach"):
         with open(SHUTDOWN_FLAG, "w") as f:
             f.write(f"Shutdown triggered at {utc_now().isoformat()} — Reason: {reason}\n")
         # Write/refresh kill flag for clarity (redundant but explicit)
+        CONTROL_DIR.mkdir(parents=True, exist_ok=True)
         with open(KILL_FLAG, "w") as f:
             f.write(f"kill — {reason}")
         from tbot_bot.trading.notifier_bot import notify_critical_error

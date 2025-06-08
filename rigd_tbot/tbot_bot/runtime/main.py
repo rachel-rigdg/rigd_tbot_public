@@ -16,6 +16,7 @@ from tbot_bot.enhancements.build_check import run_build_check
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.runtime.watchdog_bot import start_watchdog
 from tbot_bot.trading.kill_switch import check_daily_loss_limit
+from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
 import os
@@ -80,6 +81,9 @@ def main():
         # Step 5: Determine strategy execution order (overridden or default)
         strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
         print(f"[main_bot] Strategy sequence: {strategies}")
+
+        print("[main_bot] TradeBot startup successful — main runtime active.")
+        log_event("main_bot", "TradeBot startup successful — main runtime active.")
 
         graceful_stop = False
 
