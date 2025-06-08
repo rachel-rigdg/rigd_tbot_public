@@ -1,0 +1,12 @@
+# systemd_units/tbot_bot.path
+# Watches for control_start.txt and triggers tbot_bot.service
+
+[Unit]
+Description=RIGD TradeBot Bot Start Trigger Path
+
+[Path]
+PathExists=/home/tbot/rigd_tbot/tbot_bot/control/control_start.txt
+Unit=tbot_bot.service
+
+[Install]
+WantedBy=multi-user.target

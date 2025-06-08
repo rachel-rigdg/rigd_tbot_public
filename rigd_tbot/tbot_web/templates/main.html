@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
-    
+  
 </head>
 <body class="dashboard-page">
     <div class="formcontent center">
@@ -19,8 +19,8 @@
 
     <footer class="footer">
 
-          <!-- Start/Stop/Kill control buttons spaced evenly -->
-          <div class="startKillContainer center">
+        <!-- Start/Stop/Kill control buttons spaced evenly -->
+        <div class="startKillContainer center">
             <form action="{{ url_for('start_stop.trigger_start') }}" method="post" target="viewFrame">
                 <button type="submit" id="start-bot">Start Bot</button>
             </form>
@@ -30,8 +30,11 @@
             <form action="{{ url_for('start_stop.trigger_kill') }}" method="post" target="viewFrame">
                 <button type="submit" id="kill-bot">Kill Now</button>
             </form>
+            <form action="{{ url_for('logout_web.logout') }}" method="get" style="display:inline;">
+                <button type="submit" id="logout-btn">Log Out</button>
+            </form>
+            
         </div>
-
 
         <!-- Tab-style navigation within iframe as button forms (spec-compliant, accessible) -->
         <div class="tab-container">
@@ -51,7 +54,6 @@
                 <button type="submit" class="tab-button">Configuration</button>
             </form>
         </div>
-
 
         <p>&copy; 2025 RIGD Group LLC – TradeBot Monitoring Interface</p>
     </footer>

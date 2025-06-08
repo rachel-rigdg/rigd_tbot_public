@@ -2,7 +2,7 @@
 # Handles user logout and session termination
 
 from flask import Blueprint, redirect, url_for, session
-from tbot_web.support.utils_log import log_event  # Corrected import per directory spec
+from tbot_bot.support.utils_log import log_event  # Corrected import: now references tbot_bot.support.utils_log
 
 logout_blueprint = Blueprint("logout_web", __name__)
 

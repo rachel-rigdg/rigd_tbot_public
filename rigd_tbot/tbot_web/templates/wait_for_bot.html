@@ -32,25 +32,21 @@
         }
     </style>
     <script>
-        async function checkProvisioningStatus() {
-            let statusUrl = "/output/provisioning_status.json";
+        async function checkControlFlag() {
             try {
-                const resp = await fetch(statusUrl, { cache: "no-store" });
-                if (!resp.ok) throw new Error("Status file not available yet");
+                const resp = await fetch("/control_status/start", { cache: "no-store" });
+                if (!resp.ok) throw new Error("Status endpoint not available yet");
                 const data = await resp.json();
-                if (data.status === "complete" || data.status === "ready" || data.status === "success") {
+                if (data.status === "started") {
                     window.location.href = "{{ url_for('main.main_page') }}";
-                } else if (data.status === "error") {
-                    document.querySelector(".msg").innerText =
-                        "Provisioning failed. Please contact support or check logs.";
                 } else {
-                    setTimeout(checkProvisioningStatus, 2000);
+                    setTimeout(checkControlFlag, 2000);
                 }
             } catch (e) {
-                setTimeout(checkProvisioningStatus, 2000);
+                setTimeout(checkControlFlag, 2000);
             }
         }
-        window.onload = checkProvisioningStatus;
+        window.onload = checkControlFlag;
     </script>
 </head>
 <body>

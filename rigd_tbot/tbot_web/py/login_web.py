@@ -16,7 +16,7 @@ API_LOGIN_LIMIT = os.getenv("API_LOGIN_LIMIT", "5/minute")
 SECRET_KEY = os.getenv("SECRET_KEY", "use-secure-random-key-in-production")
 
 # === Flask Blueprint Setup ===
-login_blueprint = Blueprint("login", __name__)
+login_blueprint = Blueprint("login_web", __name__)
 limiter = Limiter(get_remote_address, default_limits=[])
 
 def get_encrypted_password() -> str:
@@ -62,7 +62,7 @@ def logout():
     Clears session on logout.
     """
     session.pop("authenticated", None)
-    return redirect(url_for("login.login"))
+    return redirect(url_for("login_web.login"))
 
 def login_required(f):
     """
@@ -71,6 +71,6 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get("authenticated"):
-            return redirect(url_for("login.login"))
+            return redirect(url_for("login_web.login"))
         return f(*args, **kwargs)
     return decorated_function

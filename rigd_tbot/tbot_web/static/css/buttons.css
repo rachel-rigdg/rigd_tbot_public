@@ -33,14 +33,28 @@ button, .tab-button {
     background: #a80000;
     color: #fff;
 }
-
 .startKillContainer button#kill-bot:hover,
 .startKillContainer button#kill-bot:focus {
     background: #ff3333;
     color: #fff;
     outline: none;
 }
-
+.startKillContainer button#logout-btn {
+    background: #222;
+    color: #fff;
+}
+.startKillContainer button#logout-btn:hover,
+.startKillContainer button#logout-btn:focus {
+    background: #0a9900;
+    color: #fff;
+    outline: none;
+}
+.startKillContainer button#logout-btn:hover,
+.startKillContainer button#logout-btn:focus {
+    background: #666;
+    color: #fff;
+    outline: none;
+}
 button:hover, button:focus {
     background-color: #0a9900;
     color: #dddddd;

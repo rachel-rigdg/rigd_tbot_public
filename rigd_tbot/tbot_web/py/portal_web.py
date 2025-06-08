@@ -2,10 +2,11 @@
 # Unified Flask app factory for app + static + template setup (web UI only; no provisioning logic or privileged imports)
 
 import os
-from flask import Flask, render_template, send_from_directory, redirect, url_for, request
+from flask import Flask, render_template, send_from_directory, redirect, url_for, request, jsonify
 from .main_web import main_blueprint
 from .configuration_web import configuration_blueprint
 from .login_web import login_blueprint
+from .logout_web import logout_blueprint
 from .status_web import status_blueprint
 from .logs_web import logs_blueprint
 from .start_stop_web import start_stop_blueprint
@@ -42,11 +43,21 @@ def create_app():
     app.register_blueprint(start_stop_blueprint)
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(coa_web)
+    app.register_blueprint(logout_blueprint)
 
     # Route for wait_for_bot.html
     @app.route("/wait_for_bot")
     def wait_for_bot():
         return render_template("wait_for_bot.html")
+
+    # Control status endpoint for polling control_start.txt
+    @app.route("/control_status/start")
+    def control_status_start():
+        control_path = Path(BASE_DIR) / ".." / "tbot_bot" / "control" / "control_start.txt"
+        if control_path.exists():
+            return jsonify({"status": "started"})
+        else:
+            return jsonify({"status": "pending"})
 
     # First-boot mode: redirect all requests to /configuration if not configured
     if is_first_bootstrap():
