@@ -102,6 +102,10 @@ def get_market_cap(symbol):
         return None
 
 def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
+    """
+    This function does not run automatically on import.
+    It must be called explicitly by the strategy logic.
+    """
     load_state()
     all_symbols = get_symbol_list()
     log(f"Fetched {len(all_symbols)} total symbols")
@@ -165,4 +169,5 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
     results.sort(key=lambda x: x["momentum"], reverse=True)
     top = results[:limit]
     log_event("screener", f"Selected top {len(top)} candidates from {len(all_symbols)}")
+    save_state()
     return top

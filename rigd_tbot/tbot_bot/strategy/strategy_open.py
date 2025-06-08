@@ -55,7 +55,7 @@ def analyze_opening_range(start_time):
     deadline = start_time + timedelta(minutes=OPEN_ANALYSIS_TIME)
     while utc_now() < deadline:
         try:
-            candidates = get_filtered_stocks()
+            candidates = get_filtered_stocks(strategy="open")
         except Exception as e:
             handle_error("strategy_open", "LogicError", e)
             break
@@ -86,7 +86,7 @@ def detect_breakouts(start_time):
 
     while utc_now() < deadline:
         try:
-            candidates = get_filtered_stocks()
+            candidates = get_filtered_stocks(strategy="open")
         except Exception as e:
             handle_error("strategy_open", "LogicError", e)
             break

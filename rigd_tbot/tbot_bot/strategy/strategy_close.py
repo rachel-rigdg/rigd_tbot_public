@@ -61,7 +61,7 @@ def analyze_closing_signals(start_time):
 
     while utc_now() < deadline:
         try:
-            screener_data = get_filtered_stocks(limit=50)
+            screener_data = get_filtered_stocks(limit=50, strategy="close")
         except Exception as e:
             handle_error("strategy_close", "LogicError", e)
             break

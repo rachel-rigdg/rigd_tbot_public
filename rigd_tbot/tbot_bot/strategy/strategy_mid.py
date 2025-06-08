@@ -56,7 +56,7 @@ def analyze_vwap_signals(start_time):
 
     while utc_now() < deadline:
         try:
-            screener_data = get_filtered_stocks(limit=50)
+            screener_data = get_filtered_stocks(limit=50, strategy="mid")
         except Exception as e:
             handle_error("strategy_mid", "LogicError", e)
             break
