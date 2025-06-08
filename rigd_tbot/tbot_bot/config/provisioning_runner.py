@@ -9,7 +9,6 @@ import sys
 import traceback
 import os
 
-# Inject root to sys.path to fix module resolution
 if "RIGD_TBOT_ROOT" in os.environ:
     ROOT = Path(os.environ["RIGD_TBOT_ROOT"]).resolve()
 else:
@@ -27,7 +26,6 @@ CONTROL_START_PATH = CONTROL_DIR / "control_start.txt"
 STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "logs" / "provisioning_status.json"
 STATUS_BOOTSTRAP_PATH = BOOTSTRAP_LOGS_PATH / "provisioning_status.json"
 
-# Provisioning step modules
 sys.path.insert(0, str(CONFIG_PATH))
 from tbot_bot.config.key_manager import main as key_manager_main
 from tbot_bot.config.provisioning_helper import main as provisioning_helper_main
@@ -68,7 +66,6 @@ def main():
     while True:
         if PROVISION_FLAG_PATH.exists():
             bot_identity = get_bot_identity_string()
-            # Write provisioning status to bootstrap/logs/ until bot_identity is available
             if bot_identity and bot_identity != "undefined":
                 status_path = OUTPUT_BASE / bot_identity / "logs" / "provisioning_status.json"
             else:
@@ -83,10 +80,12 @@ def main():
                 bootstrapping_helper_main()
                 write_status(status_path, "running", "Database initialization.")
                 db_bootstrap_main()
+                # Ensure decrypted config is flushed before clearing flag
+                time.sleep(0.5)
+                clear_provision_flag()
                 write_status(status_path, "running", "Creating control_start.txt to launch bot via systemd.")
                 create_control_start_flag()
                 write_status(status_path, "complete", "Provisioning complete, control_start.txt created for bot launch.")
-                clear_provision_flag()
             except Exception as e:
                 tb = traceback.format_exc()
                 write_status(status_path, "error", f"Error: {e}\nTraceback:\n{tb}")

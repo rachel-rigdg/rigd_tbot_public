@@ -14,8 +14,10 @@ def root_router():
     if is_first_bootstrap():
         print("[main_web] is_first_bootstrap=True, redirecting to configuration_web.show_configuration")
         return redirect(url_for("configuration_web.show_configuration"))
-    # Always route to provisioning to check if provisioning is pending
-    return redirect(url_for("main.provisioning_route"))
+    if session.get("trigger_provisioning"):
+        print("[main_web] trigger_provisioning=True, redirecting to provisioning_route")
+        return redirect(url_for("main.provisioning_route"))
+    return redirect(url_for("main.main_page"))
 
 @main_blueprint.route("/provisioning", methods=["GET"])
 def provisioning_route():

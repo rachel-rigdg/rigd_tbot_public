@@ -121,6 +121,7 @@ rigd_tbot/
 │   │   └── settings_bot.py                   # Editor/validator for .env_bot (strategy/runtime vars); used by Web UI/scripts; never manages key files
 │   │
 │   ├── control/                                # Control signals for runtime (web/CLI triggers)
+│   │   ├── bot_state.txt                    	# Current bot state string for UI/status integration (idle, provisioning, bootstrapping, analyzing, trading, monitoring, updating, shutdown, graceful_closing_positions, emergency_closing_positions, shutdown_triggered, error)
 │   │   ├── control_start.txt                    # Start trigger flag for bot session launch
 │   │   └── control_stop.txt                     # Stop trigger flag for safe shutdown
 │   │
