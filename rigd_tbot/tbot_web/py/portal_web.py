@@ -45,26 +45,29 @@ def create_app():
     app.register_blueprint(coa_web)
     app.register_blueprint(logout_blueprint)
 
-    # Route for wait.html with direct static JS/CSS references
+    # Route for wait.html
     @app.route("/wait")
     def wait():
         return render_template("wait.html")
 
-    # Route for main.html with direct static JS/CSS references
+    # Route for main.html
     @app.route("/main")
     def main():
         return render_template("main.html")
 
-    # Control status endpoint: polls tbot_bot/control/bot_state.txt
+    # Control status endpoint: polls tbot_bot/control/bot_state.txt and covers all defined states
     @app.route("/control_status/start")
     def control_status_start():
         bot_state_path = Path(BASE_DIR) / ".." / "tbot_bot" / "control" / "bot_state.txt"
         try:
             if bot_state_path.exists():
                 state = bot_state_path.read_text(encoding="utf-8").strip()
-                if state not in ("provisioning", "bootstrapping"):
+                if state in ("initialize", "provisioning", "bootstrapping"):
+                    return jsonify({"status": state, "bot_state": state})
+                elif state in ("error", "shutdown_triggered", "shutdown"):
+                    return jsonify({"status": "error", "bot_state": state})
+                else:
                     return jsonify({"status": "started", "bot_state": state})
-                return jsonify({"status": state, "bot_state": state})
             else:
                 return jsonify({"status": "pending", "bot_state": "pending"})
         except Exception:
