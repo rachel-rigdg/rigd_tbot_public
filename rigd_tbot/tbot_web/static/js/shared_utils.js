@@ -1,0 +1,39 @@
+// tbot_web/static/js/shared_utils.js
+// Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
+// Generic GET API helper
+async function apiGet(url) {
+    try {
+        const resp = await fetch(url, { cache: "no-store" });
+        if (!resp.ok) throw new Error("API error " + resp.status);
+        return await resp.json();
+    } catch (err) {
+        console.error("API GET failed:", url, err);
+        return null;
+    }
+}
+
+// Generic POST API helper (optional)
+async function apiPost(url, body = {}) {
+    try {
+        const resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        if (!resp.ok) throw new Error("API error " + resp.status);
+        return await resp.json();
+    } catch (err) {
+        console.error("API POST failed:", url, err);
+        return null;
+    }
+}
+
+// Overlay show/hide helpers (optional)
+function showOverlay(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "flex";
+}
+function hideOverlay(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+}

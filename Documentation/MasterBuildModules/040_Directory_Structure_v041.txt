@@ -121,7 +121,7 @@ rigd_tbot/
 │   │   └── settings_bot.py                   # Editor/validator for .env_bot (strategy/runtime vars); used by Web UI/scripts; never manages key files
 │   │
 │   ├── control/                                # Control signals for runtime (web/CLI triggers)
-│   │   ├── bot_state.txt                    	# Current bot state string for UI/status integration (idle, provisioning, bootstrapping, analyzing, trading, monitoring, updating, shutdown, graceful_closing_positions, emergency_closing_positions, shutdown_triggered, error)
+│   │   ├── bot_state.txt                    	# Current bot state string for UI/status integration (initialize, provisioning, bootstrapping,  idle, analyzing, trading, monitoring, updating, shutdown, graceful_closing_positions, emergency_closing_positions, shutdown_triggered, error)
 │   │   ├── control_start.txt                    # Start trigger flag for bot session launch
 │   │   └── control_stop.txt                     # Stop trigger flag for safe shutdown
 │   │
@@ -256,7 +256,6 @@ rigd_tbot/
 │   │   │   └── *.json                        # Temporary plain config (pre-encryption, pre-secrets); BOT_IDENTITY, etc.
 │   │   ├── utils_coa_web.py                  # Loads/validates/manages COA for bot exec and Web UI; called by coa_web.py, accounting_config.py
 │   │   ├── utils_config.py                   # Loads/validates all bot/env config files (.env, .env_bot, runtime envs)
-
 │   │   ├── utils_identity.py                 # Computes/parses BOT_IDENTITY_STRING; manages all identity metadata for file/output routing
 │   │   ├── utils_log.py                      # Provides structured logging for system/trade/web/app events
 │   │   └── utils_time.py                     # Time and scheduling utilities (UTC conversion, timestamps, session windows)
@@ -290,6 +289,12 @@ rigd_tbot/
 └── tbot_web/                                   # Web dashboard: bot monitoring, logs, user auth, control, and COA management
     ├── static/                                 # Static frontend resources
     │   ├── fnt/                                # Embedded fonts used in the interface
+    │   │
+    │   ├── js/
+    │   │   ├── main_ui.js         		# Handles live dashboard behavior, state polling, and controls config overlay in main.html
+    │   │   ├── wait.js            		# Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
+    │   │   └── shared_utils.js    		# Provides shared API helpers and utility functions for frontend JavaScript modules        
+    │   │
     │   └── css/
     │       ├── buttons.css                     # Button styling and layout rules
     │       ├── forms.css                       # Form input and UI style rules
@@ -321,8 +326,8 @@ rigd_tbot/
     │
     ├── support/                               # Web UI supporting modules: auth, crypto, session, CSRF, helpers
     │   ├── auth_web.py                        # Auth helpers; bcrypt password validation/hashing
-    │   ├── configuration_loader.py		    # Loads and decrypts config for UI (never handles keys)
-    │   ├── configuration_saver.py		    # Saves/encrypts config from UI (never creates keys)
+    │   ├── configuration_loader.py		# Loads and decrypts config for UI (never handles keys)
+    │   ├── configuration_saver.py		# Saves/encrypts config from UI (never creates keys)
     │   ├── csrf_protection.py                 # CSRF protection for web forms and blueprints
     │   ├── default_config_loader.py           # Loads config defaults/templates for UI (never touches secrets/keys)
     │   ├── security_users.py                  # RBAC/user CRUD; Fernet key helpers for user/auth secrets
@@ -333,7 +338,7 @@ rigd_tbot/
         ├── configuration.html                  # Web form for updating user, email, API, and broker credential configuration via web UI 
         ├── coa.html                            # Human-readable web form/table for COA viewing and editing (editable if RBAC allows)
         ├── index.html                          # Login page
-        ├── ledger.html			               # Human-readable web form/table for Ledger viewing and editing (editable if RBAC allows); invoked from main_web.py and coa_web.py	
+        ├── ledger.html			        # Human-readable web form/table for Ledger viewing and editing (editable if RBAC allows); invoked from main_web.py and coa_web.py	
         ├── logs.html                           # Log viewer
         ├── main.html                           # Dashboard shell (all UI widgets)
         ├── settings.html                       # Web form for updating bot trading strategy and runtime config variables

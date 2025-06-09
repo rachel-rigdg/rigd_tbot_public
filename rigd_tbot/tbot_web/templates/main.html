@@ -7,6 +7,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <!-- Load external JavaScript files for dashboard UI logic -->
+    <script src="{{ url_for('static', filename='js/shared_utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main_ui.js') }}"></script>
 </head>
 <body class="dashboard-page">
     <div class="formcontent center">

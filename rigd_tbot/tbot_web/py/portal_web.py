@@ -34,7 +34,7 @@ def create_app():
     app.config["SESSION_COOKIE_SECURE"] = False
     app.config["SESSION_COOKIE_HTTPONLY"] = True
 
-    # Register all web UI blueprints; never register any provisioning/runner/ledger blueprints at app start
+    # Register all web UI blueprints
     app.register_blueprint(main_blueprint)
     app.register_blueprint(configuration_blueprint)
     app.register_blueprint(login_blueprint)
@@ -45,19 +45,23 @@ def create_app():
     app.register_blueprint(coa_web)
     app.register_blueprint(logout_blueprint)
 
-    # Route for wait_for_bot.html
-    @app.route("/wait_for_bot")
-    def wait_for_bot():
-        return render_template("wait_for_bot.html")
+    # Route for wait.html with direct static JS/CSS references
+    @app.route("/wait")
+    def wait():
+        return render_template("wait.html")
 
-    # Improved control status endpoint: polls tbot_bot/control/bot_state.txt
+    # Route for main.html with direct static JS/CSS references
+    @app.route("/main")
+    def main():
+        return render_template("main.html")
+
+    # Control status endpoint: polls tbot_bot/control/bot_state.txt
     @app.route("/control_status/start")
     def control_status_start():
         bot_state_path = Path(BASE_DIR) / ".." / "tbot_bot" / "control" / "bot_state.txt"
         try:
             if bot_state_path.exists():
                 state = bot_state_path.read_text(encoding="utf-8").strip()
-                # Treat any non-bootstrapping state as "started"
                 if state not in ("provisioning", "bootstrapping"):
                     return jsonify({"status": "started", "bot_state": state})
                 return jsonify({"status": state, "bot_state": state})
