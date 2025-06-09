@@ -75,15 +75,10 @@ def create_admin_user_from_config():
     try:
         with open(TMP_CONFIG_PATH, "r") as f:
             config = json.load(f)
-        username = config.get("username") or config.get("bot_identity", {}).get("USERNAME") or "admin"
-        password = config.get("userpassword") or "changeme"
-        email = config.get("email") or "admin@localhost"
-        # Allow overrides if present
-        form_fields = config.get("form", {})
-        username = form_fields.get("username", username)
-        password = form_fields.get("userpassword", password)
-        email = form_fields.get("email", email)
-        # Do not create user with blank password
+        admin_user = config.get("admin_user", {})
+        username = admin_user.get("username", "admin")
+        password = admin_user.get("userpassword", "changeme")
+        email = admin_user.get("email", "admin@localhost")
         if username and password:
             upsert_user(username, password, email)
             print(f"[provisioning_runner] Created or updated admin user: {username}")
