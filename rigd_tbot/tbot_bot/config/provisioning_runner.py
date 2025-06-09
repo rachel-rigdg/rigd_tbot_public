@@ -78,6 +78,7 @@ def main():
             else:
                 status_path = STATUS_BOOTSTRAP_PATH
             try:
+                # Set state to provisioning
                 set_bot_state("provisioning")
                 write_status(status_path, "pending", "Provisioning started.")
                 write_status(status_path, "running", "Key generation.")
@@ -92,6 +93,8 @@ def main():
                 clear_provision_flag()
                 write_status(status_path, "running", "Creating control_start.txt to launch bot via systemd.")
                 create_control_start_flag()
+                
+                # Update state to idle after provisioning is complete
                 set_bot_state("idle")
                 write_status(status_path, "complete", "Provisioning complete, control_start.txt created for bot launch.")
                 already_provisioned = True
