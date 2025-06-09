@@ -82,4 +82,7 @@ def main_page():
     print(f"[main_web] session trigger_provisioning: {session.get('trigger_provisioning')}")
     state = get_current_bot_state()
     print(f"[DEBUG][main_page] bot_state: {state}")
+    if state in ("initialize", "provisioning", "bootstrapping"):
+        print(f"[main_web] State is {state}, redirecting to root_router (configuration/wait)")
+        return redirect(url_for("main.root_router"))
     return render_template("main.html", bot_state=state)
