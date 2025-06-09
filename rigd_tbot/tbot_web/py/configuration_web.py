@@ -82,13 +82,21 @@ def save_configuration():
     }
     acct_api_data = {}
 
+    # --- Save admin user credentials in a top-level section ---
+    admin_user_data = {
+        "username":     form.get("username", "").strip(),
+        "userpassword": form.get("userpassword", "").strip(),
+        "email":        form.get("email", "").strip() or "admin@localhost"
+    }
+
     config = {
         "bot_identity":    bot_identity_data,
         "broker":          broker_data,
         "screener_api":    screener_api_data,
         "smtp":            smtp_data,
         "network_config":  network_config_data,
-        "acct_api":        acct_api_data
+        "acct_api":        acct_api_data,
+        "admin_user":      admin_user_data
     }
 
     TMP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
