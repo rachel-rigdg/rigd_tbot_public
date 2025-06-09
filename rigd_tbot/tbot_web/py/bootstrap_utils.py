@@ -6,6 +6,7 @@ KEYS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys"
 SECRETS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets"
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
 BOOTSTRAP_FLAG = CONTROL_DIR / "BOOTSTRAP_FLAG"
+BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 CONFIG_REQUIRED_FILES = [
     KEYS_DIR / "bot_identity.key",
@@ -17,10 +18,16 @@ CONFIG_REQUIRED_FILES = [
 
 def is_first_bootstrap() -> bool:
     """
-    Return True if BOOTSTRAP_FLAG is missing, or any required key or secret config file is missing.
-    Prevent provisioning before config is saved.
+    Returns True only if bot_state.txt is missing or contains "initialize".
+    Prevents provisioning/redirect after initial bootstrap.
     """
-    if not BOOTSTRAP_FLAG.exists():
+    if not BOT_STATE_PATH.exists():
+        return True
+    try:
+        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        if state == "initialize":
+            return True
+    except Exception:
         return True
     for file_path in CONFIG_REQUIRED_FILES:
         if not file_path.exists():
