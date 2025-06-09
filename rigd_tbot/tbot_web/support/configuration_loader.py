@@ -7,11 +7,11 @@ from cryptography.fernet import Fernet
 from tbot_bot.support.path_resolver import get_secret_path
 from tbot_bot.config.config_encryption import load_key
 
-
 def load_encrypted_config(category: str) -> dict:
     """
     Loads and decrypts a category config file from storage/secrets.
     Returns a dict of config key/values. Returns {} if missing or empty.
+    Expects valid JSON or key=value pairs (legacy).
     """
     enc_path = Path(get_secret_path(category))
     if not enc_path.is_file():
@@ -21,13 +21,16 @@ def load_encrypted_config(category: str) -> dict:
         key = load_key(category)
         fernet = Fernet(key)
         enc_bytes = enc_path.read_bytes()
-        # Expect file as key=value pairs, one per line (not strict JSON)
         content = fernet.decrypt(enc_bytes).decode("utf-8")
-        result = {}
-        for line in content.splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                result[k.strip()] = v.strip()
+        try:
+            # Prefer JSON, fallback to key=value
+            result = json.loads(content)
+        except Exception:
+            result = {}
+            for line in content.splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    result[k.strip()] = v.strip()
         print(f"[configuration_loader] Loaded config for {category}: {result}")
         return result
     except Exception as e:
