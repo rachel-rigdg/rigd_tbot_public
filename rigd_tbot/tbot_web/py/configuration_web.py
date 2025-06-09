@@ -98,7 +98,7 @@ def save_configuration():
         print(f"[configuration_web] ERROR writing bot_state.txt: {e}")
 
     try:
-        PROVISION_FLAG_PATH.touch()
+        PROVISION_FLAG_PATH.touch(exist_ok=True)
         print(f"[configuration_web] PROVISION_FLAG written: {PROVISION_FLAG_PATH}")
     except Exception as e:
         print(f"[configuration_web] ERROR writing PROVISION_FLAG: {e}")
