@@ -24,6 +24,14 @@ def can_provision():
 @configuration_blueprint.route("/configuration", methods=["GET"])
 def show_configuration():
     print("[configuration_web] Rendering configuration page")
+    state = "initialize"
+    if BOT_STATE_PATH.exists():
+        try:
+            state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        except Exception:
+            state = "initialize"
+    if state != "initialize":
+        return redirect(url_for("main.main_page"))
     config = {}
     categories = [
         "bot_identity", "broker", "screener_api",
@@ -85,7 +93,6 @@ def save_configuration():
         "acct_api":        acct_api_data
     }
 
-    # Write full config with BOT_IDENTITY_STRING to tmp for provisioning_helper.py
     TMP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(TMP_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
