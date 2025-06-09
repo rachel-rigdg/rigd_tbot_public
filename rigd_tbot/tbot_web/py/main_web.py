@@ -22,13 +22,20 @@ def root_router():
     if is_first_bootstrap():
         print("[main_web] is_first_bootstrap=True, redirecting to configuration_web.show_configuration")
         return redirect(url_for("configuration_web.show_configuration"))
+    
     state = get_current_bot_state()
+    # Handle bot state transitions based on the updated states.
     if state in ("provisioning", "bootstrapping"):
         print(f"[main_web] provisioning/bootstrapping detected, redirecting to provisioning_route (state={state})")
         return redirect(url_for("main.provisioning_route"))
+    
+    # Checking the session for provisioning triggers
     if session.get("trigger_provisioning"):
         print("[main_web] trigger_provisioning=True, redirecting to provisioning_route")
         return redirect(url_for("main.provisioning_route"))
+    
+    # Redirect to main page if no state-related issues
+    print(f"[main_web] bot state is {state}, redirecting to main_page.")
     return redirect(url_for("main.main_page"))
 
 @main_blueprint.route("/provisioning", methods=["GET"])
@@ -36,12 +43,16 @@ def provisioning_route():
     print(f"[main_web] provisioning_route called from {request.path}")
     print(f"[main_web] session keys: {list(session.keys())}")
     print(f"[main_web] session trigger_provisioning (before pop): {session.get('trigger_provisioning')}")
-    session.pop("trigger_provisioning", None)
+    session.pop("trigger_provisioning", None)  # Clear the flag after redirect
+    
+    # Get the current state and pass to the provisioning page
     state = get_current_bot_state()
-    return render_template("wait_for_bot.html", bot_state=state)
+    return render_template("wait.html", bot_state=state)
 
 @main_blueprint.route("/main", methods=["GET"])
 def main_page():
     print(f"[main_web] main_page called from {request.path}")
+    
+    # Get current bot state and display on the main page
     state = get_current_bot_state()
     return render_template("main.html", bot_state=state)
