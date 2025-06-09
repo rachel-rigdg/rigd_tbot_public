@@ -71,14 +71,14 @@ def is_market_open(now_time=None):
 
 def main():
     try:
-        update_bot_state("idle")
+        update_bot_state("idle")  # Bot starts in idle state
         run_build_check()
-        update_bot_state("monitoring")
+        update_bot_state("monitoring")  # Transition to monitoring once build check passes
         start_heartbeat()
         start_watchdog()
 
         if check_daily_loss_limit():
-            update_bot_state("shutdown_triggered")
+            update_bot_state("shutdown_triggered")  # If daily loss limit is exceeded, transition to shutdown_triggered
             return
         if KILL_FLAG.exists():
             close_all_positions_immediately()
@@ -95,7 +95,7 @@ def main():
 
         for strat_name in strategies:
             strat_name = strat_name.strip().lower()
-            update_bot_state(f"analyzing_{strat_name}")
+            update_bot_state(f"analyzing_{strat_name}")  # Bot state transitions to 'analyzing' during each strategy
 
             if KILL_FLAG.exists():
                 close_all_positions_immediately()
@@ -112,9 +112,9 @@ def main():
                 log_event("main_bot", f"Trading disabled. Skipping {strat_name}")
                 continue
 
-            update_bot_state("trading", strategy=strat_name)
+            update_bot_state("trading", strategy=strat_name)  # Update state to 'trading' when strategy is executed
             run_strategy(override=strat_name)
-            update_bot_state(f"completed_{strat_name}")
+            update_bot_state(f"completed_{strat_name}")  # Mark strategy as completed after execution
             time.sleep(SLEEP_TIME)
 
             if STOP_FLAG.exists():
@@ -126,13 +126,13 @@ def main():
         if graceful_stop:
             print("[main_bot] Executing graceful shutdown after strategy completion. Closing positions.")
             log_event("main_bot", "Executing graceful shutdown after strategy completion. Closing positions.")
-            update_bot_state("graceful_closing_positions")
+            update_bot_state("graceful_closing_positions")  # Transition to graceful closing positions state
             # TODO: Insert real close positions logic here
 
-        update_bot_state("shutdown")
+        update_bot_state("shutdown")  # Final bot state set to 'shutdown'
 
     except Exception as e:
-        update_bot_state("error")
+        update_bot_state("error")  # Update bot state to 'error' if an exception occurs
         handle_error(e, strategy_name="main", broker="n/a", category="LogicError")
 
 if __name__ == "__main__":
