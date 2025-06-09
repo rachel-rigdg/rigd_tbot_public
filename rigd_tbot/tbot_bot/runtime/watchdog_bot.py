@@ -57,7 +57,7 @@ def check_ibkr():
     return False
 
 def start_watchdog():
-    update_bot_state("monitoring")
+    update_bot_state("monitoring")  # Update bot state to 'monitoring' when checking connectivity
     log_event("watchdog_bot", f"Starting broker connectivity check for \"{BROKER_CODE}\"")
 
     ok = False
@@ -69,7 +69,7 @@ def start_watchdog():
         log_event("watchdog_bot", f"Unsupported BROKER_CODE: \"{BROKER_CODE}\"")
 
     if not ok:
-        update_bot_state("error")
+        update_bot_state("error")  # Set state to 'error' if connectivity check fails
         log_event("watchdog_bot", "Connectivity check failed — initiating shutdown.")
         trigger_shutdown(reason="Broker connectivity failure detected by watchdog")
     else:

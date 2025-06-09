@@ -13,11 +13,13 @@ from tbot_bot.support.utils_log import log_event
 
 config = get_bot_config()
 
+# Retrieve strategy sequence and enable/disable config values
 STRATEGY_SEQUENCE = [s.strip().lower() for s in config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")]
 STRAT_OPEN_ENABLED = config.get("STRAT_OPEN_ENABLED", True)
 STRAT_MID_ENABLED = config.get("STRAT_MID_ENABLED", True)
 STRAT_CLOSE_ENABLED = config.get("STRAT_CLOSE_ENABLED", True)
 
+# Parse strategy start times from config
 def parse_start_time(tstr):
     try:
         h, m = map(int, tstr.strip().split(":"))
@@ -29,6 +31,7 @@ START_TIME_OPEN = parse_start_time(config.get("START_TIME_OPEN", "14:30"))
 START_TIME_MID = parse_start_time(config.get("START_TIME_MID", "15:30"))
 START_TIME_CLOSE = parse_start_time(config.get("START_TIME_CLOSE", "19:30"))
 
+# Sleep time configuration parsing
 SLEEP_TIME_STR = config.get("SLEEP_TIME", "1s")
 def parse_sleep_time(sleep_str):
     if sleep_str.endswith("s"):
@@ -40,16 +43,19 @@ def parse_sleep_time(sleep_str):
 
 SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
+# Main strategy routing function
 def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
     Main router to select and execute strategy based on UTC time or manual override.
     """
     now = current_utc_time or utc_now().time()
 
+    # Check for manual override (if provided)
     if override:
         log_event("router", f"Manual strategy override: {override}")
         return execute_strategy(override.strip().lower())
 
+    # Iterate through the strategy sequence and select the strategy to execute
     for s in STRATEGY_SEQUENCE:
         if s == "open" and STRAT_OPEN_ENABLED and now >= START_TIME_OPEN:
             return execute_strategy("open")
@@ -58,9 +64,11 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         elif s == "close" and STRAT_CLOSE_ENABLED and now >= START_TIME_CLOSE:
             return execute_strategy("close")
 
+    # If no strategy is executed, wait for the configured sleep time
     time.sleep(SLEEP_TIME)
     return StrategyResult(skipped=True)
 
+# Executes the selected strategy and returns the result
 def execute_strategy(name: str) -> StrategyResult:
     """
     Dispatches control to the selected strategy module.
