@@ -12,6 +12,15 @@ TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" /
 PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
+def can_provision():
+    if not BOT_STATE_PATH.exists():
+        return True
+    try:
+        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        return state in ("initialize", "provisioning")
+    except Exception:
+        return False
+
 @configuration_blueprint.route("/configuration", methods=["GET"])
 def show_configuration():
     print("[configuration_web] Rendering configuration page")
@@ -29,6 +38,10 @@ def show_configuration():
 @configuration_blueprint.route("/configuration", methods=["POST"])
 def save_configuration():
     print("[configuration_web] Received POST to /configuration")
+    if not can_provision():
+        flash("Provisioning is locked after initial bootstrap. Use Settings to update configuration.", "error")
+        return redirect(url_for("main.main_page"))
+
     form = request.form
 
     bot_identity_data = {
@@ -77,7 +90,6 @@ def save_configuration():
     with open(TMP_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
 
-    # Set bot_state.txt to "provisioning" to break bootstrap/config loop on submit
     try:
         BOT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
@@ -85,7 +97,6 @@ def save_configuration():
     except Exception as e:
         print(f"[configuration_web] ERROR writing bot_state.txt: {e}")
 
-    # Create provisioning flag for runner
     try:
         PROVISION_FLAG_PATH.touch()
         print(f"[configuration_web] PROVISION_FLAG written: {PROVISION_FLAG_PATH}")
