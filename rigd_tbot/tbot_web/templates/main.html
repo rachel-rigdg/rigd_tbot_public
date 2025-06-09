@@ -6,16 +6,17 @@
     <title>TradeBot Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <link rel="stylesheet" href="../static/css/main.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <!-- Load external JavaScript files for dashboard UI logic -->
     <script src="{{ url_for('static', filename='js/shared_utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main_ui.js') }}"></script>
 </head>
-<body class="dashboard-page">
+<body class="dashboard-page dropShadow">
     <div class="formcontent center">
         <div class="content">
             <!-- Bot state banner above iframe -->
-            <div class="bot-state-banner" style="margin-bottom: 18px; padding: 8px 0;">
+            <div class="bot-state-banner">
                 <strong>Current Bot State:</strong>
                 <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
             </div>
@@ -24,7 +25,7 @@
         </div>
     </div>
 
-    <footer class="footer">
+    <footer class="footer dropShadow">
         <!-- Start/Stop/Kill control buttons spaced evenly -->
         <div class="startKillContainer center">
             <form action="{{ url_for('start_stop.trigger_start') }}" method="post" target="viewFrame">
@@ -52,6 +53,9 @@
             <form action="{{ url_for('logs.logs_page') }}" method="get" target="viewFrame" style="display:inline;">
                 <button type="submit" class="tab-button">Logs</button>
             </form>
+            <form action="{{ url_for('logs.ledger_page') }}" method="get" target="viewFrame" style="display:inline;">
+                <button type="submit" class="tab-button">Ledger</button>
+            </form>
             <form action="{{ url_for('coa_web.coa_management') }}" method="get" target="viewFrame" style="display:inline;">
                 <button type="submit" class="tab-button">COA</button>
             </form>
@@ -60,7 +64,7 @@
             </form>
         </div>
 
-        <p>&copy; 2025 RIGD Group LLC – TradeBot Monitoring Interface</p>
+        <p>&copy; 2025 RIGD Holdings – TBot Monitoring Interface</p>
     </footer>
 </body>
 </html>

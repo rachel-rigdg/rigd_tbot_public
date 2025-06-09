@@ -40,7 +40,7 @@ button, .tab-button {
     outline: none;
 }
 .startKillContainer button#logout-btn {
-    background: #222;
+    background: #333;
     color: #fff;
 }
 .startKillContainer button#logout-btn:hover,
