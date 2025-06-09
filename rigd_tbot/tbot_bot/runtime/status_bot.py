@@ -21,18 +21,19 @@ BOT_STATE_FILE = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[
 
 # Allowed states for bot state transitions
 ALLOWED_STATES = [
-    "idle",
-    "analyzing",
-    "trading",
-    "monitoring",
-    "provisioning",
-    "bootstrapping",
-    "updating",
-    "shutdown",
-    "error",
-    "graceful_closing_positions",
-    "emergency_closing_positions",
-    "shutdown_triggered"
+    "initialize",  # Bot is in initialization state
+    "idle",        # Bot is idle, waiting for new actions
+    "analyzing",   # Bot is analyzing data
+    "trading",     # Bot is actively trading
+    "monitoring",  # Bot is monitoring markets or positions
+    "provisioning",  # Bot is in the provisioning phase
+    "bootstrapping",  # Bot is in the bootstrapping phase
+    "updating",     # Bot is updating data or configurations
+    "shutdown",     # Bot has been shut down
+    "error",        # Bot encountered an error and cannot proceed
+    "graceful_closing_positions",  # Bot is closing positions in a controlled manner
+    "emergency_closing_positions",  # Bot is closing positions urgently
+    "shutdown_triggered"  # Bot is in shutdown mode due to some event
 ]
 
 # Thread-safe singleton class to hold live bot status
