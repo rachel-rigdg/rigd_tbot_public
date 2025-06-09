@@ -5,7 +5,6 @@ from pathlib import Path
 KEYS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys"
 SECRETS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets"
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
-BOOTSTRAP_FLAG = CONTROL_DIR / "BOOTSTRAP_FLAG"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 CONFIG_REQUIRED_FILES = [
@@ -20,6 +19,7 @@ def is_first_bootstrap() -> bool:
     """
     Returns True only if bot_state.txt is missing or contains "initialize".
     Prevents provisioning/redirect after initial bootstrap.
+    BOOTSTRAP_FLAG is deprecated and ignored; logic is now driven by bot_state.txt.
     """
     if not BOT_STATE_PATH.exists():
         return True
