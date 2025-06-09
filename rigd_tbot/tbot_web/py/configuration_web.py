@@ -41,7 +41,7 @@ def show_configuration():
         config.update(load_encrypted_config(cat))
     if not config and state == "initialize":
         config = get_default_config()
-    return render_template("configuration.html", config=config)
+    return render_template("main.html", config=config)
 
 @configuration_blueprint.route("/configuration", methods=["POST"])
 def save_configuration():
