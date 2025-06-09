@@ -41,7 +41,9 @@ def provision_keys_and_secrets(config: dict = None) -> None:
     """
     print("[provisioning_helper] Starting provisioning process...")
     try:
+        # Set initial state to provisioning in bot_state.txt
         set_bot_state("provisioning")
+        
         # Load config from tmp if not provided
         if config is None or not config:
             if TMP_CONFIG_PATH.exists():
@@ -82,9 +84,12 @@ def provision_keys_and_secrets(config: dict = None) -> None:
         print("[provisioning_helper] All secrets written.")
 
         log_event("provisioning", "Provisioning completed: keys generated and secrets written.")
+        
+        # Set bot state to bootstrapping after successful provisioning
         set_bot_state("bootstrapping")
         print("[provisioning_helper] Provisioning completed successfully.")
     except Exception as e:
+        # Log provisioning failure and set the bot state to error
         log_event("provisioning", f"Provisioning failed: {e}", level="error")
         set_bot_state("error")
         print(f"[provisioning_helper] Provisioning failed: {e}")
