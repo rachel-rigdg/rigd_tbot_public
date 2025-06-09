@@ -12,15 +12,24 @@ from .logs_web import logs_blueprint
 from .start_stop_web import start_stop_blueprint
 from .settings_web import settings_blueprint
 from .coa_web import coa_web
-from .bootstrap_utils import is_first_bootstrap
+from pathlib import Path
 
 from tbot_web.support import auth_web, security_users, session_manager, utils_web, csrf_protection
-
-from pathlib import Path
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TEMPLATE_FOLDER = os.path.join(BASE_DIR, "templates")
 STATIC_FOLDER = os.path.join(BASE_DIR, "static")
+
+BOT_STATE_PATH = Path(BASE_DIR) / ".." / "tbot_bot" / "control" / "bot_state.txt"
+
+def is_state_initialize():
+    if not BOT_STATE_PATH.exists():
+        return True
+    try:
+        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        return state == "initialize"
+    except Exception:
+        return True
 
 def create_app():
     """
@@ -58,10 +67,9 @@ def create_app():
     # Control status endpoint: polls tbot_bot/control/bot_state.txt and covers all defined states
     @app.route("/control_status/start")
     def control_status_start():
-        bot_state_path = Path(BASE_DIR) / ".." / "tbot_bot" / "control" / "bot_state.txt"
         try:
-            if bot_state_path.exists():
-                state = bot_state_path.read_text(encoding="utf-8").strip()
+            if BOT_STATE_PATH.exists():
+                state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
                 if state in ("initialize", "provisioning", "bootstrapping"):
                     return jsonify({"status": state, "bot_state": state})
                 elif state in ("error", "shutdown_triggered", "shutdown"):
@@ -73,8 +81,8 @@ def create_app():
         except Exception:
             return jsonify({"status": "error", "bot_state": "error"})
 
-    # First-boot mode: redirect all requests to /configuration if not configured
-    if is_first_bootstrap():
+    # Only redirect all requests to /configuration if bot_state.txt == "initialize"
+    if is_state_initialize():
         @app.before_request
         def force_configuration():
             if not (
