@@ -107,10 +107,12 @@ def validate_user(username: str, password: str) -> bool:
         if row is None:
             return False
 
-        encrypted_hash = row[0].encode()
+        encrypted_hash = row[0]
+        if isinstance(encrypted_hash, bytes):
+            encrypted_hash = encrypted_hash.decode()
         fernet = Fernet(get_encryption_key())
         try:
-            stored_hash = fernet.decrypt(encrypted_hash)
+            stored_hash = fernet.decrypt(encrypted_hash.encode())
         except InvalidToken:
             log_event("auth_web", f"Invalid encryption token for user {username}", level="error")
             return False
