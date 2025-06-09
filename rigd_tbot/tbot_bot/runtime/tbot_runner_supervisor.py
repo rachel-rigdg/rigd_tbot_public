@@ -58,7 +58,7 @@ def main():
             # Launch bot if START_FILE is present and no bot is running
             if START_FILE.exists() and not bot_process:
                 log("START signal detected.")
-                update_bot_state("idle")
+                update_bot_state("idle")  # Ensure bot starts in idle state
                 clear_flags()
                 bot_process = subprocess.Popen(
                     ["python3", str(BOT_ENTRY)],
@@ -72,7 +72,7 @@ def main():
             # Terminate bot if STOP_FILE is present
             elif STOP_FILE.exists() and bot_process:
                 log("STOP signal detected.")
-                update_bot_state("shutdown")
+                update_bot_state("shutdown")  # Set state to shutdown before killing bot
                 clear_flags()
                 bot_process.terminate()
                 try:
@@ -87,7 +87,7 @@ def main():
             if bot_process and bot_process.poll() is not None:
                 exit_code = bot_process.returncode
                 log(f"Bot exited with code {exit_code}")
-                update_bot_state("idle")
+                update_bot_state("idle")  # Set state back to idle if bot unexpectedly exits
                 bot_process = None
 
         except Exception as e:
