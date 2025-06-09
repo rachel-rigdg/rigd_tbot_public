@@ -75,8 +75,8 @@ def upsert_user(username: str, password: str, email: str = None) -> None:
     try:
         conn.execute(
             """
-            INSERT INTO users (username, password_hash, email)
-            VALUES (?, ?, ?)
+            INSERT INTO system_users (username, password_hash, email, role, account_status)
+            VALUES (?, ?, ?, 'admin', 'active')
             ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, email = excluded.email;
             """,
             (username, encrypted_pw, email)
@@ -100,7 +100,7 @@ def validate_user(username: str, password: str) -> bool:
     conn = get_db_connection()
     try:
         cursor = conn.execute(
-            "SELECT password_hash FROM users WHERE username = ?",
+            "SELECT password_hash FROM system_users WHERE username = ?",
             (username,)
         )
         row = cursor.fetchone()
