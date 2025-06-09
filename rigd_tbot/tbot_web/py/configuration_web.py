@@ -39,7 +39,7 @@ def show_configuration():
     ]
     for cat in categories:
         config.update(load_encrypted_config(cat))
-    if not config and state == "initialize":
+    if not config:
         config = get_default_config()
     return render_template("main.html", config=config)
 
