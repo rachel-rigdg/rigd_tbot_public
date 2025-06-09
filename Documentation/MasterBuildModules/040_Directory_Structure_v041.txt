@@ -1,7 +1,7 @@
 ================================================================================
 Document: 040_Directory_Structure
 Version: v041
-Date: UTC:2025-06-03 15:33
+Date: UTC:2025-06-08 15:33
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -121,7 +121,7 @@ rigd_tbot/
 │   │   └── settings_bot.py                   # Editor/validator for .env_bot (strategy/runtime vars); used by Web UI/scripts; never manages key files
 │   │
 │   ├── control/                                # Control signals for runtime (web/CLI triggers)
-│   │   ├── bot_state.txt                    	# Current bot state string for UI/status integration (initialize, provisioning, bootstrapping,  idle, analyzing, trading, monitoring, updating, shutdown, graceful_closing_positions, emergency_closing_positions, shutdown_triggered, error)
+│   │   ├── bot_state.txt                    	# Current bot state string for UI/status integration (initialize, provisioning, bootstrapping,  idle, analyzing, trading, monitoring, updating, shutdown, graceful_closing_positions, emergency_closing_positions, shutdown_triggered, error) - See 110_Web_Interface_and_Dashboard for routing and UI behavior logic.
 │   │   ├── control_start.txt                    # Start trigger flag for bot session launch
 │   │   └── control_stop.txt                     # Stop trigger flag for safe shutdown
 │   │

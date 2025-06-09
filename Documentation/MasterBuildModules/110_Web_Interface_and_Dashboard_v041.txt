@@ -1,7 +1,7 @@
 ================================================================================
 Document: 110_Web_Interface_and_Dashboard
 Version: v041
-Date: UTC:2025-06-02 23:54
+Date: UTC:2025-06-08 23:54
 ================================================================================
 
 This module details the Flask-based Web UI, dashboard features, security, RBAC, and COA management.
@@ -30,7 +30,7 @@ Real-Time Monitoring Dashboard
 - `templates/configuration.html`: Secure interface for credentials, email, API/broker config; encrypted at rest. Submits configuration and sets provisioning trigger/flag.
 - `templates/settings.html`: Edit and validate runtime trading parameters (timings, thresholds, risk controls); excludes credentials and COA.
 - `templates/coa.html`: COA management and export UI; displays account hierarchy, metadata, version. Supports Markdown/CSV export, audit diffs, and admin-only edit workflow—all actions logged to `logs/web/coa_edit.log`. **All Web UI logic for COA management and editing must utilize `tbot_web/support/utils_coa_web.py`.**
-- `templates/wait_for_bot.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
+- `templates/wait.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
 - `templates/ledger.html`: Ledger reconciliation, view, and editing; admin-only (if RBAC allows).
 
 **Backend Flask Components (per directory spec):**
@@ -41,7 +41,7 @@ Real-Time Monitoring Dashboard
 - `py/status_web.py`: Serves live bot/session status with strategy metrics, system health, win-rate, PnL, float deviation, rebalance triggers, Defense/kill switch states, and alert counts as JSON.
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
 - `py/start_stop_web.py`: Manages lifecycle controls via `control_start.txt` / `control_stop.txt`, transition verification, and logging.
-- `py/main_web.py`: Central route router; renders main dashboard shell, wait_for_bot, and ledger pages. *Never* runs provisioning or bootstrapping; only checks status files for UI routing.
+- `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, and ledger pages. *Never* runs provisioning or bootstrapping; only checks status files for UI routing.
 - `py/portal_web.py`: Flask app factory for static files and template setup; supports static asset versioning and cache control.
 - `py/run_web.py`: Webserver launcher using host/port from encrypted config.
 
@@ -59,12 +59,13 @@ Real-Time Monitoring Dashboard
 **Provisioning/Bootstrapping (Backend Integration):**
 - **All provisioning, key generation, secret creation, and DB initialization is performed by `tbot_bot/config/provisioning_runner.py`, which is triggered by a provisioning flag/file written by the Web UI.**
 - Web UI never executes privileged actions, OS commands, or modifies keys/secrets directly.
-- Provisioning status and bot state are written to `output/{BOT_IDENTITY}/bootstrapping/provisioning_status.json`, polled by web UI (e.g., `wait_for_bot.html`) to control user flow.
+- Provisioning status and bot state are written to `output/{BOT_IDENTITY}/bootstrapping/provisioning_status.json`, polled by web UI (e.g., `wait.html`) to control user flow.
 - Upon completion, bot core is launched independently (never as Flask child).
 
 **Static Assets:**
 - `static/fnt/`: Fonts.
 - `static/css/main.css`, `static/css/*.css`: Modular core/theme styling.
+- `static/js/shared_utils.js`, `static/js/wait.js`, `static/js/main_ui.js`: JavaScript helpers for the Web UI, including bot state checking, wait for initialization, and live updates on the dashboard.
 - `favicon.ico`, `favicon.gif`.
 
 **Security & Audit:**
@@ -104,3 +105,5 @@ Real-Time Monitoring Dashboard
 **Summary:**
 - The dashboard is audit-compliant, supports live monitoring/control, and admin-only, per-bot COA and ledger management. All actions are versioned, locally enforced, and never propagate between systems. COA/ledger export/edit requires RBAC and logs all activity for full audit compliance, using `tbot_web/support/utils_coa_web.py` for UI/admin logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger integration.  
 - **All privileged setup and bot launching logic is strictly performed by backend scripts in `tbot_bot/config/` as triggered by the Web UI, never directly by Flask or web endpoints.**
+
+

@@ -1,7 +1,7 @@
 ================================================================================
 Document: 090_Runtime_and_Lifecycle
 Version: v041
-Date: UTC:2025-06-02 23:54
+Date: UTC:2025-06-08 23:54
 ================================================================================
 
 This module documents the runtime session lifecycle, phases, shutdown protocols, and design confirmations.
@@ -53,6 +53,7 @@ For each enabled strategy:
 - Monitor positions (trailing stop, VWAP/VIX/filters, API health, PnL, loss limits).
 - Strategy phase ends when window closes.
 
+
 Phase 4: Risk/Fault Monitoring (Continuous)
 ↓
 - `risk_bot.py`: enforce allocation, positions, defense mode.
@@ -75,7 +76,6 @@ Phase 6: Manual Review/Rebalancing
 - Float reconciliations handled ONLY by accounting.
 - `generate_ofx.py` (accounting) for OFX export.
 - If `DEFENSE_MODE` triggered, manually reset `.env_bot` flag and document recovery in session audit logs.
-
 
 =============================================================================================================================================
 Key Design Confirmations 
@@ -103,7 +103,6 @@ Key Design Confirmations
     - **PnL/float info displayed is for live monitoring—official records come only from accounting/ledger exports.**
 - **No hybrid mode:** Each bot/ledger/output is tied to one assignment for full audit clarity.
 - **Specs/process locked; all changes require `VERSION.md` doc and must be rolled out via Web UI config only.**
-
 
 =============================================================================================================================================
 TradeBot Master Build Enhancements (Post-Stabilization, Spec-Locked)
@@ -151,7 +150,6 @@ Implementation Notes:
 - All code/logic adheres to safety, audit, and deterministic runtime rules for single- or multi-broker expansion
 
 **Version tag, schema changes, and new enhancements must be documented in `VERSION.md`.**
-
 
 =============================================================================================================================================
 Final Build Checklist 
@@ -209,6 +207,12 @@ Web Interface:
 - Bot lifecycle controlled by `control/control_start.txt` & `control/control_stop.txt`; never via direct API/web calls.
 - UI routes (`/status`, `/logs`, `/settings`, `/configuration`) reflect live session state, RBAC enforced at all endpoints.
 - Credentials/sensitive config via encrypted secrets & secure config pages (`configuration_web.py` for creds, `settings_web.py` for runtime logic).
+- **bot_state.txt** in `tbot_bot/control/` governs UI routing and lifecycle:
+    - Valid states: `initialize`, `provisioning`, `bootstrapping`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error`
+    - UI Logic: 
+        - `initialize`, `provisioning`, `bootstrapping` → redirect to configuration.html (configuration UI)
+        - `idle`, `trading`, `monitoring`, `updating`, `analyzing` → show main.html (monitoring/dashboard UI)
+        - `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error` → show error state/page and halt further operations
 
 Deployment:
 - All code uses relative paths; cross-platform.

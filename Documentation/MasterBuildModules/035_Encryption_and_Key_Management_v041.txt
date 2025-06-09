@@ -1,7 +1,7 @@
 ================================================================================
 Document: 035_Encryption_and_Key_Management
 Version: v041
-Date: UTC:2025-06-03 18:52
+Date: UTC:2025-06-08 23:54
 ================================================================================
 
 Overview:
@@ -57,7 +57,7 @@ Compliance and Best Practices
 - Penetration testing and security review are periodic and enforced as part of CI/CD.
 
 --------------------------------------------------------------------------------
-v041 Functional Requirements
+Functional Requirements
 --------------------------------------------------------------------------------
 - All provisioning, credential creation, key management, and encryption occurs **exclusively** via the TradeBot Web UI configuration step.  
 - No external tool, CLI, script, or manual operator may create, rotate, or inject any Fernet key, config, or secret after bootstrap.
@@ -65,10 +65,23 @@ v041 Functional Requirements
 - All key and config storage paths, naming, and lifecycle strictly follow the structure defined in `040_Directory_Structure_v041.txt`.
 
 --------------------------------------------------------------------------------
+bot_state.txt State Management 
+--------------------------------------------------------------------------------
+- `tbot_bot/control/bot_state.txt` holds the authoritative session state string for both the runtime and UI routing.
+- Valid states:  
+  `initialize`, `provisioning`, `bootstrapping`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error`
+- UI routing is driven by `bot_state.txt` as follows:
+    - `initialize`, `provisioning`, `bootstrapping`: show configuration UI (`configuration.html`)
+    - `idle`, `trading`, `monitoring`, `analyzing`, `updating`: show main dashboard UI (`main.html`)
+    - `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error`: show error state/page and halt further operations
+- The state machine is cross-referenced and enforced per `090_Runtime_and_Lifecycle_v041.txt` and `110_Web_Interface_and_Dashboard_v041.txt`.
+
+--------------------------------------------------------------------------------
 Summary
 --------------------------------------------------------------------------------
 - Encryption and key management is centralized, automated, and strictly audited via the TradeBot Web UI.  
 - No manual key or credential handling is permitted.  
 - All failures or policy violations trigger fatal errors and are recorded for compliance review.
+- The bot state machine (`bot_state.txt`) governs runtime session transitions, UI routing, and error states, and must always be kept in sync with session events for full compliance.
 
 *End of Document*
