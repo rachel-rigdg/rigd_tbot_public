@@ -3,6 +3,8 @@
 
 from flask import Blueprint, redirect, url_for, render_template, session, request
 from tbot_web.py.bootstrap_utils import is_first_bootstrap
+from ..support.configuration_loader import load_encrypted_config
+from ..support.default_config_loader import get_default_config
 from pathlib import Path
 
 main_blueprint = Blueprint("main", __name__)
@@ -26,32 +28,40 @@ def root_router():
     print(f"[main_web] root_router called from {request.path}")
     print(f"[DEBUG][root_router] session keys at entry: {list(session.keys())}")
     print(f"[DEBUG][root_router] session trigger_provisioning at entry: {session.get('trigger_provisioning')}")
-    # Always clear the session flag as early as possible
     session.pop("trigger_provisioning", None)
     print(f"[DEBUG][root_router] session keys after pop: {list(session.keys())}")
     print(f"[DEBUG][root_router] session trigger_provisioning after pop: {session.get('trigger_provisioning')}")
 
-    if is_first_bootstrap():
-        print("[main_web] is_first_bootstrap=True, redirecting to configuration_web.show_configuration")
-        return redirect(url_for("configuration_web.show_configuration"))
-
     state = get_current_bot_state()
     print(f"[DEBUG][root_router] bot_state: {state}")
 
-    if state in INITIALIZE_STATES:
-        print(f"[main_web] initialize/provisioning/bootstrapping detected, redirecting to provisioning_route (state={state})")
-        return redirect(url_for("main.provisioning_route"))
+    if state == "initialize":
+        print("[main_web] State is initialize, rendering configuration.html from main_web")
+        config = {}
+        categories = [
+            "bot_identity", "broker", "screener_api",
+            "smtp", "network_config", "acct_api"
+        ]
+        for cat in categories:
+            config.update(load_encrypted_config(cat))
+        if not config:
+            config = get_default_config()
+        return render_template("configuration.html", config=config)
+
+    if state in ("provisioning", "bootstrapping"):
+        print(f"[main_web] State is {state}, rendering wait.html")
+        return render_template("wait.html", bot_state=state)
 
     if session.get("trigger_provisioning"):
-        print("[main_web] trigger_provisioning=True, redirecting to provisioning_route")
-        return redirect(url_for("main.provisioning_route"))
+        print("[main_web] trigger_provisioning=True, rendering wait.html")
+        return render_template("wait.html", bot_state=state)
 
     if state in ("error", "shutdown_triggered"):
         print(f"[main_web] ERROR or SHUTDOWN_TRIGGERED detected, rendering wait page (state={state})")
         return render_template("wait.html", bot_state=state)
 
-    print(f"[main_web] bot state is {state}, redirecting to main_page.")
-    return redirect(url_for("main.main_page"))
+    print(f"[main_web] bot state is {state}, rendering main.html")
+    return render_template("main.html", bot_state=state)
 
 @main_blueprint.route("/provisioning", methods=["GET"])
 def provisioning_route():

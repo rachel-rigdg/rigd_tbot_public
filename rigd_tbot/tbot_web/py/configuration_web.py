@@ -30,8 +30,6 @@ def show_configuration():
             state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         except Exception:
             state = "initialize"
-    if state != "initialize":
-        return redirect(url_for("main.main_page"))
     config = {}
     categories = [
         "bot_identity", "broker", "screener_api",
@@ -41,7 +39,7 @@ def show_configuration():
         config.update(load_encrypted_config(cat))
     if not config and state == "initialize":
         config = get_default_config()
-    return render_template("main.html", config=config)
+    return render_template("configuration.html", config=config)
 
 @configuration_blueprint.route("/configuration", methods=["POST"])
 def save_configuration():
