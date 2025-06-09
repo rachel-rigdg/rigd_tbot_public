@@ -70,7 +70,9 @@ def get_default_config():
         "PORT": "port",
     }
     result = {v: config.get(k, "") for k, v in mapping.items()}
-    # DEBUG: Log the parsed default config for troubleshooting initial bootstrap
+    # Add defaults for new required fields if not present (current bot_state logic)
+    if "bot_state" not in result:
+        result["bot_state"] = "initialize"
     print(f"[default_config_loader] DEBUG: Loaded default config: {result}", file=sys.stderr)
     return result
 
