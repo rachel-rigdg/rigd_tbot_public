@@ -6,9 +6,8 @@ from flask import Blueprint, request, redirect, render_template, session, url_fo
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
-from tbot_web.support.auth_web import decrypt_password  # Corrected absolute import as per directory spec
+from tbot_web.support.auth_web import validate_user
 from pathlib import Path
-import json
 
 # === Secure session config ===
 SESSION_TIMEOUT = int(os.getenv("SESSION_TIMEOUT", "300"))
@@ -19,41 +18,23 @@ SECRET_KEY = os.getenv("SECRET_KEY", "use-secure-random-key-in-production")
 login_blueprint = Blueprint("login_web", __name__)
 limiter = Limiter(get_remote_address, default_limits=[])
 
-def get_encrypted_password() -> str:
-    """
-    Loads the most recent encrypted hashed credentials (deferred until needed).
-    Returns the hashed_password string.
-    """
-    SECURE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "backups"
-    try:
-        # Find all files matching pattern
-        candidates = list(SECURE_PATH.glob("hashed_credentials_*.json"))
-        if not candidates:
-            raise FileNotFoundError("No hashed_credentials_*.json files found.")
-        latest = sorted(candidates)[-1]
-        return json.loads(latest.read_text(encoding="utf-8"))["hashed_password"]
-    except Exception as e:
-        raise RuntimeError(f"[login_web] Failed to load hashed credentials: {e}")
-
 @limiter.limit(API_LOGIN_LIMIT)
 @login_blueprint.route("/login", methods=["GET", "POST"])
 def login():
     """
-    POST → Decrypt stored password and compare with form input.
+    POST → Validate username and password against SYSTEM_USERS.db.
     GET  → Render login form.
     """
     if request.method == "POST":
-        entered_password = request.form.get("password", "")
-        try:
-            encrypted_password = get_encrypted_password()
-            decrypted_password = decrypt_password(encrypted_password)
-            if entered_password == decrypted_password:
-                session["authenticated"] = True
-                return redirect(url_for("main.main_page"))
-            else:
-                return render_template("index.html", error="Invalid password")
-        except Exception as e:
-            return render_template("index.html", error=f"Login error: {e}")
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if validate_user(username, password):
+            session["authenticated"] = True
+            session["user"] = username
+            # Optional: Fetch user role and store in session if RBAC is used
+            return redirect(url_for("main.main_page"))
+        else:
+            return render_template("index.html", error="Invalid username or password")
     return render_template("index.html")
 
 @login_blueprint.route("/logout")
@@ -62,6 +43,7 @@ def logout():
     Clears session on logout.
     """
     session.pop("authenticated", None)
+    session.pop("user", None)
     return redirect(url_for("login_web.login"))
 
 def login_required(f):
