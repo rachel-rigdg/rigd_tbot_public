@@ -3,10 +3,10 @@
 
 import json
 from flask import Blueprint, render_template, redirect, url_for
-from tbot_web.py.login_web import login_required  # Corrected import per directory spec
+from tbot_web.py.login_web import login_required
 from pathlib import Path
 from tbot_bot.support.path_resolver import get_output_path, validate_bot_identity
-from tbot_web.py.bootstrap_utils import is_first_bootstrap  # Use utility module for bootstrap check
+from tbot_web.py.bootstrap_utils import is_first_bootstrap
 
 status_blueprint = Blueprint("status", __name__)
 
@@ -24,13 +24,21 @@ def get_current_bot_state():
 def status_page():
     """
     Loads bot status from JSON and renders to dashboard.
+    Handles initialize/provisioning/bootstrapping states and error states for UI display.
     """
     if is_first_bootstrap():
         return redirect(url_for("configuration_web.show_configuration"))
 
+    bot_state = get_current_bot_state()
+    if bot_state in ("initialize", "provisioning", "bootstrapping"):
+        # Pass through to UI to display configuration/provisioning info
+        return render_template("wait.html", bot_state=bot_state)
+    if bot_state in ("error", "shutdown_triggered"):
+        # Show error or shutdown state explicitly
+        return render_template("wait.html", bot_state=bot_state)
+
     status_data = {}
     try:
-        # Resolve BOT_IDENTITY_STRING from .env_bot
         bot_env_path = Path("tbot_bot/.env_bot")
         bot_identity_string = "INVALID_IDENTITY"
         if bot_env_path.exists():
@@ -40,10 +48,7 @@ def status_page():
                         bot_identity_string = line.split("=", 1)[1].strip()
                         break
         validate_bot_identity(bot_identity_string)
-
-        # Dynamically resolve status.json path
         status_file_path = Path(get_output_path(bot_identity_string, "logs", "status.json"))
-
         with open(status_file_path, "r", encoding="utf-8") as f:
             status_data = json.load(f)
     except FileNotFoundError:
@@ -53,5 +58,4 @@ def status_page():
     except Exception as e:
         status_data = {"error": str(e)}
 
-    bot_state = get_current_bot_state()
     return render_template("status.html", status=status_data, bot_state=bot_state)
