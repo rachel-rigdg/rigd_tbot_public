@@ -42,7 +42,7 @@ def status_page():
         validate_bot_identity(bot_identity_string)
 
         # Dynamically resolve status.json path
-        status_file_path = Path(get_output_path(bot_identity_string, "output", "status.json"))
+        status_file_path = Path(get_output_path(bot_identity_string, "logs", "status.json"))
 
         with open(status_file_path, "r", encoding="utf-8") as f:
             status_data = json.load(f)
