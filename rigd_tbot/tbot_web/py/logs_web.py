@@ -25,7 +25,7 @@ def logs_page():
     try:
         bot_identity_string = load_bot_identity()
         validate_bot_identity(bot_identity_string)
-        log_path = Path(get_output_path(bot_identity_string, "logs", "bot_live.log"))
+        log_path = Path(get_output_path(bot_identity_string, "logs", "*.log"))
 
         if log_path.is_file():
             log_content = log_path.read_text(encoding="utf-8")
