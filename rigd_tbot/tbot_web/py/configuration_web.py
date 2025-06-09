@@ -10,6 +10,7 @@ configuration_blueprint = Blueprint("configuration_web", __name__)
 
 TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" / "tmp" / "bootstrap_config.json"
 PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
+BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
 @configuration_blueprint.route("/configuration", methods=["GET"])
 def show_configuration():
@@ -76,13 +77,21 @@ def save_configuration():
     with open(TMP_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
 
-   # Create provisioning flag for runner
+    # Set bot_state.txt to "provisioning" to break bootstrap/config loop on submit
+    try:
+        BOT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
+            f.write("provisioning")
+    except Exception as e:
+        print(f"[configuration_web] ERROR writing bot_state.txt: {e}")
+
+    # Create provisioning flag for runner
     try:
         PROVISION_FLAG_PATH.touch()
         print(f"[configuration_web] PROVISION_FLAG written: {PROVISION_FLAG_PATH}")
     except Exception as e:
         print(f"[configuration_web] ERROR writing PROVISION_FLAG: {e}")
-        
+
     print("[configuration_web] Configuration saved. Triggering provisioning on redirect.")
     session["trigger_provisioning"] = True
     session.modified = True
