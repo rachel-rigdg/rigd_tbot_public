@@ -16,9 +16,10 @@ from tbot_bot.support.decrypt_secrets import decrypt_json
 from pathlib import Path
 import os
 
-BOT_STATE_FILE = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[2] / "control")) / "bot_state.txt"
+# Path for bot state tracking
+BOT_STATE_FILE = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[1] / "control")) / "bot_state.txt"
 
-# Allowed states
+# Allowed states for bot state transitions
 ALLOWED_STATES = [
     "idle",
     "analyzing",
@@ -28,7 +29,10 @@ ALLOWED_STATES = [
     "bootstrapping",
     "updating",
     "shutdown",
-    "error"
+    "error",
+    "graceful_closing_positions",
+    "emergency_closing_positions",
+    "shutdown_triggered"
 ]
 
 # Thread-safe singleton class to hold live bot status
@@ -39,7 +43,7 @@ class BotStatus:
 
     def reset(self):
         with self.lock:
-            self.state = "idle"
+            self.state = "initialize"  # Default initial state
             self.active_strategy = None
             self.timestamp = utc_now().isoformat()
             self.trade_count = 0
@@ -76,7 +80,7 @@ class BotStatus:
             if new_state in ALLOWED_STATES:
                 self.state = new_state
             else:
-                self.state = "error"
+                self.state = "error"  # Default to error if state is invalid
             self.timestamp = utc_now().isoformat()
             # Write state to disk for UI/status monitoring
             BOT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
