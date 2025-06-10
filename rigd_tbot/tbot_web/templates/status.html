@@ -1,51 +1,59 @@
-<!-- tbot_web/templates/status.html -->
+<!-- tbot_web/templates/settings.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>TradeBot Status Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <meta charset="UTF-8" />
+    <title>TradeBot Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}" />
 </head>
-<body>
-    <div class="main-container">
-        <div style="width:70%; margin-left:auto; margin-right:auto;">
-            <h1>TradeBot Status</h1>
 
-            <div class="bot-state-banner" style="margin-bottom: 18px; padding: 8px 0;">
-                <strong>Current Bot State:</strong>
-                <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
-            </div>
+<body class="settings-page">
+    <header class="dashboard-header">
+        <h1>TradeBot Settings</h1>
+    </header>
 
-            {% if status.error %}
-                <p class="error">{{ status.error }}</p>
-            {% else %}
-                <div class="status-grid">
-                    <div><strong>Timestamp:</strong> {{ status.timestamp }}</div>
-                    <div><strong>Bot State:</strong> {{ status.state }}</div>
-                    <div><strong>Active Strategy:</strong> {{ status.active_strategy }}</div>
-                    <div><strong>Trade Count:</strong> {{ status.trade_count }}</div>
-                    <div><strong>Error Count:</strong> {{ status.error_count }}</div>
-                    <div><strong>Version:</strong> {{ status.version }}</div>
+    <main class="dashboard-main">
+        <!-- Editable form generated from decrypted .env_bot values -->
+        <form id="settings-form" action="{{ url_for('settings.update_settings') }}" method="POST" novalidate>
+            <h2>Update .env_bot Parameters</h2>
+            {% for key, value in config.items() %}
+                <div class="form-group">
+                    <label for="{{ key }}">{{ key }}</label>
+                    {% if key == "TEST_MODE" %}
+                        <select id="TEST_MODE" name="TEST_MODE" required>
+                            <option value="true" {% if value in [True, "true", "True", 1, "1"] %}selected{% endif %}>ON</option>
+                            <option value="false" {% if value in [False, "false", "False", 0, "0"] %}selected{% endif %}>OFF</option>
+                        </select>
+                    {% else %}
+                        <input 
+                            type="text" 
+                            id="{{ key }}" 
+                            name="{{ key }}" 
+                            value="{{ value }}" 
+                            autocomplete="off" 
+                            required
+                        />
+                    {% endif %}
                 </div>
+            {% endfor %}
+            <button type="submit">Save Changes</button>
+        </form>
 
-                <hr>
-                <h2>Strategy Toggles</h2>
-                <div class="status-grid">
-                    <div><strong>Open:</strong> {{ status.enabled_strategies.open }}</div>
-                    <div><strong>Mid:</strong> {{ status.enabled_strategies.mid }}</div>
-                    <div><strong>Close:</strong> {{ status.enabled_strategies.close }}</div>
-                </div>
+        {% if status %}
+        <p class="update-status">{{ status }}</p>
+        {% endif %}
+    </main>
 
-                <hr>
-                <h2>Risk Controls</h2>
-                <div class="status-grid">
-                    <div><strong>Max Risk per Trade:</strong> {{ status.max_risk_per_trade }}</div>
-                    <div><strong>Daily Loss Limit:</strong> {{ status.daily_loss_limit }}</div>
-                </div>
-            {% endif %}
-        </div>
-    </div>
+    <footer class="dashboard-footer">
+        <p>&copy; 2025 RIGD Group LLC – Bot Settings Interface</p>
+    </footer>
+
+    <script>
+        // Optional: Enhance UX with client-side validation or AJAX submit in future
+        // Current form uses standard POST submit
+    </script>
 </body>
 </html>
