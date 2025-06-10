@@ -12,6 +12,7 @@ from .logs_web import logs_blueprint
 from .start_stop_web import start_stop_blueprint
 from .settings_web import settings_blueprint
 from .coa_web import coa_web
+from .ledger_web import ledger_web
 from pathlib import Path
 
 from tbot_web.support import auth_web, security_users, session_manager, utils_web, csrf_protection
@@ -45,6 +46,7 @@ def create_app():
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(coa_web)
     app.register_blueprint(logout_blueprint)
+    app.register_blueprint(ledger_web)  # Added ledger endpoints
 
     @app.before_request
     def force_configuration():

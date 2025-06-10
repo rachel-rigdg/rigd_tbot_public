@@ -42,6 +42,25 @@ def role_required(required_role: str):
         return wrapper
     return decorator
 
+def admin_required(func: Callable) -> Callable:
+    """
+    Decorator to require admin role for Flask routes.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        user_role = session.get("user_role", None)
+        if user_role != "admin":
+            flash("Admin privileges required.", "error")
+            return redirect(url_for("login_web.login"))
+        return func(*args, **kwargs)
+    return wrapper
+
+def is_admin() -> bool:
+    """
+    Returns True if current user session is admin.
+    """
+    return session.get("user_role", None) == "admin"
+
 def safe_int(value: Optional[str], default: int = 0) -> int:
     """
     Converts a string to int safely, returning default if conversion fails.
@@ -103,8 +122,6 @@ def clear_session():
     """
     session.clear()
 
-# Example additional helpers for template usage:
-
 def format_datetime(dt: datetime, fmt: str = "%Y-%m-%d %H:%M:%S UTC") -> str:
     """
     Format a datetime object for display in UI templates.
@@ -114,4 +131,3 @@ def format_datetime(dt: datetime, fmt: str = "%Y-%m-%d %H:%M:%S UTC") -> str:
     return dt.strftime(fmt)
 
 # Add any additional web-specific utilities here as needed.
-
