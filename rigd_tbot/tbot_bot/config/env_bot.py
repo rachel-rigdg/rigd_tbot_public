@@ -3,6 +3,7 @@
 # All config access must be explicit and deferred—no module-level loading permitted.
 
 import json
+import logging
 from cryptography.fernet import Fernet
 from pathlib import Path
 from typing import Any, Dict
@@ -31,43 +32,62 @@ REQUIRED_KEYS = [
     "LEDGER_EXPORT_MODE"
 ]
 
+logger = logging.getLogger(__name__)
+
 def decrypt_env_bot(encryption_key: str) -> Dict[str, Any]:
     try:
+        logger.debug(f"Decrypting .env_bot.enc at {ENCRYPTED_CONFIG_PATH}")
         with open(ENCRYPTED_CONFIG_PATH, "rb") as file:
             encrypted_data = file.read()
         fernet = Fernet(encryption_key.encode())
         decrypted_data = fernet.decrypt(encrypted_data).decode()
+        logger.debug(".env_bot.enc decrypted successfully")
         return json.loads(decrypted_data)
     except Exception as e:
+        logger.error(f"Failed to decrypt .env_bot.enc: {e}")
         raise RuntimeError(f"Failed to decrypt .env_bot.enc: {e}")
 
 def load_env_bot() -> Dict[str, Any]:
     if not KEY_PATH.exists():
+        logger.error(f"ENV_BOT_KEY missing at expected path: {KEY_PATH}")
         raise RuntimeError(f"ENV_BOT_KEY missing at expected path: {KEY_PATH}")
     encryption_key = KEY_PATH.read_text(encoding="utf-8").strip()
+    logger.debug(f"Read encryption key from {KEY_PATH}")
     config = decrypt_env_bot(encryption_key)
     missing = [key for key in REQUIRED_KEYS if key not in config]
     if missing:
+        logger.error(f"Missing required keys in .env_bot: {missing}")
         raise KeyError(f"Missing required keys in .env_bot: {missing}")
+    logger.debug(f".env_bot keys present: {list(config.keys())}")
     for key, val in list(config.items()):
         if isinstance(val, str):
             val_lc = val.lower()
             if val_lc == "true":
                 config[key] = True
+                logger.debug(f"Key {key}: converted string 'true' to boolean True")
             elif val_lc == "false":
                 config[key] = False
+                logger.debug(f"Key {key}: converted string 'false' to boolean False")
     return config
 
 def validate_bot_config(config: Dict[str, Any]) -> None:
     missing = [key for key in REQUIRED_KEYS if key not in config]
     if missing:
+        logger.error(f"Missing required keys during validation: {missing}")
         raise ValueError(f"Missing required keys: {missing}")
     alloc = float(config.get("TOTAL_ALLOCATION", 0))
     if not (0 < alloc <= 1):
+        logger.error("TOTAL_ALLOCATION must be between 0 and 1.")
         raise ValueError("TOTAL_ALLOCATION must be between 0 and 1.")
     export_mode = config.get("LEDGER_EXPORT_MODE")
     if export_mode not in ("auto", "off"):
+        logger.error("LEDGER_EXPORT_MODE must be 'auto' or 'off'.")
         raise ValueError("LEDGER_EXPORT_MODE must be 'auto' or 'off'.")
 
 def get_bot_config() -> Dict[str, Any]:
-    return load_env_bot()
+    logger.debug("Loading bot config from .env_bot.enc")
+    config = load_env_bot()
+    logger.debug("Validating bot config")
+    validate_bot_config(config)
+    logger.debug("Bot config loaded and validated successfully")
+    return config

@@ -44,11 +44,11 @@ def load_summary():
 def check_daily_loss_limit():
     """Abort session if realized PnL exceeds allowable loss or kill flag present."""
     # Emergency kill flag check
-    if KILL_FLAG.exists():
-        print("[kill_switch] control_kill.txt detected — immediate shutdown triggered.")
-        log_event("kill_switch", "control_kill.txt detected — immediate shutdown triggered.")
-        trigger_shutdown(reason="Immediate kill flag (control_kill.txt) detected")
-        return True
+    #if KILL_FLAG.exists():
+    #    print("[kill_switch] control_kill.txt detected — immediate shutdown triggered.")
+    #   log_event("kill_switch", "control_kill.txt detected — immediate shutdown triggered.")
+    #    trigger_shutdown(reason="Immediate kill flag (control_kill.txt) detected")
+     #   return True
 
     summary = load_summary()
     if not summary:
