@@ -1,5 +1,5 @@
 # tbot_bot/strategy/strategy_mid.py
-# summary: Implements VWAP-based mid-day reversal strategy with full bi-directional logic and env-driven parameters
+# summary: Implements VWAP-based mid-day reversal strategy with full bi-directional logic and env-driven parameters; compresses analysis/monitor window to 1min if TEST_MODE
 
 import time
 from datetime import timedelta
@@ -32,6 +32,7 @@ ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
 SLEEP_TIME_STR = config["SLEEP_TIME"]
+TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
 
 def parse_sleep_time(sleep_str):
     try:
@@ -52,7 +53,7 @@ def self_check():
 def analyze_vwap_signals(start_time):
     log_event("strategy_mid", "Starting VWAP deviation analysis...")
     signals = []
-    deadline = start_time + timedelta(minutes=MID_ANALYSIS_TIME)
+    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else MID_ANALYSIS_TIME))
 
     while utc_now() < deadline:
         try:
@@ -94,7 +95,7 @@ def analyze_vwap_signals(start_time):
 def execute_mid_trades(signals, start_time):
     log_event("strategy_mid", "Executing trades...")
     trades = []
-    deadline = start_time + timedelta(minutes=MID_MONITORING_TIME)
+    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else MID_MONITORING_TIME))
 
     for signal in signals:
         if utc_now() >= deadline:

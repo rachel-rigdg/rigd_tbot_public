@@ -1,5 +1,5 @@
 # tbot_bot/screeners/finnhub_screener.py
-# summary: Screens symbols using Finnhub price, volume, and VWAP data (strategy-specific filters)
+# summary: Screens symbols using Finnhub price, volume, and VWAP data (strategy-specific filters, TEST_MODE aware)
 
 import requests
 import time
@@ -32,6 +32,7 @@ API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
 FRACTIONAL = config.get("FRACTIONAL", True)
+TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
 
 session_exclusions = set()
 strike_counts = {}
@@ -111,8 +112,8 @@ def get_market_cap(symbol):
 
 def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
     """
-    This function does not run automatically on import.
-    It must be called explicitly by the strategy logic.
+    TEST_MODE: Ignores all filters except price, returns first 3 passing.
+    Non-TEST_MODE: Applies all normal filters.
     """
     load_state()
     all_symbols = get_symbol_list()
@@ -145,6 +146,21 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
             log_event("screener", f"Rejected: Invalid quote data for {symbol}")
             continue
 
+        # TEST_MODE: Only price filter
+        if TEST_MODE:
+            if current < MIN_PRICE or (current > MAX_PRICE and not FRACTIONAL):
+                log_event("screener", f"Rejected: Price out of bounds for {symbol} = {current}")
+                continue
+            results.append({
+                "symbol": symbol,
+                "price": current,
+                "vwap": vwap,
+                "momentum": abs(current - open_) / open_
+            })
+            if len(results) >= limit:
+                break
+            continue
+
         if current < MIN_PRICE:
             log_event("screener", f"Rejected: Price below MIN_PRICE for {symbol} = {current}")
             continue
@@ -174,8 +190,11 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
             log(f"Checked {idx} symbols...")
         time.sleep(1.0)
 
-    results.sort(key=lambda x: x["momentum"], reverse=True)
-    top = results[:limit]
+    if not TEST_MODE:
+        results.sort(key=lambda x: x["momentum"], reverse=True)
+        top = results[:limit]
+    else:
+        top = results[:limit]
     log_event("screener", f"Selected top {len(top)} candidates from {len(all_symbols)}")
     save_state()
     return top

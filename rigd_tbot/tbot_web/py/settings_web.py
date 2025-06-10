@@ -56,11 +56,7 @@ def update_settings():
         validate_bot_identity(data.get("BOT_IDENTITY_STRING", "INVALID_IDENTITY"))
         validate_bot_config(data)
         raw_bytes = json.dumps(data, indent=2).encode("utf-8")
-        with tempfile.NamedTemporaryFile("wb", delete=False) as tf:
-            tf.write(raw_bytes)
-            temp_path = Path(tf.name)
         encrypt_env_bot_from_bytes(raw_bytes, rotate_key=False)
-        os.remove(temp_path)
         return jsonify({"status": "updated"})
     except Exception as e:
         return jsonify({"status": "error", "detail": str(e)}), 500

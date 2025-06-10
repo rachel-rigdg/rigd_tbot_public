@@ -1,5 +1,5 @@
 # tbot_bot/strategy/strategy_close.py
-# summary: Implements Late-day momentum/fade strategy with VIX gating and bi-directional logic
+# summary: Implements Late-day momentum/fade strategy with VIX gating and bi-directional logic; compresses analysis/monitor window to 1min if TEST_MODE
 
 import time
 from datetime import timedelta
@@ -33,6 +33,7 @@ ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
 SLEEP_TIME_STR = config["SLEEP_TIME"]
+TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
 
 def parse_sleep_time(sleep_str):
     try:
@@ -52,7 +53,7 @@ def self_check():
 
 def analyze_closing_signals(start_time):
     log_event("strategy_close", "Starting EOD momentum/fade analysis...")
-    deadline = start_time + timedelta(minutes=CLOSE_ANALYSIS_TIME)
+    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else CLOSE_ANALYSIS_TIME))
     signals = []
 
     if not is_vix_above_threshold(VIX_THRESHOLD):
@@ -107,7 +108,7 @@ def analyze_closing_signals(start_time):
 def monitor_closing_trades(signals, start_time):
     log_event("strategy_close", "Monitoring EOD trades...")
     trades = []
-    deadline = start_time + timedelta(minutes=CLOSE_MONITORING_TIME)
+    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else CLOSE_MONITORING_TIME))
 
     for signal in signals:
         if utc_now() >= deadline:

@@ -27,6 +27,7 @@ DISABLE_ALL_TRADES = config.get("DISABLE_ALL_TRADES", False)
 SLEEP_TIME_STR = config.get("SLEEP_TIME", "1s")
 STRATEGY_SEQUENCE = config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")
 STRATEGY_OVERRIDE = config.get("STRATEGY_OVERRIDE")
+TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
 
 CONTROL_DIR = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[2] / "control"))
 START_FLAG = CONTROL_DIR / "control_start.txt"
@@ -64,6 +65,8 @@ def close_all_positions_immediately():
     # TODO: Insert real close positions logic here
 
 def is_market_open(now_time=None):
+    if TEST_MODE:
+        return True
     now = now_time or datetime.utcnow()
     if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
         return False

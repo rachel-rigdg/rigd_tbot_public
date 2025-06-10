@@ -22,14 +22,21 @@
             {% for key, value in config.items() %}
                 <div class="form-group">
                     <label for="{{ key }}">{{ key }}</label>
-                    <input 
-                        type="text" 
-                        id="{{ key }}" 
-                        name="{{ key }}" 
-                        value="{{ value }}" 
-                        autocomplete="off" 
-                        required
-                    />
+                    {% if key == "TEST_MODE" %}
+                        <select id="TEST_MODE" name="TEST_MODE" required>
+                            <option value="true" {% if value in [True, "true", "True", 1, "1"] %}selected{% endif %}>ON</option>
+                            <option value="false" {% if value in [False, "false", "False", 0, "0"] %}selected{% endif %}>OFF</option>
+                        </select>
+                    {% else %}
+                        <input 
+                            type="text" 
+                            id="{{ key }}" 
+                            name="{{ key }}" 
+                            value="{{ value }}" 
+                            autocomplete="off" 
+                            required
+                        />
+                    {% endif %}
                 </div>
             {% endfor %}
             <button type="submit">Save Changes</button>
