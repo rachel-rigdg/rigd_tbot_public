@@ -6,11 +6,46 @@
     <title>TradeBot Logs</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-  
+    <script>
+        function loadLog() {
+            const selectedLog = document.getElementById('logSelect').value;
+            fetch(`/logs/view?file=${encodeURIComponent(selectedLog)}`)
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('logContent').textContent = data;
+                })
+                .catch(() => {
+                    document.getElementById('logContent').textContent = 'Failed to load log.';
+                });
+        }
+        window.onload = function() {
+            loadLog();
+        };
+    </script>
 </head>
 <body class="logs-page">
     <header class="dashboard-header">
         <h1>TradeBot Logs</h1>
+        <select id="logSelect" onchange="loadLog()">
+            <option value="auth_web.log">auth_web.log</option>
+            <option value="close.log">close.log</option>
+            <option value="db_bootstrap.log">db_bootstrap.log</option>
+            <option value="error_tracebacks.log">error_tracebacks.log</option>
+            <option value="heartbeat.log">heartbeat.log</option>
+            <option value="init_password_reset_tokens.log">init_password_reset_tokens.log</option>
+            <option value="init_system_logs.log">init_system_logs.log</option>
+            <option value="init_system_users.log">init_system_users.log</option>
+            <option value="init_user_activity_monitoring.log">init_user_activity_monitoring.log</option>
+            <option value="kill_switch.log">kill_switch.log</option>
+            <option value="logs_web.log">logs_web.log</option>
+            <option value="main_bot.log">main_bot.log</option>
+            <option value="mid.log">mid.log</option>
+            <option value="open.log">open.log</option>
+            <option value="provisioning.log">provisioning.log</option>
+            <option value="security_users.log">security_users.log</option>
+            <option value="unresolved_orders.log">unresolved_orders.log</option>
+            <option value="watchdog_bot.log">watchdog_bot.log</option>
+        </select>
     </header>
 
     <main class="dashboard-main content">
@@ -18,7 +53,7 @@
             <h2>Runtime Log Stream</h2>
             <!-- Escaped preformatted log output -->
             <div class="log-stream">
-                <pre>{{ log_text | e }}</pre>
+                <pre id="logContent">{{ log_text | e }}</pre>
             </div>
         </section>
     </main>
