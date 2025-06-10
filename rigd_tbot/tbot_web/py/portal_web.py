@@ -11,9 +11,6 @@ from .status_web import status_blueprint
 from .logs_web import logs_blueprint
 from .start_stop_web import start_stop_blueprint
 from .settings_web import settings_blueprint
-from .coa_web import coa_web
-from .ledger_web import ledger_web
-from .test_web import test_web
 from pathlib import Path
 
 from tbot_web.support import auth_web, security_users, session_manager, utils_web, csrf_protection
@@ -45,22 +42,28 @@ def create_app():
     app.register_blueprint(logs_blueprint)
     app.register_blueprint(start_stop_blueprint)
     app.register_blueprint(settings_blueprint)
-    app.register_blueprint(coa_web)
     app.register_blueprint(logout_blueprint)
-    app.register_blueprint(ledger_web)
-    app.register_blueprint(test_web)  # TEST_MODE endpoints and UI
+
+    # Defer import and registration of ledger and coa blueprints until after provisioning
+    from . import coa_web, ledger_web, test_web
 
     @app.before_request
     def force_configuration():
         # Always check bot_state.txt before every request
         state = get_bot_state()
-        if state == "initialize":
+        if state in ("initialize", "provisioning", "bootstrapping"):
             if not (
                 (request.endpoint or "").startswith("configuration_web")
                 or (request.endpoint or "").startswith("main.provisioning_route")
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("configuration_web.show_configuration"))
+        else:
+            # Register ledger, coa, and test blueprints only after provisioning completes
+            if 'ledger_web' not in app.blueprints:
+                app.register_blueprint(coa_web.coa_web)
+                app.register_blueprint(ledger_web.ledger_web)
+                app.register_blueprint(test_web.test_web)
 
     @app.route("/wait")
     def wait():

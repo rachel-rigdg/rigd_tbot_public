@@ -2,15 +2,26 @@
 import csv
 import io
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
-from tbot_bot.accounting.ledger import (
-    load_internal_ledger,
-    mark_entry_resolved,
-    add_ledger_entry,
-    edit_ledger_entry,
-    delete_ledger_entry
-)
+from pathlib import Path
 
 ledger_web = Blueprint("ledger_web", __name__)
+
+BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
+
+def get_current_bot_state():
+    try:
+        with open(BOT_STATE_PATH, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return "unknown"
+
+def provisioning_guard():
+    state = get_current_bot_state()
+    if state in INITIALIZE_STATES:
+        flash("Provisioning not complete. Ledger access is unavailable.")
+        return True
+    return False
 
 def reconcile_ledgers(internal, broker):
     result = []
@@ -28,6 +39,9 @@ def reconcile_ledgers(internal, broker):
 
 @ledger_web.route('/ledger/reconcile', methods=['GET', 'POST'])
 def ledger_reconcile():
+    if provisioning_guard():
+        return redirect(url_for('main.root_router'))
+    from tbot_bot.accounting.ledger import load_internal_ledger  # Lazy import after provisioning
     internal_ledger = load_internal_ledger()
     broker_entries = []
     if request.method == 'POST' and 'broker_csv' in request.files:
@@ -42,12 +56,18 @@ def ledger_reconcile():
 
 @ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
+    if provisioning_guard():
+        return redirect(url_for('main.root_router'))
+    from tbot_bot.accounting.ledger import mark_entry_resolved  # Lazy import
     mark_entry_resolved(entry_id)
     flash('Entry marked as resolved.')
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 @ledger_web.route('/ledger/add', methods=['POST'])
 def add_ledger_entry_route():
+    if provisioning_guard():
+        return redirect(url_for('main.root_router'))
+    from tbot_bot.accounting.ledger import add_ledger_entry  # Lazy import
     form = request.form
     entry_data = {
         "date": form.get("date"),
@@ -61,6 +81,9 @@ def add_ledger_entry_route():
 
 @ledger_web.route('/ledger/edit/<int:entry_id>', methods=['POST'])
 def edit_ledger_entry_route(entry_id):
+    if provisioning_guard():
+        return redirect(url_for('main.root_router'))
+    from tbot_bot.accounting.ledger import edit_ledger_entry  # Lazy import
     form = request.form
     updated_data = {
         "date": form.get("date"),
@@ -74,6 +97,9 @@ def edit_ledger_entry_route(entry_id):
 
 @ledger_web.route('/ledger/delete/<int:entry_id>', methods=['POST'])
 def delete_ledger_entry_route(entry_id):
+    if provisioning_guard():
+        return redirect(url_for('main.root_router'))
+    from tbot_bot.accounting.ledger import delete_ledger_entry  # Lazy import
     delete_ledger_entry(entry_id)
     flash('Ledger entry deleted.')
     return redirect(url_for('ledger_web.ledger_reconcile'))
