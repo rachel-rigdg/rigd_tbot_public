@@ -1,5 +1,5 @@
 # tbot_bot/strategy/strategy_router.py
-# Routes execution to correct strategy based on UTC time
+# Routes execution to correct strategy based on UTC time and TEST_MODE override
 
 import time
 from datetime import datetime, time as dt_time
@@ -10,6 +10,7 @@ from tbot_bot.strategy.strategy_close import run_close_strategy
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
+from pathlib import Path
 
 config = get_bot_config()
 
@@ -43,11 +44,39 @@ def parse_sleep_time(sleep_str):
 
 SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
+# Check for TEST_MODE flag presence
+def is_test_mode_active() -> bool:
+    test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
+    return test_flag_path.exists()
+
 # Main strategy routing function
 def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
-    Main router to select and execute strategy based on UTC time or manual override.
+    Main router to select and execute strategy based on UTC time, manual override,
+    or TEST_MODE immediate execution bypassing schedule.
     """
+    # If TEST_MODE active, run all strategies sequentially immediately and once
+    if is_test_mode_active():
+        log_event("router", "TEST_MODE active: executing all strategies sequentially")
+        results = []
+        for strat in ["open", "mid", "close"]:
+            try:
+                log_event("router", f"TEST_MODE executing strategy: {strat}")
+                result = execute_strategy(strat)
+                results.append(result)
+            except Exception as e:
+                log_event("router", f"TEST_MODE error executing {strat}: {e}")
+                results.append(StrategyResult(skipped=True, errors=[str(e)]))
+        # After execution, delete test_mode.flag to reset
+        try:
+            test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
+            test_flag_path.unlink()
+            log_event("router", "TEST_MODE flag cleared after test sequence completion")
+        except Exception as e:
+            log_event("router", f"Failed to clear TEST_MODE flag: {e}")
+        # Return last strategy result or combined as needed (return last here)
+        return results[-1]
+
     now = current_utc_time or utc_now().time()
 
     # Check for manual override (if provided)

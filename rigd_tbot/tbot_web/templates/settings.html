@@ -5,7 +5,6 @@
     <meta charset="UTF-8" />
     <title>TradeBot Settings</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}" />
 </head>
@@ -20,24 +19,19 @@
         <form id="settings-form" action="{{ url_for('settings.update_settings') }}" method="POST" novalidate>
             <h2>Update .env_bot Parameters</h2>
             {% for key, value in config.items() %}
+                {% if key != "TEST_MODE" %}
                 <div class="form-group">
                     <label for="{{ key }}">{{ key }}</label>
-                    {% if key == "TEST_MODE" %}
-                        <select id="TEST_MODE" name="TEST_MODE" required>
-                            <option value="true" {% if value in [True, "true", "True", 1, "1"] %}selected{% endif %}>ON</option>
-                            <option value="false" {% if value in [False, "false", "False", 0, "0"] %}selected{% endif %}>OFF</option>
-                        </select>
-                    {% else %}
-                        <input 
-                            type="text" 
-                            id="{{ key }}" 
-                            name="{{ key }}" 
-                            value="{{ value }}" 
-                            autocomplete="off" 
-                            required
-                        />
-                    {% endif %}
+                    <input 
+                        type="text" 
+                        id="{{ key }}" 
+                        name="{{ key }}" 
+                        value="{{ value }}" 
+                        autocomplete="off" 
+                        required
+                    />
                 </div>
+                {% endif %}
             {% endfor %}
             <button type="submit">Save Changes</button>
         </form>

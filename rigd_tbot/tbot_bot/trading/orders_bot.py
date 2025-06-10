@@ -11,12 +11,16 @@ from tbot_bot.broker.broker_api import place_order, close_position
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.decrypt_secrets import decrypt_json
+from pathlib import Path
 
 config = get_bot_config()
 MAX_RISK_PER_TRADE = config.get("MAX_RISK_PER_TRADE", 0.025)
 FRACTIONAL = config.get("FRACTIONAL", True)
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
+
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 # Retrieve BROKER_CODE (BROKER_NAME) from broker_credentials.json.enc (not .env_bot)
 broker_creds = decrypt_json("broker_credentials")
@@ -33,6 +37,33 @@ def create_order(symbol, side, capital, price, stop_loss_pct=0.02, strategy=None
     :param strategy: str, strategy name
     :return: dict with order metadata or None if failed
     """
+    # TEST_MODE stub: simulate success, no live API call
+    if TEST_MODE_FLAG.exists():
+        log_event("orders_bot", f"TEST_MODE active: Simulating order for {symbol} side {side} at {price}")
+        if price < MIN_PRICE or price > MAX_PRICE:
+            log_event("orders_bot", f"TEST_MODE simulated order rejected: Price out of bounds for {symbol}: {price}")
+            return None
+        qty = capital / price if FRACTIONAL else int(capital / price)
+        if qty <= 0:
+            log_event("orders_bot", f"TEST_MODE simulated order rejected: Invalid quantity for {symbol} at {price}")
+            return None
+        order = {
+            "symbol": symbol,
+            "qty": round(qty, 4),
+            "side": side,
+            "type": "market",
+            "strategy": strategy,
+            "price": price,
+            "total_value": round(qty * price, 2),
+            "timestamp": utc_now().isoformat(),
+            "trailing_stop_pct": stop_loss_pct,
+            "broker": BROKER_NAME,
+            "account": "test_mode",
+            "test_mode": True
+        }
+        log_event("orders_bot", f"TEST_MODE simulated order placed: {order}")
+        return order
+
     if price < MIN_PRICE or price > MAX_PRICE:
         log_event("orders_bot", f"Price out of bounds for {symbol}: {price}")
         return None
@@ -80,6 +111,23 @@ def exit_order(symbol, side, qty, strategy=None):
     :param strategy: optional label
     :return: dict with order metadata or None
     """
+    # TEST_MODE stub: simulate success, no live API call
+    if TEST_MODE_FLAG.exists():
+        log_event("orders_bot", f"TEST_MODE active: Simulating exit order for {symbol} side {side} qty {qty}")
+        order = {
+            "symbol": symbol,
+            "qty": round(qty, 4),
+            "side": side,
+            "type": "market",
+            "strategy": strategy,
+            "timestamp": utc_now().isoformat(),
+            "broker": BROKER_NAME,
+            "account": "test_mode",
+            "test_mode": True
+        }
+        log_event("orders_bot", f"TEST_MODE simulated exit order placed: {order}")
+        return order
+
     order = {
         "symbol": symbol,
         "qty": round(qty, 4),

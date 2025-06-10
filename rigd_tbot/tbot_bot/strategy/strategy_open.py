@@ -16,6 +16,7 @@ from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.trading.risk_bot import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
+from pathlib import Path
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
@@ -31,7 +32,9 @@ ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
 SLEEP_TIME_STR = config["SLEEP_TIME"]
-TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
+
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def parse_sleep_time(sleep_str):
     try:
@@ -48,12 +51,16 @@ SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
 range_data = {}
 
+def is_test_mode_active():
+    return TEST_MODE_FLAG.exists()
+
 def self_check():
     return STRAT_OPEN_ENABLED and STRAT_OPEN_BUFFER > 0
 
 def analyze_opening_range(start_time):
     log_event("strategy_open", "Starting opening range analysis...")
-    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else OPEN_ANALYSIS_TIME))
+    analysis_minutes = 1 if is_test_mode_active() else OPEN_ANALYSIS_TIME
+    deadline = start_time + timedelta(minutes=analysis_minutes)
     while utc_now() < deadline:
         try:
             candidates = get_filtered_stocks(strategy="open")
@@ -83,7 +90,8 @@ def analyze_opening_range(start_time):
 def detect_breakouts(start_time):
     log_event("strategy_open", "Monitoring for breakouts...")
     trades = []
-    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else OPEN_BREAKOUT_TIME))
+    breakout_minutes = 1 if is_test_mode_active() else OPEN_BREAKOUT_TIME
+    deadline = start_time + timedelta(minutes=breakout_minutes)
 
     while utc_now() < deadline:
         try:

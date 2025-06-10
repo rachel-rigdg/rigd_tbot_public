@@ -19,6 +19,7 @@ from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.trading.risk_bot import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
+from pathlib import Path
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
@@ -33,7 +34,9 @@ ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
 SLEEP_TIME_STR = config["SLEEP_TIME"]
-TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
+
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def parse_sleep_time(sleep_str):
     try:
@@ -48,15 +51,19 @@ def parse_sleep_time(sleep_str):
 
 SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
+def is_test_mode_active():
+    return TEST_MODE_FLAG.exists()
+
 def self_check():
     return STRAT_CLOSE_ENABLED and VIX_THRESHOLD >= 0
 
 def analyze_closing_signals(start_time):
     log_event("strategy_close", "Starting EOD momentum/fade analysis...")
-    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else CLOSE_ANALYSIS_TIME))
+    analysis_minutes = 1 if is_test_mode_active() else CLOSE_ANALYSIS_TIME
+    deadline = start_time + timedelta(minutes=analysis_minutes)
     signals = []
 
-    if not is_vix_above_threshold(VIX_THRESHOLD):
+    if not is_vix_above_threshold(VIX_THRESHOLD) and not is_test_mode_active():
         log_event("strategy_close", "VIX filter blocked strategy.")
         return signals
 
@@ -108,7 +115,8 @@ def analyze_closing_signals(start_time):
 def monitor_closing_trades(signals, start_time):
     log_event("strategy_close", "Monitoring EOD trades...")
     trades = []
-    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else CLOSE_MONITORING_TIME))
+    monitoring_minutes = 1 if is_test_mode_active() else CLOSE_MONITORING_TIME
+    deadline = start_time + timedelta(minutes=monitoring_minutes)
 
     for signal in signals:
         if utc_now() >= deadline:

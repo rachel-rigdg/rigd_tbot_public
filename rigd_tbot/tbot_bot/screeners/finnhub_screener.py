@@ -10,6 +10,7 @@ from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.path_resolver import get_output_path
+from pathlib import Path
 
 config = get_bot_config()
 
@@ -32,7 +33,13 @@ API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
 FRACTIONAL = config.get("FRACTIONAL", True)
-TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
+
+# Replace TEST_MODE config flag with runtime detection of test_mode.flag
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+
+def is_test_mode_active():
+    return TEST_MODE_FLAG.exists()
 
 session_exclusions = set()
 strike_counts = {}
@@ -128,6 +135,8 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
     min_cap = float(config.get(min_cap_key, 2e9))
     max_cap = float(config.get(max_cap_key, 1e10))
 
+    test_mode_active = is_test_mode_active()
+
     for idx, symbol in enumerate(all_symbols):
         if symbol in session_exclusions or symbol in hard_exclusions:
             log_event("screener", f"Excluded symbol: {symbol}")
@@ -147,7 +156,7 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
             continue
 
         # TEST_MODE: Only price filter
-        if TEST_MODE:
+        if test_mode_active:
             if current < MIN_PRICE or (current > MAX_PRICE and not FRACTIONAL):
                 log_event("screener", f"Rejected: Price out of bounds for {symbol} = {current}")
                 continue
@@ -190,7 +199,7 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
             log(f"Checked {idx} symbols...")
         time.sleep(1.0)
 
-    if not TEST_MODE:
+    if not test_mode_active:
         results.sort(key=lambda x: x["momentum"], reverse=True)
         top = results[:limit]
     else:

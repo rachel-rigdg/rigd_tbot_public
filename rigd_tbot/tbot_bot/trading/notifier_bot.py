@@ -10,6 +10,7 @@ import smtplib
 from email.mime.text import MIMEText
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
+from pathlib import Path
 
 config = get_bot_config()
 SMTP_USER = config.get("SMTP_USER")
@@ -20,8 +21,17 @@ ALERT_EMAIL = config.get("ALERT_EMAIL")
 NOTIFY_ON_FILL = config.get("NOTIFY_ON_FILL", False)
 NOTIFY_ON_EXIT = config.get("NOTIFY_ON_EXIT", False)
 
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+
+def is_test_mode_active():
+    return TEST_MODE_FLAG.exists()
+
 def send_email(subject, message, override=False):
-    """Send an email via SMTP if enabled or override is set"""
+    """Send an email via SMTP if enabled or override is set, suppress if TEST_MODE active"""
+    if is_test_mode_active() and not override:
+        # Suppress non-critical notifications during TEST_MODE
+        return
     if not ALERT_EMAIL or (not override and not (NOTIFY_ON_FILL or NOTIFY_ON_EXIT)):
         return
 
@@ -40,6 +50,8 @@ def send_email(subject, message, override=False):
 
 def notify_trade_fill(ticker, side, size, price, strategy, broker):
     """Notify when a trade is filled"""
+    if is_test_mode_active():
+        return
     if not NOTIFY_ON_FILL:
         return
     subject = f"TradeBot Fill Alert - {ticker}"
@@ -57,6 +69,8 @@ def notify_trade_fill(ticker, side, size, price, strategy, broker):
 
 def notify_trade_exit(ticker, size, entry_price, exit_price, pnl, strategy, broker):
     """Notify when a trade is exited"""
+    if is_test_mode_active():
+        return
     if not NOTIFY_ON_EXIT:
         return
     subject = f"TradeBot Exit Alert - {ticker}"
@@ -82,4 +96,5 @@ def notify_critical_error(summary, detail):
         f"Details:\n{detail}\n\n"
         f"Time: {utc_now().isoformat()}"
     )
+    # Always send critical errors even in TEST_MODE
     send_email(subject, body, override=True)

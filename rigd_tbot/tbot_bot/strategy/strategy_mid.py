@@ -18,6 +18,7 @@ from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.trading.risk_bot import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
+from pathlib import Path
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
@@ -32,7 +33,9 @@ ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
 SLEEP_TIME_STR = config["SLEEP_TIME"]
-TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
+
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def parse_sleep_time(sleep_str):
     try:
@@ -47,13 +50,17 @@ def parse_sleep_time(sleep_str):
 
 SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
+def is_test_mode_active():
+    return TEST_MODE_FLAG.exists()
+
 def self_check():
     return STRAT_MID_ENABLED and VWAP_THRESHOLD > 0
 
 def analyze_vwap_signals(start_time):
     log_event("strategy_mid", "Starting VWAP deviation analysis...")
     signals = []
-    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else MID_ANALYSIS_TIME))
+    analysis_minutes = 1 if is_test_mode_active() else MID_ANALYSIS_TIME
+    deadline = start_time + timedelta(minutes=analysis_minutes)
 
     while utc_now() < deadline:
         try:
@@ -95,7 +102,8 @@ def analyze_vwap_signals(start_time):
 def execute_mid_trades(signals, start_time):
     log_event("strategy_mid", "Executing trades...")
     trades = []
-    deadline = start_time + timedelta(minutes=(1 if TEST_MODE else MID_MONITORING_TIME))
+    monitoring_minutes = 1 if is_test_mode_active() else MID_MONITORING_TIME
+    deadline = start_time + timedelta(minutes=monitoring_minutes)
 
     for signal in signals:
         if utc_now() >= deadline:

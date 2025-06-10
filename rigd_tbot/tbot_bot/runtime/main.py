@@ -27,12 +27,12 @@ DISABLE_ALL_TRADES = config.get("DISABLE_ALL_TRADES", False)
 SLEEP_TIME_STR = config.get("SLEEP_TIME", "1s")
 STRATEGY_SEQUENCE = config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")
 STRATEGY_OVERRIDE = config.get("STRATEGY_OVERRIDE")
-TEST_MODE = config.get("TEST_MODE", False) in [True, "true", "True", 1, "1"]
 
 CONTROL_DIR = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[2] / "control"))
 START_FLAG = CONTROL_DIR / "control_start.txt"
 STOP_FLAG = CONTROL_DIR / "control_stop.txt"
 KILL_FLAG = CONTROL_DIR / "control_kill.txt"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 # Define market hours gating (UTC time)
 MARKET_OPEN_TIME = dt_time(hour=13, minute=30)   # 09:30 EST in UTC
@@ -65,7 +65,7 @@ def close_all_positions_immediately():
     # TODO: Insert real close positions logic here
 
 def is_market_open(now_time=None):
-    if TEST_MODE:
+    if TEST_MODE_FLAG.exists():
         return True
     now = now_time or datetime.utcnow()
     if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
@@ -87,7 +87,13 @@ def main():
             close_all_positions_immediately()
             safe_exit()
 
-        strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
+        # If TEST_MODE active, run all strategies sequentially once and then clear flag
+        if TEST_MODE_FLAG.exists():
+            log_event("main_bot", "TEST_MODE active: executing all strategies sequentially")
+            strategies = ["open", "mid", "close"]
+        else:
+            strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
+
         print(f"[main_bot] Strategy sequence: {strategies}")
         log_event("main_bot", f"Strategy sequence: {strategies}")
 
@@ -105,12 +111,12 @@ def main():
                 safe_exit()
 
             now_dt = datetime.utcnow()
-            if not is_market_open(now_dt) and not STRATEGY_OVERRIDE:
+            if not is_market_open(now_dt) and not STRATEGY_OVERRIDE and not TEST_MODE_FLAG.exists():
                 print(f"[main_bot] Outside market hours. Skipping {strat_name}.")
                 log_event("main_bot", f"Outside market hours. Skipping {strat_name}.")
                 continue
 
-            if DISABLE_ALL_TRADES:
+            if DISABLE_ALL_TRADES and not TEST_MODE_FLAG.exists():
                 print(f"[main_bot] Trading disabled. Skipping {strat_name}")
                 log_event("main_bot", f"Trading disabled. Skipping {strat_name}")
                 continue
@@ -119,6 +125,15 @@ def main():
             run_strategy(override=strat_name)
             update_bot_state(f"completed_{strat_name}")  # Mark strategy as completed after execution
             time.sleep(SLEEP_TIME)
+
+            if TEST_MODE_FLAG.exists():
+                # Clear test_mode.flag after single full run
+                try:
+                    TEST_MODE_FLAG.unlink()
+                    log_event("main_bot", "TEST_MODE flag cleared after test run completion")
+                except Exception as e:
+                    log_event("main_bot", f"Failed to clear TEST_MODE flag: {e}")
+                break
 
             if STOP_FLAG.exists():
                 print("[main_bot] Graceful stop detected. Will shut down after current strategy.")

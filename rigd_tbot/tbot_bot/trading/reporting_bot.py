@@ -15,6 +15,7 @@ from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
 from tbot_bot.support.utils_identity import get_bot_identity
+from pathlib import Path
 
 config = get_bot_config()
 FORCE_PAPER_EXPORT = config.get("FORCE_PAPER_EXPORT", False)
@@ -23,14 +24,21 @@ LOG_FORMAT = config.get("LOG_FORMAT", "json").lower()
 GNC_EXPORT_MODE = config.get("GNC_EXPORT_MODE", "auto")
 BOT_IDENTITY = get_bot_identity()
 
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+
 history_file = f"{BOT_IDENTITY}_BOT_trade_history.{LOG_FORMAT}"
 summary_file = f"{BOT_IDENTITY}_BOT_daily_summary.json"
+
+def is_test_mode_active():
+    return TEST_MODE_FLAG.exists()
 
 def append_trade_log(trade_data):
     """
     Appends trade to JSON or CSV file with correct bot-scoped filename.
+    Skips actual logging if TEST_MODE active.
     """
-    if not ENABLE_LOGGING:
+    if not ENABLE_LOGGING or is_test_mode_active():
         return
 
     filepath = get_output_path("trades", history_file)
@@ -59,8 +67,9 @@ def append_trade_log(trade_data):
 def append_summary(summary):
     """
     Writes session summary JSON with bot-scoped filename.
+    Skips writing if TEST_MODE active.
     """
-    if not ENABLE_LOGGING:
+    if not ENABLE_LOGGING or is_test_mode_active():
         return
 
     filepath = get_output_path("summaries", summary_file)
@@ -75,8 +84,9 @@ def append_summary(summary):
 def export_to_manager(trade_data):
     """
     Routes trade to Manager.io ledger if GNC_EXPORT_MODE is 'auto'.
+    Skips export if TEST_MODE active.
     """
-    if GNC_EXPORT_MODE != "auto":
+    if GNC_EXPORT_MODE != "auto" or is_test_mode_active():
         return
     try:
         export_trade_to_manager(trade_data)

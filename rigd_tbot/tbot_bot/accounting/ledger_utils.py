@@ -9,7 +9,11 @@ from cryptography.fernet import Fernet
 from pathlib import Path
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_identity import get_bot_identity
+
 BOT_ID = get_bot_identity()
+
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 ACCOUNT_MAP = {
     "cash":               "Assets:Brokerage Accounts – Equities:Cash",
@@ -39,7 +43,12 @@ def validate_ledger_schema():
     """
     Checks that the ledger DB matches the required schema.
     Returns True if compliant, raises on missing schema.
+    Skips validation if TEST_MODE active.
     """
+    if TEST_MODE_FLAG.exists():
+        # Skip schema validation during TEST_MODE
+        return True
+
     key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
     enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
     key = key_path.read_bytes()
@@ -64,6 +73,10 @@ def get_entry_by_id(entry_id):
     """
     Fetch a single ledger entry from trades table by id.
     """
+    if TEST_MODE_FLAG.exists():
+        # Skip ledger reads in TEST_MODE
+        return None
+
     key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
     enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
     key = key_path.read_bytes()
@@ -81,6 +94,10 @@ def log_audit_event(action, entry_id, user, before=None, after=None):
     """
     Write an audit event to audit_trail table for compliance tracking.
     """
+    if TEST_MODE_FLAG.exists():
+        # Skip audit logging in TEST_MODE
+        return
+
     key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
     enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
     key = key_path.read_bytes()
@@ -102,6 +119,10 @@ def get_all_ledger_entries():
     """
     Fetch all ledger entries from trades table, returns list of dicts.
     """
+    if TEST_MODE_FLAG.exists():
+        # Skip ledger reads in TEST_MODE
+        return []
+
     key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
     enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
     key = key_path.read_bytes()
