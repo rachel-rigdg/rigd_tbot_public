@@ -44,8 +44,11 @@ def create_app():
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(logout_blueprint)
 
-    # Defer import and registration of ledger and coa blueprints until after provisioning
+    # Import and register ledger, coa, and test blueprints unconditionally here before first request
     from . import coa_web, ledger_web, test_web
+    app.register_blueprint(coa_web.coa_web)
+    app.register_blueprint(ledger_web.ledger_web)
+    app.register_blueprint(test_web.test_web)
 
     @app.before_request
     def force_configuration():
@@ -58,12 +61,6 @@ def create_app():
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("configuration_web.show_configuration"))
-        else:
-            # Register ledger, coa, and test blueprints only after provisioning completes
-            if 'ledger_web' not in app.blueprints:
-                app.register_blueprint(coa_web.coa_web)
-                app.register_blueprint(ledger_web.ledger_web)
-                app.register_blueprint(test_web.test_web)
 
     @app.route("/wait")
     def wait():
