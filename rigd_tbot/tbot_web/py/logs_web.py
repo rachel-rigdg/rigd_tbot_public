@@ -45,7 +45,7 @@ def logs_page():
     try:
         bot_identity_string = load_bot_identity()
         validate_bot_identity(bot_identity_string)
-        logs_dir = get_output_path(bot_identity_string, "logs")
+        logs_dir = Path(get_output_path(bot_identity_string, "logs"))
         file_path = logs_dir / selected_log
         if file_path.is_file():
             try:
