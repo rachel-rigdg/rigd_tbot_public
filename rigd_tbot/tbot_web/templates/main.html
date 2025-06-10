@@ -54,7 +54,7 @@
             <form action="{{ url_for('logs.logs_page') }}" method="get" target="viewFrame" style="display:inline;">
                 <button type="submit" class="tab-button">Logs</button>
             </form>
-            <form action="{{ url_for('logs.ledger_page') }}" method="get" target="viewFrame" style="display:inline;">
+            <form action="{{ url_for('ledger_web.ledger_reconcile') }}" method="get" target="viewFrame" style="display:inline;">
                 <button type="submit" class="tab-button">Ledger</button>
             </form>
             <form action="{{ url_for('coa_web.coa_management') }}" method="get" target="viewFrame" style="display:inline;">
