@@ -1,7 +1,7 @@
 ================================================================================
 Document: 040_Directory_Structure
-Version: v041
-Date: UTC:2025-06-08 15:33
+Version: v042
+Date: UTC:2025-06-10 14:17
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -312,6 +312,7 @@ rigd_tbot/
     │   ├── bootstrap_utils.py                  # UI-only first-run logic: detects bootstrap status, determines page to show (config or login); calls db_bootstrap.py
     │   ├── coa_web.py                          # COA endpoints: view, edit, export; calls utils_coa_web.py, config_encryption.py
     │   ├── configuration_web.py                # Handles configuration route: displays, saves, and provisions config; calls config_encryption, key_manager, security_users
+        ├── ledger_web.py		        # Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
     │   ├── login_web.py                        # User login/logout/session; calls auth_web.py, security_users.py, session_manager.py
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state
     │   ├── logs_web.py                         # Displays log output (read-only); calls utils_log.py
@@ -338,7 +339,7 @@ rigd_tbot/
         ├── configuration.html                  # Web form for updating user, email, API, and broker credential configuration via web UI 
         ├── coa.html                            # Human-readable web form/table for COA viewing and editing (editable if RBAC allows)
         ├── index.html                          # Login page
-        ├── ledger.html			        # Human-readable web form/table for Ledger viewing and editing (editable if RBAC allows); invoked from main_web.py and coa_web.py	
+        ├── ledger.html			        # Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
         ├── logs.html                           # Log viewer
         ├── main.html                           # Dashboard shell (all UI widgets)
         ├── settings.html                       # Web form for updating bot trading strategy and runtime config variables

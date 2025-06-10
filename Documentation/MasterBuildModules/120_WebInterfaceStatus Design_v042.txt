@@ -1,7 +1,7 @@
 ================================================================================
 Document: 120_WebInterfaceStatus Design
-Version: v041
-Date: UTC:2025-06-02 23:54
+Version: v042
+Date: UTC:2025-06-10 14:17
 ================================================================================
 
 This document specifies the detailed design for the status dashboard panel in the TradeBot web interface, including system status overview, session summary, and operational notes.

@@ -1,7 +1,7 @@
 ================================================================================
 Document: 110_Web_Interface_and_Dashboard
-Version: v041
-Date: UTC:2025-06-08 23:54
+Version: v042
+Date: UTC:2025-06-10 14:17
 ================================================================================
 
 This module details the Flask-based Web UI, dashboard features, security, RBAC, and COA management.
@@ -26,6 +26,7 @@ Real-Time Monitoring Dashboard
 - `templates/index.html`: AES-encrypted login portal; RBAC, rate-limited authentication.
 - `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA).
 - `templates/status.html`: Displays live bot health, session lifecycle, active strategy state, float metrics, win-rate, cumulative PnL, and risk/defense/kill switch state; data sourced from `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/status.json`.
+- `templates/ledger.html`: Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
 - `templates/logs.html`: Streams all bot logs in real time (open.log, mid.log, close.log, unresolved_orders.log, error_tracebacks.log).
 - `templates/configuration.html`: Secure interface for credentials, email, API/broker config; encrypted at rest. Submits configuration and sets provisioning trigger/flag.
 - `templates/settings.html`: Edit and validate runtime trading parameters (timings, thresholds, risk controls); excludes credentials and COA.
@@ -35,10 +36,11 @@ Real-Time Monitoring Dashboard
 
 **Backend Flask Components (per directory spec):**
 - `py/__init__.py`: Registers Flask blueprints for all routes.
-- `py/coa_web.py`: COA management API. Uses `tbot_web/support/utils_coa_web.py` for JSON/UI logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger/schema integration. GET/POST endpoints for viewing, exporting (Markdown/CSV/table), and editing COA. Admin-only edits with version bumps and audit logs.
+- `py/coa_web.py`: COA management API. Uses `tbot_web/py/coa_web.py` for JSON/UI logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger/schema integration. GET/POST endpoints for viewing, exporting (Markdown/CSV/table), and editing COA. Admin-only edits with version bumps and audit logs.
 - `py/configuration_web.py`: Web UI route handling user, email, API, and broker credential configuration via encrypted multi-category config files. Only writes config and provisioning trigger; does *not* execute provisioning logic.
 - `py/settings_web.py`: Loads and validates `.env_bot` trading config; provides API for updates/errors.
 - `py/status_web.py`: Serves live bot/session status with strategy metrics, system health, win-rate, PnL, float deviation, rebalance triggers, Defense/kill switch states, and alert counts as JSON.
+- `py/ledger_web.py`:Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
 - `py/start_stop_web.py`: Manages lifecycle controls via `control_start.txt` / `control_stop.txt`, transition verification, and logging.
 - `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, and ledger pages. *Never* runs provisioning or bootstrapping; only checks status files for UI routing.
@@ -81,6 +83,12 @@ Real-Time Monitoring Dashboard
 - Broker/API health, connection status, retry/error counters.
 - Defense Mode, kill switch, error/exception counts, unresolved order backlog.
 - COA: metadata (currency_code, coa_version, entity, jurisdiction), last update, audit status, full account hierarchy.
+
+**Ledger Management Workflow:**
+-The web UI allows the admin to view, add, edit, and reconcile ledger entries directly, with changes tracked and versioned for audit. 
+-Manual corrections and new entries are supported through simple form-based editing, ensuring the internal ledger can be kept in sync with broker records. 
+-All edits and reconciliations are logged with timestamps and user actions for compliance. CSV broker data can be uploaded for automated cross-check and matching. 
+-The system highlights mismatches for review and provides “resolve” controls for any flagged item. Only admin users can perform these operations.
 
 **COA Management Workflow:**
 1. Admin opens `coa.html`; COA loaded from per-bot ledger file via `tbot_web/support/utils_coa_web.py`.

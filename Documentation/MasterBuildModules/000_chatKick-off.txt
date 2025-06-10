@@ -1,7 +1,7 @@
 ================================================================================
 Document: 000_ChatKick-off
-Version: v041
-Date: UTC:2025-06-02 23:54
+Version: v042
+Date: UTC:2025-06-10 14:17
 ================================================================================
 
 This document covers initial project kick-off notes, key objectives, and early planning for the TradeBot system.
@@ -80,7 +80,7 @@ All debugging and file operations must follow this exact procedure:
 1. Identify the next file to be edited or created.
 2. User (Rachel) pastes the current, complete contents of the file.
 3. ChatGPT compares the file against the master specifications.
-4. If the file does not require any changes, ChatGPT replies with: "No update needed."
+4. If the file does not require any changes, ChatGPT replies with: "No update needed" before writing any code.
 5. If changes are required, ChatGPT generates the surgically updated, full and complete file inside a single code block (or split blocks if necessary).
 6. ChatGPT provides a one-line summary describing the exact change made.
 7. ChatGPT inserts a passive inline UTC timestamp outside the code block, using the exact format: [UTC:YYYY-MM-DD HH:MM — RIGD_TradingBot_{CURRENT_VERSION}]
@@ -94,7 +94,6 @@ ENFORCEMENT — INITIAL DOCUMENT INGESTION PHASE ONLY:
 - All master documents must be accessed from the **Project Files section**; do not wait for the user to paste them.
 - On first reference or validation, silently load and fully analyze each document internally.
 - For each document verified, respond with: `Received.`
-- Do not respond further or provide summaries unless asked.
 - Proceed only when the user explicitly instructs to begin or provides a file for editing.
 
 SESSION START:
@@ -105,6 +104,7 @@ You must:
 
 - Ensure full internal understanding and locking of all referenced documents.
 - Await explicit commands before proceeding to edits or generation.
+- keep responses as brief and concise as possible.
 
 WEB UI BOOTSTRAP ENFORCEMENT:
 

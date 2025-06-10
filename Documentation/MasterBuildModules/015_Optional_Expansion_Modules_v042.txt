@@ -1,7 +1,7 @@
 ================================================================================
 Document: 015_Optional_Expansion_Modules
-Version: v041
-Date: UTC:2025-06-02 23:54
+Version: v042
+Date: UTC:2025-06-10 14:17
 ================================================================================
 Overview:
 This document defines optional expansion modules for TradeBot, fully compliant with core architecture {CURRENT_VERSION}. Modules are independently testable, maintain strict separation of concerns, and must be toggled exclusively via `.env_bot`.

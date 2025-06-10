@@ -1,7 +1,7 @@
 ================================================================================
 Document: 001_Master_Index_and_Summary
-Version: v041
-Date: UTC:2025-06-02 23:54
+Version: v042
+Date: UTC:2025-06-10 14:17
 ================================================================================
 
 This master index provides a comprehensive reference to all TradeBot system specification documents. Each entry includes document number, filename, title, version, timestamp, summary of contents, and cross-reference notes for quick lookup and navigation.
