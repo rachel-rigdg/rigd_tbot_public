@@ -122,8 +122,9 @@ rigd_tbot/
 │   │
 │   ├── control/                                # Control signals for runtime (web/CLI triggers)
 │   │   ├── bot_state.txt                    	# Current bot state string for UI/status integration (initialize, provisioning, bootstrapping,  idle, analyzing, trading, monitoring, updating, shutdown, graceful_closing_positions, emergency_closing_positions, shutdown_triggered, error) - See 110_Web_Interface_and_Dashboard for routing and UI behavior logic.
-│   │   ├── control_start.txt                    # Start trigger flag for bot session launch
-│   │   └── control_stop.txt                     # Stop trigger flag for safe shutdown
+│   │   ├── test_mode.flag			# indicates if bot is running in test mode : (presence = true, absence = false)
+│   │   ├── control_start.flag                  # Start trigger flag for bot session launch (presence = true, absence = false)
+│   │   └── control_stop.flag                     # Stop trigger flag for safe shutdown (presence = true, absence = false)
 │   │
 │   ├── core/                                       # Persistent state, user authentication, and schema files
 │   │   ├── databases/					# created during the provisioning process
@@ -321,7 +322,8 @@ rigd_tbot/
     │   ├── run_web.py                          # Flask app launch entrypoint (WSGI)
     │   ├── settings_web.py                     # Bot strategy/runtime settings routes; calls utils_config.py (never handles credentials)
     │   ├── start_stop_web.py                   # API/UI for bot control lifecycle (start/stop); writes control files
-    │   └── status_web.py                       # Serves live bot/system status; reports active session/metrics from status sources
+    │   ├── status_web.py                       # Serves live bot/system status; reports active session/metrics from status sources
+    │   └── test_web.py				# Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
     │
     ├── robots.txt                              # Blocks bots and search engine indexing (security)
     │
@@ -344,6 +346,7 @@ rigd_tbot/
         ├── main.html                           # Dashboard shell (all UI widgets)
         ├── settings.html                       # Web form for updating bot trading strategy and runtime config variables
         ├── status.html                         # Displays live bot health, strategies, PnL, session state, and key metrics (live data from status.json)
+        ├── test.html				# Web UI page providing controls to trigger TEST_MODE and view live test logs and results.
         └── wait_for_bot.html                   # Spinner/progress bar shown while bot is initializing; triggers transition to main.html when ready
 
 

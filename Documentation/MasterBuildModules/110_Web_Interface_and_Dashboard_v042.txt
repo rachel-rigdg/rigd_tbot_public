@@ -8,6 +8,7 @@ This module details the Flask-based Web UI, dashboard features, security, RBAC, 
 
 Contents:
 - Real-Time Monitoring Dashboard (COA Integration, v1.1)
+- TEST_MODE Runtime Control and UI Integration
 
 **Policy Enforcement:**  
 All provisioning, credential creation, Fernet key generation (including all *.key files), configuration management, and COA operations are *triggered exclusively* via the tbot_web Web UI. No CLI or external system may create or modify credentials, secrets, keys, or COA after bootstrap.  
@@ -26,25 +27,27 @@ Real-Time Monitoring Dashboard
 - `templates/index.html`: AES-encrypted login portal; RBAC, rate-limited authentication.
 - `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA).
 - `templates/status.html`: Displays live bot health, session lifecycle, active strategy state, float metrics, win-rate, cumulative PnL, and risk/defense/kill switch state; data sourced from `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/status.json`.
-- `templates/ledger.html`: Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
+- `templates/ledger.html`: Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies.
 - `templates/logs.html`: Streams all bot logs in real time (open.log, mid.log, close.log, unresolved_orders.log, error_tracebacks.log).
 - `templates/configuration.html`: Secure interface for credentials, email, API/broker config; encrypted at rest. Submits configuration and sets provisioning trigger/flag.
 - `templates/settings.html`: Edit and validate runtime trading parameters (timings, thresholds, risk controls); excludes credentials and COA.
 - `templates/coa.html`: COA management and export UI; displays account hierarchy, metadata, version. Supports Markdown/CSV export, audit diffs, and admin-only edit workflow—all actions logged to `logs/web/coa_edit.log`. **All Web UI logic for COA management and editing must utilize `tbot_web/support/utils_coa_web.py`.**
 - `templates/wait.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
+- `templates/test.html`: Dedicated UI page for TEST_MODE trigger and progress monitoring. Allows admin users to start the test sequence and view real-time logs and final test results.
 - `templates/ledger.html`: Ledger reconciliation, view, and editing; admin-only (if RBAC allows).
 
 **Backend Flask Components (per directory spec):**
 - `py/__init__.py`: Registers Flask blueprints for all routes.
 - `py/coa_web.py`: COA management API. Uses `tbot_web/py/coa_web.py` for JSON/UI logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger/schema integration. GET/POST endpoints for viewing, exporting (Markdown/CSV/table), and editing COA. Admin-only edits with version bumps and audit logs.
 - `py/configuration_web.py`: Web UI route handling user, email, API, and broker credential configuration via encrypted multi-category config files. Only writes config and provisioning trigger; does *not* execute provisioning logic.
-- `py/settings_web.py`: Loads and validates `.env_bot` trading config; provides API for updates/errors.
+- `py/settings_web.py`: Loads and validates `.env_bot` trading config; provides API for updates/errors; includes TEST_MODE flag toggle reflecting presence of `test_mode.flag`.
 - `py/status_web.py`: Serves live bot/session status with strategy metrics, system health, win-rate, PnL, float deviation, rebalance triggers, Defense/kill switch states, and alert counts as JSON.
-- `py/ledger_web.py`:Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
+- `py/ledger_web.py`: Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
-- `py/start_stop_web.py`: Manages lifecycle controls via `control_start.txt` / `control_stop.txt`, transition verification, and logging.
-- `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, and ledger pages. *Never* runs provisioning or bootstrapping; only checks status files for UI routing.
+- `py/start_stop_web.py`: Manages lifecycle controls via `control_start.flag` / `control_stop.flag`, transition verification, and logging.
+- `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, and test.html. Does not execute provisioning or bootstrapping; only checks status files for UI routing. Supports immediate TEST_MODE execution trigger detection.
 - `py/portal_web.py`: Flask app factory for static files and template setup; supports static asset versioning and cache control.
+- `py/test_web.py`: Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
 - `py/run_web.py`: Webserver launcher using host/port from encrypted config.
 
 **Support Modules (from tbot_web/support/):**
@@ -85,16 +88,24 @@ Real-Time Monitoring Dashboard
 - COA: metadata (currency_code, coa_version, entity, jurisdiction), last update, audit status, full account hierarchy.
 
 **Ledger Management Workflow:**
--The web UI allows the admin to view, add, edit, and reconcile ledger entries directly, with changes tracked and versioned for audit. 
--Manual corrections and new entries are supported through simple form-based editing, ensuring the internal ledger can be kept in sync with broker records. 
--All edits and reconciliations are logged with timestamps and user actions for compliance. CSV broker data can be uploaded for automated cross-check and matching. 
--The system highlights mismatches for review and provides “resolve” controls for any flagged item. Only admin users can perform these operations.
+- The web UI allows the admin to view, add, edit, and reconcile ledger entries directly, with changes tracked and versioned for audit. 
+- Manual corrections and new entries are supported through simple form-based editing, ensuring the internal ledger can be kept in sync with broker records. 
+- All edits and reconciliations are logged with timestamps and user actions for compliance. CSV broker data can be uploaded for automated cross-check and matching. 
+- The system highlights mismatches for review and provides “resolve” controls for any flagged item. Only admin users can perform these operations.
 
 **COA Management Workflow:**
 1. Admin opens `coa.html`; COA loaded from per-bot ledger file via `tbot_web/support/utils_coa_web.py`.
 2. Export COA as Markdown/CSV for audit/docs.
 3. Edits (if admin): Inline table editor, live diff/preview, change summary.
 4. On submit: New COA version written to ledger; `coa_version` and `last_updated_utc` updated via `coa_utils_ledger.py`. Full diff + metadata logged to `logs/web/coa_edit.log`.
+
+**TEST_MODE Runtime Control:**
+- `tbot_web/py/test_web.py`: Dedicated blueprint managing TEST_MODE lifecycle via `test_mode.flag`. Supports triggering, monitoring, and resetting TEST_MODE from Web UI.
+- `templates/test.html`: Web UI page providing controls to trigger TEST_MODE and view live test logs and results.
+- `settings_web.py`: Includes toggle reflecting `test_mode.flag` state; disables live trading controls when TEST_MODE active.
+- `main_web.py` and `strategy_router.py`: Detect TEST_MODE flag and immediately execute `strategy_open`, `strategy_mid`, and `strategy_close` in sequence, overriding normal schedules.
+- Logs and ledgers during TEST_MODE routed to isolated test-only paths to prevent live data contamination.
+- All UI actions during TEST_MODE are audited and restricted to admin roles.
 
 **Deployment/Isolation:**
 - Dashboard and bot logic fully decoupled (UI can be disabled with zero impact to trading).
@@ -104,7 +115,7 @@ Real-Time Monitoring Dashboard
 
 **Testing:**
 - `test_coa_web_endpoints.py`: CI test for all COA endpoints (read/export/edit/audit), RBAC, and versioning. Must use `utils_coa_web.py` and `coa_utils_ledger.py`.
-- All frontend/backend exceptions logged.
+- TEST_MODE functional test suites integrated with pytest, validating test flag behavior and UI controls.
 
 **Compliance:**
 - All COA/log/credential output local to bot—never pushed to accounting system.
@@ -114,4 +125,4 @@ Real-Time Monitoring Dashboard
 - The dashboard is audit-compliant, supports live monitoring/control, and admin-only, per-bot COA and ledger management. All actions are versioned, locally enforced, and never propagate between systems. COA/ledger export/edit requires RBAC and logs all activity for full audit compliance, using `tbot_web/support/utils_coa_web.py` for UI/admin logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger integration.  
 - **All privileged setup and bot launching logic is strictly performed by backend scripts in `tbot_bot/config/` as triggered by the Web UI, never directly by Flask or web endpoints.**
 
-
+================================================================================

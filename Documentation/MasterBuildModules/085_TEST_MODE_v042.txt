@@ -1,0 +1,91 @@
+================================================================================
+Document: 085_TEST_MODE_v042
+Version: v042
+Date: UTC:2025-06-10 18:04
+================================================================================
+TEST_MODE Specification for RIGD TradeBot v1.0.0+ (v042 Update)
+
+OVERVIEW:
+TEST_MODE is a transient, runtime-only mode triggered by the presence of `tbot_bot/control/test_mode.flag`.
+It enables full end-to-end dry-run validation of TradeBot execution without live trades or persistent data changes.
+
+PURPOSE:
+- Validate scheduling, strategies, screener filtering, order logic, logs, ledgers, and UI display.
+- Prevent real capital usage, real orders, notifications, or permanent ledger changes.
+- Allow automated/manual testing via Web UI or CLI triggers.
+
+TRIGGERING:
+- Presence of `test_mode.flag` enables TEST_MODE.
+- Setting TEST_MODE via Web UI writes this flag.
+- Test completes after sequential execution of `strategy_open`, `strategy_mid`, `strategy_close`.
+- Upon completion, flag is auto-deleted, returning bot to normal mode.
+- UI optionally includes dedicated `test.html` page for triggering and monitoring tests.
+
+BEHAVIOR:
+
+1. Screener:
+ - Ignores fundamentals; filters symbols only by price.
+ - Enables rapid symbol pipeline validation.
+
+2. Strategies:
+ - Analysis/monitoring windows forced to 1 minute.
+ - Executes all three strategies sequentially immediately on flag set.
+ - Bypasses normal schedule (`START_TIME_*`, `TRADING_DAYS`).
+ - Stub order submission: no live broker calls.
+ - Capital allocation and risk limits ignored or simulated.
+ - Outputs/logs/ledgers routed to ephemeral test paths.
+ - Suppresses notifications/alerts.
+
+3. Trade Execution:
+ - `orders_bot.py` simulates order success; no API calls.
+ - Logs all simulated trades with TEST_MODE tag.
+
+4. Logging & Reporting:
+ - Separate test-only logs and ledger files used.
+ - No changes to live data.
+ - Audit logs capture test start/end and all events.
+
+5. UI & Control:
+ - `test_web.py` toggles flag file.
+ - Dedicated `test.html` page allows test trigger and log streaming.
+ - UI disables live trading actions while test active.
+ - Displays test progress, results, and completion status.
+ - Auto-reset of flag after test ends.
+
+6. Lifecycle:
+ - Single run per flag set; non-persistent across restarts.
+ - Prevents accidental persistent TEST_MODE.
+ - Clear differentiation from live mode in all outputs.
+
+SECURITY & COMPLIANCE:
+- Immutable audit logging of test mode lifecycle and all simulated actions.
+- No live trades or financial exposure.
+- Flag file access secured to admin users only.
+
+FILES AFFECTED:
+- `tbot_bot/control/test_mode.flag`
+- `tbot_bot/config/env_bot.py` (read test_mode.flag)
+- `tbot_bot/screeners/finnhub_screener.py`
+- `tbot_bot/strategy/*.py` (open, mid, close)
+- `tbot_bot/trading/orders_bot.py`
+- `tbot_bot/trading/notifier_bot.py`
+- `tbot_bot/reporting/reporting_bot.py`
+- `tbot_bot/accounting/ledger_utils.py`
+- `tbot_web/py/settings_web.py`
+- `tbot_web/py/ledger_web.py` (optional logs display)
+- `tbot_web/py/main_web.py` or `strategy_router.py` (immediate execution)
+- `tbot_web/py/test_web.py` and `templates/test.html` (dedicated UI)
+- `tbot_web/templates/settings.html` (toggle update)
+
+TEST VALIDATION:
+- Full pytest integration in `tbot_bot/test/` with test_mode flag.
+- Logs and ledgers segregated in test runs.
+- UI test page verified for trigger and progress display.
+
+CHANGE HISTORY:
+- v042: Added dedicated UI page and flag file control.
+- v041: Deprecated persistent TEST_MODE in `.env_bot.enc`.
+- Prior versions used persistent config flag; now replaced with ephemeral runtime flag.
+
+END OF DOCUMENT
+================================================================================

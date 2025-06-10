@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TEST_MODE — Bot Test Sequence</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tabs.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/spinner.css') }}">
+    <script>
+        let logPoller = null;
+        function startLogPolling() {
+            if (logPoller) clearInterval(logPoller);
+            logPoller = setInterval(fetchLogs, 1500);
+        }
+        function fetchLogs() {
+            fetch("{{ url_for('test_web.get_test_logs') }}")
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('test-log-output').textContent = data.logs || '';
+                document.getElementById('test-status').textContent = data.status || '';
+                if (data.status === "completed" || data.status === "idle" || data.status === "error") {
+                    clearInterval(logPoller);
+                }
+            });
+        }
+        function triggerTestMode() {
+            document.getElementById("trigger-btn").disabled = true;
+            document.getElementById("test-status").textContent = "triggered";
+            fetch("{{ url_for('test_web.trigger_test_mode') }}", {method: "POST"})
+                .then(() => startLogPolling());
+        }
+        window.onload = function() {
+            fetchLogs();
+        }
+    </script>
+    <style>
+        .test-log-box {width:100%; height:350px; background:#181c22; color:#a5ffce; font-family:monospace; overflow:auto; border-radius:8px; border:1px solid #20242a; padding:1rem; margin-top:1em;}
+        .test-header {font-size:1.6em; font-weight:bold; margin:0.5em 0;}
+        .trigger-btn {background:#4e91ff; color:white; border:none; border-radius:4px; padding:0.6em 1.3em; font-size:1.2em; cursor:pointer;}
+        .trigger-btn:disabled {background:#ccc; color:#888; cursor:not-allowed;}
+        .status-running {color:#ffc34b;}
+        .status-completed {color:#00da70;}
+        .status-error {color:#ff5b4b;}
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="test-header">TEST_MODE — End-to-End Bot System Test</div>
+        <div>
+            <button id="trigger-btn" class="trigger-btn" onclick="triggerTestMode()" {% if test_active %}disabled{% endif %}>Start Full Test</button>
+            <span id="test-status" class="status-running">{{ test_status|default("idle") }}</span>
+        </div>
+        <div class="test-log-box" id="test-log-output">
+            {% if test_logs %}
+                {{ test_logs }}
+            {% endif %}
+        </div>
+        <div class="audit-log-info">
+            <p>All test actions are logged and visible here in real time. No live trades or data changes occur in TEST_MODE. The bot will reset to normal operation when test is complete.</p>
+            <p><strong>Admin Only:</strong> Only admin users can trigger or view system tests. All actions are audited.</p>
+        </div>
+    </div>
+</body>
+</html>
