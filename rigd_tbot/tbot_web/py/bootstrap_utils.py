@@ -15,9 +15,11 @@ CONFIG_REQUIRED_FILES = [
     SECRETS_DIR / "network_config.json.enc",
 ]
 
+INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
+
 def is_first_bootstrap() -> bool:
     """
-    Returns True only if bot_state.txt is missing or contains "initialize".
+    Returns True only if bot_state.txt is missing or contains any "initialize", "provisioning", "bootstrapping".
     Prevents provisioning/redirect after initial bootstrap.
     BOOTSTRAP_FLAG is deprecated and ignored; logic is now driven by bot_state.txt.
     Debugs all checked paths and values to stdout for diagnostics.
@@ -29,8 +31,8 @@ def is_first_bootstrap() -> bool:
     try:
         state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         print(f"[DEBUG] bot_state.txt state: {state}")
-        if state == "initialize":
-            print("[DEBUG] bot_state.txt state is initialize")
+        if state in INITIALIZE_STATES:
+            print(f"[DEBUG] bot_state.txt state is {state}")
             return True
     except Exception as e:
         print(f"[DEBUG] Exception reading bot_state.txt: {e}")
