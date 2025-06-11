@@ -1,12 +1,10 @@
 # tbot_web/py/configuration_web.py
 
 from flask import Blueprint, request, render_template, flash, redirect, url_for, session
-from ..support.configuration_loader import load_encrypted_config
 from ..support.default_config_loader import get_default_config
 from pathlib import Path
 from cryptography.fernet import Fernet
 import json
-import os
 
 configuration_blueprint = Blueprint("configuration_web", __name__)
 
@@ -44,7 +42,7 @@ def save_runtime_config(config: dict):
     else:
         key = RUNTIME_CONFIG_KEY_PATH.read_bytes()
     fernet = Fernet(key)
-    enc_json = fernet.encrypt(json.dumps(config).encode("utf-8"))
+    enc_json = fernet.encrypt(json.dumps(config, indent=2).encode("utf-8"))
     RUNTIME_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     RUNTIME_CONFIG_PATH.write_bytes(enc_json)
 
