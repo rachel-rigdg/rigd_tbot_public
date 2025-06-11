@@ -2,11 +2,11 @@
 # Login/logout route handling with rate limit enforcement
 
 import os
-from flask import Blueprint, request, redirect, render_template, session, url_for
+from flask import Blueprint, request, redirect, render_template, session, url_for, flash
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
-from tbot_web.support.auth_web import validate_user
+from tbot_web.support.auth_web import validate_user, user_exists
 from pathlib import Path
 
 # === Secure session config ===
@@ -24,7 +24,11 @@ def login():
     """
     POST → Validate username and password against SYSTEM_USERS.db.
     GET  → Render login form.
+    Redirect to /register if no users exist.
     """
+    if not user_exists():
+        flash("No admin user exists. Please register.", "warning")
+        return redirect(url_for("register_web.register"))
     if request.method == "POST":
         username = request.form.get("username", "")
         password = request.form.get("password", "")

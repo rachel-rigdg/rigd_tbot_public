@@ -16,10 +16,10 @@
             <fieldset>
                 <legend>Admin User Details</legend>
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" maxlength="32" required value="{{ request.form.get('username', username or '') }}" />
+                <input type="text" id="username" name="username" maxlength="32" required value="{{ username or '' }}" />
 
                 <label for="email">Email</label>
-                <input type="email" id="email" name="email" maxlength="64" required value="{{ request.form.get('email', email or '') }}" />
+                <input type="email" id="email" name="email" maxlength="64" required value="{{ email or '' }}" />
 
                 <label for="userpassword">Password</label>
                 <input type="password" id="userpassword" name="userpassword" required />

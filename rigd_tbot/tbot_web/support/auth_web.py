@@ -124,6 +124,23 @@ def validate_user(username: str, password: str) -> bool:
     finally:
         conn.close()
 
+def user_exists() -> bool:
+    """
+    Returns True if there is at least one active user in SYSTEM_USERS.db.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute("SELECT COUNT(*) FROM system_users WHERE account_status = 'active';")
+        count = cursor.fetchone()[0]
+        return count > 0
+    except Exception:
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 def rbac_required(role: str = None):
     """
     Role-Based Access Control decorator for Flask endpoints.

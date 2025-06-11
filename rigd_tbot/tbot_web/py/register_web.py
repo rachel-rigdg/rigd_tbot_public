@@ -10,9 +10,9 @@ def register():
     if user_exists():
         flash("Admin user already exists. Please log in.", "info")
         return redirect(url_for("login_web.login"))
-    username = request.form.get("username", "")
-    email = request.form.get("email", "")
     if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
         password = request.form.get("userpassword", "")
         password2 = request.form.get("userpassword2", "")
         if not username or not email or not password:
@@ -28,4 +28,4 @@ def register():
         except Exception as e:
             flash(f"Error creating user: {e}", "error")
             return render_template("register.html", username=username, email=email)
-    return render_template("register.html", username=username, email=email)
+    return render_template("register.html")

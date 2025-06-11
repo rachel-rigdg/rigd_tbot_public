@@ -5,6 +5,7 @@ from flask import Blueprint, redirect, url_for, render_template, session, reques
 from tbot_web.py.bootstrap_utils import is_first_bootstrap
 from ..support.configuration_loader import load_encrypted_config
 from ..support.default_config_loader import get_default_config
+from tbot_web.support.auth_web import user_exists
 from pathlib import Path
 
 main_blueprint = Blueprint("main", __name__)
@@ -60,6 +61,10 @@ def root_router():
         print(f"[main_web] ERROR or SHUTDOWN_TRIGGERED detected, rendering wait page (state={state})")
         return render_template("wait.html", bot_state=state)
 
+    if not user_exists():
+        print("[main_web] No users exist; redirecting to user registration page.")
+        return redirect(url_for("register_web.register"))
+
     print(f"[main_web] bot state is {state}, rendering main.html")
     return render_template("main.html", bot_state=state)
 
@@ -85,4 +90,7 @@ def main_page():
     if state in ("initialize", "provisioning", "bootstrapping"):
         print(f"[main_web] State is {state}, redirecting to root_router (configuration/wait)")
         return redirect(url_for("main.root_router"))
+    if not user_exists():
+        print("[main_web] No users exist; redirecting to user registration page.")
+        return redirect(url_for("register_web.register"))
     return render_template("main.html", bot_state=state)
