@@ -23,7 +23,12 @@ settings_blueprint = Blueprint("settings", __name__)
 
 def get_valid_bot_identity_string():
     try:
-        return load_bot_identity()
+        # Always load the decrypted identity directly from the encrypted secret.
+        identity = load_bot_identity()
+        if identity and get_bot_identity_string_regex().match(identity):
+            validate_bot_identity(identity)
+            return identity
+        return None
     except Exception:
         return None
 
@@ -33,12 +38,10 @@ def settings_page():
     if is_first_bootstrap():
         return redirect(url_for("configuration_web.show_configuration"))
     try:
-        config = get_bot_config()
-        identity_string = config.get("BOT_IDENTITY_STRING", None)
         valid_identity = get_valid_bot_identity_string()
-        if not valid_identity or not identity_string or not get_bot_identity_string_regex().match(valid_identity):
+        if not valid_identity:
             return render_template("settings.html", config=None, error="Bot identity not available, please complete configuration")
-        validate_bot_identity(valid_identity)
+        config = get_bot_config()
     except Exception:
         return render_template("settings.html", config=None, error="Bot identity not available, please complete configuration")
     return render_template("settings.html", config=config, error=None)
@@ -49,12 +52,10 @@ def get_settings():
     if is_first_bootstrap():
         return redirect(url_for("configuration_web.show_configuration"))
     try:
-        config = get_bot_config()
-        identity_string = config.get("BOT_IDENTITY_STRING", None)
         valid_identity = get_valid_bot_identity_string()
-        if not valid_identity or not identity_string or not get_bot_identity_string_regex().match(valid_identity):
+        if not valid_identity:
             return jsonify({"error": "Bot identity not available, please complete configuration"}), 400
-        validate_bot_identity(valid_identity)
+        config = get_bot_config()
         return jsonify(config)
     except Exception as e:
         return jsonify({"error": "Bot identity not available, please complete configuration"}), 400
@@ -68,11 +69,9 @@ def update_settings():
         return jsonify({"status": "error", "detail": "Invalid JSON body"}), 400
     try:
         data = request.get_json()
-        identity_string = data.get("BOT_IDENTITY_STRING", None)
         valid_identity = get_valid_bot_identity_string()
-        if not valid_identity or not identity_string or not get_bot_identity_string_regex().match(valid_identity):
+        if not valid_identity:
             return jsonify({"status": "error", "detail": "Bot identity not available, please complete configuration"}), 400
-        validate_bot_identity(valid_identity)
         validate_bot_config(data)
         raw_bytes = json.dumps(data, indent=2).encode("utf-8")
         encrypt_env_bot_from_bytes(raw_bytes, rotate_key=False)
@@ -80,4 +79,4 @@ def update_settings():
     except Exception as e:
         return jsonify({"status": "error", "detail": "Bot identity not available, please complete configuration"}), 400
 
-# Updated: Always loads bot identity via load_bot_identity(), checks validity, and handles missing/invalid identity gracefully with a UI error.
+# Always validates using load_bot_identity(); config is only loaded after identity check.
