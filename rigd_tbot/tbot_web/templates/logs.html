@@ -6,10 +6,6 @@
     <title>TradeBot Logs</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-    <!-- <link rel="stylesheet" href="../static/css/main.css"> -->
-    <!-- <link rel="stylesheet" href="../static/css/layout.css"> -->
-    <!-- <link rel="stylesheet" href="../static/css/ledger.css"> -->
-
     <style>
         .log-stream-container {
             max-height: 600px;
@@ -29,16 +25,27 @@
             color: #ddd;
             background: transparent;
         }
+        .filter-bar {
+            margin-bottom: 12px;
+        }
+        .filter-bar label, .filter-bar select {
+            font-size: 1em;
+        }
     </style>
     <script>
         function onLogChange() {
             const selectedLog = document.getElementById('logSelect').value;
-            window.location.href = '/logs?file=' + encodeURIComponent(selectedLog);
+            const hours = document.getElementById('hourSelect').value;
+            window.location.href = '/logs?file=' + encodeURIComponent(selectedLog) + '&hours=' + encodeURIComponent(hours);
         }
         window.onload = function() {
             const currentLog = "{{ selected_log }}";
+            const currentHours = "{{ selected_hours|default('1') }}";
             if (currentLog) {
                 document.getElementById('logSelect').value = currentLog;
+            }
+            if (currentHours) {
+                document.getElementById('hourSelect').value = currentHours;
             }
         };
     </script>
@@ -46,13 +53,29 @@
 <body class="logs-page">
     <header class="dashboard-header">
         <h1>TradeBot Logs</h1>
-        <form method="get" action="/logs" style="display:inline;">
-            <select id="logSelect" name="file" onchange="onLogChange()">
-                {% for log_file in log_files %}
-                <option value="{{ log_file }}" {% if log_file == selected_log %}selected{% endif %}>{{ log_file }}</option>
-                {% endfor %}
-            </select>
-        </form>
+        <div class="filter-bar">
+            <form method="get" action="/logs" style="display:inline;">
+                <label for="logSelect">Log File:</label>
+                <select id="logSelect" name="file" onchange="onLogChange()">
+                    {% for log_file in log_files %}
+                    <option value="{{ log_file }}" {% if log_file == selected_log %}selected{% endif %}>{{ log_file }}</option>
+                    {% endfor %}
+                </select>
+                <label for="hourSelect" style="margin-left:1em;">Show:</label>
+                <select id="hourSelect" name="hours" onchange="onLogChange()">
+                    <option value="1" {% if selected_hours == "1" or not selected_hours %}selected{% endif %}>Last 1 h</option>
+                    <option value="2" {% if selected_hours == "2" %}selected{% endif %}>Last 2 h</option>
+                    <option value="4" {% if selected_hours == "4" %}selected{% endif %}>Last 4 h</option>
+                    <option value="6" {% if selected_hours == "6" %}selected{% endif %}>Last 6 h</option>
+                    <option value="12" {% if selected_hours == '12' %}selected{% endif %}>Last 12 h</option>
+                    <option value="24" {% if selected_hours == '24' %}selected{% endif %}>Last 24 h</option>
+                    <option value="48" {% if selected_hours == '48' %}selected{% endif %}>Last 48 h</option>
+                    <option value="72" {% if selected_hours == '72' %}selected{% endif %}>Last 72 h</option>
+                    <option value="120" {% if selected_hours == '120' %}selected{% endif %}>Last 120 h</option>
+                    <option value="all" {% if selected_hours == 'all' %}selected{% endif %}>All</option>
+                </select>
+            </form>
+        </div>
     </header>
 
     <main class="dashboard-main content">
