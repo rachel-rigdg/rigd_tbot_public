@@ -7,6 +7,7 @@ from tbot_web.py.login_web import login_required
 from pathlib import Path
 from tbot_bot.support.path_resolver import get_output_path, validate_bot_identity
 from tbot_web.py.bootstrap_utils import is_first_bootstrap
+from tbot_bot.support.decrypt_secrets import load_bot_identity
 
 status_blueprint = Blueprint("status", __name__)
 
@@ -31,22 +32,18 @@ def status_page():
 
     bot_state = get_current_bot_state()
     if bot_state in ("initialize", "provisioning", "bootstrapping"):
-        # Pass through to UI to display configuration/provisioning info
         return render_template("wait.html", bot_state=bot_state)
     if bot_state in ("error", "shutdown_triggered"):
-        # Show error or shutdown state explicitly
         return render_template("wait.html", bot_state=bot_state)
 
     status_data = {}
+    error = None
     try:
-        bot_env_path = Path("tbot_bot/.env_bot")
-        bot_identity_string = "INVALID_IDENTITY"
-        if bot_env_path.exists():
-            with open(bot_env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("BOT_IDENTITY_STRING"):
-                        bot_identity_string = line.split("=", 1)[1].strip()
-                        break
+        bot_identity_string = load_bot_identity()
+        if not bot_identity_string:
+            error = "Bot identity not available, please complete configuration"
+            status_data = {"error": error}
+            return render_template("status.html", status=status_data, bot_state=bot_state, error=error)
         validate_bot_identity(bot_identity_string)
         status_file_path = Path(get_output_path(bot_identity_string, "logs", "status.json"))
         with open(status_file_path, "r", encoding="utf-8") as f:
@@ -55,7 +52,9 @@ def status_page():
         status_data = {"error": "Status file not found."}
     except json.JSONDecodeError:
         status_data = {"error": "Malformed status file."}
-    except Exception as e:
-        status_data = {"error": str(e)}
+    except Exception:
+        error = "Bot identity not available, please complete configuration"
+        status_data = {"error": error}
+        return render_template("status.html", status=status_data, bot_state=bot_state, error=error)
 
-    return render_template("status.html", status=status_data, bot_state=bot_state)
+    return render_template("status.html", status=status_data, bot_state=bot_state, error=error)

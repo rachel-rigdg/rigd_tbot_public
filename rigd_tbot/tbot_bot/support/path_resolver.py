@@ -40,6 +40,10 @@ def validate_bot_identity(bot_identity: str) -> None:
     if not re.match(IDENTITY_PATTERN, bot_identity):
         raise ValueError(f"[path_resolver] Invalid BOT_IDENTITY_STRING: {bot_identity}")
 
+def get_bot_identity_string_regex():
+    """Returns compiled regex object for bot identity string validation (for use in web/UI input)."""
+    return re.compile(IDENTITY_PATTERN)
+
 def get_output_path(bot_identity: str = None, category: str = None, filename: str = None, output_subdir: bool = False) -> str:
     """
     Returns the full output path for a given file category under the specified bot identity.
@@ -114,6 +118,7 @@ def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
+    "get_bot_identity_string_regex",
     "get_output_path",
     "resolve_category_path",
     "file_exists_resolved",
