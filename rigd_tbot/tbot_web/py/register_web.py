@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from tbot_web.support.auth_web import upsert_user, get_db_connection
 from sqlite3 import OperationalError
 
-register_blueprint = Blueprint("register_web", __name__)
+register_web = Blueprint("register_web", __name__)
 
 def user_exists():
     try:
@@ -16,8 +16,8 @@ def user_exists():
     except OperationalError:
         return False
 
-@register_blueprint.route("/register", methods=["GET", "POST"])
-def register():
+@register_web.route("/register", methods=["GET", "POST"])
+def register_page():
     if user_exists():
         flash("Admin user already exists. Please log in.", "info")
         return redirect(url_for("login_web.login"))

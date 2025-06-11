@@ -49,7 +49,7 @@ def create_app():
     app.register_blueprint(coa_web.coa_web)
     app.register_blueprint(ledger_web.ledger_web)
     app.register_blueprint(test_web.test_web)
-    app.register_blueprint(register_web.register_blueprint)  # add user registration
+    app.register_blueprint(register_web.register_web)
 
     @app.before_request
     def force_configuration():
