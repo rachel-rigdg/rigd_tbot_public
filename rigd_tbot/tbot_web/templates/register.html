@@ -1,0 +1,45 @@
+<!-- tbot_web/templates/register.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Register Admin User</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+</head>
+<body>
+    <div class="container">
+        <div class="title">
+            <h1>Register Admin User</h1>
+        </div>
+        <form method="POST" action="{{ url_for('register_web.register') }}">
+            <fieldset>
+                <legend>Admin User Details</legend>
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" maxlength="32" required value="{{ request.form.get('username', username or '') }}" />
+
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" maxlength="64" required value="{{ request.form.get('email', email or '') }}" />
+
+                <label for="userpassword">Password</label>
+                <input type="password" id="userpassword" name="userpassword" required />
+
+                <label for="userpassword2">Confirm Password</label>
+                <input type="password" id="userpassword2" name="userpassword2" required />
+            </fieldset>
+            <br>
+            <button type="submit">Create Admin User</button>
+        </form>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <ul class="flashes">
+            {% for category, message in messages %}
+              <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+        <br><br>
+    </div>
+</body>
+</html>
