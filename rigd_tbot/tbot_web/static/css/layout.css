@@ -18,9 +18,9 @@
 position:fixed;
 top: 0;
 left: 0;
-width: 100%;
+width: 15%;
 height: 50px;
-background-color: #00000044;
+background-color: #00000000;
 color: #ffffff;
 text-align: center;
 line-height: 50px;
@@ -60,7 +60,7 @@ z-index: 1000;
 }
 .content {
     display: flex;
-    align-items: center;
+ 
     justify-content: center;
     height: 100vh;
 }
