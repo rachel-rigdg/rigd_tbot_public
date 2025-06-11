@@ -4,37 +4,21 @@
 """
 status_bot.py – Tracks and exposes the current state of the bot for UI or external monitoring.
 Used by status_web.py and internal logging for diagnostics and dashboard reporting.
+Implements exhaustive status tracking and win_rate calculation per RIGD_TradingBot spec.
 """
 
 import time
+import json
 from datetime import datetime
 from threading import Lock, Thread
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
-from tbot_bot.support.decrypt_secrets import decrypt_json
 from pathlib import Path
-import os
 
-# Path for bot state tracking
-BOT_STATE_FILE = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[1] / "control")) / "bot_state.txt"
-
-# Allowed states for bot state transitions
-ALLOWED_STATES = [
-    "initialize",  # Bot is in initialization state
-    "idle",        # Bot is idle, waiting for new actions
-    "analyzing",   # Bot is analyzing data
-    "trading",     # Bot is actively trading
-    "monitoring",  # Bot is monitoring markets or positions
-    "provisioning",  # Bot is in the provisioning phase
-    "bootstrapping",  # Bot is in the bootstrapping phase
-    "updating",     # Bot is updating data or configurations
-    "shutdown",     # Bot has been shut down
-    "error",        # Bot encountered an error and cannot proceed
-    "graceful_closing_positions",  # Bot is closing positions in a controlled manner
-    "emergency_closing_positions",  # Bot is closing positions urgently
-    "shutdown_triggered"  # Bot is in shutdown mode due to some event
-]
+STATUS_DIR = Path(__file__).resolve().parents[2] / "output"
+BOT_IDENTITY = get_bot_config().get("BOT_IDENTITY_STRING", "UNKNOWN_BOT")
+STATUS_FILE_PATH = STATUS_DIR / BOT_IDENTITY / "logs" / "status.json"
 
 # Thread-safe singleton class to hold live bot status
 class BotStatus:
@@ -44,10 +28,12 @@ class BotStatus:
 
     def reset(self):
         with self.lock:
-            self.state = "initialize"  # Default initial state
+            self.state = "idle"
             self.active_strategy = None
             self.timestamp = utc_now().isoformat()
             self.trade_count = 0
+            self.win_trades = 0
+            self.loss_trades = 0
             self.error_count = 0
             self.enabled_strategies = {
                 "open": False,
@@ -60,45 +46,65 @@ class BotStatus:
             self.version = "v1.0.0"
             self.daily_loss_limit = 0.05
             self.max_risk_per_trade = 0.025
+            self.pnl = 0.0
+            self.win_rate = 0.0
 
-    def update_config(self, config: dict, broker_creds: dict = None):
+    def update_config(self, config: dict):
         with self.lock:
             self.enabled_strategies["open"] = config.get("STRAT_OPEN_ENABLED", False)
             self.enabled_strategies["mid"] = config.get("STRAT_MID_ENABLED", False)
             self.enabled_strategies["close"] = config.get("STRAT_CLOSE_ENABLED", False)
-            if broker_creds and broker_creds.get("BROKER_CODE"):
-                self.broker_code = broker_creds.get("BROKER_CODE", "undefined").lower()
-            else:
-                self.broker_code = config.get("BROKER_NAME", "undefined").lower()
+
+            self.broker_code = config.get("BROKER_NAME", "undefined").lower()
             self.broker_mode = "single"
             self.is_live_mode = True
+
             self.version = config.get("VERSION_TAG", "v1.0.0")
             self.daily_loss_limit = config.get("DAILY_LOSS_LIMIT", 0.05)
             self.max_risk_per_trade = config.get("MAX_RISK_PER_TRADE", 0.025)
 
     def set_state(self, new_state: str):
         with self.lock:
-            if new_state in ALLOWED_STATES:
-                self.state = new_state
-            else:
-                self.state = "error"  # Default to error if state is invalid
+            self.state = new_state
             self.timestamp = utc_now().isoformat()
-            # Write state to disk for UI/status monitoring
-            BOT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(BOT_STATE_FILE, "w", encoding="utf-8") as f:
-                f.write(self.state)
 
     def set_strategy(self, strategy_name: str):
         with self.lock:
             self.active_strategy = strategy_name
 
-    def increment_trade_count(self):
+    def increment_trade_count(self, win=False, pnl=0.0):
         with self.lock:
             self.trade_count += 1
+            if win:
+                self.win_trades += 1
+            else:
+                self.loss_trades += 1
+            self.pnl += pnl
+            self._update_win_rate()
 
     def increment_error_count(self):
         with self.lock:
             self.error_count += 1
+
+    def set_trade_result(self, win: bool, pnl: float = 0.0):
+        with self.lock:
+            self.trade_count += 1
+            if win:
+                self.win_trades += 1
+            else:
+                self.loss_trades += 1
+            self.pnl += pnl
+            self._update_win_rate()
+
+    def set_pnl(self, pnl: float):
+        with self.lock:
+            self.pnl = pnl
+
+    def _update_win_rate(self):
+        if self.trade_count > 0:
+            self.win_rate = round(100.0 * self.win_trades / self.trade_count, 2)
+        else:
+            self.win_rate = 0.0
 
     def to_dict(self):
         with self.lock:
@@ -107,6 +113,8 @@ class BotStatus:
                 "state": self.state,
                 "active_strategy": self.active_strategy,
                 "trade_count": self.trade_count,
+                "win_trades": self.win_trades,
+                "loss_trades": self.loss_trades,
                 "error_count": self.error_count,
                 "enabled_strategies": self.enabled_strategies,
                 "broker_code": self.broker_code,
@@ -114,24 +122,29 @@ class BotStatus:
                 "is_live_mode": self.is_live_mode,
                 "version": self.version,
                 "daily_loss_limit": self.daily_loss_limit,
-                "max_risk_per_trade": self.max_risk_per_trade
+                "max_risk_per_trade": self.max_risk_per_trade,
+                "pnl": self.pnl,
+                "win_rate": self.win_rate
             }
+
+    def save_status(self):
+        status_dict = self.to_dict()
+        STATUS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(STATUS_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(status_dict, f, indent=2)
 
 # Global instance
 bot_status = BotStatus()
 
-# Initialize with decrypted config and broker creds
+# Initialize with decrypted config
 config = get_bot_config()
-try:
-    broker_creds = decrypt_json("broker_credentials")
-except Exception:
-    broker_creds = {}
-bot_status.update_config(config, broker_creds)
+bot_status.update_config(config)
+bot_status.save_status()
 
-def update_bot_state(state: str = None, strategy: str = None, error: bool = False, trade: bool = False):
+def update_bot_state(state: str = None, strategy: str = None, error: bool = False, trade: bool = False, win: bool = None, pnl: float = 0.0):
     """
-    Convenience wrapper to update runtime bot status.
-    Called throughout lifecycle to reflect state transitions and counters.
+    Update runtime bot status and write to status.json.
+    Supports error count, trade count, win/loss, and real-time metrics.
     """
     if state:
         bot_status.set_state(state)
@@ -140,7 +153,11 @@ def update_bot_state(state: str = None, strategy: str = None, error: bool = Fals
     if error:
         bot_status.increment_error_count()
     if trade:
-        bot_status.increment_trade_count()
+        if win is not None:
+            bot_status.set_trade_result(win=win, pnl=pnl)
+        else:
+            bot_status.increment_trade_count()
+    bot_status.save_status()
 
 def start_heartbeat(interval: int = 15):
     """
@@ -150,7 +167,8 @@ def start_heartbeat(interval: int = 15):
     def heartbeat_loop():
         while True:
             status = bot_status.to_dict()
-            log_event("heartbeat", f"Heartbeat OK – State: {status['state']}, Strategy: {status['active_strategy']}")
+            log_event("heartbeat", f"Heartbeat OK – State: {status['state']}, Strategy: {status['active_strategy']}, Win Rate: {status['win_rate']}%")
+            bot_status.save_status()
             time.sleep(interval)
 
     thread = Thread(target=heartbeat_loop, daemon=True)
