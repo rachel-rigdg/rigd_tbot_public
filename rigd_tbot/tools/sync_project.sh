@@ -29,7 +29,7 @@ read -rp "Enter direction [1–5]: " direction
 
 echo ""
 echo "Choose SYNC PROFILE:"
-echo "1) CODE      – Code only (no secrets, logs, or books)"
+echo "1) CODE     – Code only (no secrets, logs, or books)"
 echo "2) ARCHIVE  – Logs/reports only (no secrets or books)"
 echo "3) ENC      – Encrypted deploy only (.env_bot.enc)"
 echo "4) DEV      – Everything except setup scripts and .flux"
@@ -37,9 +37,9 @@ echo ""
 read -rp "Enter profile [1–4]: " profile
 
 case "$profile" in
-  1) IGNORE_FILE=".scpignore_env" ;;
+  1) IGNORE_FILE=".scpignore_code" ;;
   2) IGNORE_FILE=".scpignore_prod_archive" ;;
-  3) IGNORE_FILE=".scpignore_code" ;;
+  3) IGNORE_FILE=".scpignore_enc" ;;
   4) IGNORE_FILE=".scpignore_dev" ;;
   *) echo "❌ Invalid profile."; exit 1 ;;
 esac

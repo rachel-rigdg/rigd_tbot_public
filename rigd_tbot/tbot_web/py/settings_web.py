@@ -21,6 +21,63 @@ from tbot_bot.config.security_bot import encrypt_env_bot_from_bytes
 
 settings_blueprint = Blueprint("settings", __name__)
 
+SECTION_TITLES = {
+    "General & Debugging": [
+        "VERSION_TAG", "BUILD_MODE", "DISABLE_ALL_TRADES", "DEBUG_LOG_LEVEL", "ENABLE_LOGGING", "LOG_FORMAT"
+    ],
+    "Trade Execution & Risk Controls": [
+        "TRADE_CONFIRMATION_REQUIRED", "API_RETRY_LIMIT", "API_TIMEOUT", "FRACTIONAL", "TOTAL_ALLOCATION",
+        "MAX_TRADES", "WEIGHTS", "DAILY_LOSS_LIMIT", "MAX_RISK_PER_TRADE", "MAX_OPEN_POSITIONS"
+    ],
+    "Price & Volume Filters": [
+        "MIN_PRICE", "MAX_PRICE", "MIN_VOLUME_THRESHOLD", "ENABLE_FUNNHUB_FUNDAMENTALS_FILTER",
+        "MAX_PE_RATIO", "MAX_DEBT_EQUITY"
+    ],
+    "Strategy Routing & Broker Mode": [
+        "STRATEGY_SEQUENCE", "STRATEGY_OVERRIDE"
+    ],
+    "Automated Rebalance Triggers": [
+        "ACCOUNT_BALANCE", "REBALANCE_ENABLED", "REBALANCE_THRESHOLD", "REBALANCE_CHECK_INTERVAL"
+    ],
+    "Failover Broker Routing": [
+        "FAILOVER_ENABLED", "FAILOVER_LOG_TAG"
+    ],
+    "Global Time & Polling": [
+        "TRADING_DAYS", "SLEEP_TIME"
+    ],
+    "OPEN Strategy Configuration (20 min trading)": [
+        "MAX_GAP_PCT_OPEN", "MIN_MARKET_CAP_OPEN", "MAX_MARKET_CAP_OPEN", "STRAT_OPEN_ENABLED",
+        "START_TIME_OPEN", "OPEN_ANALYSIS_TIME", "OPEN_BREAKOUT_TIME", "OPEN_MONITORING_TIME",
+        "STRAT_OPEN_BUFFER", "SHORT_TYPE_OPEN"
+    ],
+    "MID Strategy Configuration (VWAP Reversion)": [
+        "MAX_GAP_PCT_MID", "MIN_MARKET_CAP_MID", "MAX_MARKET_CAP_MID", "STRAT_MID_ENABLED",
+        "START_TIME_MID", "MID_ANALYSIS_TIME", "MID_BREAKOUT_TIME", "MID_MONITORING_TIME",
+        "STRAT_MID_VWAP_THRESHOLD", "SHORT_TYPE_MID"
+    ],
+    "CLOSE Strategy Configuration (EOD Momentum/Fade)": [
+        "MAX_GAP_PCT_CLOSE", "MIN_MARKET_CAP_CLOSE", "MAX_MARKET_CAP_CLOSE", "STRAT_CLOSE_ENABLED",
+        "START_TIME_CLOSE", "CLOSE_ANALYSIS_TIME", "CLOSE_BREAKOUT_TIME", "CLOSE_MONITORING_TIME",
+        "STRAT_CLOSE_VIX_THRESHOLD", "SHORT_TYPE_CLOSE"
+    ],
+    "Notifications": [
+        "NOTIFY_ON_FILL", "NOTIFY_ON_EXIT"
+    ],
+    "Reporting & Ledger Export": [
+        "LEDGER_EXPORT_MODE"
+    ],
+    "Defense Mode (Disaster Risk Reduction)": [
+        "DEFENSE_MODE_ACTIVE", "DEFENSE_MODE_TRADE_LIMIT_PCT", "DEFENSE_MODE_TOTAL_ALLOCATION"
+    ],
+    "ENHANCEMENT MODULE TOGGLES": [
+        "ENABLE_REBALANCE_NOTIFIER", "REBALANCE_TRIGGER_PCT", "RBAC_ENABLED", "DEFAULT_USER_ROLE",
+        "ENABLE_STRATEGY_OPTIMIZER", "OPTIMIZER_BACKTEST_LOOKBACK_DAYS", "OPTIMIZER_ALGORITHM", "OPTIMIZER_OUTPUT_DIR",
+        "ENABLE_SLIPPAGE_MODEL", "SLIPPAGE_SIMULATION_TYPE", "SLIPPAGE_MEAN_PCT", "SLIPPAGE_STDDEV_PCT", "SIMULATED_LATENCY_MS",
+        "ENABLE_BSM_FILTER", "MAX_BSM_DEVIATION", "RISK_FREE_RATE", "RISK_FREE_RATE_SOURCE",
+        "NOTIFY_ON_FAILURE", "CRITICAL_ALERT_CHANNEL", "ROUTINE_ALERT_CHANNEL"
+    ]
+}
+
 def get_valid_bot_identity_string():
     try:
         # Always load the decrypted identity directly from the encrypted secret.
@@ -44,7 +101,7 @@ def settings_page():
         config = get_bot_config()
     except Exception:
         return render_template("settings.html", config=None, error="Bot identity not available, please complete configuration")
-    return render_template("settings.html", config=config, error=None)
+    return render_template("settings.html", config=config, section_titles=SECTION_TITLES, error=None)
 
 @settings_blueprint.route("/settings.json", methods=["GET"])
 @login_required

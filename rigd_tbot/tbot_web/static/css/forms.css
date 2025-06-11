@@ -8,3 +8,7 @@
 .login-container {
     margin: 50%;
 }
+
+#settings-form, .dashboard-main form {
+    margin-bottom: 2em;
+}

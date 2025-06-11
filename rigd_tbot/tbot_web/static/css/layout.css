@@ -12,9 +12,13 @@
     justify-content: center;
 }
 
-dashboard-footer {
-    min-height: 10em;
+
+.dashboard-footer {
+    min-height: 200px;     /* increase as needed */
+    padding: 2.5em 0 2.5em 0;
 }
+
+
 .dropShadow {
     overflow: visible;
     text-shadow: 3px 3px 10px #000;
