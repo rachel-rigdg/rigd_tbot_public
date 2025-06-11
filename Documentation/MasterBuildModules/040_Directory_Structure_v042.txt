@@ -225,6 +225,7 @@ rigd_tbot/
 │   │   │   ├── env.key                             # Fernet key for decrypting env.json.enc (general bot config)
 │   │   │   ├── env_bot.key                         # Fernet key for decrypting .env_bot.enc (runtime bot settings)
 │   │   │   ├── login.key                           # Fernet key for encrypting SYSTEM_USERS.db (login/auth)
+│   │   │   ├── runtime_config.key		    # Fernet key for encrypting/decrypting runtime_config.json.enc (persistent bot runtime config)
 │   │   │   ├── screener_api.key                    # Fernet key for decrypting screener_api.json.enc
 │   │   │   └── smtp.key                            # Fernet key for decrypting smtp_credentials.json.enc
 │   │   │
@@ -234,6 +235,7 @@ rigd_tbot/
 │   │   │   ├── bot_identity.json.enc		        # Encrypted bot identity and entity/jurisdiction metadata
 │   │   │   ├── broker_credentials.json.enc         # Encrypted broker API credentials (ALPACA/IBKR, etc.)
 │   │   │   ├── network_config.json.enc   		    # Encrypted network config (hostname, IP, port)
+│   │   │   ├── runtime_config.json.enc		   # Encrypted persistent runtime bot configuration settings
 │   │   │   ├── smtp_credentials.json.enc           # Encrypted SMTP credentials for notifications
 │   │   │   └── screener_api.json.enc               # Encrypted screener/Finnhub API credentials
 │   │   │

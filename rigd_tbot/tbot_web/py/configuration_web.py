@@ -2,13 +2,12 @@
 
 from flask import Blueprint, request, render_template, flash, redirect, url_for, session
 from ..support.configuration_loader import load_encrypted_config
+from ..support.configuration_saver import save_encrypted_config
 from ..support.default_config_loader import get_default_config
 from pathlib import Path
-import json
 
 configuration_blueprint = Blueprint("configuration_web", __name__)
 
-TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" / "tmp" / "bootstrap_config.json"
 PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
@@ -33,7 +32,7 @@ def show_configuration():
     config = {}
     categories = [
         "bot_identity", "broker", "screener_api",
-        "smtp", "network_config", "acct_api"
+        "smtp", "network_config", "acct_api", "admin_user"
     ]
     for cat in categories:
         config.update(load_encrypted_config(cat))
@@ -82,14 +81,13 @@ def save_configuration():
     }
     acct_api_data = {}
 
-    # --- Save admin user credentials in a top-level section ---
     admin_user_data = {
         "username":     form.get("username", "").strip(),
         "userpassword": form.get("userpassword", "").strip(),
         "email":        form.get("email", "").strip() or "admin@localhost"
     }
 
-    config = {
+    categories = {
         "bot_identity":    bot_identity_data,
         "broker":          broker_data,
         "screener_api":    screener_api_data,
@@ -99,9 +97,8 @@ def save_configuration():
         "admin_user":      admin_user_data
     }
 
-    TMP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(TMP_CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2)
+    # Save encrypted config to secrets (no tmp file)
+    save_encrypted_config(categories)
 
     try:
         BOT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)

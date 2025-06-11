@@ -32,7 +32,8 @@ def load_encrypted_config(category: str) -> dict:
                     k, v = line.split("=", 1)
                     result[k.strip()] = v.strip()
         print(f"[configuration_loader] Loaded config for {category}: {result}")
-        return result
+        # Force all config values to string (fixes HTML display/placeholder bugs)
+        return {k: str(v) for k, v in result.items()}
     except Exception as e:
         print(f"[configuration_loader] ERROR loading {category}: {e}")
         return {}
