@@ -46,7 +46,7 @@
 <body>
     <div class="main-container">
         <div class="test-header">TEST_MODE — End-to-End Bot System Test</div>
-        <div>
+        <div class="center">
             <button id="trigger-btn" class="trigger-btn" onclick="triggerTestMode()" {% if test_active %}disabled{% endif %}>Start Full Test</button>
             <span id="test-status" class="status-running">{{ test_status|default("idle") }}</span>
         </div>
