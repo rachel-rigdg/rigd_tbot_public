@@ -321,6 +321,7 @@ rigd_tbot/
     │   ├── logs_web.py                         # Displays log output (read-only); calls utils_log.py
     │   ├── main_web.py                         # Orchestrates main UI shell; registers routes, manages state; triggers bot start if required; links wait_for_bot.html and ledger.html
     │   ├── portal_web.py                       # Flask app factory: app instantiation, static/template config, middleware, fallback routes
+    │   ├── register_web.py			# handles user registration logic and SYSTEM_USERS.db creation/updating
     │   ├── run_web.py                          # Flask app launch entrypoint (WSGI)
     │   ├── settings_web.py                     # Bot strategy/runtime settings routes; calls utils_config.py (never handles credentials)
     │   ├── start_stop_web.py                   # API/UI for bot control lifecycle (start/stop); writes control files
@@ -340,12 +341,13 @@ rigd_tbot/
     │   └── utils_web.py                       # Minor UI/web helpers, non-secret logic
     │
     └── templates/                              # Jinja2 HTML UI templates (rendered for user)
-        ├── configuration.html                  # Web form for updating user, email, API, and broker credential configuration via web UI 
+        ├── configuration.html                  # Web form for updating email, API, and broker credential configuration via web UI 
         ├── coa.html                            # Human-readable web form/table for COA viewing and editing (editable if RBAC allows)
         ├── index.html                          # Login page
         ├── ledger.html			        # Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
         ├── logs.html                           # Log viewer
         ├── main.html                           # Dashboard shell (all UI widgets)
+        ├── register.html			# Flask template for user registration form
         ├── settings.html                       # Web form for updating bot trading strategy and runtime config variables
         ├── status.html                         # Displays live bot health, strategies, PnL, session state, and key metrics (live data from status.json)
         ├── test.html				# Web UI page providing controls to trigger TEST_MODE and view live test logs and results.

@@ -35,6 +35,7 @@ Real-Time Monitoring Dashboard
 - `templates/wait.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
 - `templates/test.html`: Dedicated UI page for TEST_MODE trigger and progress monitoring. Allows admin users to start the test sequence and view real-time logs and final test results.
 - `templates/ledger.html`: Ledger reconciliation, view, and editing; admin-only (if RBAC allows).
+- `templates/register.html`:  Flask template for user registration form
 
 **Backend Flask Components (per directory spec):**
 - `py/__init__.py`: Registers Flask blueprints for all routes.
@@ -49,6 +50,7 @@ Real-Time Monitoring Dashboard
 - `py/portal_web.py`: Flask app factory for static files and template setup; supports static asset versioning and cache control.
 - `py/test_web.py`: Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
 - `py/run_web.py`: Webserver launcher using host/port from encrypted config.
+- `register_web.py`: handles user registration logic and SYSTEM_USERS.db creation/updating
 
 **Support Modules (from tbot_web/support/):**
 - `auth_web.py`: Handles user authentication, bcrypt password hashing, validation for login/session.
@@ -66,6 +68,30 @@ Real-Time Monitoring Dashboard
 - Web UI never executes privileged actions, OS commands, or modifies keys/secrets directly.
 - Provisioning status and bot state are written to `output/{BOT_IDENTITY}/bootstrapping/provisioning_status.json`, polled by web UI (e.g., `wait.html`) to control user flow.
 - Upon completion, bot core is launched independently (never as Flask child).
+
+
+
+**Added User Registration Flow:**
+
+- `templates/register.html`: New Flask template for user registration and password management.
+- `py/register_web.py`: Backend Flask blueprint managing user registration POST/GET, updating SYSTEM_USERS.db, enforcing user creation post-provisioning.
+
+**User Credential Lifecycle:**
+
+- Post-provisioning, if no users exist in `SYSTEM_USERS.db`, UI redirects automatically to `/register`.
+- User registration page persists form data, supports new user creation and password updates.
+- Login/logout (`login_web.py`) unchanged; validates against SYSTEM_USERS.db.
+
+**Provisioning and Bootstrapping:**
+
+- Backend provisioning remains responsible for key generation, encrypted config/secret files, and DB initialization.
+- Web UI triggers provisioning and user registration separately; no privileged actions in UI.
+
+**Session and Security:**
+
+- All auth and session events remain local with Fernet encryption and audit logging.
+- RBAC enforced via `security_users.py` and session tokens.
+
 
 **Static Assets:**
 - `static/fnt/`: Fonts.
@@ -120,9 +146,13 @@ Real-Time Monitoring Dashboard
 **Compliance:**
 - All COA/log/credential output local to bot—never pushed to accounting system.
 - Exports only for compliance, audit, docs.
+- Separation of concerns strictly maintained.
+- Manual CLI provisioning prohibited.
+- All user credential management occurs post-bootstrap in dedicated UI.
 
 **Summary:**
-- The dashboard is audit-compliant, supports live monitoring/control, and admin-only, per-bot COA and ledger management. All actions are versioned, locally enforced, and never propagate between systems. COA/ledger export/edit requires RBAC and logs all activity for full audit compliance, using `tbot_web/support/utils_coa_web.py` for UI/admin logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger integration.  
+- The dashboard is audit-compliant, supports live monitoring/control, and admin-only, per-bot COA and ledger management. All actions are versioned, locally enforced, and never propagate between systems. COA/ledger export/edit requires RBAC and logs all activity for full audit compliance, using `tbot_web/support/utils_coa_web.py` for UI/admin logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger integration.
+This update implements a robust, secure user registration flow decoupled from provisioning to prevent lockout scenarios, enforce local credential persistence, and maintain strict backend privilege separation per architecture mandates.  
 - **All privileged setup and bot launching logic is strictly performed by backend scripts in `tbot_bot/config/` as triggered by the Web UI, never directly by Flask or web endpoints.**
 
 ================================================================================
