@@ -14,11 +14,6 @@
 <body class="dashboard-page dropShadow">
     <div class="formcontent center">
         <div class="content">
-            <div class="bot-state-banner">
-                <strong>RIGD Tbot</strong><br>
-                <strong>Current Bot State:</strong>
-                <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
-            </div>
             <iframe src="{{ url_for('status.status_page') }}" width="100%" height="100%" frameborder="0" name="viewFrame" id="viewFrame"></iframe>
         </div>
     </div>
@@ -59,6 +54,8 @@
 
     <footer class="footer dropShadow">
         <div class="startKillContainer center">
+            <strong>Current Bot State:</strong>
+                <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
             <form action="{{ url_for('start_stop.trigger_start') }}" method="post" target="viewFrame">
                 <button type="submit" id="start-bot">Start Bot</button>
             </form>
@@ -69,7 +66,9 @@
                 <button type="submit" id="kill-bot">Kill Now</button>
             </form>
         </div>
-        <p>&copy; 2025 RIGD Holdings – TBot Monitoring Interface</p>
+        <br>
+                
+        <p><strong>RIGD Tbot</strong> –  &copy; 2025 RIGD Holdings – TBot Monitoring Interface</p>
     </footer>
 </body>
 </html>
