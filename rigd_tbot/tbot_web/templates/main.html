@@ -7,6 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/hamburger.css') }}">
+
     <script src="{{ url_for('static', filename='js/shared_utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main_ui.js') }}"></script>
 </head>
@@ -49,7 +50,7 @@
             <button type="submit" class="tab-button">Configuration</button>
         </form>
         <form action="{{ url_for('test_web.test_page') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button" style="background:#4e91ff; color:#fff;">TEST</button>
+            <button type="submit" class="tab-button" >TEST</button>
         </form>
         <form action="{{ url_for('logout_web.logout') }}" method="get">
             <button type="submit" id="logout-btn" class="tab-button">Log Out</button>

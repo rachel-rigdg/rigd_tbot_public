@@ -47,7 +47,6 @@ def remove_test_flag():
         TEST_FLAG_PATH.unlink()
 
 @test_web.route("/test", methods=["GET"])
-@admin_required
 def test_page():
     status = get_test_status()
     logs = read_test_logs()
