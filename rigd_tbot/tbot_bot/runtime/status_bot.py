@@ -5,6 +5,7 @@
 status_bot.py – Tracks and exposes the current state of the bot for UI or external monitoring.
 Used by status_web.py and internal logging for diagnostics and dashboard reporting.
 Implements exhaustive status tracking and win_rate calculation per RIGD_TradingBot spec.
+Writes live status only to tbot_bot/output/logs/status.json (no identity subdir).
 """
 
 import time
@@ -16,9 +17,10 @@ from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 
-STATUS_DIR = Path(__file__).resolve().parents[2] / "output"
-BOT_IDENTITY = get_bot_config().get("BOT_IDENTITY_STRING", "UNKNOWN_BOT")
-STATUS_FILE_PATH = STATUS_DIR / BOT_IDENTITY / "logs" / "status.json"
+STATUS_FILE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "status.json"
+
+def ensure_status_dir():
+    STATUS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Thread-safe singleton class to hold live bot status
 class BotStatus:
@@ -129,17 +131,20 @@ class BotStatus:
 
     def save_status(self):
         status_dict = self.to_dict()
-        STATUS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        ensure_status_dir()
         with open(STATUS_FILE_PATH, "w", encoding="utf-8") as f:
             json.dump(status_dict, f, indent=2)
 
 # Global instance
 bot_status = BotStatus()
 
-# Initialize with decrypted config
-config = get_bot_config()
-bot_status.update_config(config)
-bot_status.save_status()
+# Initialize with decrypted config if available
+try:
+    config = get_bot_config()
+    bot_status.update_config(config)
+    bot_status.save_status()
+except Exception:
+    bot_status.save_status()
 
 def update_bot_state(state: str = None, strategy: str = None, error: bool = False, trade: bool = False, win: bool = None, pnl: float = 0.0):
     """
