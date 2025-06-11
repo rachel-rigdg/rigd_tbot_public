@@ -4,12 +4,9 @@
 .env
 tbot_bot/.env_bot
 tbot_bot/.env_bot.enc
+tbot_bot/storage/secrets/
+tbot_bot/storage/keys/
 
-# === GnuCash Ledgers & Backups ===
-*.gnucash
-gnu_live.gnucash
-gnu_paper.gnucash
-backups/
 
 # === Logs and Trade Reports ===
 logs/
@@ -24,6 +21,11 @@ trade_history_*.csv
 *_paper.log
 *_live.log
 unresolved_orders_*.log
+
+# === Runtime State, Control, and Output ===
+tbot_bot/output/
+tbot_bot/core/databases/
+tbot_bot/control/
 
 # === Visual Builder/Project Clutter ===
 .DS_Store
