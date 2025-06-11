@@ -1,0 +1,64 @@
+/* static/css/hamburger.css */
+.hamburger-toggle {
+    display: none;
+}
+.hamburger-icon {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    z-index: 9999;
+    cursor: pointer;
+}
+.hamburger-icon span {
+    display: block;
+    width: 100%;
+    height: 5px;
+    background: #333;
+    margin: 4px 0;
+    border-radius: 3px;
+    transition: 0.25s;
+}
+.hamburger-menu {
+    position: fixed;
+    top: 0;
+    right: -320px;
+    width: 300px;
+    height: 100%;
+    background: #232323;
+    box-shadow: -2px 0 8px rgba(0,0,0,0.16);
+    padding: 48px 24px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: right 0.3s cubic-bezier(.38,1.15,.4,1);
+    z-index: 9998;
+}
+.hamburger-menu form {
+    margin: 0;
+}
+.hamburger-toggle:checked ~ .hamburger-menu {
+    right: 0;
+}
+.hamburger-toggle:checked + .hamburger-icon span:nth-child(1) {
+    transform: rotate(45deg) translateY(8px);
+}
+.hamburger-toggle:checked + .hamburger-icon span:nth-child(2) {
+    opacity: 0;
+}
+.hamburger-toggle:checked + .hamburger-icon span:nth-child(3) {
+    transform: rotate(-45deg) translateY(-8px);
+}
+@media (max-width: 700px) {
+    .hamburger-menu {
+        width: 92vw;
+        right: -100vw;
+    }
+    .hamburger-toggle:checked ~ .hamburger-menu {
+        right: 0;
+    }
+}

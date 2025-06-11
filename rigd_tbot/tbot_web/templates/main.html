@@ -5,29 +5,58 @@
     <meta charset="UTF-8">
     <title>TradeBot Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- <link rel="stylesheet" href="../static/css/main.css"> -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-    
-    <!-- Load external JavaScript files for dashboard UI logic -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/hamburger.css') }}">
     <script src="{{ url_for('static', filename='js/shared_utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main_ui.js') }}"></script>
 </head>
 <body class="dashboard-page dropShadow">
     <div class="formcontent center">
         <div class="content">
-            <!-- Bot state banner above iframe -->
             <div class="bot-state-banner">
                 <strong>RIGD Tbot</strong><br>
                 <strong>Current Bot State:</strong>
                 <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
             </div>
-            <!-- Embedded strategy/status/log UI -->
             <iframe src="{{ url_for('status.status_page') }}" width="100%" height="100%" frameborder="0" name="viewFrame" id="viewFrame"></iframe>
         </div>
     </div>
 
+    <!-- Hamburger Menu Toggle -->
+    <input type="checkbox" id="hamburger-toggle" class="hamburger-toggle" />
+    <label for="hamburger-toggle" class="hamburger-icon" aria-label="Open menu">
+        <span></span>
+        <span></span>
+        <span></span>
+    </label>
+    <nav class="hamburger-menu">
+        <form action="{{ url_for('settings.settings_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Settings</button>
+        </form>
+        <form action="{{ url_for('status.status_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Status</button>
+        </form>
+        <form action="{{ url_for('logs.logs_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Logs</button>
+        </form>
+        <form action="{{ url_for('ledger_web.ledger_reconcile') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Ledger</button>
+        </form>
+        <form action="{{ url_for('coa_web.coa_management') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">COA</button>
+        </form>
+        <form action="{{ url_for('configuration_web.show_configuration') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Configuration</button>
+        </form>
+        <form action="{{ url_for('test_web.test_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="background:#4e91ff; color:#fff;">TEST</button>
+        </form>
+        <form action="{{ url_for('logout_web.logout') }}" method="get">
+            <button type="submit" id="logout-btn" class="tab-button">Log Out</button>
+        </form>
+    </nav>
+
     <footer class="footer dropShadow">
-        <!-- Start/Stop/Kill control buttons spaced evenly -->
         <div class="startKillContainer center">
             <form action="{{ url_for('start_stop.trigger_start') }}" method="post" target="viewFrame">
                 <button type="submit" id="start-bot">Start Bot</button>
@@ -38,36 +67,7 @@
             <form action="{{ url_for('start_stop.trigger_kill') }}" method="post" target="viewFrame">
                 <button type="submit" id="kill-bot">Kill Now</button>
             </form>
-            <form action="{{ url_for('logout_web.logout') }}" method="get" style="display:inline;">
-                <button type="submit" id="logout-btn">Log Out</button>
-            </form>
         </div>
-
-        <!-- Tab-style navigation within iframe as button forms (spec-compliant, accessible) -->
-        <div class="tab-container">
-            <form action="{{ url_for('settings.settings_page') }}" method="get" target="viewFrame" style="display:inline;">
-                <button type="submit" class="tab-button">Settings</button>
-            </form>
-            <form action="{{ url_for('status.status_page') }}" method="get" target="viewFrame" style="display:inline;">
-                <button type="submit" class="tab-button">Status</button>
-            </form>
-            <form action="{{ url_for('logs.logs_page') }}" method="get" target="viewFrame" style="display:inline;">
-                <button type="submit" class="tab-button">Logs</button>
-            </form>
-            <form action="{{ url_for('ledger_web.ledger_reconcile') }}" method="get" target="viewFrame" style="display:inline;">
-                <button type="submit" class="tab-button">Ledger</button>
-            </form>
-            <form action="{{ url_for('coa_web.coa_management') }}" method="get" target="viewFrame" style="display:inline;">
-                <button type="submit" class="tab-button">COA</button>
-            </form>
-            <form action="{{ url_for('configuration_web.show_configuration') }}" method="get" target="viewFrame" style="display:inline;">
-                <button type="submit" class="tab-button">Configuration</button>
-            </form>
-            <form action="{{ url_for('test_web.test_page') }}" method="get" target="viewFrame" style="display:inline;">
-                <button type="submit" class="tab-button" style="background:#4e91ff; color:#fff;">TEST</button>
-            </form>
-        </div>
-
         <p>&copy; 2025 RIGD Holdings – TBot Monitoring Interface</p>
     </footer>
 </body>
