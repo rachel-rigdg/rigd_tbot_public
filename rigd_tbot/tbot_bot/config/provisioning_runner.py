@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import traceback
 import os
+from cryptography.fernet import Fernet
 
 if "RIGD_TBOT_ROOT" in os.environ:
     ROOT = Path(os.environ["RIGD_TBOT_ROOT"]).resolve()
@@ -19,7 +20,8 @@ SUPPORT_PATH = ROOT / "tbot_bot" / "support"
 CONFIG_PATH = ROOT / "tbot_bot" / "config"
 OUTPUT_BASE = ROOT / "tbot_bot" / "output"
 BOOTSTRAP_LOGS_PATH = OUTPUT_BASE / "bootstrap" / "logs"
-TMP_CONFIG_PATH = SUPPORT_PATH / "tmp" / "bootstrap_config.json"
+RUNTIME_CONFIG_KEY_PATH = ROOT / "tbot_bot" / "storage" / "keys" / "runtime_config.key"
+RUNTIME_CONFIG_PATH = ROOT / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
 PROVISION_FLAG_PATH = CONFIG_PATH / "PROVISION_FLAG"
 CONTROL_DIR = ROOT / "tbot_bot" / "control"
 CONTROL_START_PATH = CONTROL_DIR / "control_start.txt"
@@ -46,10 +48,21 @@ def write_status(status_file, state, detail=""):
     with open(status_file, "w") as f:
         json.dump(status, f, indent=2)
 
+def load_runtime_config():
+    if RUNTIME_CONFIG_KEY_PATH.exists() and RUNTIME_CONFIG_PATH.exists():
+        try:
+            key = RUNTIME_CONFIG_KEY_PATH.read_bytes()
+            fernet = Fernet(key)
+            enc_bytes = RUNTIME_CONFIG_PATH.read_bytes()
+            config_json = fernet.decrypt(enc_bytes).decode("utf-8")
+            return json.loads(config_json)
+        except Exception as e:
+            print(f"[provisioning_runner] ERROR loading runtime config: {e}")
+    return {}
+
 def get_bot_identity_string():
+    config = load_runtime_config()
     try:
-        with open(TMP_CONFIG_PATH, "r") as f:
-            config = json.load(f)
         return config["bot_identity"]["BOT_IDENTITY_STRING"]
     except Exception:
         return None
@@ -71,10 +84,9 @@ def set_bot_state(state):
         f.write(state)
 
 def create_admin_user_from_config():
-    # Load user credentials from TMP_CONFIG_PATH
+    # Load user credentials from runtime config
+    config = load_runtime_config()
     try:
-        with open(TMP_CONFIG_PATH, "r") as f:
-            config = json.load(f)
         admin_user = config.get("admin_user", {})
         username = admin_user.get("username", "admin")
         password = admin_user.get("userpassword", "changeme")

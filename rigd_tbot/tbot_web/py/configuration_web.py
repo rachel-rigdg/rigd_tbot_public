@@ -2,12 +2,16 @@
 
 from flask import Blueprint, request, render_template, flash, redirect, url_for, session
 from ..support.configuration_loader import load_encrypted_config
-from ..support.configuration_saver import save_encrypted_config
 from ..support.default_config_loader import get_default_config
 from pathlib import Path
+from cryptography.fernet import Fernet
+import json
+import os
 
 configuration_blueprint = Blueprint("configuration_web", __name__)
 
+RUNTIME_CONFIG_KEY_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "runtime_config.key"
+RUNTIME_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
 PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
@@ -20,6 +24,30 @@ def can_provision():
     except Exception:
         return False
 
+def load_runtime_config():
+    if RUNTIME_CONFIG_KEY_PATH.exists() and RUNTIME_CONFIG_PATH.exists():
+        try:
+            key = RUNTIME_CONFIG_KEY_PATH.read_bytes()
+            fernet = Fernet(key)
+            enc_bytes = RUNTIME_CONFIG_PATH.read_bytes()
+            config_json = fernet.decrypt(enc_bytes).decode("utf-8")
+            return json.loads(config_json)
+        except Exception as e:
+            print(f"[configuration_web] ERROR loading runtime config: {e}")
+    return {}
+
+def save_runtime_config(config: dict):
+    if not RUNTIME_CONFIG_KEY_PATH.exists():
+        key = Fernet.generate_key()
+        RUNTIME_CONFIG_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        RUNTIME_CONFIG_KEY_PATH.write_bytes(key)
+    else:
+        key = RUNTIME_CONFIG_KEY_PATH.read_bytes()
+    fernet = Fernet(key)
+    enc_json = fernet.encrypt(json.dumps(config).encode("utf-8"))
+    RUNTIME_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RUNTIME_CONFIG_PATH.write_bytes(enc_json)
+
 @configuration_blueprint.route("/configuration", methods=["GET"])
 def show_configuration():
     print("[configuration_web] Rendering configuration page")
@@ -29,13 +57,7 @@ def show_configuration():
             state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         except Exception:
             state = "initialize"
-    config = {}
-    categories = [
-        "bot_identity", "broker", "screener_api",
-        "smtp", "network_config", "acct_api", "admin_user"
-    ]
-    for cat in categories:
-        config.update(load_encrypted_config(cat))
+    config = load_runtime_config()
     if not config and state == "initialize":
         config = get_default_config()
     return render_template("configuration.html", config=config)
@@ -87,7 +109,7 @@ def save_configuration():
         "email":        form.get("email", "").strip() or "admin@localhost"
     }
 
-    categories = {
+    config = {
         "bot_identity":    bot_identity_data,
         "broker":          broker_data,
         "screener_api":    screener_api_data,
@@ -97,8 +119,7 @@ def save_configuration():
         "admin_user":      admin_user_data
     }
 
-    # Save encrypted config to secrets (no tmp file)
-    save_encrypted_config(categories)
+    save_runtime_config(config)
 
     try:
         BOT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
