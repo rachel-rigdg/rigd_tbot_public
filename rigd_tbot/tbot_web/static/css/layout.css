@@ -2,6 +2,15 @@
 .dashboard-header {
     text-align: center;
 }
+
+.dashboard-main {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
 .dropShadow {
     overflow: visible;
     text-shadow: 3px 3px 10px #000;
