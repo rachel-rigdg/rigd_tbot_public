@@ -27,16 +27,7 @@
                 <input type="text" id="bot_id" name="bot_id" maxlength="6" required value="{{ config['bot_identity']['BOT_ID'] if config.get('bot_identity') else 'TB01' }}" />
             </fieldset>
             </div>
-            <div class="fieldblock">
-            <fieldset >
-                <legend>User Credentials</legend>
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" maxlength="32" required value="{{ config['admin_user']['username'] if config.get('admin_user') else 'admin' }}" />
-                
-                <label for="userpassword">Password</label>
-                <input type="password" id="userpassword" name="userpassword" value="" placeholder="Enter new password or leave blank to keep existing" />
-            </fieldset>
-        </div>
+            
         <div class="fieldblock">
             <fieldset >
                 <legend>Alert & Email Settings</legend>

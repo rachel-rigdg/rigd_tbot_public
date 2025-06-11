@@ -13,7 +13,8 @@ except ImportError:
     is_first_bootstrap = lambda: False  # fallback for non-web contexts
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-IDENTITY_PATTERN = r"^[A-Z]{2,6}_[A-Z]{2,4}_[A-Z]{2,10}_[0-9]{2,4}$"
+# PATCH: Accept both TB01 and 01 as bot_id (trailing digits, up to 6 chars, alpha+digit allowed)
+IDENTITY_PATTERN = r"^[A-Z]{2,6}_[A-Z]{2,4}_[A-Z]{2,10}_[A-Z0-9]{2,6}$"
 
 CATEGORIES = {
     "logs": "logs",
@@ -102,10 +103,12 @@ def resolve_output_folder_path(bot_identity: str) -> str:
 
 def resolve_ledger_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
+    validate_bot_identity(bot_identity)
     return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_ledger.db")
 
 def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
+    validate_bot_identity(bot_identity)
     return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_COA_v1.0.0.db")
 
 __all__ = [

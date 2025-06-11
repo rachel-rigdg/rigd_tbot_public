@@ -36,6 +36,15 @@ def _decrypt_bot_identity() -> dict:
     decrypted = fernet.decrypt(encrypted_data)
     return json.loads(decrypted)
 
+def _validate_bot_identity_string(identity_string: str) -> bool:
+    # Must be non-empty string with exactly 4 underscore-separated tokens, no empty segments
+    if not identity_string or not isinstance(identity_string, str):
+        return False
+    parts = identity_string.split("_")
+    if len(parts) != 4 or any(not part.strip() for part in parts):
+        return False
+    return True
+
 def initialize_all():
     """
     Calls each core DB CLI script to initialize all mandatory DBs,
@@ -60,14 +69,14 @@ def initialize_all():
     log_event("db_bootstrap", "All core system databases initialized via CLI scripts.")
     print("[db_bootstrap] All core system databases initialized via CLI scripts.")
 
-    # --- Ensure accounting output folders exist and build ledgers if BOT_IDENTITY is available ---
+    # --- Ensure accounting output folders exist and build ledgers if BOT_IDENTITY is available and valid ---
     try:
         from tbot_bot.accounting import accounting_config
 
         bot_identity = _decrypt_bot_identity()
         BOT_IDENTITY = bot_identity.get("BOT_IDENTITY_STRING", "")
-        print(f"[db_bootstrap] Decrypted BOT_IDENTITY_STRING: {BOT_IDENTITY}")  # <--- Added print
-        if BOT_IDENTITY:
+        print(f"[db_bootstrap] Decrypted BOT_IDENTITY_STRING: {BOT_IDENTITY}")
+        if _validate_bot_identity_string(BOT_IDENTITY):
             ENTITY, JURISDICTION, BROKER, BOT_ID = BOT_IDENTITY.split("_")
             accounting_config.ensure_output_folder_structure()
             for script in ACCOUNTING_INIT:
@@ -89,7 +98,9 @@ def initialize_all():
                     print(f"[db_bootstrap] ERROR: Missing script: {script_path}")
                     raise FileNotFoundError(f"Missing accounting DB init script: {script_path}")
         else:
-            print("[db_bootstrap] BOT_IDENTITY_STRING missing from decrypted bot_identity secret; skipping ledger/COA creation")
+            log_event("db_bootstrap", f"Invalid BOT_IDENTITY_STRING: {BOT_IDENTITY}", level="error")
+            print(f"[db_bootstrap] Invalid BOT_IDENTITY_STRING: {BOT_IDENTITY} (expected 4 tokens separated by '_')")
+            print("[db_bootstrap] Skipping ledger/COA creation due to invalid identity string.")
     except Exception as e:
         print(f"[db_bootstrap] Skipping ledger/COA creation due to error: {e}")
 

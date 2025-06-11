@@ -101,12 +101,6 @@ def save_configuration():
     }
     acct_api_data = {}
 
-    admin_user_data = {
-        "username":     form.get("username", "").strip(),
-        "userpassword": form.get("userpassword", "").strip(),
-        "email":        form.get("email", "").strip() or "admin@localhost"
-    }
-
     config = {
         "bot_identity":    bot_identity_data,
         "broker":          broker_data,
@@ -114,7 +108,6 @@ def save_configuration():
         "smtp":            smtp_data,
         "network_config":  network_config_data,
         "acct_api":        acct_api_data,
-        "admin_user":      admin_user_data
     }
 
     save_runtime_config(config)

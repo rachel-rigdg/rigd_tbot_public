@@ -35,9 +35,6 @@ from tbot_bot.config.provisioning_helper import main as provisioning_helper_main
 from tbot_bot.config.bootstrapping_helper import main as bootstrapping_helper_main
 from tbot_bot.config.db_bootstrap import initialize_all as db_bootstrap_main
 
-# === Added for user creation ===
-from tbot_web.support.auth_web import upsert_user
-
 def write_status(status_file, state, detail=""):
     status = {
         "status": state,
@@ -83,20 +80,6 @@ def set_bot_state(state):
     with open(BOT_STATE_FILE, "w", encoding="utf-8") as f:
         f.write(state)
 
-def create_admin_user_from_config():
-    # Load user credentials from runtime config
-    config = load_runtime_config()
-    try:
-        admin_user = config.get("admin_user", {})
-        username = admin_user.get("username", "admin")
-        password = admin_user.get("userpassword", "changeme")
-        email = admin_user.get("email", "admin@localhost")
-        if username and password:
-            upsert_user(username, password, email)
-            print(f"[provisioning_runner] Created or updated admin user: {username}")
-    except Exception as e:
-        print(f"[provisioning_runner] Failed to create admin user: {e}")
-
 def main():
     print("[provisioning_runner] Runner started; monitoring provisioning flag.")
     already_provisioned = False
@@ -119,9 +102,6 @@ def main():
                 bootstrapping_helper_main()
                 write_status(status_path, "running", "Database initialization.")
                 db_bootstrap_main()
-                # === CREATE ADMIN USER HERE ===
-                write_status(status_path, "running", "Creating initial admin user.")
-                create_admin_user_from_config()
                 time.sleep(0.5)
                 clear_provision_flag()
                 write_status(status_path, "running", "Creating control_start.txt to launch bot via systemd.")

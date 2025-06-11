@@ -1,9 +1,20 @@
 # tbot_web/py/register_web.py
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash
-from tbot_web.support.auth_web import upsert_user, user_exists
+from tbot_web.support.auth_web import upsert_user, get_db_connection
+from sqlite3 import OperationalError
 
 register_blueprint = Blueprint("register_web", __name__)
+
+def user_exists():
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute("SELECT COUNT(*) FROM system_users;")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count > 0
+    except OperationalError:
+        return False
 
 @register_blueprint.route("/register", methods=["GET", "POST"])
 def register():
@@ -13,12 +24,12 @@ def register():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip()
-        password = request.form.get("userpassword", "")
-        password2 = request.form.get("userpassword2", "")
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
         if not username or not email or not password:
             flash("All fields are required.", "error")
             return render_template("register.html", username=username, email=email)
-        if password != password2:
+        if password != confirm:
             flash("Passwords do not match.", "error")
             return render_template("register.html", username=username, email=email)
         try:
