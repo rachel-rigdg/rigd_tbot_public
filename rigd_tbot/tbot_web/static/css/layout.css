@@ -11,6 +11,10 @@
     align-items: center;
     justify-content: center;
 }
+
+dashboard-footer {
+    min-height: 10em;
+}
 .dropShadow {
     overflow: visible;
     text-shadow: 3px 3px 10px #000;
@@ -71,7 +75,7 @@ z-index: 1000;
     display: flex;
  
     justify-content: center;
-    height: 80vh;
+    height: 100vh;
 }
 .center {
     align-items: center;
