@@ -23,6 +23,8 @@ from pathlib import Path
 import json
 
 TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" / "tmp" / "bootstrap_config.json"
+RUNTIME_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
+RUNTIME_CONFIG_KEY_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "runtime_config.key"
 KEYS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys"
 SECRETS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets"
 STATE_FILE = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
@@ -34,9 +36,22 @@ def set_bot_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         f.write(state)
 
+def load_runtime_config():
+    from cryptography.fernet import Fernet
+    if RUNTIME_CONFIG_PATH.exists() and RUNTIME_CONFIG_KEY_PATH.exists():
+        try:
+            key = RUNTIME_CONFIG_KEY_PATH.read_bytes()
+            fernet = Fernet(key)
+            enc_bytes = RUNTIME_CONFIG_PATH.read_bytes()
+            content = fernet.decrypt(enc_bytes).decode("utf-8")
+            return json.loads(content)
+        except Exception as e:
+            print(f"[provisioning_helper] ERROR decrypting runtime_config: {e}")
+    return None
+
 def provision_keys_and_secrets(config: dict = None) -> None:
     """
-    Loads config from TMP_CONFIG_PATH if not provided.
+    Loads config from runtime_config.json.enc, or TMP_CONFIG_PATH if not provided.
     Generate all Fernet keys, then generate and write all encrypted secret files independently.
     """
     print("[provisioning_helper] Starting provisioning process...")
@@ -44,13 +59,15 @@ def provision_keys_and_secrets(config: dict = None) -> None:
         # Set initial state to provisioning in bot_state.txt
         set_bot_state("provisioning")
         
-        # Load config from tmp if not provided
+        # Prefer runtime_config if available, else fall back to TMP_CONFIG_PATH
         if config is None or not config:
+            config = load_runtime_config()
+        if config is None:
             if TMP_CONFIG_PATH.exists():
                 with open(TMP_CONFIG_PATH, "r") as f:
                     config = json.load(f)
             else:
-                raise FileNotFoundError(f"[provisioning_helper] TMP config file missing: {TMP_CONFIG_PATH}")
+                raise FileNotFoundError("[provisioning_helper] No config found in runtime_config or TMP_CONFIG_PATH")
 
         # Ensure BOT_IDENTITY_STRING exists inside bot_identity data
         bot_identity = config.get("bot_identity", {})
