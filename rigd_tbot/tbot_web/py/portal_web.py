@@ -44,16 +44,17 @@ def create_app():
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(logout_blueprint)
 
-    # Import and register ledger, coa, test, and register blueprints
-    from . import coa_web, ledger_web, test_web, register_web
-    app.register_blueprint(coa_web.coa_web)
-    app.register_blueprint(ledger_web.ledger_web)
-    app.register_blueprint(test_web.test_web)
-    app.register_blueprint(register_web.register_web)
+    # Conditionally import and register blueprints after initial config/provisioning
+    state = get_bot_state()
+    if state not in ("initialize", "provisioning", "bootstrapping"):
+        from . import coa_web, ledger_web, test_web, register_web
+        app.register_blueprint(coa_web.coa_web)
+        app.register_blueprint(ledger_web.ledger_web)
+        app.register_blueprint(test_web.test_web)
+        app.register_blueprint(register_web.register_web)
 
     @app.before_request
     def force_configuration():
-        # Always check bot_state.txt before every request
         state = get_bot_state()
         if state in ("initialize", "provisioning", "bootstrapping"):
             if not (
