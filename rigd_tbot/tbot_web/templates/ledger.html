@@ -23,6 +23,9 @@
             </ul>
           {% endif %}
         {% endwith %}
+        {% if error %}
+            <div class="error-message" style="color:#b30000; margin:1em 0 2em 0;">{{ error }}</div>
+        {% endif %}
         <form id="brokerUploadForm" method="post" enctype="multipart/form-data" action="{{ url_for('ledger_web.ledger_reconcile') }}">
             <label for="broker_csv">Upload Broker CSV Statement:</label>
             <input type="file" name="broker_csv" accept=".csv" required>

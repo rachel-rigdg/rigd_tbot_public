@@ -2,6 +2,8 @@
 # Alpaca broker adapter (single-mode, single-broker architecture)
 
 import requests
+import csv
+import io
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.trading.logs_bot import log_event
 
@@ -83,3 +85,45 @@ class AlpacaBroker:
             return account.get("status", "").upper() == "ACTIVE"
         except Exception:
             return False
+
+    def download_trade_ledger_csv(self, start_date=None, end_date=None, output_path=None):
+        """
+        Downloads trades from Alpaca and writes a deduplicated CSV to output_path.
+        """
+        params = {"status": "filled", "limit": 1000}
+        if start_date:
+            params["after"] = start_date
+        if end_date:
+            params["until"] = end_date
+        trades = self._request("GET", "/v2/orders", params=params)
+        unique = {}
+        for t in trades:
+            unique[t["id"]] = t  # dedupe by broker trade ID
+
+        fieldnames = [
+            "id", "symbol", "qty", "filled_at", "side", "type", "status", "filled_qty", "filled_avg_price"
+        ]
+        rows = []
+        for t in unique.values():
+            rows.append({
+                "id": t.get("id"),
+                "symbol": t.get("symbol"),
+                "qty": t.get("qty"),
+                "filled_at": t.get("filled_at"),
+                "side": t.get("side"),
+                "type": t.get("type"),
+                "status": t.get("status"),
+                "filled_qty": t.get("filled_qty"),
+                "filled_avg_price": t.get("filled_avg_price"),
+            })
+        if output_path:
+            with open(output_path, "w", newline="") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+        else:
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+            return output.getvalue()

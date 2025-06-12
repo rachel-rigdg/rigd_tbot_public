@@ -54,8 +54,9 @@ def reconcile_ledgers(internal, broker):
 @ledger_web.route('/ledger/reconcile', methods=['GET', 'POST'])
 def ledger_reconcile():
     error = None
+    entries = []
     if provisioning_guard() or identity_guard():
-        return redirect(url_for('main.root_router'))
+        return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).")
     try:
         from tbot_bot.accounting.ledger import load_internal_ledger  # Lazy import after provisioning
         internal_ledger = load_internal_ledger()
