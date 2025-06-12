@@ -101,12 +101,6 @@ def save_configuration():
     }
     acct_api_data = {}
 
-    language_code = form.get("language_code", "").strip()
-    if language_code:
-        config_language = language_code
-    else:
-        config_language = "en"
-
     config = {
         "bot_identity":    bot_identity_data,
         "broker":          broker_data,
@@ -114,7 +108,6 @@ def save_configuration():
         "smtp":            smtp_data,
         "network_config":  network_config_data,
         "acct_api":        acct_api_data,
-        "language_code":   config_language,
     }
 
     save_runtime_config(config)

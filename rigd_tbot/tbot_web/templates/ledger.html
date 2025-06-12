@@ -1,6 +1,5 @@
 <!-- tbot_web/templates/ledger.html -->
 
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -26,10 +25,8 @@
         {% if error %}
             <div class="error-message" style="color:#b30000; margin:1em 0 2em 0;">{{ error }}</div>
         {% endif %}
-        <form id="brokerUploadForm" method="post" enctype="multipart/form-data" action="{{ url_for('ledger_web.ledger_reconcile') }}">
-            <label for="broker_csv">Upload Broker CSV Statement:</label>
-            <input type="file" name="broker_csv" accept=".csv" required>
-            <button type="submit">Upload</button>
+        <form id="syncLedgerForm" method="post" action="{{ url_for('ledger_web.ledger_sync') }}">
+            <button type="submit">Sync Broker Ledger</button>
         </form>
         <div class="reconcile-container">
             <h2>Reconciliation Table</h2>
@@ -40,6 +37,10 @@
                         <th>Symbol</th>
                         <th>Type</th>
                         <th>Amount</th>
+                        <th>Account</th>
+                        <th>Trade ID</th>
+                        <th>Tags</th>
+                        <th>Notes</th>
                         <th>Status</th>
                         <th>Action</th>
                     </tr>
@@ -59,6 +60,18 @@
                         </td>
                         <td>
                             <input type="text" name="amount" value="{{ entry.amount }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %} required>
+                        </td>
+                        <td>
+                            <input type="text" name="account" value="{{ entry.account }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %}>
+                        </td>
+                        <td>
+                            <input type="text" name="trade_id" value="{{ entry.trade_id }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %}>
+                        </td>
+                        <td>
+                            <input type="text" name="tags" value="{{ entry.tags }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %}>
+                        </td>
+                        <td>
+                            <input type="text" name="notes" value="{{ entry.notes }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %}>
                         </td>
                         <td>
                             {% if entry.status == "mismatch" %}
@@ -98,6 +111,10 @@
                     <td><input type="text" name="symbol" placeholder="Symbol" required></td>
                     <td><input type="text" name="type" placeholder="Type" required></td>
                     <td><input type="text" name="amount" placeholder="Amount" required></td>
+                    <td><input type="text" name="account" placeholder="Account"></td>
+                    <td><input type="text" name="trade_id" placeholder="Trade ID"></td>
+                    <td><input type="text" name="tags" placeholder="Tags"></td>
+                    <td><input type="text" name="notes" placeholder="Notes"></td>
                     <td colspan="2">
                         <button type="submit" class="add-btn">Add Entry</button>
                     </td>
@@ -105,6 +122,29 @@
                 </tr>
                 </tbody>
             </table>
+            <div class="ledger-balance-summary">
+                <h3>Account Balances</h3>
+                {% if balances %}
+                    <table class="balance-table">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for account, balance in balances.items() %}
+                                <tr>
+                                    <td>{{ account }}</td>
+                                    <td>{{ balance }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No balance data available.</p>
+                {% endif %}
+            </div>
             <div class="audit-log-info">
                 <p>All edits, resolutions, and reconciliation actions are logged with UTC timestamp and user ID for compliance.</p>
                 <p>Only admin users can resolve or edit ledger entries.</p>

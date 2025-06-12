@@ -5,6 +5,8 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from pathlib import Path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
+from tbot_web.support.auth_web import get_current_user  # to get current user info
+from tbot_bot.config.env_bot import get_bot_config     # to get bot config for language etc.
 
 ledger_web = Blueprint("ledger_web", __name__)
 
@@ -55,27 +57,25 @@ def reconcile_ledgers(internal, broker):
 def ledger_reconcile():
     error = None
     entries = []
+    balances = {}
     if provisioning_guard() or identity_guard():
-        return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).")
+        return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).", balances=balances)
     try:
         from tbot_bot.accounting.ledger import load_internal_ledger  # Lazy import after provisioning
+        from tbot_bot.accounting.ledger_utils import calculate_account_balances
         internal_ledger = load_internal_ledger()
         broker_entries = []
-        if request.method == 'POST' and 'broker_csv' in request.files:
-            csv_file = request.files['broker_csv']
-            csv_reader = csv.DictReader(io.StringIO(csv_file.stream.read().decode('utf-8')))
-            broker_entries = list(csv_reader)
-            session['broker_entries'] = broker_entries
-        else:
-            broker_entries = session.get('broker_entries', [])
         entries = reconcile_ledgers(internal_ledger, broker_entries)
+        balances = calculate_account_balances()
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
+        balances = {}
     except Exception as e:
         error = f"Ledger error: {e}"
         entries = []
-    return render_template('ledger.html', entries=entries, error=error)
+        balances = {}
+    return render_template('ledger.html', entries=entries, error=error, balances=balances)
 
 @ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
@@ -92,11 +92,33 @@ def add_ledger_entry_route():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import add_ledger_entry  # Lazy import
     form = request.form
+    bot_identity = load_bot_identity()
+    entity_code, jurisdiction, broker, bot_id = bot_identity.split("_")
+    current_user = get_current_user()
+    config = get_bot_config()
     entry_data = {
         "date": form.get("date"),
         "symbol": form.get("symbol"),
         "type": form.get("type"),
-        "amount": form.get("amount")
+        "amount": form.get("amount"),
+        "account": form.get("account"),
+        "trade_id": form.get("trade_id"),
+        "tags": form.get("tags"),
+        "notes": form.get("notes"),
+        "broker": broker,
+        "entity_code": entity_code,
+        "jurisdiction": jurisdiction,
+        "created_by": current_user.username if current_user else "system",
+        "updated_by": current_user.username if current_user else "system",
+        "approved_by": current_user.username if current_user else "system",
+        "language": config.get("LANGUAGE_CODE", "en"),
+        "approval_status": "pending",
+        "gdpr_compliant": True,
+        "ccpa_compliant": True,
+        "pipeda_compliant": True,
+        "hipaa_sensitive": False,
+        "iso27001_tag": "",
+        "soc2_type": "",
     }
     add_ledger_entry(entry_data)
     flash('Ledger entry added.')
@@ -108,11 +130,31 @@ def edit_ledger_entry_route(entry_id):
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import edit_ledger_entry  # Lazy import
     form = request.form
+    bot_identity = load_bot_identity()
+    entity_code, jurisdiction, broker, bot_id = bot_identity.split("_")
+    current_user = get_current_user()
+    config = get_bot_config()
     updated_data = {
         "date": form.get("date"),
         "symbol": form.get("symbol"),
         "type": form.get("type"),
-        "amount": form.get("amount")
+        "amount": form.get("amount"),
+        "account": form.get("account"),
+        "trade_id": form.get("trade_id"),
+        "tags": form.get("tags"),
+        "notes": form.get("notes"),
+        "broker": broker,
+        "entity_code": entity_code,
+        "jurisdiction": jurisdiction,
+        "updated_by": current_user.username if current_user else "system",
+        "language": config.get("LANGUAGE_CODE", "en"),
+        "approval_status": form.get("approval_status", "pending"),
+        "gdpr_compliant": True,
+        "ccpa_compliant": True,
+        "pipeda_compliant": True,
+        "hipaa_sensitive": False,
+        "iso27001_tag": "",
+        "soc2_type": "",
     }
     edit_ledger_entry(entry_id, updated_data)
     flash('Ledger entry updated.')
@@ -125,4 +167,16 @@ def delete_ledger_entry_route(entry_id):
     from tbot_bot.accounting.ledger import delete_ledger_entry  # Lazy import
     delete_ledger_entry(entry_id)
     flash('Ledger entry deleted.')
+    return redirect(url_for('ledger_web.ledger_reconcile'))
+
+@ledger_web.route('/ledger/sync', methods=['POST'])
+def ledger_sync():
+    if provisioning_guard() or identity_guard():
+        return redirect(url_for('main.root_router'))
+    try:
+        from tbot_bot.accounting.ledger import sync_broker_ledger  # Lazy import
+        sync_broker_ledger()
+        flash("Broker ledger synced successfully.")
+    except Exception as e:
+        flash(f"Broker ledger sync failed: {e}")
     return redirect(url_for('ledger_web.ledger_reconcile'))

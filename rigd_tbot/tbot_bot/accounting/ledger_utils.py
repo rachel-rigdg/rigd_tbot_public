@@ -136,3 +136,28 @@ def get_all_ledger_entries():
         cursor = conn.execute("SELECT * FROM trades")
         columns = [c[0] for c in cursor.description]
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+def calculate_account_balances():
+    """
+    Dynamically calculate the sum of amounts grouped by account from the trades table.
+    Returns a dict of {account: balance}.
+    """
+    if TEST_MODE_FLAG.exists():
+        return {}
+
+    key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
+    enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
+    key = key_path.read_bytes()
+    cipher = Fernet(key)
+    plaintext = cipher.decrypt(enc_path.read_bytes())
+    bot_identity_data = json.loads(plaintext.decode("utf-8"))
+    identity = bot_identity_data.get("BOT_IDENTITY_STRING")
+    entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT account, SUM(amount) as balance FROM trades GROUP BY account"
+        )
+        balances = {row[0]: row[1] for row in cursor.fetchall()}
+    return balances
