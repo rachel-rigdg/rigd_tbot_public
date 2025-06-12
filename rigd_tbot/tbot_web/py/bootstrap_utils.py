@@ -15,11 +15,11 @@ CONFIG_REQUIRED_FILES = [
     SECRETS_DIR / "network_config.json.enc",
 ]
 
-INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
+INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping", "registration")
 
 def is_first_bootstrap() -> bool:
     """
-    Returns True only if bot_state.txt is missing or contains any "initialize", "provisioning", "bootstrapping".
+    Returns True only if bot_state.txt is missing or contains any "initialize", "provisioning", "bootstrapping", "registration".
     Prevents provisioning/redirect after initial bootstrap.
     BOOTSTRAP_FLAG is deprecated and ignored; logic is now driven by bot_state.txt.
     Debugs all checked paths and values to stdout for diagnostics.

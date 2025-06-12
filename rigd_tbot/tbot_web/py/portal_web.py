@@ -44,14 +44,16 @@ def create_app():
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(logout_blueprint)
 
-    # Conditionally import and register blueprints after initial config/provisioning
+    # Conditionally import and register blueprints by initialization phase
     state = get_bot_state()
     if state not in ("initialize", "provisioning", "bootstrapping"):
-        from . import coa_web, ledger_web, test_web, register_web
+        from . import register_web
+        app.register_blueprint(register_web.register_web)
+    if state not in ("initialize", "provisioning", "bootstrapping", "registration"):
+        from . import coa_web, ledger_web, test_web
         app.register_blueprint(coa_web.coa_web)
         app.register_blueprint(ledger_web.ledger_web)
         app.register_blueprint(test_web.test_web)
-        app.register_blueprint(register_web.register_web)
 
     @app.before_request
     def force_configuration():
@@ -64,6 +66,13 @@ def create_app():
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("configuration_web.show_configuration"))
+        elif state == "registration":
+            if not (
+                (request.endpoint or "").startswith("register_web")
+                or (request.endpoint or "").startswith("main.provisioning_route")
+                or request.path.startswith("/static")
+            ):
+                return redirect(url_for("register_web.register_page"))
 
     @app.route("/wait")
     def wait():
@@ -78,6 +87,8 @@ def create_app():
         try:
             state = get_bot_state()
             if state in ("initialize", "provisioning", "bootstrapping"):
+                return jsonify({"status": state, "bot_state": state})
+            elif state == "registration":
                 return jsonify({"status": state, "bot_state": state})
             elif state in ("error", "shutdown_triggered", "shutdown"):
                 return jsonify({"status": "error", "bot_state": state})

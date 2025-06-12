@@ -81,6 +81,9 @@ def save_configuration():
         "BROKER_URL":            form.get("broker_url", "").strip(),
         "BROKER_API_KEY":        form.get("broker_api_key", "").strip(),
         "BROKER_SECRET_KEY":     form.get("broker_secret_key", "").strip(),
+        "BROKER_USERNAME":       form.get("broker_username", "").strip(),
+        "BROKER_ACCOUNT_NUMBER": form.get("broker_account_number", "").strip(),
+        "BROKER_PASSWORD":       form.get("broker_password", "").strip(),
     }
     screener_api_data = {
         "SCREENER_NAME":  form.get("screener_name", "").strip(),
@@ -102,10 +105,10 @@ def save_configuration():
     acct_api_data = {}
 
     language_code = form.get("language_code", "").strip()
-    if language_code:
-        config_language = language_code
-    else:
-        config_language = "en"
+    if not language_code:
+        language_code = "en"
+
+    alert_channels = form.get("alert_channels", "").strip() or "email"
 
     config = {
         "bot_identity":    bot_identity_data,
@@ -114,7 +117,8 @@ def save_configuration():
         "smtp":            smtp_data,
         "network_config":  network_config_data,
         "acct_api":        acct_api_data,
-        "language_code":   config_language,
+        "language_code":   language_code,
+        "alert_channels":  alert_channels,
     }
 
     save_runtime_config(config)

@@ -61,6 +61,10 @@ def root_router():
         print(f"[main_web] ERROR or SHUTDOWN_TRIGGERED detected, rendering wait page (state={state})")
         return render_template("wait.html", bot_state=state)
 
+    if state == "registration":
+        print("[main_web] State is registration, redirecting to user registration page.")
+        return redirect(url_for("register_web.register_page"))
+
     if not user_exists():
         print("[main_web] No users exist; redirecting to user registration page.")
         return redirect(url_for("register_web.register_page"))
@@ -90,6 +94,9 @@ def main_page():
     if state in ("initialize", "provisioning", "bootstrapping"):
         print(f"[main_web] State is {state}, redirecting to root_router (configuration/wait)")
         return redirect(url_for("main.root_router"))
+    if state == "registration":
+        print("[main_web] State is registration, redirecting to user registration page.")
+        return redirect(url_for("register_web.register_page"))
     if not user_exists():
         print("[main_web] No users exist; redirecting to user registration page.")
         return redirect(url_for("register_web.register_page"))

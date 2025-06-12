@@ -24,7 +24,7 @@ def bootstrap_databases() -> None:
     initialize_all()
     print("[bootstrapping_helper] Database bootstrap complete.")
     with open(BOT_STATE_FILE, "w", encoding="utf-8") as f:
-        f.write("idle")
+        f.write("registration")
 
 def main():
     bootstrap_databases()
