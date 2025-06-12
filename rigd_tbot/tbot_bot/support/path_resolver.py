@@ -86,7 +86,6 @@ def resolve_coa_json_path() -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa.json")
 
 def resolve_coa_template_path() -> str:
-    # Optionally, if you have a template file, point to it; else remove or repoint
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_template.json")
 
 def resolve_coa_metadata_path() -> str:
@@ -114,6 +113,12 @@ def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
     return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_COA_v1.0.0.db")
+
+def get_current_bot_identity():
+    """Returns tuple (entity, jurisdiction, broker, bot_id) from canonical secrets."""
+    identity = load_bot_identity()
+    validate_bot_identity(identity)
+    return tuple(identity.split("_"))
 
 __all__ = [
     "get_bot_identity",
