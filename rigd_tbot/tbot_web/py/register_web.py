@@ -4,7 +4,6 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from tbot_web.support.auth_web import upsert_user, get_db_connection
 from sqlite3 import OperationalError
 from pathlib import Path
-import os
 
 register_web = Blueprint("register_web", __name__)
 
@@ -27,11 +26,9 @@ def register_page():
         try:
             with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
                 f.write("idle\n")
-                f.flush()
-                os.fsync(f.fileno())
         except Exception:
             pass
-        os._exit(0)
+        return redirect(url_for("login_web.login"))
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip()
@@ -49,11 +46,9 @@ def register_page():
             try:
                 with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
                     f.write("idle\n")
-                    f.flush()
-                    os.fsync(f.fileno())
             except Exception:
                 pass
-            os._exit(0)
+            return redirect(url_for("login_web.login"))
         except Exception as e:
             flash(f"Error creating user: {e}", "error")
             return render_template("register.html", username=username, email=email)
