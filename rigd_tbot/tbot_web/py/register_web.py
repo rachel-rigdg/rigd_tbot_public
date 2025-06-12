@@ -3,8 +3,11 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from tbot_web.support.auth_web import upsert_user, get_db_connection
 from sqlite3 import OperationalError
+from pathlib import Path
 
 register_web = Blueprint("register_web", __name__)
+
+BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
 def user_exists():
     try:
@@ -20,6 +23,12 @@ def user_exists():
 def register_page():
     if user_exists():
         flash("Admin user already exists. Please log in.", "info")
+        # Update bot_state.txt to idle when user exists (after registration)
+        try:
+            with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
+                f.write("idle")
+        except Exception:
+            pass
         return redirect(url_for("login_web.login"))
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -35,10 +44,14 @@ def register_page():
         try:
             upsert_user(username, password, email)
             flash("Admin user created successfully. Please log in.", "success")
+            # Update bot_state.txt to idle immediately after successful registration
+            try:
+                with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
+                    f.write("idle")
+            except Exception:
+                pass
             return redirect(url_for("login_web.login"))
         except Exception as e:
             flash(f"Error creating user: {e}", "error")
             return render_template("register.html", username=username, email=email)
     return render_template("register.html")
-
-# Added for Flask url_for routing compliance: use 'register_page' as endpoint.
