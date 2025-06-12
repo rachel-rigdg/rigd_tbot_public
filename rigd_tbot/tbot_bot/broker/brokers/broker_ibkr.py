@@ -3,6 +3,8 @@
 
 from ib_insync import IB, Stock, MarketOrder
 from tbot_bot.trading.logs_bot import log_event
+import csv
+import io
 
 class IBKRBroker:
     def __init__(self, env):
@@ -100,3 +102,43 @@ class IBKRBroker:
     def is_market_open(self):
         # Placeholder: IBKR has no direct market open call
         return True
+
+    def download_trade_ledger_csv(self, start_date=None, end_date=None, output_path=None):
+        """
+        Downloads executed trades from IBKR and writes a deduplicated CSV to output_path.
+        """
+        try:
+            trades = self.client.trades()
+            unique = {}
+            for t in trades:
+                if t.order.permId:
+                    unique[t.order.permId] = t  # dedupe by IBKR order permId
+            fieldnames = [
+                "perm_id", "symbol", "qty", "action", "filled", "avg_fill_price", "status", "filled_time"
+            ]
+            rows = []
+            for t in unique.values():
+                rows.append({
+                    "perm_id": t.order.permId,
+                    "symbol": t.contract.symbol,
+                    "qty": t.order.totalQuantity,
+                    "action": t.order.action,
+                    "filled": t.filled,
+                    "avg_fill_price": t.orderStatus.avgFillPrice,
+                    "status": t.orderStatus.status,
+                    "filled_time": str(t.log[-1].time) if t.log else ""
+                })
+            if output_path:
+                with open(output_path, "w", newline="") as csvfile:
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+            else:
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+                return output.getvalue()
+        except Exception as e:
+            log_event("broker_ibkr", f"Download trade ledger failed: {e}")
+            raise
