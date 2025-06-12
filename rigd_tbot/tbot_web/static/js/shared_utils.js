@@ -5,7 +5,10 @@ async function apiGet(url) {
     try {
         const resp = await fetch(url, { cache: "no-store" });
         if (!resp.ok) throw new Error("API error " + resp.status);
-        return await resp.json();
+        const data = await resp.json();
+        // Normalize state key for all responses
+        if (data.state && !data.bot_state) data.bot_state = data.state;
+        return data;
     } catch (err) {
         console.error("API GET failed:", url, err);
         return null;
@@ -21,7 +24,9 @@ async function apiPost(url, body = {}) {
             body: JSON.stringify(body),
         });
         if (!resp.ok) throw new Error("API error " + resp.status);
-        return await resp.json();
+        const data = await resp.json();
+        if (data.state && !data.bot_state) data.bot_state = data.state;
+        return data;
     } catch (err) {
         console.error("API POST failed:", url, err);
         return null;

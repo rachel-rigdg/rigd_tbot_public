@@ -10,9 +10,9 @@ async function checkBotState() {
         setTimeout(checkBotState, 2000);
         return;
     }
-    const state = data.bot_state;
-    // Redirect when NOT in a bootstrap/init state
-    if (!bootstrapStates.includes(state)) {
+    const state = data.bot_state || data.state;
+    // Redirect only when NOT in a bootstrap/init/registration state
+    if (!bootstrapStates.includes(state) && state !== "registration") {
         window.location.replace("/main");
     } else {
         setTimeout(checkBotState, 2000);

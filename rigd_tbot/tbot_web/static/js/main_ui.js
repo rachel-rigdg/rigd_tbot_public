@@ -9,12 +9,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     async function checkBotStateAndRender() {
         const data = await apiGet("/main/state");
         if (!data) return; // API call failed
-        const state = data.bot_state;
+        const state = data.bot_state || data.state;
 
-        if (state === "initialize") {
+        if (state === "initialize" || state === "provisioning" || state === "bootstrapping") {
             // Show config overlay/iframe until setup is completed
             if (configOverlay) configOverlay.style.display = "flex";
             if (configIframe) configIframe.src = "/configuration";
+        } else if (state === "registration") {
+            // Show registration overlay
+            if (configOverlay) configOverlay.style.display = "flex";
+            if (configIframe) configIframe.src = "/register";
         } else {
             // Hide config overlay if not needed
             if (configOverlay) configOverlay.style.display = "none";
@@ -44,6 +48,10 @@ function updateStatusBanner(state) {
         case "bootstrapping":
         case "initialize":
             statusBanner.textContent = "Initializing…";
+            statusBanner.className = "banner-wait";
+            break;
+        case "registration":
+            statusBanner.textContent = "Registration Required";
             statusBanner.className = "banner-wait";
             break;
         case "error":
