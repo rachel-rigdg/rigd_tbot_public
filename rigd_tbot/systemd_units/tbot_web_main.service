@@ -1,0 +1,16 @@
+# tbot_web_main.service
+[Unit]
+Description=RIGD TradeBot Web UI (Main/Dashboard Phase)
+After=network.target
+
+[Service]
+Type=simple
+User=tbot
+WorkingDirectory=/home/tbot/rigd_tbot/
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_web.py.portal_web_main
+Restart=on-failure
+Environment="FLASK_SECRET_KEY=changeme-unsafe-dev-key"
+Environment="BOT_WEB_PHASE=main"
+
+[Install]
+WantedBy=tbot_web.target

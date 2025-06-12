@@ -1,19 +1,14 @@
-# systemd_units/tbot_provisioning.service
-# Launches the provisioning_runner for bootstrap/setup
+# tbot_provisioning.service
 [Unit]
-Description=RIGD TradeBot Provisioning Runner
+Description=RIGD TradeBot Provisioning Orchestrator
 After=network.target
 
 [Service]
 Type=simple
 User=tbot
-WorkingDirectory=/home/tbot/rigd_tbot
-Environment=PYTHONPATH=/home/tbot/rigd_tbot
-ExecStartPre=/bin/echo "[systemd:tbot_provisioning] Starting provisioning runner..."
-ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/config/provisioning_runner.py
-ExecStartPost=/bin/echo "[systemd:tbot_provisioning] Provisioning runner launched."
-Restart=no
-RestartSec=2
+WorkingDirectory=/home/tbot/rigd_tbot/
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_bot.config.provisioning_runner
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target

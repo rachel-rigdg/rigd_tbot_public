@@ -1,22 +1,14 @@
-# systemd_units/tbot_bot.service
-# Launches the main TradeBot core bot process
-
+# tbot_bot.service
 [Unit]
-Description=RIGD TradeBot Main Bot Process
-After=network.target tbot_provisioning.service
+Description=RIGD TradeBot Core Bot Runtime
+After=network.target
 
 [Service]
 Type=simple
 User=tbot
-WorkingDirectory=/home/tbot/rigd_tbot
-Environment=PYTHONPATH=/home/tbot/rigd_tbot
-Environment=CONTROL_DIR=/home/tbot/rigd_tbot/tbot_bot/control
-ExecStartPre=/usr/bin/test -f /home/tbot/rigd_tbot/tbot_bot/control/control_start.txt
-ExecStartPre=/bin/echo "[systemd:tbot_bot] Starting main bot process..."
-ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 tbot_bot/runtime/main.py
-ExecStartPost=/bin/echo "[systemd:tbot_bot] Main bot process launched."
-Restart=always
-RestartSec=2
+WorkingDirectory=/home/tbot/rigd_tbot/
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_bot.runtime.main
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target

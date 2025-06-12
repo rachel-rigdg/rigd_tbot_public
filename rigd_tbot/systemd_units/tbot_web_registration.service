@@ -1,0 +1,16 @@
+# tbot_web_registration.service
+[Unit]
+Description=RIGD TradeBot Web UI (Registration Phase)
+After=network.target
+
+[Service]
+Type=simple
+User=tbot
+WorkingDirectory=/home/tbot/rigd_tbot/
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_web.py.portal_web_registration
+Restart=on-failure
+Environment="FLASK_SECRET_KEY=changeme-unsafe-dev-key"
+Environment="BOT_WEB_PHASE=registration"
+
+[Install]
+WantedBy=tbot_web.target

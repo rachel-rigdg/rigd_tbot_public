@@ -25,7 +25,7 @@ def register_page():
         flash("Admin user already exists. Please log in.", "info")
         try:
             with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
-                f.write("idle\n")
+                f.write("idle")
         except Exception:
             pass
         return redirect(url_for("login_web.login"))
@@ -45,7 +45,7 @@ def register_page():
             flash("Admin user created successfully. Please log in.", "success")
             try:
                 with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
-                    f.write("idle\n")
+                    f.write("idle")
             except Exception:
                 pass
             return redirect(url_for("login_web.login"))
