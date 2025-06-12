@@ -1,7 +1,7 @@
 # tbot_web/py/main_web.py
 # Router/shell for dashboard and blueprint registration; orchestrates UI state, v041-compliant (no privileged/provisioning actions in Flask)
 
-from flask import Blueprint, redirect, url_for, render_template, session, request
+from flask import Blueprint, redirect, url_for, render_template, session, request, jsonify
 from tbot_web.py.bootstrap_utils import is_first_bootstrap
 from ..support.configuration_loader import load_encrypted_config
 from ..support.default_config_loader import get_default_config
@@ -63,7 +63,7 @@ def root_router():
 
     if not user_exists():
         print("[main_web] No users exist; redirecting to user registration page.")
-        return redirect(url_for("register_web.register"))
+        return redirect(url_for("register_web.register_page"))
 
     print(f"[main_web] bot state is {state}, rendering main.html")
     return render_template("main.html", bot_state=state)
@@ -92,5 +92,13 @@ def main_page():
         return redirect(url_for("main.root_router"))
     if not user_exists():
         print("[main_web] No users exist; redirecting to user registration page.")
-        return redirect(url_for("register_web.register"))
+        return redirect(url_for("register_web.register_page"))
     return render_template("main.html", bot_state=state)
+
+@main_blueprint.route("/main/state", methods=["GET"])
+def main_state():
+    try:
+        state = get_current_bot_state()
+        return jsonify({"state": state})
+    except Exception:
+        return jsonify({"state": "error"}), 500

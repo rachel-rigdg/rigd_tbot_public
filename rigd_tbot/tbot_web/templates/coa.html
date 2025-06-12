@@ -6,7 +6,6 @@
     <title>TradeBot Chart of Accounts (COA) Management</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-
 </head>
 <body>
     <div class="container">
@@ -19,6 +18,11 @@
                 <a href="/coa">COA</a>
             </nav>
         </header>
+        {% if error %}
+            <div class="error-message" style="color: #c00; margin-bottom: 2em;">
+                {{ error }}
+            </div>
+        {% endif %}
         <section>
             <h2>COA Metadata</h2>
             <table id="coa-metadata-table">
@@ -91,6 +95,12 @@
             fetch('/coa/api')
                 .then(response => response.json())
                 .then(data => {
+                    if(data.error){
+                        document.getElementById("coa-metadata-table").innerHTML = "<tr><td colspan='2' style='color:#c00;'>" + data.error + "</td></tr>";
+                        document.getElementById("coa-tree").innerHTML = "";
+                        document.getElementById("coa-history-table").innerHTML = "";
+                        return;
+                    }
                     // Metadata
                     document.getElementById("currency_code").textContent = data.metadata.currency_code;
                     document.getElementById("entity_code").textContent = data.metadata.entity_code;
@@ -102,7 +112,7 @@
                     // Account Hierarchy
                     const coaTree = document.getElementById("coa-tree");
                     coaTree.innerHTML = buildCoaTreeHtml(data.accounts);
-                    
+
                     // Audit log
                     const historyTable = document.getElementById("coa-history-table");
                     historyTable.innerHTML = data.history.map(item => `

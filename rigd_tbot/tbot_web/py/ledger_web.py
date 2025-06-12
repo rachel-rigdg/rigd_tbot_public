@@ -3,6 +3,8 @@ import csv
 import io
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from pathlib import Path
+from tbot_bot.support.decrypt_secrets import load_bot_identity
+from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 
 ledger_web = Blueprint("ledger_web", __name__)
 
@@ -23,9 +25,21 @@ def provisioning_guard():
         return True
     return False
 
+def identity_guard():
+    try:
+        bot_identity_string = load_bot_identity()
+        if not bot_identity_string or not get_bot_identity_string_regex().match(bot_identity_string):
+            flash("Bot identity not available, please complete configuration.")
+            return True
+        validate_bot_identity(bot_identity_string)
+        return False
+    except Exception:
+        flash("Bot identity not available, please complete configuration.")
+        return True
+
 def reconcile_ledgers(internal, broker):
     result = []
-    broker_lookup = {(row['date'], row['symbol'], row['type'], row['amount']): True for row in broker}
+    broker_lookup = {(row['date'], row['symbol'], row['type'], row['amount']) for row in broker}
     for entry in internal:
         key = (entry['date'], entry['symbol'], entry['type'], entry['amount'])
         if entry.get('resolved'):
@@ -39,24 +53,32 @@ def reconcile_ledgers(internal, broker):
 
 @ledger_web.route('/ledger/reconcile', methods=['GET', 'POST'])
 def ledger_reconcile():
-    if provisioning_guard():
+    error = None
+    if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
-    from tbot_bot.accounting.ledger import load_internal_ledger  # Lazy import after provisioning
-    internal_ledger = load_internal_ledger()
-    broker_entries = []
-    if request.method == 'POST' and 'broker_csv' in request.files:
-        csv_file = request.files['broker_csv']
-        csv_reader = csv.DictReader(io.StringIO(csv_file.stream.read().decode('utf-8')))
-        broker_entries = list(csv_reader)
-        session['broker_entries'] = broker_entries
-    else:
-        broker_entries = session.get('broker_entries', [])
-    entries = reconcile_ledgers(internal_ledger, broker_entries)
-    return render_template('ledger.html', entries=entries)
+    try:
+        from tbot_bot.accounting.ledger import load_internal_ledger  # Lazy import after provisioning
+        internal_ledger = load_internal_ledger()
+        broker_entries = []
+        if request.method == 'POST' and 'broker_csv' in request.files:
+            csv_file = request.files['broker_csv']
+            csv_reader = csv.DictReader(io.StringIO(csv_file.stream.read().decode('utf-8')))
+            broker_entries = list(csv_reader)
+            session['broker_entries'] = broker_entries
+        else:
+            broker_entries = session.get('broker_entries', [])
+        entries = reconcile_ledgers(internal_ledger, broker_entries)
+    except FileNotFoundError:
+        error = "Ledger database or table not found. Please initialize via admin tools."
+        entries = []
+    except Exception as e:
+        error = f"Ledger error: {e}"
+        entries = []
+    return render_template('ledger.html', entries=entries, error=error)
 
 @ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
-    if provisioning_guard():
+    if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import mark_entry_resolved  # Lazy import
     mark_entry_resolved(entry_id)
@@ -65,7 +87,7 @@ def resolve_ledger_entry(entry_id):
 
 @ledger_web.route('/ledger/add', methods=['POST'])
 def add_ledger_entry_route():
-    if provisioning_guard():
+    if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import add_ledger_entry  # Lazy import
     form = request.form
@@ -81,7 +103,7 @@ def add_ledger_entry_route():
 
 @ledger_web.route('/ledger/edit/<int:entry_id>', methods=['POST'])
 def edit_ledger_entry_route(entry_id):
-    if provisioning_guard():
+    if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import edit_ledger_entry  # Lazy import
     form = request.form
@@ -97,7 +119,7 @@ def edit_ledger_entry_route(entry_id):
 
 @ledger_web.route('/ledger/delete/<int:entry_id>', methods=['POST'])
 def delete_ledger_entry_route(entry_id):
-    if provisioning_guard():
+    if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import delete_ledger_entry  # Lazy import
     delete_ledger_entry(entry_id)

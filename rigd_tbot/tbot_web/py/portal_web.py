@@ -59,6 +59,7 @@ def create_app():
             if not (
                 (request.endpoint or "").startswith("configuration_web")
                 or (request.endpoint or "").startswith("main.provisioning_route")
+                or (request.endpoint or "").startswith("register_web.register_page")
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("configuration_web.show_configuration"))

@@ -1,3 +1,6 @@
+<!-- tbot_web/templates/ledger.html -->
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,7 +14,16 @@
         <h1>Ledger Reconciliation</h1>
     </div>
     <div class="main-container">
-        <form id="brokerUploadForm" method="post" enctype="multipart/form-data" action="{{ url_for('ledger_reconcile') }}">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <ul class="flashes">
+            {% for category, message in messages %}
+              <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+        <form id="brokerUploadForm" method="post" enctype="multipart/form-data" action="{{ url_for('ledger_web.ledger_reconcile') }}">
             <label for="broker_csv">Upload Broker CSV Statement:</label>
             <input type="file" name="broker_csv" accept=".csv" required>
             <button type="submit">Upload</button>
@@ -32,7 +44,7 @@
                 <tbody>
                 {% for entry in entries %}
                     <tr class="{{ entry.status }}">
-                        <form method="post" action="{{ url_for('edit_ledger_entry_route', entry_id=entry.id) }}">
+                        <form method="post" action="{{ url_for('ledger_web.edit_ledger_entry_route', entry_id=entry.id) }}">
                         <td>
                             <input type="text" name="date" value="{{ entry.date }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %} required>
                         </td>
@@ -57,27 +69,28 @@
                         <td>
                             {% if entry.status == "mismatch" %}
                                 <button type="submit" class="edit-btn">Edit</button>
-                                <form method="post" action="{{ url_for('resolve_ledger_entry', entry_id=entry.id) }}" style="display:inline;">
+                        </form>
+                                <form method="post" action="{{ url_for('ledger_web.resolve_ledger_entry', entry_id=entry.id) }}" style="display:inline;">
                                     <button type="submit" class="resolve-btn">Mark as Resolved</button>
                                 </form>
-                                <form method="post" action="{{ url_for('delete_ledger_entry_route', entry_id=entry.id) }}" style="display:inline;">
+                                <form method="post" action="{{ url_for('ledger_web.delete_ledger_entry_route', entry_id=entry.id) }}" style="display:inline;">
                                     <button type="submit" class="delete-btn" onclick="return confirm('Delete this entry?')">Delete</button>
                                 </form>
                             {% elif entry.status == "resolved" %}
+                        </form>
                                 <span class="resolved-tag">Resolved</span>
-                                <form method="post" action="{{ url_for('delete_ledger_entry_route', entry_id=entry.id) }}" style="display:inline;">
+                                <form method="post" action="{{ url_for('ledger_web.delete_ledger_entry_route', entry_id=entry.id) }}" style="display:inline;">
                                     <button type="submit" class="delete-btn" onclick="return confirm('Delete this entry?')">Delete</button>
                                 </form>
                             {% else %}
+                        </form>
                                 <span>—</span>
                             {% endif %}
                         </td>
-                        </form>
                     </tr>
                 {% endfor %}
-                <!-- Add new entry row -->
                 <tr>
-                    <form method="post" action="{{ url_for('add_ledger_entry_route') }}">
+                    <form method="post" action="{{ url_for('ledger_web.add_ledger_entry_route') }}">
                     <td><input type="text" name="date" placeholder="YYYY-MM-DD" required></td>
                     <td><input type="text" name="symbol" placeholder="Symbol" required></td>
                     <td><input type="text" name="type" placeholder="Type" required></td>

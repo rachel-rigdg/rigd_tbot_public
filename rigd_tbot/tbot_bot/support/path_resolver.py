@@ -13,7 +13,6 @@ except ImportError:
     is_first_bootstrap = lambda: False  # fallback for non-web contexts
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-# PATCH: Accept both TB01 and 01 as bot_id (trailing digits, up to 6 chars, alpha+digit allowed)
 IDENTITY_PATTERN = r"^[A-Z]{2,6}_[A-Z]{2,4}_[A-Z]{2,10}_[A-Z0-9]{2,6}$"
 
 CATEGORIES = {
@@ -25,15 +24,11 @@ CATEGORIES = {
 }
 
 def get_bot_identity(explicit_identity: str = None) -> str:
-    """
-    Returns the BOT_IDENTITY_STRING (explicit or decrypted from secrets), or raises cleanly if absent.
-    Never performs any provisioning/bootstrapping logic.
-    """
     if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (system is in bootstrap mode)")
     identity = explicit_identity if explicit_identity else load_bot_identity(default=None)
-    if not identity:
-        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (not yet configured)")
+    if not identity or not get_bot_identity_string_regex().match(identity):
+        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     return identity
 
 def validate_bot_identity(bot_identity: str) -> None:
@@ -41,14 +36,9 @@ def validate_bot_identity(bot_identity: str) -> None:
         raise ValueError(f"[path_resolver] Invalid BOT_IDENTITY_STRING: {bot_identity}")
 
 def get_bot_identity_string_regex():
-    """Returns compiled regex object for bot identity string validation (for use in web/UI input)."""
     return re.compile(IDENTITY_PATTERN)
 
 def get_output_path(bot_identity: str = None, category: str = None, filename: str = None, output_subdir: bool = False) -> str:
-    """
-    Returns the full output path for a given file category under the specified bot identity.
-    Returns absolute paths relative to project root.
-    """
     identity = get_bot_identity(bot_identity)
     validate_bot_identity(identity)
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
@@ -113,12 +103,6 @@ def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
     return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_COA_v1.0.0.db")
-
-def get_current_bot_identity():
-    """Returns tuple (entity, jurisdiction, broker, bot_id) from canonical secrets."""
-    identity = load_bot_identity()
-    validate_bot_identity(identity)
-    return tuple(identity.split("_"))
 
 __all__ = [
     "get_bot_identity",

@@ -40,3 +40,5 @@ def register_page():
             flash(f"Error creating user: {e}", "error")
             return render_template("register.html", username=username, email=email)
     return render_template("register.html")
+
+# Added for Flask url_for routing compliance: use 'register_page' as endpoint.

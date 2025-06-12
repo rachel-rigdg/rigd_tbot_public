@@ -1,7 +1,7 @@
 # tbot_web/py/coa_web.py
 #  Dedicated page and API endpoints for human-readable COA viewing/editing via Web UI
 
-from flask import Blueprint, render_template, request, redirect, url_for, jsonify, session, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, jsonify, session, send_file, flash
 from flask import current_app as app
 from datetime import datetime, timezone
 import json
@@ -18,11 +18,25 @@ from tbot_bot.support.utils_coa_web import (        # Corrected absolute import 
     compute_coa_diff,
     validate_coa_json,
 )
+from tbot_bot.support.decrypt_secrets import load_bot_identity
+from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 
 coa_web = Blueprint("coa_web", __name__, template_folder="../templates")
 
 def utcnow():
     return datetime.utcnow().replace(tzinfo=timezone.utc)
+
+def identity_guard():
+    try:
+        bot_identity_string = load_bot_identity()
+        if not bot_identity_string or not get_bot_identity_string_regex().match(bot_identity_string):
+            flash("Bot identity not available, please complete configuration.")
+            return True
+        validate_bot_identity(bot_identity_string)
+        return False
+    except Exception:
+        flash("Bot identity not available, please complete configuration.")
+        return True
 
 # --- COA Management Page ---
 @coa_web.route("/coa", methods=["GET"])
@@ -30,30 +44,62 @@ def utcnow():
 def coa_management():
     user = session.get("user", "unknown")
     user_is_admin = session.get("role", "") == "admin"
-    coa_data = load_coa_metadata_and_accounts()
-    coa_json = json.dumps(coa_data['accounts'], indent=2)
-    return render_template(
-        "coa.html",
-        user_is_admin=user_is_admin,
-        coa_json=coa_json,
-    )
+    if identity_guard():
+        return render_template(
+            "coa.html",
+            user_is_admin=user_is_admin,
+            coa_json=None,
+            error="Bot identity not available, please complete configuration."
+        )
+    try:
+        coa_data = load_coa_metadata_and_accounts()
+        coa_json = json.dumps(coa_data['accounts'], indent=2)
+        return render_template(
+            "coa.html",
+            user_is_admin=user_is_admin,
+            coa_json=coa_json,
+            error=None
+        )
+    except FileNotFoundError:
+        return render_template(
+            "coa.html",
+            user_is_admin=user_is_admin,
+            coa_json=None,
+            error="COA or metadata file not found. Please initialize via admin tools."
+        )
+    except Exception as e:
+        return render_template(
+            "coa.html",
+            user_is_admin=user_is_admin,
+            coa_json=None,
+            error=f"COA error: {e}"
+        )
 
 # --- COA API: metadata, hierarchy, audit log (JSON) ---
 @coa_web.route("/coa/api", methods=["GET"])
 @rbac_required()
 def coa_api():
-    coa_data = load_coa_metadata_and_accounts()
-    audit_history = get_coa_audit_log(limit=50)
-    return jsonify({
-        "metadata": coa_data["metadata"],
-        "accounts": coa_data["accounts"],
-        "history": audit_history
-    })
+    if identity_guard():
+        return jsonify({"error": "Bot identity not available, please complete configuration."}), 400
+    try:
+        coa_data = load_coa_metadata_and_accounts()
+        audit_history = get_coa_audit_log(limit=50)
+        return jsonify({
+            "metadata": coa_data["metadata"],
+            "accounts": coa_data["accounts"],
+            "history": audit_history
+        })
+    except FileNotFoundError:
+        return jsonify({"error": "COA or metadata file not found. Please initialize via admin tools."}), 400
+    except Exception as e:
+        return jsonify({"error": f"COA error: {e}"}), 400
 
 # --- COA Edit (Admin Only) ---
 @coa_web.route("/coa/edit", methods=["POST"])
 @rbac_required(role="admin")
 def coa_edit():
+    if identity_guard():
+        return "Bot identity not available, please complete configuration.", 400
     raw_json = request.form.get("coa_json", "")
     user = session.get("user", "unknown")
     try:
@@ -70,23 +116,37 @@ def coa_edit():
 @coa_web.route("/coa/export/markdown", methods=["GET"])
 @rbac_required()
 def coa_export_markdown():
-    coa_data = load_coa_metadata_and_accounts()
-    md = export_coa_markdown(coa_data)
-    buf = io.BytesIO(md.encode('utf-8'))
-    ts = utcnow().strftime("%Y%m%dT%H%M%SZ")
-    filename = f"COA_{coa_data['metadata']['entity_code']}_{ts}.md"
-    return send_file(buf, mimetype="text/markdown", as_attachment=True, download_name=filename)
+    if identity_guard():
+        return "Bot identity not available, please complete configuration.", 400
+    try:
+        coa_data = load_coa_metadata_and_accounts()
+        md = export_coa_markdown(coa_data)
+        buf = io.BytesIO(md.encode('utf-8'))
+        ts = utcnow().strftime("%Y%m%dT%H%M%SZ")
+        filename = f"COA_{coa_data['metadata']['entity_code']}_{ts}.md"
+        return send_file(buf, mimetype="text/markdown", as_attachment=True, download_name=filename)
+    except FileNotFoundError:
+        return "COA or metadata file not found. Please initialize via admin tools.", 400
+    except Exception as e:
+        return f"COA error: {e}", 400
 
 # --- Export: CSV ---
 @coa_web.route("/coa/export/csv", methods=["GET"])
 @rbac_required()
 def coa_export_csv():
-    coa_data = load_coa_metadata_and_accounts()
-    csv_txt = export_coa_csv(coa_data)
-    buf = io.BytesIO(csv_txt.encode('utf-8'))
-    ts = utcnow().strftime("%Y%m%dT%H%M%SZ")
-    filename = f"COA_{coa_data['metadata']['entity_code']}_{ts}.csv"
-    return send_file(buf, mimetype="text/csv", as_attachment=True, download_name=filename)
+    if identity_guard():
+        return "Bot identity not available, please complete configuration.", 400
+    try:
+        coa_data = load_coa_metadata_and_accounts()
+        csv_txt = export_coa_csv(coa_data)
+        buf = io.BytesIO(csv_txt.encode('utf-8'))
+        ts = utcnow().strftime("%Y%m%dT%H%M%SZ")
+        filename = f"COA_{coa_data['metadata']['entity_code']}_{ts}.csv"
+        return send_file(buf, mimetype="text/csv", as_attachment=True, download_name=filename)
+    except FileNotFoundError:
+        return "COA or metadata file not found. Please initialize via admin tools.", 400
+    except Exception as e:
+        return f"COA error: {e}", 400
 
 # --- RBAC API: (for JS/Frontend/CI Testing) ---
 @coa_web.route("/coa/rbac", methods=["GET"])
