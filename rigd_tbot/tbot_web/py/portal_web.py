@@ -44,11 +44,13 @@ def create_app():
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(logout_blueprint)
 
-    # Conditionally import and register blueprints by initialization phase
     state = get_bot_state()
+
+    # Register register_web ONLY during/after registration state
     if state not in ("initialize", "provisioning", "bootstrapping"):
         from . import register_web
         app.register_blueprint(register_web.register_web)
+    # Register rest AFTER registration
     if state not in ("initialize", "provisioning", "bootstrapping", "registration"):
         from . import coa_web, ledger_web, test_web
         app.register_blueprint(coa_web.coa_web)
@@ -62,14 +64,12 @@ def create_app():
             if not (
                 (request.endpoint or "").startswith("configuration_web")
                 or (request.endpoint or "").startswith("main.provisioning_route")
-                or (request.endpoint or "").startswith("register_web.register_page")
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("configuration_web.show_configuration"))
         elif state == "registration":
             if not (
                 (request.endpoint or "").startswith("register_web")
-                or (request.endpoint or "").startswith("main.provisioning_route")
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("register_web.register_page"))
