@@ -1,5 +1,4 @@
 # tbot_web/py/portal_web.py
-# Unified Flask app factory for app + static + template setup (web UI only; no provisioning logic or privileged imports)
 
 import os
 from flask import Flask, render_template, send_from_directory, redirect, url_for, request, jsonify
@@ -44,13 +43,11 @@ def create_app():
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(logout_blueprint)
 
+    # Always register register_web (to make url_for("register_web.register_page") work everywhere)
+    from . import register_web
+    app.register_blueprint(register_web.register_web)
+    # Only register after registration is complete
     state = get_bot_state()
-
-    # Register register_web ONLY during/after registration state
-    if state not in ("initialize", "provisioning", "bootstrapping"):
-        from . import register_web
-        app.register_blueprint(register_web.register_web)
-    # Register rest AFTER registration
     if state not in ("initialize", "provisioning", "bootstrapping", "registration"):
         from . import coa_web, ledger_web, test_web
         app.register_blueprint(coa_web.coa_web)
