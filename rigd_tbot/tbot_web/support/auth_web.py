@@ -6,7 +6,7 @@ import sqlite3
 import bcrypt
 from cryptography.fernet import Fernet, InvalidToken
 from functools import wraps
-from flask import session, abort
+from flask import session, abort, g
 from pathlib import Path
 from tbot_bot.support.utils_log import log_event
 
@@ -159,3 +159,10 @@ def rbac_required(role: str = None):
             return f(*args, **kwargs)
         return wrapped
     return decorator
+
+def get_current_user():
+    """
+    Returns current logged-in user from session, or None.
+    Used for operational UI and admin/role checks.
+    """
+    return session.get("user", None)
