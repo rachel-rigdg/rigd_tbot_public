@@ -1,6 +1,6 @@
 #!/bin/bash
 # run_tbot.sh
-# One-time setup: Enables all systemd services for TradeBot (web UI, provisioning, bot), launches Flask web UI for configuration/provisioning.
+# Enables and launches all systemd services for modular TradeBot (bootstrap, registration, main web, provisioning, bot), launches web UI for configuration/provisioning.
 
 set -e
 
@@ -9,20 +9,29 @@ SYSTEMD_UNIT_PATH="$ROOT_DIR/systemd_units"
 LOG_TAG="[run_tbot_webui_launcher]"
 
 echo "$LOG_TAG Killing any existing TradeBot systemd processes..."
-sudo systemctl stop tbot_web.service tbot_provisioning.service tbot_bot.service tbot_bot.path || true
+sudo systemctl stop tbot_web_bootstrap.service tbot_web_registration.service tbot_web_main.service tbot_provisioning.service tbot_bot.service tbot_bot.path tbot_web.target || true
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 
 echo "$LOG_TAG Copying all systemd unit files for TradeBot..."
-sudo cp "$SYSTEMD_UNIT_PATH"/tbot_web.service "$SYSTEMD_UNIT_PATH"/tbot_provisioning.service "$SYSTEMD_UNIT_PATH"/tbot_bot.service "$SYSTEMD_UNIT_PATH"/tbot.target "$SYSTEMD_UNIT_PATH"/tbot_bot.path /etc/systemd/system/
+sudo cp "$SYSTEMD_UNIT_PATH"/tbot_web_bootstrap.service \
+        "$SYSTEMD_UNIT_PATH"/tbot_web_registration.service \
+        "$SYSTEMD_UNIT_PATH"/tbot_web_main.service \
+        "$SYSTEMD_UNIT_PATH"/tbot_provisioning.service \
+        "$SYSTEMD_UNIT_PATH"/tbot_bot.service \
+        "$SYSTEMD_UNIT_PATH"/tbot_bot.path \
+        "$SYSTEMD_UNIT_PATH"/tbot_web.target /etc/systemd/system/
 sudo systemctl daemon-reload
 
-sudo systemctl enable tbot_web.service tbot_provisioning.service tbot_bot.service tbot_bot.path
-sudo systemctl start tbot_web.service
+sudo systemctl enable tbot_web_bootstrap.service tbot_web_registration.service tbot_web_main.service tbot_provisioning.service tbot_bot.service tbot_bot.path tbot_web.target
+
+sudo systemctl start tbot_web_bootstrap.service
+sudo systemctl start tbot_web_registration.service
+sudo systemctl start tbot_web_main.service
 sudo systemctl start tbot_provisioning.service
 sudo systemctl start tbot_bot.path
 
-echo "$LOG_TAG TradeBot Web UI launched using systemd (tbot_web.service)."
+echo "$LOG_TAG Modular TradeBot Web UI launched using systemd."
 echo "$LOG_TAG Proceed to configure the bot using the web UI."
 
 PYTHON_BIN="python3"
