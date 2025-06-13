@@ -7,8 +7,10 @@ SERVICES=(
   "tbot_bot.path"
   "tbot_bot.service"
   "tbot_provisioning.service"
-  "tbot_web.service"
-  "tbot.target"
+  "tbot_web_bootstrap.service"
+  "tbot_web_registration.service"
+  "tbot_web_main.service"
+  "tbot_web.target"
 )
 
 echo "Select one or more services to restart (separate numbers with spaces):"
