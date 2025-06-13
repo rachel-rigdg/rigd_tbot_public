@@ -1,14 +1,15 @@
 ================================================================================
 Document: 110_Web_Interface_and_Dashboard
 Version: v042
-Date: UTC:2025-06-10 14:17
+Date: UTC:2025-06-13 06:30
 ================================================================================
 
-This module details the Flask-based Web UI, dashboard features, security, RBAC, and COA management.
+This module details the Flask-based Web UI, dashboard features, security, RBAC, COA management, and **modular multi-phase systemd integration** for RIGD TradeBot.
 
 Contents:
 - Real-Time Monitoring Dashboard (COA Integration, v1.1)
 - TEST_MODE Runtime Control and UI Integration
+- **Phase-Specific Flask App/Blueprint Modularization** (2025-06 update)
 
 **Policy Enforcement:**  
 All provisioning, credential creation, Fernet key generation (including all *.key files), configuration management, and COA operations are *triggered exclusively* via the tbot_web Web UI. No CLI or external system may create or modify credentials, secrets, keys, or COA after bootstrap.  
@@ -21,7 +22,7 @@ All UI access is role-controlled with full audit logging and encryption at rest.
 Real-Time Monitoring Dashboard 
 =============================================================================================================================================
 
-`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, and Chart of Accounts (COA) management. UI and backend components strictly follow `040_Directory_Structure_v041.txt`.
+`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, and Chart of Accounts (COA) management. UI and backend components strictly follow `040_Directory_Structure_v042.txt`.
 
 **Frontend UI Components:**
 - `templates/index.html`: AES-encrypted login portal; RBAC, rate-limited authentication.
@@ -34,7 +35,6 @@ Real-Time Monitoring Dashboard
 - `templates/coa.html`: COA management and export UI; displays account hierarchy, metadata, version. Supports Markdown/CSV export, audit diffs, and admin-only edit workflow—all actions logged to `logs/web/coa_edit.log`. **All Web UI logic for COA management and editing must utilize `tbot_web/support/utils_coa_web.py`.**
 - `templates/wait.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
 - `templates/test.html`: Dedicated UI page for TEST_MODE trigger and progress monitoring. Allows admin users to start the test sequence and view real-time logs and final test results.
-- `templates/ledger.html`: Ledger reconciliation, view, and editing; admin-only (if RBAC allows).
 - `templates/register.html`:  Flask template for user registration form
 
 **Backend Flask Components (per directory spec):**
@@ -47,12 +47,14 @@ Real-Time Monitoring Dashboard
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
 - `py/start_stop_web.py`: Manages lifecycle controls via `control_start.flag` / `control_stop.flag`, transition verification, and logging.
 - `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, and test.html. Does not execute provisioning or bootstrapping; only checks status files for UI routing. Supports immediate TEST_MODE execution trigger detection.
-- `portal_web_bootstrap.py`: Flask app for static files and template setup; bootstrap/configuration/provisioning phase only
-- `portal_web_main.py`: Flask app for static files and template setup; main (post-registration) operational UI
-- `portal_web_registration.py`: Flask for static files and template setup; for registration phase only
 - `py/test_web.py`: Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
-- `py/run_web.py`: Webserver launcher using host/port from encrypted config.
-- `register_web.py`: handles user registration logic and SYSTEM_USERS.db creation/updating
+- `py/run_web.py`: **Phase-aware Flask entrypoint**. Detects phase (bootstrap, registration, main) using `bot_state.txt`, and dynamically loads only the relevant Flask app and blueprints for that phase.
+- `py/register_web.py`: Handles user registration logic and SYSTEM_USERS.db creation/updating.
+
+**Multi-Phase Flask App Structure:**
+- `portal_web_bootstrap.py`: Flask app for static files, main/configuration blueprints; *bootstrap/configuration/provisioning phase only*.
+- `portal_web_registration.py`: Flask app for static files and register_web blueprint; *registration phase only*.
+- `portal_web_main.py`: Flask app for static files and all operational blueprints (main, login, logout, settings, coa, ledger, logs, test, etc); *main/dashboard phase only*.
 
 **Support Modules (from tbot_web/support/):**
 - `auth_web.py`: Handles user authentication, bcrypt password hashing, validation for login/session.
@@ -71,11 +73,18 @@ Real-Time Monitoring Dashboard
 - Provisioning status and bot state are written to `output/{BOT_IDENTITY}/bootstrapping/provisioning_status.json`, polled by web UI (e.g., `wait.html`) to control user flow.
 - Upon completion, bot core is launched independently (never as Flask child).
 
-
+**Systemd Integration and Service Phases:**  
+- Systemd units are *modular and phase-specific*:
+    - `tbot_web_bootstrap.service`: Launches the Flask app for initial configuration/provisioning (only registers blueprints required for that phase).
+    - `tbot_web_registration.service`: Launches Flask app for user registration (only registers registration blueprints, minimal attack surface).
+    - `tbot_web_main.service`: Launches full Flask dashboard after registration (all blueprints).
+    - `tbot_web.target`: Pulls all phases together as a unit dependency group, but only one phase is active at any time.
+- `run_web.py` detects `bot_state.txt` and ensures only the appropriate app for the current phase is launched. No blueprints/routes for unprovisioned phases are ever loaded.
+- **Flask modularization and systemd phase control ensures that privileged routes, registration, or dashboard features can never be loaded or called outside their authorized lifecycle phase.**
 
 **Added User Registration Flow:**
 
-- `templates/register.html`: New Flask template for user registration and password management.
+- `templates/register.html`: Flask template for user registration and password management.
 - `py/register_web.py`: Backend Flask blueprint managing user registration POST/GET, updating SYSTEM_USERS.db, enforcing user creation post-provisioning.
 
 **User Credential Lifecycle:**
@@ -156,5 +165,6 @@ Real-Time Monitoring Dashboard
 - The dashboard is audit-compliant, supports live monitoring/control, and admin-only, per-bot COA and ledger management. All actions are versioned, locally enforced, and never propagate between systems. COA/ledger export/edit requires RBAC and logs all activity for full audit compliance, using `tbot_web/support/utils_coa_web.py` for UI/admin logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger integration.
 This update implements a robust, secure user registration flow decoupled from provisioning to prevent lockout scenarios, enforce local credential persistence, and maintain strict backend privilege separation per architecture mandates.  
 - **All privileged setup and bot launching logic is strictly performed by backend scripts in `tbot_bot/config/` as triggered by the Web UI, never directly by Flask or web endpoints.**
+- **Systemd and Flask modularization ensures only phase-appropriate code is loaded, and no operational blueprints are active before provisioning or registration is complete.**
 
 ================================================================================

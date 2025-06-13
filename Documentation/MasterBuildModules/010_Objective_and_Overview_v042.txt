@@ -160,13 +160,14 @@ Accounting:
 - TradeBot does not emit CSV for ledgers; all CSV/JSON outputs are for human audit only
 
 Web Interface:
-- `tbot_web/` Flask dashboard
+- `tbot_web/` Flask dashboard (modular, phase-driven)
 - Features:
-  - AES login (key in `.env`)
-  - Config UI
-  - Logs/status via `status.json`
-  - Start/Stop: `control_start.txt`, `control_stop.txt`
-  - **COA management:** COA can be viewed and edited exclusively through a dedicated tbot_web UI page. Human-readable COA export available for reference.
+  - Encrypted login (bcrypt + Fernet keys, no plaintext; `.env`/env vars only for Flask secret key)
+  - Multi-phase config/registration/startup: UI phases for bootstrap, registration, and main dashboard, orchestrated by bot state and systemd units
+  - Secure config UI: All configuration and credentials entered via Web UI, never CLI
+  - Logs/status: Live dashboard, logs, and bot status read from `status.json` and log files per bot
+  - Start/Stop: UI triggers write `control_start.txt`, `control_stop.txt` for systemd/bot lifecycle
+  - **COA management:** COA can be viewed and edited exclusively through a dedicated tbot_web UI page, with RBAC enforcement. Human-readable COA export in Markdown/CSV. All edits versioned and audit-logged.
 
 Alerts:
 - Optional SMTP email via `.env`:
