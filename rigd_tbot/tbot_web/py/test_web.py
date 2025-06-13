@@ -47,6 +47,7 @@ def remove_test_flag():
         TEST_FLAG_PATH.unlink()
 
 @test_web.route("/test", methods=["GET"])
+@admin_required
 def test_page():
     status = get_test_status()
     logs = read_test_logs()
@@ -59,7 +60,6 @@ def trigger_test_mode():
         if is_test_active():
             return jsonify({"result": "already_running"})
         create_test_flag()
-        # (Strategy execution is picked up by main/strategy_router, not here)
     return jsonify({"result": "started"})
 
 @test_web.route("/test/logs", methods=["GET"])
@@ -69,7 +69,6 @@ def get_test_logs():
     status = get_test_status()
     return jsonify({"logs": logs, "status": status})
 
-# Helper for auto-resetting test flag (should be called by bot after test completes)
 def auto_reset_test_flag():
     for _ in range(60):
         if not is_test_active():

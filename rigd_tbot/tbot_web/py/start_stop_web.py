@@ -7,7 +7,7 @@ from tbot_web.py.login_web import login_required  # Corrected import per directo
 from tbot_web.py.bootstrap_utils import is_first_bootstrap  # Use utility module for bootstrap check
 from pathlib import Path
 
-start_stop_blueprint = Blueprint("start_stop", __name__)
+start_stop_blueprint = Blueprint("start_stop_web", __name__)
 
 # Define control directory and flag files
 BASE_DIR = Path(__file__).resolve().parents[2]

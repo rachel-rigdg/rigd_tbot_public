@@ -1,5 +1,4 @@
 # tbot_web/py/main_web.py
-# Router/shell for dashboard and blueprint registration; orchestrates UI state, v041-compliant (no privileged/provisioning actions in Flask)
 
 from flask import Blueprint, redirect, url_for, render_template, session, request, jsonify
 from tbot_web.py.bootstrap_utils import is_first_bootstrap
@@ -12,7 +11,8 @@ main_blueprint = Blueprint("main", __name__)
 TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" / "tmp" / "bootstrap_config.json"
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
-INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
+PHASE1_STATES = ("initialize", "provisioning", "bootstrapping")
+PHASE2_STATE = "registration"
 
 def get_current_bot_state():
     try:
@@ -32,12 +32,11 @@ def root_router():
     session.pop("trigger_provisioning", None)
     print(f"[DEBUG][root_router] session keys after pop: {list(session.keys())}")
     print(f"[DEBUG][root_router] session trigger_provisioning after pop: {session.get('trigger_provisioning')}")
-
     state = get_current_bot_state()
     print(f"[DEBUG][root_router] bot_state: {state}")
 
-    if state == "initialize":
-        print("[main_web] State is initialize, rendering configuration.html from main_web")
+    if state in PHASE1_STATES:
+        print(f"[main_web] State is {state}, rendering configuration or wait.html")
         config = {}
         categories = [
             "bot_identity", "broker", "screener_api",
@@ -47,11 +46,10 @@ def root_router():
             config.update(load_encrypted_config(cat))
         if not config:
             config = get_default_config()
-        return render_template("configuration.html", config=config)
-
-    if state in ("provisioning", "bootstrapping"):
-        print(f"[main_web] State is {state}, rendering wait.html")
-        return render_template("wait.html", bot_state=state)
+        if state == "initialize":
+            return render_template("configuration.html", config=config)
+        else:
+            return render_template("wait.html", bot_state=state)
 
     if session.get("trigger_provisioning"):
         print("[main_web] trigger_provisioning=True, rendering wait.html")
@@ -61,7 +59,7 @@ def root_router():
         print(f"[main_web] ERROR or SHUTDOWN_TRIGGERED detected, rendering wait page (state={state})")
         return render_template("wait.html", bot_state=state)
 
-    if state == "registration":
+    if state == PHASE2_STATE:
         print("[main_web] State is registration, redirecting to user registration page.")
         return redirect(url_for("register_web.register_page"))
 
@@ -91,10 +89,10 @@ def main_page():
     print(f"[main_web] session trigger_provisioning: {session.get('trigger_provisioning')}")
     state = get_current_bot_state()
     print(f"[DEBUG][main_page] bot_state: {state}")
-    if state in ("initialize", "provisioning", "bootstrapping"):
+    if state in PHASE1_STATES:
         print(f"[main_web] State is {state}, redirecting to root_router (configuration/wait)")
         return redirect(url_for("main.root_router"))
-    if state == "registration":
+    if state == PHASE2_STATE:
         print("[main_web] State is registration, redirecting to user registration page.")
         return redirect(url_for("register_web.register_page"))
     if not user_exists():
@@ -106,6 +104,6 @@ def main_page():
 def main_state():
     try:
         state = get_current_bot_state()
-        return jsonify({"state": state})
+        return jsonify({"bot_state": state})
     except Exception:
-        return jsonify({"state": "error"}), 500
+        return jsonify({"bot_state": "error"}), 500

@@ -53,12 +53,10 @@ def get_boot_identity_string():
     try:
         from tbot_bot.support.decrypt_secrets import load_bot_identity
         bot_identity_data = load_bot_identity()
-        if (
-            not bot_identity_data
-            or not isinstance(bot_identity_data, dict)
-            or "BOT_IDENTITY_STRING" not in bot_identity_data
-        ):
-            return "UNKNOWN_BOT"
-        return bot_identity_data["BOT_IDENTITY_STRING"]
+        if isinstance(bot_identity_data, dict):
+            return bot_identity_data.get("BOT_IDENTITY_STRING", "UNKNOWN_BOT")
+        if isinstance(bot_identity_data, str):
+            return bot_identity_data
+        return "UNKNOWN_BOT"
     except Exception:
         return "UNKNOWN_BOT"

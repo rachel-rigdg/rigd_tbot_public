@@ -19,7 +19,7 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 from tbot_bot.config.security_bot import encrypt_env_bot_from_bytes
 
-settings_blueprint = Blueprint("settings", __name__)
+settings_blueprint = Blueprint("settings_web", __name__)
 
 SECTION_TITLES = {
     "General & Debugging": [

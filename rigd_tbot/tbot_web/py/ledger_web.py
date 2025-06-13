@@ -1,12 +1,13 @@
 # tbot_web/py/ledger_web.py
+
 import csv
 import io
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from pathlib import Path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
-from tbot_web.support.auth_web import get_current_user  # to get current user info
-from tbot_bot.config.env_bot import get_bot_config     # to get bot config for language etc.
+from tbot_web.support.auth_web import get_current_user
+from tbot_bot.config.env_bot import get_bot_config
 
 ledger_web = Blueprint("ledger_web", __name__)
 
@@ -61,7 +62,7 @@ def ledger_reconcile():
     if provisioning_guard() or identity_guard():
         return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).", balances=balances)
     try:
-        from tbot_bot.accounting.ledger import load_internal_ledger  # Lazy import after provisioning
+        from tbot_bot.accounting.ledger import load_internal_ledger
         from tbot_bot.accounting.ledger_utils import calculate_account_balances
         internal_ledger = load_internal_ledger()
         broker_entries = []
@@ -81,7 +82,7 @@ def ledger_reconcile():
 def resolve_ledger_entry(entry_id):
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
-    from tbot_bot.accounting.ledger import mark_entry_resolved  # Lazy import
+    from tbot_bot.accounting.ledger import mark_entry_resolved
     mark_entry_resolved(entry_id)
     flash('Entry marked as resolved.')
     return redirect(url_for('ledger_web.ledger_reconcile'))
@@ -90,7 +91,7 @@ def resolve_ledger_entry(entry_id):
 def add_ledger_entry_route():
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
-    from tbot_bot.accounting.ledger import add_ledger_entry  # Lazy import
+    from tbot_bot.accounting.ledger import add_ledger_entry
     form = request.form
     bot_identity = load_bot_identity()
     entity_code, jurisdiction, broker, bot_id = bot_identity.split("_")
@@ -128,7 +129,7 @@ def add_ledger_entry_route():
 def edit_ledger_entry_route(entry_id):
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
-    from tbot_bot.accounting.ledger import edit_ledger_entry  # Lazy import
+    from tbot_bot.accounting.ledger import edit_ledger_entry
     form = request.form
     bot_identity = load_bot_identity()
     entity_code, jurisdiction, broker, bot_id = bot_identity.split("_")
@@ -164,7 +165,7 @@ def edit_ledger_entry_route(entry_id):
 def delete_ledger_entry_route(entry_id):
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
-    from tbot_bot.accounting.ledger import delete_ledger_entry  # Lazy import
+    from tbot_bot.accounting.ledger import delete_ledger_entry
     delete_ledger_entry(entry_id)
     flash('Ledger entry deleted.')
     return redirect(url_for('ledger_web.ledger_reconcile'))
@@ -174,7 +175,7 @@ def ledger_sync():
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     try:
-        from tbot_bot.accounting.ledger import sync_broker_ledger  # Lazy import
+        from tbot_bot.accounting.ledger import sync_broker_ledger
         sync_broker_ledger()
         flash("Broker ledger synced successfully.")
     except Exception as e:

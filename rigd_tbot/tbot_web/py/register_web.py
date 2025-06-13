@@ -21,14 +21,20 @@ def user_exists():
 
 @register_web.route("/register", methods=["GET", "POST"])
 def register_page():
-    if user_exists():
-        flash("Admin user already exists. Please log in.", "info")
+    already_exists = user_exists()
+    if already_exists:
+        # If admin user exists and state is registration, promote to idle
         try:
-            with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
-                f.write("idle")
+            if BOT_STATE_PATH.exists():
+                state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+                if state == "registration":
+                    with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
+                        f.write("idle")
         except Exception:
             pass
+        flash("Admin user already exists. Please log in.", "info")
         return redirect(url_for("login_web.login"))
+
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip()
@@ -44,8 +50,12 @@ def register_page():
             upsert_user(username, password, email)
             flash("Admin user created successfully. Please log in.", "success")
             try:
-                with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
-                    f.write("idle")
+                # If state is registration, promote to idle
+                if BOT_STATE_PATH.exists():
+                    state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+                    if state == "registration":
+                        with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
+                            f.write("idle")
             except Exception:
                 pass
             return redirect(url_for("login_web.login"))

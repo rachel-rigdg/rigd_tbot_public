@@ -5,7 +5,7 @@ from flask import Blueprint, render_template
 from .login_web import login_required
 from pathlib import Path
 
-status_blueprint = Blueprint("status", __name__)
+status_blueprint = Blueprint("status_web", __name__)
 
 @status_blueprint.route("/status")
 @login_required

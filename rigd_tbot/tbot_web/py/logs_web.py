@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from tbot_bot.support.path_resolver import get_output_path, validate_bot_identity
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 
-logs_blueprint = Blueprint("logs", __name__)
+logs_blueprint = Blueprint("logs_web", __name__)
 
 LOG_FILES_TO_INCLUDE = [
     "main_bot.log",
@@ -40,7 +40,6 @@ TIME_FORMATS = [
 ]
 
 def parse_timestamp(line):
-    # Accepts JSON, log, or bracketed timestamp lines
     for tag in ('"timestamp":', "'timestamp':", "timestamp=", "timestamp:"):
         idx = line.find(tag)
         if idx != -1:
@@ -53,7 +52,6 @@ def parse_timestamp(line):
                     return ts.replace(tzinfo=None)
                 except Exception:
                     continue
-    # Fallback ISO pattern
     import re
     alt_match = re.search(r"\[?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?:Z|\+00:00)?\]?", line)
     if alt_match:
@@ -64,7 +62,6 @@ def parse_timestamp(line):
     return None
 
 def find_log_file(selected_log):
-    # Canonical locations to search in order
     paths = []
     try:
         bot_identity_string = load_bot_identity()

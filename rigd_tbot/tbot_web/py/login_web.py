@@ -9,12 +9,10 @@ from functools import wraps
 from tbot_web.support.auth_web import validate_user, user_exists
 from pathlib import Path
 
-# === Secure session config ===
 SESSION_TIMEOUT = int(os.getenv("SESSION_TIMEOUT", "300"))
 API_LOGIN_LIMIT = os.getenv("API_LOGIN_LIMIT", "5/minute")
 SECRET_KEY = os.getenv("SECRET_KEY", "use-secure-random-key-in-production")
 
-# === Flask Blueprint Setup ===
 login_blueprint = Blueprint("login_web", __name__)
 limiter = Limiter(get_remote_address, default_limits=[])
 
@@ -28,14 +26,13 @@ def login():
     """
     if not user_exists():
         flash("No admin user exists. Please register.", "warning")
-        return redirect(url_for("register_web.register"))
+        return redirect(url_for("register_web.register_page"))
     if request.method == "POST":
         username = request.form.get("username", "")
         password = request.form.get("password", "")
         if validate_user(username, password):
             session["authenticated"] = True
             session["user"] = username
-            # Optional: Fetch user role and store in session if RBAC is used
             return redirect(url_for("main.main_page"))
         else:
             return render_template("index.html", error="Invalid username or password")

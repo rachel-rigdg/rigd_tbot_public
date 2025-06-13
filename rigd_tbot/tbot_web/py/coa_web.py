@@ -1,15 +1,13 @@
 # tbot_web/py/coa_web.py
-#  Dedicated page and API endpoints for human-readable COA viewing/editing via Web UI
+# Dedicated page and API endpoints for human-readable COA viewing/editing via Web UI
 
 from flask import Blueprint, render_template, request, redirect, url_for, jsonify, session, send_file, flash
-from flask import current_app as app
 from datetime import datetime, timezone
 import json
-import os
 import io
 
-from tbot_web.support.auth_web import rbac_required  # Corrected absolute import per directory spec
-from tbot_bot.support.utils_coa_web import (        # Corrected absolute import per directory spec
+from tbot_web.support.auth_web import rbac_required
+from tbot_bot.support.utils_coa_web import (
     load_coa_metadata_and_accounts,
     save_coa_json,
     export_coa_markdown,
