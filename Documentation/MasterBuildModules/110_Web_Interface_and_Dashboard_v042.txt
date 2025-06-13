@@ -47,7 +47,9 @@ Real-Time Monitoring Dashboard
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
 - `py/start_stop_web.py`: Manages lifecycle controls via `control_start.flag` / `control_stop.flag`, transition verification, and logging.
 - `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, and test.html. Does not execute provisioning or bootstrapping; only checks status files for UI routing. Supports immediate TEST_MODE execution trigger detection.
-- `py/portal_web.py`: Flask app factory for static files and template setup; supports static asset versioning and cache control.
+- `portal_web_bootstrap.py`: Flask app for static files and template setup; bootstrap/configuration/provisioning phase only
+- `portal_web_main.py`: Flask app for static files and template setup; main (post-registration) operational UI
+- `portal_web_registration.py`: Flask for static files and template setup; for registration phase only
 - `py/test_web.py`: Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
 - `py/run_web.py`: Webserver launcher using host/port from encrypted config.
 - `register_web.py`: handles user registration logic and SYSTEM_USERS.db creation/updating

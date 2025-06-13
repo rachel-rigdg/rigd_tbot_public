@@ -1,6 +1,6 @@
 # tbot_web/py/register_web.py
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from tbot_web.support.auth_web import upsert_user, get_db_connection
 from sqlite3 import OperationalError
 from pathlib import Path
@@ -32,6 +32,7 @@ def register_page():
                         f.write("idle")
         except Exception:
             pass
+        session.clear()
         flash("Admin user already exists. Please log in.", "info")
         return redirect(url_for("login_web.login"))
 
@@ -58,6 +59,7 @@ def register_page():
                             f.write("idle")
             except Exception:
                 pass
+            session.clear()
             return redirect(url_for("login_web.login"))
         except Exception as e:
             flash(f"Error creating user: {e}", "error")

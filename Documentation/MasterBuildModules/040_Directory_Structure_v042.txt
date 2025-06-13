@@ -67,16 +67,19 @@ rigd_tbot/
 │       ├── audit_log_parser.py          	# CLI: Parse, summarize, and export audit log analytics
 │       ├── Fix_Paths.py			# Codebase repair: Recursively fixes legacy import paths in tbot_bot/
 │       ├── sync_to_accounting.py        	# CLI: Push trade data to accounting ingestion endpoint (offline/manual sync)
-│       ├── tradebot.service              # Systemd or process manager service definition for bot daemon
+│       ├── tradebot.service              	# Systemd or process manager service definition for bot daemon
 │       └── upload_backups_to_cloud.sh   	# CLI: Uploads backup archives to S3/cloud/offsite vault
 │
-├── systemd_units/			
-│   ├── tbot_bot.service              		# Launches the main TradeBot core bot process
-│   ├── tbot_provisioning.service           	# Launches the provisioning_runner for bootstrap/setup
-│   ├── tbot_web.service           		# Launches the Flask web UI as a standalone service
+├── systemd_units/
+│   ├── tbot_bot.path				# tbot Core Path Monitor
+│   ├── tbot_bot.service              		# tbot Core Bot Runtime
+│   ├── tbot_provisioning.service           	# tbot Provisioning Orchestrator
+│   ├── tbot_web_bootstrap.service		# tbot Web UI (Bootstrap/Config Phase)
+│   ├── tbot_web_main.service           	# tbot Web UI (Main/Dashboard Phase)
+│   ├── tbot_web_registration.service		# tbot Web UI (Registration Phase)
 │   └── tbot.target				# Orchestration unit that ensures all TradeBot services run as a group
 │
-├── tbot_bot/                                # Core engine: execution, strategy, reporting, and config
+├── tbot_bot/                                	# Core engine: execution, strategy, reporting, and config
 │   ├── __init__.py
 │   │
 │   ├── accounting/                              # Accounting integration, ledger/COA/schema helpers (all logic for bot ledger/COA creation, validation, export)
@@ -154,18 +157,18 @@ rigd_tbot/
 │   │
 │   ├── data/
 │   │   └── cache/
-│   │       └── fundamentals_{date}.json           # Ephemeral daily cache: stores API/screener data and runtime metadata for strategy logic and post-trade analysis
+│   │       └── fundamentals_{date}.json           	# Ephemeral daily cache: stores API/screener data and runtime metadata for strategy logic and post-trade analysis
 │   │ 
-│   ├── enhancements/				                # Core safety/risk modules and real-time trading guards; enforced per .env_bot and strategy logic
+│   ├── enhancements/				        # Core safety/risk modules and real-time trading guards; enforced per .env_bot and strategy logic
 │   │   ├── adx_filter.py                	        # Enforces risk: blocks new trades during strong ADX/trending conditions (used by risk control in strategy logic)
 │   │   ├── black_scholes_filter.py     	        # Enforces option trade validation: checks pricing against Black-Scholes model; blocks invalid trades
-│   │   ├── bollinger_confluence.py               # Enforces entry: requires Bollinger Band confluence for strategy trade signals
-│   │   ├── build_check.py               	    # System requirement: pre-launch validator for keys, schemas, COA, and directory structure
+│   │   ├── bollinger_confluence.py               	# Enforces entry: requires Bollinger Band confluence for strategy trade signals
+│   │   ├── build_check.py               	    	# System requirement: pre-launch validator for keys, schemas, COA, and directory structure
 │   │   ├── finnhub_fundamental_guard.py	        # Enforces entry filter: blocks trade if company fails fundamental thresholds from screener
-│   │   ├── imbalance_scanner_ibkr.py    		    # Session gatekeeper: uses IBKR imbalance feed to validate end-of-day trading in close strategy
-│   │   ├── ticker_blocklist.py                   # Risk enforcement: blocks duplicate ticker use within the same trading session
+│   │   ├── imbalance_scanner_ibkr.py    		# Session gatekeeper: uses IBKR imbalance feed to validate end-of-day trading in close strategy
+│   │   ├── ticker_blocklist.py                   	# Risk enforcement: blocks duplicate ticker use within the same trading session
 │   │   ├── tuning_tracker.py		                # Tracks session and strategy performance for self-tuning and audit; provides live stats to Web UI
-│   │   └── vix_gatekeeper.py                     # Risk enforcement: blocks or disables trading when VIX exceeds threshold (checked before any entry)
+│   │   └── vix_gatekeeper.py                     	# Risk enforcement: blocks or disables trading when VIX exceeds threshold (checked before any entry)
 │   │
 │   ├── output/				                          					# Output Artifacts
 │   │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/       				# ← Scoped per bot ID - Entire directory mirrored to Accounting system
@@ -189,7 +192,7 @@ rigd_tbot/
 │   │           ├── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv   	# All trade data for session (raw, human-readable)
 │   │           └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.json  	# Structured trade records for ingestion, reconciliation, and audit
 │   │
-│   ├── reporting/				                # Reporting & Logging
+│   ├── reporting/				    # Reporting & Logging
 │   │   ├── auto_backup.py               	    # Compresses and archives /output after session
 │   │   ├── daily_summary.py            	    # Builds trade summary stats and outcomes
 │   │   ├── log_rotation.py             	    # Cleans output folder after N days
@@ -320,7 +323,9 @@ rigd_tbot/
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state
     │   ├── logs_web.py                         # Displays log output (read-only); calls utils_log.py
     │   ├── main_web.py                         # Orchestrates main UI shell; registers routes, manages state; triggers bot start if required; links wait_for_bot.html and ledger.html
-    │   ├── portal_web.py                       # Flask app factory: app instantiation, static/template config, middleware, fallback routes
+    │   ├── portal_web_bootstrap.py             # Flask app for bootstrap/configuration/provisioning phase only
+    │   ├── portal_web_main.py                  # Flask app for main (post-registration) operational UI
+    │   ├── portal_web_registration.py          # Flask app for registration phase only
     │   ├── register_web.py			# handles user registration logic and SYSTEM_USERS.db creation/updating
     │   ├── run_web.py                          # Flask app launch entrypoint (WSGI)
     │   ├── settings_web.py                     # Bot strategy/runtime settings routes; calls utils_config.py (never handles credentials)

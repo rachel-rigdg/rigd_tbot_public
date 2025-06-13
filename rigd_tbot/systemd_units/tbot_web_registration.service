@@ -7,7 +7,7 @@ After=network.target
 Type=simple
 User=tbot
 WorkingDirectory=/home/tbot/rigd_tbot/
-ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_web.py.portal_web_registration
+ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_web.py.run_web
 Restart=on-failure
 Environment="FLASK_SECRET_KEY=changeme-unsafe-dev-key"
 Environment="BOT_WEB_PHASE=registration"
