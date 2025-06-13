@@ -8,7 +8,7 @@ Type=simple
 User=tbot
 WorkingDirectory=/home/tbot/rigd_tbot/
 ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_bot.config.provisioning_runner
-Restart=on-failure
+Restart=no
 
 [Install]
 WantedBy=multi-user.target

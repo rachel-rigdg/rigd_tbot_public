@@ -8,7 +8,7 @@ Type=simple
 User=tbot
 WorkingDirectory=/home/tbot/rigd_tbot/
 ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_web.py.run_web
-Restart=on-failure
+Restart=no
 Environment="FLASK_SECRET_KEY=changeme-unsafe-dev-key"
 Environment="BOT_WEB_PHASE=registration"
 
