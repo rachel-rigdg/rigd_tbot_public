@@ -17,8 +17,38 @@ echo "Select one or more services to restart (separate numbers with spaces):"
 for i in "${!SERVICES[@]}"; do
   printf "%2d) %s\n" $((i+1)) "${SERVICES[$i]}"
 done
+echo "  r) Restart ALL services"
+echo "  k) KILL ALL services"
 
-read -p "Enter number(s): " -a choices
+read -p "Enter number(s) or 'r' or 'k': " -a choices
+
+if [[ "${choices[0]}" == "r" ]]; then
+  echo "Restarting ALL services..."
+  for SERVICE in "${SERVICES[@]}"; do
+    echo "Restarting $SERVICE ..."
+    sudo systemctl restart "$SERVICE"
+    STATUS=$?
+    if [ $STATUS -eq 0 ]; then
+      echo "Service $SERVICE restarted successfully."
+    else
+      echo "Failed to restart $SERVICE. (Exit code: $STATUS)"
+    fi
+  done
+  exit 0
+elif [[ "${choices[0]}" == "k" ]]; then
+  echo "Stopping/KILLING ALL services..."
+  for SERVICE in "${SERVICES[@]}"; do
+    echo "Stopping $SERVICE ..."
+    sudo systemctl stop "$SERVICE"
+    STATUS=$?
+    if [ $STATUS -eq 0 ]; then
+      echo "Service $SERVICE stopped successfully."
+    else
+      echo "Failed to stop $SERVICE. (Exit code: $STATUS)"
+    fi
+  done
+  exit 0
+fi
 
 echo "You have selected:"
 for i in "${choices[@]}"; do

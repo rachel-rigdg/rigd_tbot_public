@@ -23,6 +23,10 @@ def create_registration_app():
     def serve_index():
         return redirect(url_for("register_web.register_page"))
 
+    @app.route("/register")
+    def register_redirect():
+        return redirect(url_for("register_web.register_page"))
+
     @app.route("/favicon.ico")
     def favicon():
         return send_from_directory(BASE_DIR, "favicon.ico")

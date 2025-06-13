@@ -39,7 +39,7 @@ def create_main_app():
 
     @app.route("/")
     def serve_index():
-        return render_template("main.html")
+        return redirect(url_for("main.main_page"))
 
     @app.route("/favicon.ico")
     def favicon():
