@@ -38,24 +38,37 @@ BOT_START_PHASES = {
 
 def read_bot_state():
     try:
-        return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-    except Exception:
+        val = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        print(f"[phase_supervisor] BOT_STATE_PATH: {BOT_STATE_PATH}  value: {val}")
+        return val
+    except Exception as ex:
+        print(f"[phase_supervisor] ERROR reading bot_state.txt: {ex}")
         return "initialize"
 
 def is_port_open(port):
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.5)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        result = s.connect_ex(("127.0.0.1", port)) == 0
+        print(f"[phase_supervisor] is_port_open({port}): {result}")
+        return result
 
 def start_flask_app(script_path, port):
     if is_port_open(port):
+        print(f"[phase_supervisor] Flask app for port {port} already running: {script_path}")
         return None  # Already running
-    return subprocess.Popen(
-        ["python3", str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    print(f"[phase_supervisor] Launching Flask app: python3 {script_path} (port {port})")
+    try:
+        proc = subprocess.Popen(
+            ["python3", str(script_path)],
+            # stdout=subprocess.DEVNULL,
+            # stderr=subprocess.DEVNULL,
+        )
+        print(f"[phase_supervisor] Launched process PID={proc.pid} for {script_path}")
+        return proc
+    except Exception as ex:
+        print(f"[phase_supervisor] ERROR launching {script_path}: {ex}")
+        return None
 
 def supervisor_loop():
     print("[phase_supervisor] Starting TradeBot phase supervisor...")
@@ -64,15 +77,19 @@ def supervisor_loop():
     while True:
         phase = read_bot_state()
         if phase not in PHASE_APPS:
+            print(f"[phase_supervisor] Unrecognized phase '{phase}', defaulting to 'initialize'")
             phase = "initialize"
         if phase != last_phase:
             print(f"[phase_supervisor] Phase changed: {last_phase} -> {phase}")
             # Kill previous phase app
             if active_process:
+                print(f"[phase_supervisor] Terminating previous phase Flask app...")
                 active_process.terminate()
                 try:
                     active_process.wait(timeout=5)
+                    print(f"[phase_supervisor] Flask app process terminated.")
                 except subprocess.TimeoutExpired:
+                    print(f"[phase_supervisor] Flask app process did not terminate in time, killing...")
                     active_process.kill()
                 active_process = None
             # Do NOT launch portal_web_router.py here; only manage phase Flask apps below
@@ -99,6 +116,7 @@ def supervisor_loop():
             active_process = start_flask_app(script_path, port)
             # Start bot only after registration phase or later
             if phase in BOT_START_PHASES:
+                print(f"[phase_supervisor] Starting tbot_bot.service for phase: {phase}")
                 subprocess.run(["systemctl", "--user", "start", "tbot_bot.service"])
         last_phase = phase
         time.sleep(3)
