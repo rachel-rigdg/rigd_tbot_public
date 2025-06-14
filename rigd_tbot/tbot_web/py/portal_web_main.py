@@ -27,15 +27,15 @@ def create_main_app():
     app.config["SESSION_COOKIE_HTTPONLY"] = True
 
     app.register_blueprint(main_blueprint)
-    app.register_blueprint(login_blueprint)
-    app.register_blueprint(logout_blueprint)
-    app.register_blueprint(status_blueprint)
-    app.register_blueprint(logs_blueprint)
-    app.register_blueprint(start_stop_blueprint)
-    app.register_blueprint(settings_blueprint)
-    app.register_blueprint(coa_web)
-    app.register_blueprint(ledger_web)
-    app.register_blueprint(test_web)
+    app.register_blueprint(login_blueprint, url_prefix="/login")
+    app.register_blueprint(logout_blueprint, url_prefix="/logout")
+    app.register_blueprint(status_blueprint, url_prefix="/status")
+    app.register_blueprint(logs_blueprint, url_prefix="/logs")
+    app.register_blueprint(start_stop_blueprint, url_prefix="/control")
+    app.register_blueprint(settings_blueprint, url_prefix="/settings")
+    app.register_blueprint(coa_web, url_prefix="/coa")
+    app.register_blueprint(ledger_web, url_prefix="/ledger")
+    app.register_blueprint(test_web, url_prefix="/test")
 
     @app.route("/")
     def serve_index():
@@ -46,3 +46,8 @@ def create_main_app():
         return send_from_directory(BASE_DIR, "favicon.ico")
 
     return app
+
+if __name__ == "__main__":
+    app = create_main_app()
+    port = int(os.environ.get("PORT", 6900))
+    app.run(host="0.0.0.0", port=port)

@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 import sys
 
-sys.stdout = open("/home/tbot/rigd_tbot/phase_supervisor.log", "a")
+sys.stdout = open(str(Path(__file__).resolve().parents[1] / "phase_supervisor.log"), "a")
 sys.stderr = sys.stdout
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -36,8 +36,8 @@ ALL_UNITS = [
     "tbot_provisioning.service",
     "tbot_web_bootstrap.service",
     "tbot_web_registration.service",
-    "tbot_web_main.service",
-    "tbot_bot.service"
+    "tbot_web_main.service"
+    # do NOT include "tbot_bot.service" for stop loop below
 ]
 
 def read_bot_state():
@@ -52,7 +52,7 @@ def read_bot_state():
 
 def stop_all_services(except_unit=None):
     for unit in ALL_UNITS:
-        if unit != except_unit and unit != "tbot_bot.service":
+        if unit != except_unit:
             subprocess.run(["systemctl", "--user", "stop", unit], check=False)
 
 def start_service(unit):

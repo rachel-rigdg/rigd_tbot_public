@@ -1,4 +1,5 @@
-[Unit]
+# phase_supervisor.service
+
 [Unit]
 Description=RIGD TradeBot Phase Supervisor
 After=network.target

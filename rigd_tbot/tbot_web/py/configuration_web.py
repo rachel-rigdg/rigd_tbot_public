@@ -18,7 +18,7 @@ def can_provision():
         return True
     try:
         state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        return state in ("initialize", "provisioning")
+        return state == "initialize"
     except Exception:
         return False
 
@@ -48,7 +48,6 @@ def save_runtime_config(config: dict):
 
 @configuration_blueprint.route("/configuration", methods=["GET"])
 def show_configuration():
-    print("[configuration_web] Rendering configuration page")
     state = "initialize"
     if BOT_STATE_PATH.exists():
         try:
@@ -62,7 +61,6 @@ def show_configuration():
 
 @configuration_blueprint.route("/configuration", methods=["POST"])
 def save_configuration():
-    print("[configuration_web] Received POST to /configuration")
     if not can_provision():
         flash("Provisioning is locked after initial bootstrap. Use Settings to update configuration.", "error")
         return redirect(url_for("main.main_page"))
@@ -104,10 +102,7 @@ def save_configuration():
     }
     acct_api_data = {}
 
-    language_code = form.get("language_code", "").strip()
-    if not language_code:
-        language_code = "en"
-
+    language_code = form.get("language_code", "").strip() or "en"
     alert_channels = form.get("alert_channels", "").strip() or "email"
 
     config = {
@@ -132,11 +127,9 @@ def save_configuration():
 
     try:
         PROVISION_FLAG_PATH.touch(exist_ok=True)
-        print(f"[configuration_web] PROVISION_FLAG written: {PROVISION_FLAG_PATH}")
     except Exception as e:
         print(f"[configuration_web] ERROR writing PROVISION_FLAG: {e}")
 
-    print("[configuration_web] Configuration saved. Triggering provisioning on redirect.")
     session["trigger_provisioning"] = True
     session.modified = True
     flash("Configuration saved. Proceeding to provisioning...", "success")

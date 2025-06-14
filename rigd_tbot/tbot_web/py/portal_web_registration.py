@@ -2,7 +2,7 @@
 # Flask app for registration phase only
 
 import os
-from flask import Flask, render_template, send_from_directory, redirect, url_for, request
+from flask import Flask, send_from_directory, redirect, url_for
 from .register_web import register_web
 from pathlib import Path
 
@@ -23,12 +23,13 @@ def create_registration_app():
     def serve_index():
         return redirect(url_for("register_web.register_page"))
 
-    @app.route("/register")
-    def register_redirect():
-        return redirect(url_for("register_web.register_page"))
-
     @app.route("/favicon.ico")
     def favicon():
         return send_from_directory(BASE_DIR, "favicon.ico")
 
     return app
+
+if __name__ == "__main__":
+    app = create_registration_app()
+    port = int(os.environ.get("PORT", 6900))
+    app.run(host="0.0.0.0", port=port)

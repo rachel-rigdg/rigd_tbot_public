@@ -19,11 +19,11 @@ def create_configuration_app():
     app.config["SESSION_COOKIE_HTTPONLY"] = True
 
     app.register_blueprint(main_blueprint)
-    app.register_blueprint(configuration_blueprint)
+    app.register_blueprint(configuration_blueprint, url_prefix="/configuration")
 
     @app.route("/")
     def serve_configuration():
-        return redirect(url_for("configuration.configuration"))
+        return redirect(url_for("configuration_web.show_configuration"))
 
     @app.route("/favicon.ico")
     def favicon():
