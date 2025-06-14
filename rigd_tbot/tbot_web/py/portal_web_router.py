@@ -5,6 +5,7 @@
 
 from flask import Flask, redirect, request
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import socket
 
 app = Flask(__name__)

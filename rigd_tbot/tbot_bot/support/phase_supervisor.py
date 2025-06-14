@@ -4,6 +4,7 @@
 import subprocess
 import time
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import sys
 
 sys.stdout = open("/home/tbot/rigd_tbot/tbot_bot/output/bootstrap/logs/phase_supervisor.log", "a")

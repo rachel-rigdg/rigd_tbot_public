@@ -2,6 +2,9 @@
 # Flask app for main (post-registration) operational UI
 
 import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from flask import Flask, render_template, send_from_directory, redirect, url_for, request, jsonify
 from .main_web import main_blueprint
 from .login_web import login_blueprint
@@ -14,7 +17,7 @@ from .coa_web import coa_web
 from .ledger_web import ledger_web
 from .test_web import test_web
 from .configuration_web import configuration_blueprint
-from pathlib import Path
+
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TEMPLATE_FOLDER = os.path.join(BASE_DIR, "templates")

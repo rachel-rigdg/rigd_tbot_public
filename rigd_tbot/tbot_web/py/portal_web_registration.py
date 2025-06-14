@@ -3,9 +3,11 @@
 
 import os
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from flask import Flask, send_from_directory, redirect, url_for, request, jsonify
 from .register_web import register_web
-from pathlib import Path
+
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TEMPLATE_FOLDER = os.path.join(BASE_DIR, "templates")
