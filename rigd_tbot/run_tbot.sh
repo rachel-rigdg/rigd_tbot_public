@@ -1,6 +1,6 @@
 #!/bin/bash
 # run_tbot.sh
-# Launches TradeBot web router and core bot services.
+# Launches TradeBot web router only (do not start core bot until provisioning is complete).
 
 set -e
 
@@ -22,13 +22,12 @@ ln -sf "$SYSTEMD_UNIT_PATH"/tbot_bot.service ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_web_router.service ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_bot.path ~/.config/systemd/user/
 
-
 systemctl --user daemon-reload
 
 systemctl --user enable tbot_web_router.service
 systemctl --user start tbot_web_router.service
 
-systemctl --user enable tbot_bot.service
+# DO NOT enable/start tbot_bot.service here; it must be started only after provisioning and registration are complete.
 
 PYTHON_BIN="python3"
 WEB_DIR="$ROOT_DIR/tbot_web"
