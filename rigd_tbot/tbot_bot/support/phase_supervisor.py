@@ -14,11 +14,12 @@ PHASE_SEQUENCE = [
     "provisioning",
     "bootstrapping",
     "registration",
-    "main"
+    "main",
+    "bot"
 ]
 
 PHASE_UNITS = {
-    "initialize":      "tbot_web_bootstrap.service",
+    "initialize":      "tbot_web_configuration.service",
     "provisioning":    "tbot_provisioning.service",
     "bootstrapping":   "tbot_web_bootstrap.service",
     "registration":    "tbot_web_registration.service",
@@ -27,8 +28,9 @@ PHASE_UNITS = {
 }
 
 ALL_UNITS = [
-    "tbot_web_bootstrap.service",
+    "tbot_web_configuration.service",
     "tbot_provisioning.service",
+    "tbot_web_bootstrap.service",
     "tbot_web_registration.service",
     "tbot_web_main.service",
     "tbot_bot.service"
@@ -38,7 +40,9 @@ def read_bot_state():
     if not BOT_STATE_PATH.exists():
         return "initialize"
     try:
-        return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        print(f"[phase_supervisor] read_bot_state() returned: {state!r}")
+        return state
     except Exception:
         return "initialize"
 
@@ -55,8 +59,8 @@ def supervisor_loop():
     last_phase = None
     while True:
         phase = read_bot_state()
-        print(f"[phase_supervisor] read_bot_state() returned: {phase}")
         if phase not in PHASE_UNITS:
+            print(f"[phase_supervisor] Unrecognized phase '{phase}', defaulting to 'initialize'")
             phase = "initialize"
         active_unit = PHASE_UNITS[phase]
 
@@ -66,7 +70,7 @@ def supervisor_loop():
             start_service(active_unit)
             if phase == "main":
                 start_service(PHASE_UNITS["bot"])
-            else:
+            elif last_phase == "main" and phase != "bot":
                 subprocess.run(["systemctl", "--user", "stop", PHASE_UNITS["bot"]], check=False)
         last_phase = phase
         time.sleep(2)

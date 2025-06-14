@@ -1,11 +1,10 @@
 # tbot_web/py/portal_web_bootstrap.py
-# Flask app for bootstrap/configuration/provisioning phase only
+# Flask app for bootstrap/configuration phase only
 
 import os
 from flask import Flask, render_template, send_from_directory, redirect, url_for, request, jsonify
 from .main_web import main_blueprint
 from .configuration_web import configuration_blueprint
-from .register_web import register_web
 from pathlib import Path
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -21,7 +20,6 @@ def create_bootstrap_app():
 
     app.register_blueprint(main_blueprint)
     app.register_blueprint(configuration_blueprint)
-    app.register_blueprint(register_web)
 
     @app.route("/wait")
     def wait():

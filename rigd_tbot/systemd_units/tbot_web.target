@@ -1,6 +1,8 @@
 # tbot_web.target
 [Unit]
 Description=RIGD TradeBot Web UI Target
+Requires=tbot_web_configuration.service
+Requires=tbot_provisioning.service
 Requires=tbot_web_bootstrap.service
 Requires=tbot_web_registration.service
 Requires=tbot_web_main.service
