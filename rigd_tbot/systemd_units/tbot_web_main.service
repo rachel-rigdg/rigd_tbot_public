@@ -6,9 +6,10 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/tbot/rigd_tbot/
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_web.py.portal_web_main
+WorkingDirectory=%h/rigd_tbot
+ExecStart=/usr/bin/env python3 tbot_web.py.portal_web_main
+
 Restart=on-failure
 Environment="FLASK_SECRET_KEY=changeme-unsafe-dev-key"
 Environment="BOT_WEB_PHASE=main"

@@ -5,7 +5,7 @@ Description=RIGD TradeBot Core Path Monitor
 Wants=tbot_bot.service
 
 [Path]
-PathChanged=/home/tbot/rigd_tbot/tbot_bot/control/control_start.txt
+PathChanged=%h/rigd_tbot/tbot_bot/control/control_start.txt
 
 [Install]
 WantedBy=default.target

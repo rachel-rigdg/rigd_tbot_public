@@ -5,9 +5,9 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/tbot/rigd_tbot
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/env python3 /home/tbot/rigd_tbot/tbot_bot/support/phase_supervisor.py
+WorkingDirectory=%h/rigd_tbot
+ExecStart=/usr/bin/env python3 tbot_bot/support/phase_supervisor.py
 Restart=always
 
 [Install]

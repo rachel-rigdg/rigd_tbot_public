@@ -6,9 +6,10 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/tbot/rigd_tbot/
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_bot.config.provisioning_runner
+WorkingDirectory=%h/rigd_tbot
+ExecStart=/usr/bin/env python3 tbot_bot/config/provisioning_runner.py
+
 Restart=no
 Environment="PROVISIONING_PHASE=1"
 

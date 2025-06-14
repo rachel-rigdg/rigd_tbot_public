@@ -52,7 +52,7 @@ def read_bot_state():
 
 def stop_all_services(except_unit=None):
     for unit in ALL_UNITS:
-        if unit != except_unit:
+        if unit != except_unit and unit != "tbot_bot.service":
             subprocess.run(["systemctl", "--user", "stop", unit], check=False)
 
 def start_service(unit):
@@ -61,6 +61,7 @@ def start_service(unit):
 def supervisor_loop():
     print("[phase_supervisor] TradeBot phase supervisor started. Monitoring bot_state.txt...")
     last_phase = None
+    bot_started = False
     while True:
         phase = read_bot_state()
         if phase not in PHASE_UNITS:
@@ -72,10 +73,9 @@ def supervisor_loop():
             print(f"[phase_supervisor] Phase transition detected: {last_phase} -> {phase}")
             stop_all_services(except_unit=active_unit)
             start_service(active_unit)
-            if phase == "main":
+            if phase == "main" and not bot_started:
                 start_service(PHASE_UNITS["bot"])
-            elif last_phase == "main" and phase != "bot":
-                subprocess.run(["systemctl", "--user", "stop", PHASE_UNITS["bot"]], check=False)
+                bot_started = True
         last_phase = phase
         time.sleep(2)
 
