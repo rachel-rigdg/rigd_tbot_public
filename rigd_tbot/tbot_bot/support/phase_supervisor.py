@@ -12,102 +12,98 @@ sys.stderr = sys.stdout
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
+WEB_DIR = ROOT_DIR.parent / "tbot_web" / "py"
 
-PHASE_SEQUENCE = [
-    "initialize",
-    "provisioning",
-    "bootstrapping",
-    "registration",
-    "main",
-    "idle",
-    "analyzing",
-    "monitoring",
-    "trading",
-    "updating",
-    "shutdown",
-    "graceful_closing_positions",
-    "emergency_closing_positions",
-    "shutdown_triggered",
-    "error"
-]
-
-PHASE_UNITS = {
-    "initialize":      "tbot_web_configuration.service",
-    "provisioning":    "tbot_provisioning.service",
-    "bootstrapping":   "tbot_web_bootstrap.service",
-    "registration":    "tbot_web_registration.service",
-    "main":            "tbot_web_main.service",
-    "idle":            "tbot_web_main.service",
-    "analyzing":       "tbot_web_main.service",
-    "monitoring":      "tbot_web_main.service",
-    "trading":         "tbot_web_main.service",
-    "updating":        "tbot_web_main.service",
-    "shutdown":        "tbot_web_main.service",
-    "graceful_closing_positions": "tbot_web_main.service",
-    "emergency_closing_positions": "tbot_web_main.service",
-    "shutdown_triggered": "tbot_web_main.service",
-    "error":           "tbot_web_main.service",
-    # do not launch tbot_bot.service unless in main or later operational states
-    "bot":             "tbot_bot.service"
+PHASE_APPS = {
+    "initialize":      "portal_web_configuration.py",
+    "provisioning":    "portal_web_provision.py",
+    "bootstrapping":   "portal_web_bootstrap.py",
+    "registration":    "portal_web_registration.py",
+    "main":            "portal_web_main.py",
+    "idle":            "portal_web_main.py",
+    "analyzing":       "portal_web_main.py",
+    "monitoring":      "portal_web_main.py",
+    "trading":         "portal_web_main.py",
+    "updating":        "portal_web_main.py",
+    "shutdown":        "portal_web_main.py",
+    "graceful_closing_positions": "portal_web_main.py",
+    "emergency_closing_positions": "portal_web_main.py",
+    "shutdown_triggered": "portal_web_main.py",
+    "error":           "portal_web_main.py",
 }
-
-ALL_UNITS = [
-    "tbot_web_configuration.service",
-    "tbot_provisioning.service",
-    "tbot_web_bootstrap.service",
-    "tbot_web_registration.service",
-    "tbot_web_main.service",
-    "tbot_bot.service"
-]
 
 BOT_START_PHASES = {
     "main", "idle", "analyzing", "monitoring", "trading", "updating"
 }
 
 def read_bot_state():
-    if not BOT_STATE_PATH.exists():
-        return "initialize"
     try:
-        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        print(f"[phase_supervisor] read_bot_state() returned: {state!r}")
-        return state
+        return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
     except Exception:
         return "initialize"
 
-def stop_all_services(except_unit=None):
-    for unit in ALL_UNITS:
-        if unit != except_unit and unit != "tbot_bot.service":
-            subprocess.run(["systemctl", "--user", "stop", unit], check=False)
+def is_port_open(port):
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
 
-def start_service(unit):
-    subprocess.run(["systemctl", "--user", "restart", unit], check=False)
-
-def is_bot_started():
-    result = subprocess.run(
-        ["systemctl", "--user", "is-active", "--quiet", "tbot_bot.service"]
+def start_flask_app(script_path, port):
+    if is_port_open(port):
+        return None  # Already running
+    return subprocess.Popen(
+        ["python3", str(script_path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    return result.returncode == 0
 
 def supervisor_loop():
-    print("[phase_supervisor] TradeBot phase supervisor started. Monitoring bot_state.txt...")
+    print("[phase_supervisor] Starting TradeBot phase supervisor...")
+    # Start router service once
+    subprocess.Popen(
+        ["systemctl", "--user", "start", "tbot_web_router.service"]
+    )
+    active_process = None
     last_phase = None
     while True:
         phase = read_bot_state()
-        if phase not in PHASE_UNITS:
-            print(f"[phase_supervisor] Unrecognized phase '{phase}', defaulting to 'initialize'")
+        if phase not in PHASE_APPS:
             phase = "initialize"
-        active_unit = PHASE_UNITS[phase]
-
         if phase != last_phase:
-            print(f"[phase_supervisor] Phase transition detected: {last_phase} -> {phase}")
-            stop_all_services(except_unit=active_unit)
-            start_service(active_unit)
-            # Launch tbot_bot.service only if we are in an operational phase
-            if phase in BOT_START_PHASES and not is_bot_started():
-                print(f"[phase_supervisor] Starting tbot_bot.service for phase: {phase}")
-                start_service("tbot_bot.service")
+            print(f"[phase_supervisor] Phase changed: {last_phase} -> {phase}")
+            # Kill previous phase app
+            if active_process:
+                active_process.terminate()
+                active_process.wait(timeout=5)
+                active_process = None
+            # Launch new phase Flask app on appropriate port
+            # Map phases to ports (same as router)
+            port_map = {
+                "initialize": 6901,
+                "provisioning": 6902,
+                "bootstrapping": 6903,
+                "registration": 6904,
+                "main": 6905,
+                "idle": 6905,
+                "analyzing": 6905,
+                "monitoring": 6905,
+                "trading": 6905,
+                "updating": 6905,
+                "shutdown": 6905,
+                "graceful_closing_positions": 6905,
+                "emergency_closing_positions": 6905,
+                "shutdown_triggered": 6905,
+                "error": 6905,
+            }
+            port = port_map.get(phase, 6901)
+            script = PHASE_APPS[phase]
+            script_path = WEB_DIR / script
+            active_process = start_flask_app(script_path, port)
+            # Start bot only after registration phase or later
+            if phase in BOT_START_PHASES:
+                subprocess.run(["systemctl", "--user", "start", "tbot_bot.service"])
         last_phase = phase
-        time.sleep(2)
+        time.sleep(3)
 
 if __name__ == "__main__":
     supervisor_loop()
