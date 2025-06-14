@@ -1,7 +1,7 @@
 # tbot_provisioning.service
 
 [Unit]
-Description=RIGD TradeBot Provisioning Orchestrator
+Description=RIGD TradeBot Provisioning Orchestrator (Keys/Secrets Generation Phase)
 After=network.target
 
 [Service]
@@ -10,6 +10,7 @@ WorkingDirectory=/home/tbot/rigd_tbot/
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_bot.config.provisioning_runner
 Restart=no
+Environment="PROVISIONING_PHASE=1"
 
 [Install]
 WantedBy=default.target
