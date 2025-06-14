@@ -3,6 +3,7 @@
 # Interactive multi-select user-mode systemd service restarter with confirmation.
 
 SERVICES=(
+  "phase_supervisor.service"
   "tbot_web_configuration.service"
   "tbot_provisioning.service"
   "tbot_web_bootstrap.service"
