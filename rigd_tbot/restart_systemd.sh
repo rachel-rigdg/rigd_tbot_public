@@ -3,22 +3,19 @@
 # Interactive multi-select user-mode systemd service restarter with confirmation.
 
 SERVICES=(
-  "phase_supervisor.service"
-  "tbot_web_configuration.service"
-  "tbot_provisioning.service"
-  "tbot_web_bootstrap.service"
-  "tbot_web_registration.service"
-  "tbot_web_main.service"
   "tbot_bot.service"
   "tbot_bot.path"
-  "tbot_web.target"
+  "tbot_web_router.service"
 )
 
 PROCESS_PATTERNS=(
-  "phase_supervisor.py"
-  "tbot_web.py"
+  "tbot_web_router.py"
+  "portal_web_bootstrap.py"
+  "portal_web_configuration.py"
+  "portal_web_main.py"
+  "portal_web_provision.py"
+  "portal_web_registration.py"
   "tbot_bot.runtime.main"
-  "tbot_bot.config.provisioning_runner"
 )
 
 echo "Select one or more services to restart (separate numbers with spaces):"
