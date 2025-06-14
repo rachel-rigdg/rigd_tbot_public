@@ -33,5 +33,5 @@ def create_provision_app():
 
 if __name__ == "__main__":
     app = create_provision_app()
-    port = int(os.environ.get("PORT", 6900))
+    port = int(os.environ.get("PORT", 6902))
     app.run(host="0.0.0.0", port=port)

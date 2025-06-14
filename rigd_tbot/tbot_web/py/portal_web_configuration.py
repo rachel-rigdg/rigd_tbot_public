@@ -33,5 +33,6 @@ def create_configuration_app():
 
 if __name__ == "__main__":
     app = create_configuration_app()
-    port = int(os.environ.get("PORT", 6900))
+    # Use dedicated port for configuration phase to avoid port conflicts.
+    port = int(os.environ.get("PORT", 6901))
     app.run(host="0.0.0.0", port=port)

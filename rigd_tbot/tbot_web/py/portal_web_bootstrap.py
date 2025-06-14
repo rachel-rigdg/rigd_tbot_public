@@ -34,3 +34,9 @@ def create_bootstrap_app():
         return send_from_directory(BASE_DIR, "favicon.ico")
 
     return app
+
+if __name__ == "__main__":
+    app = create_bootstrap_app()
+    # Use dedicated port for bootstrap phase to avoid port conflicts.
+    port = int(os.environ.get("PORT", 6903))
+    app.run(host="0.0.0.0", port=port)
