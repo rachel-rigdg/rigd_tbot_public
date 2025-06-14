@@ -1,6 +1,6 @@
 #!/bin/bash
 # run_tbot.sh
-# Launches TradeBot web router only (do not start core bot until provisioning is complete).
+# Launches TradeBot web router and phase supervisor (do not start core bot until provisioning is complete).
 
 set -e
 
@@ -11,21 +11,25 @@ SYSTEMD_UNIT_PATH="$ROOT_DIR/systemd_units"
 LOG_TAG="[run_tbot_webui_launcher]"
 
 echo "$LOG_TAG Stopping any existing TradeBot systemd processes..."
-systemctl --user stop tbot_bot.service tbot_web_router.service || true
+systemctl --user stop tbot_bot.service tbot_web_router.service phase_supervisor.service || true
 
 systemctl --user daemon-reexec
 systemctl --user daemon-reload
 
-echo "$LOG_TAG Linking systemd unit files for TradeBot core and web router..."
+echo "$LOG_TAG Linking systemd unit files for TradeBot core, web router, and phase supervisor..."
 mkdir -p ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_bot.service ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_web_router.service ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_bot.path ~/.config/systemd/user/
+ln -sf "$SYSTEMD_UNIT_PATH"/phase_supervisor.service ~/.config/systemd/user/
 
 systemctl --user daemon-reload
 
 systemctl --user enable tbot_web_router.service
 systemctl --user start tbot_web_router.service
+
+systemctl --user enable phase_supervisor.service
+systemctl --user start phase_supervisor.service
 
 # DO NOT enable/start tbot_bot.service here; it must be started only after provisioning and registration are complete.
 
@@ -48,4 +52,4 @@ else
     echo "$LOG_TAG No browser launcher available. UI available at: $URL"
 fi
 
-echo "$LOG_TAG Web router launched. TradeBot ready for UI/phase testing."
+echo "$LOG_TAG Web router and phase supervisor launched. TradeBot ready for UI/phase testing."
