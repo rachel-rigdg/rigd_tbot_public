@@ -4,6 +4,10 @@
 import subprocess
 import time
 from pathlib import Path
+import sys
+
+sys.stdout = open("/home/tbot/rigd_tbot/phase_supervisor.log", "a")
+sys.stderr = sys.stdout
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
