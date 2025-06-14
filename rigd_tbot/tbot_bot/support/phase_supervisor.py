@@ -57,12 +57,23 @@ def start_flask_app(script_path, port):
         stderr=subprocess.DEVNULL,
     )
 
+def start_router():
+    # Launch the router Flask app on port 6900, if not running
+    import socket
+    ROUTER_PORT = 6900
+    if not is_port_open(ROUTER_PORT):
+        router_script = WEB_DIR / "portal_web_router.py"
+        return subprocess.Popen(
+            ["python3", str(router_script)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    return None
+
 def supervisor_loop():
     print("[phase_supervisor] Starting TradeBot phase supervisor...")
-    # Start router service once
-    subprocess.Popen(
-        ["systemctl", "--user", "start", "tbot_web_router.service"]
-    )
+    # Start router once
+    router_process = start_router()
     active_process = None
     last_phase = None
     while True:
@@ -74,10 +85,12 @@ def supervisor_loop():
             # Kill previous phase app
             if active_process:
                 active_process.terminate()
-                active_process.wait(timeout=5)
+                try:
+                    active_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    active_process.kill()
                 active_process = None
             # Launch new phase Flask app on appropriate port
-            # Map phases to ports (same as router)
             port_map = {
                 "initialize": 6901,
                 "provisioning": 6902,
