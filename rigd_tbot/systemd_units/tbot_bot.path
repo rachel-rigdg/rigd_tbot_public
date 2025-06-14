@@ -2,7 +2,6 @@
 
 [Unit]
 Description=RIGD TradeBot Core Path Monitor
-Wants=tbot_bot.service
 
 [Path]
 PathChanged=%h/rigd_tbot/tbot_bot/control/control_start.txt
