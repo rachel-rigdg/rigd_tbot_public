@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 import sys
 
-sys.stdout = open("/home/tbot/rigd_tbot/output/bootstrap/logs/phase_supervisor.log", "a")
+sys.stdout = open("/home/tbot/rigd_tbot/tbot_bot/output/bootstrap/logs/phase_supervisor.log", "a")
 sys.stderr = sys.stdout
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -54,20 +54,19 @@ def is_port_open(port):
         return result
 
 def start_flask_app(script_path, port):
+    module_name = f"tbot_web.py.{script_path.stem}"
     if is_port_open(port):
-        print(f"[phase_supervisor] Flask app for port {port} already running: {script_path}")
+        print(f"[phase_supervisor] Flask app for port {port} already running: {module_name}")
         return None  # Already running
-    print(f"[phase_supervisor] Launching Flask app: python3 {script_path} (port {port})")
+    print(f"[phase_supervisor] Launching Flask app: python3 -m {module_name} (port {port})")
     try:
         proc = subprocess.Popen(
-            ["python3", str(script_path)],
-            # stdout=subprocess.DEVNULL,
-            # stderr=subprocess.DEVNULL,
+            ["python3", "-m", module_name],
         )
-        print(f"[phase_supervisor] Launched process PID={proc.pid} for {script_path}")
+        print(f"[phase_supervisor] Launched process PID={proc.pid} for {module_name}")
         return proc
     except Exception as ex:
-        print(f"[phase_supervisor] ERROR launching {script_path}: {ex}")
+        print(f"[phase_supervisor] ERROR launching {module_name}: {ex}")
         return None
 
 def supervisor_loop():
