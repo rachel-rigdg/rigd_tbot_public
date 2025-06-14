@@ -36,8 +36,8 @@ def create_bootstrap_app():
 
     @app.route("/bootstrap/complete", methods=["POST"])
     def bootstrap_complete():
-        # Trigger self-termination after bootstrap phase completes
-        os._exit(0)
+        # Removed self-termination; phase_supervisor.py manages process lifecycle
+        return jsonify({"status": "bootstrap complete"}), 200
 
     return app
 

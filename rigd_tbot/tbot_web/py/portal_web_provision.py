@@ -3,7 +3,7 @@
 
 import os
 import sys
-from flask import Flask, redirect, url_for, send_from_directory, request
+from flask import Flask, redirect, url_for, send_from_directory, request, jsonify
 from .main_web import main_blueprint
 from .provisioning_web import provisioning_blueprint
 from pathlib import Path
@@ -32,8 +32,8 @@ def create_provision_app():
 
     @app.route("/provision/complete", methods=["POST"])
     def provision_complete():
-        # Trigger self-termination after provisioning completes
-        os._exit(0)
+        # Removed self-termination; phase_supervisor.py manages process lifecycle
+        return jsonify({"status": "provisioning complete"}), 200
 
     return app
 

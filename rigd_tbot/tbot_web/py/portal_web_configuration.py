@@ -32,8 +32,8 @@ def create_configuration_app():
 
     @app.route("/configuration/complete", methods=["POST"])
     def configuration_complete():
-        # Trigger self-termination after configuration completes
-        os._exit(0)
+        # Removed self-termination; phase_supervisor.py manages process lifecycle
+        return jsonify({"status": "configuration complete"}), 200
 
     return app
 

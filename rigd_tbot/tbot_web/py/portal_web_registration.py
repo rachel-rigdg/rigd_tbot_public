@@ -3,7 +3,7 @@
 
 import os
 import sys
-from flask import Flask, send_from_directory, redirect, url_for, request
+from flask import Flask, send_from_directory, redirect, url_for, request, jsonify
 from .register_web import register_web
 from pathlib import Path
 
@@ -30,8 +30,8 @@ def create_registration_app():
 
     @app.route("/registration/complete", methods=["POST"])
     def registration_complete():
-        # Trigger self-termination after registration completes
-        os._exit(0)
+        # Removed self-termination; phase_supervisor.py manages process lifecycle
+        return jsonify({"status": "registration complete"}), 200
 
     return app
 
