@@ -4,6 +4,8 @@
 
 set -e
 
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_UNIT_PATH="$ROOT_DIR/systemd_units"
 LOG_TAG="[run_tbot_webui_launcher]"
