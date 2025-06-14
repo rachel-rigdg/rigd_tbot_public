@@ -13,6 +13,7 @@ from .settings_web import settings_blueprint
 from .coa_web import coa_web
 from .ledger_web import ledger_web
 from .test_web import test_web
+from .configuration_web import configuration_blueprint
 from pathlib import Path
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -36,6 +37,7 @@ def create_main_app():
     app.register_blueprint(coa_web, url_prefix="/coa")
     app.register_blueprint(ledger_web, url_prefix="/ledger")
     app.register_blueprint(test_web, url_prefix="/test")
+    app.register_blueprint(configuration_blueprint, url_prefix="/configuration")
 
     @app.route("/")
     def serve_index():

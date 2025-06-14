@@ -71,13 +71,9 @@ rigd_tbot/
 │       └── upload_backups_to_cloud.sh   	# CLI: Uploads backup archives to S3/cloud/offsite vault
 │
 ├── systemd_units/	
-│   ├── tbot_bot.path				# tbot Core Path Monitor 				→ symlink: ~/.config/systemd/user/
-│   ├── tbot_bot.service              		# tbot Core Bot Runtime					→ symlink: ~/.config/systemd/user/
-│   ├── tbot_provisioning.service           	# tbot Provisioning Orchestrator			→ symlink: ~/.config/systemd/user/	
-│   ├── tbot_web_bootstrap.service		# tbot Web UI (Bootstrap/Config Phase)			→ symlink: ~/.config/systemd/user/
-│   ├── tbot_web_main.service           	# tbot Web UI (Main/Dashboard Phase)			→ symlink: ~/.config/systemd/user/
-│   ├── tbot_web_registration.service		# tbot Web UI (Registration Phase)			→ symlink: ~/.config/systemd/user/
-│   └── tbot.target				# Master Orchestration unit for all TradeBot services	→ symlink: ~/.config/systemd/user/
+│   ├── tbot_bot.path				# tbot Core Path Monitor 	→ symlink: ~/.config/systemd/user/
+│   ├── tbot_bot.service              		# tbot Core Bot Runtime		→ symlink: ~/.config/systemd/user/
+│   └── tbot_web_router.service 		# tbot Core Web UI Runtime	→ symlink: ~/.config/systemd/user/
 │
 ├── tbot_bot/                                	# Core engine: execution, strategy, reporting, and config
 │   ├── __init__.py
@@ -257,7 +253,6 @@ rigd_tbot/
 │   │   ├── decrypt_secrets.py                # Loads/decrypts *.json.enc secrets using Fernet keys from storage/keys/; called by config/runtime modules
 │   │   ├── encrypt_secrets.py                # Encrypts/rotates all secret/config JSONs in storage/secrets/ using Fernet keys from storage/keys/
 │   │   ├── path_resolver.py                  # Resolves storage/output/config paths for all modules, based on BOT_IDENTITY and file category; called by all runtime modules for dynamic file routing
-│   │   ├── phase_supervisor.py			# Single entry point: orchestrates all systemd services for TradeBot and Web UI phases. Ensures only one phase service is active at a time by monitoring bot_state.txt.
 │   │   ├── service_bot.py                    # (Optional) Systemd-compatible daemon: manages TradeBot process as a background service (not required for bootstrap)
 │   │   ├── utils_coa_web.py                  # Loads/validates/manages COA for bot exec and Web UI; called by coa_web.py, accounting_config.py
 │   │   ├── utils_config.py                   # Loads/validates all bot/env config files (.env, .env_bot, runtime envs)
@@ -322,11 +317,14 @@ rigd_tbot/
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state
     │   ├── logs_web.py                         # Displays log output (read-only); calls utils_log.py
     │   ├── main_web.py                         # Orchestrates main UI shell; registers routes, manages state; triggers bot start if required; links wait_for_bot.html and ledger.html
-    │   ├── portal_web_bootstrap.py             # Flask app for bootstrap/configuration/provisioning phase only
-    │   ├── portal_web_main.py                  # Flask app for main (post-registration) operational UI
-    │   ├── portal_web_registration.py          # Flask app for registration phase only
+    │   ├── portal_web_bootstrap.py             # Flask app for bootstrap phase only  - builds databases and ledgers  (runs after provisioning)
+    │   ├── portal_web_configuration.py         # Flask app for initial configuration phase - initial configuration (Runs first - configuration.html UI)
+    │   ├── portal_web_main.py                  # Flask app for main operational UI (runs after registration )
+    │   ├── portal_web_provision.py              # Flask app for provisioning phase only  - sets keys and encrypts secrets (runs after configuration)
+    │   ├── portal_web_registration.py          # Flask app for registration phase only - Adds Admin User to SYSTEM_USERS.db  (runs after bootstrapping )
+    │   ├── portal_web_router.py 		# Main Entry Point for Web UI -  Routes to correct Flask app, phased/lazy loads modules only as needed - Ensures only one phase service is active at a time by monitoring bot_state.txt.
     │   ├── register_web.py			# handles user registration logic and SYSTEM_USERS.db creation/updating
-    │   ├── run_web.py                          # Flask app launch entrypoint (WSGI)
+    │   ├── run_web.py                          # 
     │   ├── settings_web.py                     # Bot strategy/runtime settings routes; calls utils_config.py (never handles credentials)
     │   ├── start_stop_web.py                   # API/UI for bot control lifecycle (start/stop); writes control files
     │   ├── status_web.py                       # Serves live bot/system status; reports active session/metrics from status sources

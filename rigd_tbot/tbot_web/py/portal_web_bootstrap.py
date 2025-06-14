@@ -2,6 +2,7 @@
 # Flask app for bootstrap/configuration phase only
 
 import os
+import sys
 from flask import Flask, render_template, send_from_directory, redirect, url_for, request, jsonify
 from .main_web import main_blueprint
 from .configuration_web import configuration_blueprint
@@ -32,6 +33,11 @@ def create_bootstrap_app():
     @app.route("/favicon.ico")
     def favicon():
         return send_from_directory(BASE_DIR, "favicon.ico")
+
+    @app.route("/bootstrap/complete", methods=["POST"])
+    def bootstrap_complete():
+        # Trigger self-termination after bootstrap phase completes
+        os._exit(0)
 
     return app
 

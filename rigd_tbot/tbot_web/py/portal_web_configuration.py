@@ -2,6 +2,7 @@
 # Flask app for configuration phase (configuration.html UI)
 
 import os
+import sys
 from flask import Flask, render_template, send_from_directory, redirect, url_for, request, jsonify
 from .main_web import main_blueprint
 from .configuration_web import configuration_blueprint
@@ -28,6 +29,11 @@ def create_configuration_app():
     @app.route("/favicon.ico")
     def favicon():
         return send_from_directory(BASE_DIR, "favicon.ico")
+
+    @app.route("/configuration/complete", methods=["POST"])
+    def configuration_complete():
+        # Trigger self-termination after configuration completes
+        os._exit(0)
 
     return app
 

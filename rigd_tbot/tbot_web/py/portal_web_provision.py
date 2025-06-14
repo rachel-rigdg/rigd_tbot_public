@@ -2,7 +2,8 @@
 # Flask entry point for provisioning phase
 
 import os
-from flask import Flask, redirect, url_for, send_from_directory
+import sys
+from flask import Flask, redirect, url_for, send_from_directory, request
 from .main_web import main_blueprint
 from .provisioning_web import provisioning_blueprint
 from pathlib import Path
@@ -28,6 +29,11 @@ def create_provision_app():
     @app.route("/favicon.ico")
     def favicon():
         return send_from_directory(BASE_DIR, "favicon.ico")
+
+    @app.route("/provision/complete", methods=["POST"])
+    def provision_complete():
+        # Trigger self-termination after provisioning completes
+        os._exit(0)
 
     return app
 

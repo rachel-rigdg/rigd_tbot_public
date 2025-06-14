@@ -2,7 +2,8 @@
 # Flask app for registration phase only
 
 import os
-from flask import Flask, send_from_directory, redirect, url_for
+import sys
+from flask import Flask, send_from_directory, redirect, url_for, request
 from .register_web import register_web
 from pathlib import Path
 
@@ -26,6 +27,11 @@ def create_registration_app():
     @app.route("/favicon.ico")
     def favicon():
         return send_from_directory(BASE_DIR, "favicon.ico")
+
+    @app.route("/registration/complete", methods=["POST"])
+    def registration_complete():
+        # Trigger self-termination after registration completes
+        os._exit(0)
 
     return app
 

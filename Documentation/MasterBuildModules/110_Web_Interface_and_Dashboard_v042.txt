@@ -52,9 +52,14 @@ Real-Time Monitoring Dashboard
 - `py/register_web.py`: Handles user registration logic and SYSTEM_USERS.db creation/updating.
 
 **Multi-Phase Flask App Structure:**
-- `portal_web_bootstrap.py`: Flask app for static files, main/configuration blueprints; *bootstrap/configuration/provisioning phase only*.
-- `portal_web_registration.py`: Flask app for static files and register_web blueprint; *registration phase only*.
-- `portal_web_main.py`: Flask app for static files and all operational blueprints (main, login, logout, settings, coa, ledger, logs, test, etc); *main/dashboard phase only*.
+- `portal_web_router.py`: Main Entry Point for Web UI -  Routes to correct Flask app, phased/lazy loads modules only as needed - detects `bot_state.txt` and ensures only one phase service is active at a time by monitoring bot_state.txt.
+- `portal_web_configuration.py`: Flask app for initial configuration phase (Runs first - configuration.html UI)
+- `portal_web_provision.py`: Flask app for provisioning phase only - sets keys and encrypts secrets (runs after configuration )
+- `portal_web_bootstrap.py`: Flask app for static files,  - builds databases and ledgers  (runs after provisioning)
+- `portal_web_registration.py`: Flask app for registration phase only - Adds Admin User to SYSTEM_USERS.db  (runs after bootstrapping )
+- `portal_web_main.py`: Flask app for static files and all operational blueprints (main, login, logout, settings, configuration, coa, ledger, logs, test, etc); *main/dashboard phase only*.  (runs after registration )
+- **Flask modularization and phase control ensures that privileged routes, registration, or dashboard features can never be loaded or called outside their authorized lifecycle phase.**
+
 
 **Support Modules (from tbot_web/support/):**
 - `auth_web.py`: Handles user authentication, bcrypt password hashing, validation for login/session.
@@ -74,13 +79,10 @@ Real-Time Monitoring Dashboard
 - Upon completion, bot core is launched independently (never as Flask child).
 
 **Systemd Integration and Service Phases:**  
-- Systemd units are *modular and phase-specific*:
-    - `tbot_web_bootstrap.service`: Launches the Flask app for initial configuration/provisioning (only registers blueprints required for that phase).
-    - `tbot_web_registration.service`: Launches Flask app for user registration (only registers registration blueprints, minimal attack surface).
-    - `tbot_web_main.service`: Launches full Flask dashboard after registration (all blueprints).
-    - `tbot_web.target`: Pulls all phases together as a unit dependency group, but only one phase is active at any time.
-- `run_web.py` detects `bot_state.txt` and ensures only the appropriate app for the current phase is launched. No blueprints/routes for unprovisioned phases are ever loaded.
-- **Flask modularization and systemd phase control ensures that privileged routes, registration, or dashboard features can never be loaded or called outside their authorized lifecycle phase.**
+    - `tbot_bot.service `: Launches the Flask app for initial configuration/provisioning (only registers blueprints required for that phase).
+    - `tbot_bot.path `: tbot Core Path Monitor
+    - `tbot_web_router.service`: Launches portal_web_main.py - Main Flask entry point - 
+
 
 **Added User Registration Flow:**
 
