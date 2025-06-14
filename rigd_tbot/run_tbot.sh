@@ -29,9 +29,14 @@ echo "$LOG_TAG Enabling and starting tbot_web_router.service..."
 systemctl --user enable tbot_web_router.service
 systemctl --user start tbot_web_router.service
 
-echo "$LOG_TAG Enabling and starting phase_supervisor.service..."
-systemctl --user enable phase_supervisor.service
-systemctl --user start phase_supervisor.service
+# Try to use systemd --user for phase_supervisor.service. If it fails, launch phase_supervisor.py in background.
+if systemctl --user enable phase_supervisor.service && systemctl --user start phase_supervisor.service; then
+    echo "$LOG_TAG phase_supervisor.service started with systemd."
+else
+    echo "$LOG_TAG WARNING: systemd --user not available or failed. Launching phase_supervisor.py directly in background."
+    nohup python3 "$ROOT_DIR/tbot_bot/support/phase_supervisor.py" > "$ROOT_DIR/tbot_bot/output/bootstrap/logs/phase_supervisor.log" 2>&1 &
+    echo "$LOG_TAG phase_supervisor.py started in background."
+fi
 
 # DO NOT enable/start tbot_bot.service here; it must be started only after provisioning and registration are complete by phase_supervisor.
 
