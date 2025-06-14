@@ -14,6 +14,13 @@ SERVICES=(
   "tbot_web.target"
 )
 
+PROCESS_PATTERNS=(
+  "phase_supervisor.py"
+  "tbot_web.py"
+  "tbot_bot.runtime.main"
+  "tbot_bot.config.provisioning_runner"
+)
+
 echo "Select one or more services to restart (separate numbers with spaces):"
 for i in "${!SERVICES[@]}"; do
   printf "%2d) %s\n" $((i+1)) "${SERVICES[$i]}"
@@ -48,6 +55,11 @@ elif [[ "${choices[0]}" == "k" ]]; then
       echo "Failed to stop $SERVICE. (Exit code: $STATUS)"
     fi
   done
+  echo "Force killing any orphaned bot-related processes..."
+  for PATTERN in "${PROCESS_PATTERNS[@]}"; do
+    pkill -f "$PATTERN"
+  done
+  echo "All relevant processes killed."
   exit 0
 fi
 
