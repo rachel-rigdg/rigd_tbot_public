@@ -1,0 +1,14 @@
+[Unit]
+Description=RIGD TradeBot Phase Supervisor
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/tbot/rigd_tbot
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment="SUDO_ASKPASS=/bin/true"
+ExecStart=/usr/bin/env python3 /home/tbot/rigd_tbot/tbot_bot/support/phase_supervisor.py
+Restart=always
+
+[Install]
+WantedBy=default.target

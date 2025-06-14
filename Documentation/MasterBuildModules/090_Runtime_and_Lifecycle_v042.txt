@@ -1,7 +1,7 @@
 ================================================================================
 Document: 090_Runtime_and_Lifecycle
 Version: v042
-Date: UTC:2025-06-10 14:17
+Date: UTC:2025-06-13 12:42
 ================================================================================
 
 This module documents the runtime session lifecycle, phases, shutdown protocols, and design confirmations.
@@ -15,6 +15,79 @@ Contents:
 All runtime logic is immutable except via Web UI configuration changes.
 
 audit compliance.
+
+
+================================================================================
+RIGD PHASE SUPERVISOR: USER-MODE SYSTEMD SPECIFICATION 
+================================================================================
+
+OBJECTIVE:
+Fully eliminate `sudo` and `visudo` from all bot orchestration. The phase supervisor and systemd units must run entirely in *user mode*, allowing any `tbot`-like account to bootstrap a bot instance without elevated permissions.
+
+--------------------------------------------------------------------------------
+CORE CHANGES TO IMPLEMENT (LOCKED IN)
+--------------------------------------------------------------------------------
+
+1. Replace All `sudo systemctl` with `systemctl --user`
+	- Applies to `phase_supervisor.py` and any launch scripts
+	- e.g. `systemctl --user restart tbot_bot.service`
+
+2. Unit Files Directory
+	- Move all `.service` files to:
+	`/home/tbot/.config/systemd/user/`
+	- Remove any `User=...` directive (not valid in user units)
+	- Ensure `[Install]` section uses: `WantedBy=default.target`
+
+3. Enable User-Level Systemd Session
+	```bash
+	loginctl enable-linger tbot
+
+4. Environment Setup
+
+	Add to ~/.bashrc (or loader script):
+
+	export XDG_RUNTIME_DIR=/run/user/$(id -u)
+
+5.Update Supervisor Launch
+
+	Supervisor must run with:
+	systemctl --user start phase_supervisor.service
+	Do Not Use sudo in Code or Scripts
+	No sudo calls anywhere in *.py or run_tbot.sh
+
+INTERNAL ASSISTANT INSTRUCTION BLOCK (LOCKED)
+When modifying any service-related logic or orchestration scripts in the RIGD TradeBot project:
+
+Enforce systemctl --user (never sudo systemctl)
+
+Phase supervisor must use user-level systemd
+
+Unit files must live at ~/.config/systemd/user/
+
+Ensure environment includes XDG_RUNTIME_DIR
+
+Never reference sudo, visudo, or privileged paths
+
+This is now the permanent spec for all future implementations.
+
+
+--------------------------------------------------------------------------------
+SYSTEMD INSTALLATION:
+--------------------------------------------------------------------------------
+
+mkdir -p ~/.config/systemd/user
+cd ~/.config/systemd/user
+
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_bot.service
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_bot.path
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_provisioning.service
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_web_bootstrap.service
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_web_main.service
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_web_registration.service
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot.target
+
+systemctl --user daemon-reexec
+systemctl --user daemon-reload
 
 
 =============================================================================================================================================

@@ -62,7 +62,7 @@ Functional Requirements
 - All provisioning, credential creation, key management, and encryption occurs **exclusively** via the TradeBot Web UI configuration step.  
 - No external tool, CLI, script, or manual operator may create, rotate, or inject any Fernet key, config, or secret after bootstrap.
 - All encryption helpers (`key_manager.py`, `config_encryption.py`, `security_users.py`) must enforce this policy and reject any unauthorized usage.
-- All key and config storage paths, naming, and lifecycle strictly follow the structure defined in `040_Directory_Structure_v041.txt`.
+- All key and config storage paths, naming, and lifecycle strictly follow the structure defined in `040_Directory_Structure_v042.txt`.
 
 --------------------------------------------------------------------------------
 bot_state.txt State Management 
@@ -75,6 +75,10 @@ bot_state.txt State Management
     - `idle`, `trading`, `monitoring`, `analyzing`, `updating`: show main dashboard UI (`main.html`)
     - `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error`: show error state/page and halt further operations
 - The state machine is cross-referenced and enforced per `090_Runtime_and_Lifecycle_v041.txt` and `110_Web_Interface_and_Dashboard_v041.txt`.
+
+
+
+
 
 --------------------------------------------------------------------------------
 Summary

@@ -1,7 +1,6 @@
 #!/bin/bash
 # restart_systemd.sh
-# Interactive multi-select systemd service restarter with confirmation.
-# Recommend: configure passwordless sudo for systemctl commands (edit /etc/sudoers).
+# Interactive multi-select user-mode systemd service restarter with confirmation.
 
 SERVICES=(
   "tbot_bot.path"
@@ -26,7 +25,7 @@ if [[ "${choices[0]}" == "r" ]]; then
   echo "Restarting ALL services..."
   for SERVICE in "${SERVICES[@]}"; do
     echo "Restarting $SERVICE ..."
-    sudo systemctl restart "$SERVICE"
+    systemctl --user restart "$SERVICE"
     STATUS=$?
     if [ $STATUS -eq 0 ]; then
       echo "Service $SERVICE restarted successfully."
@@ -39,7 +38,7 @@ elif [[ "${choices[0]}" == "k" ]]; then
   echo "Stopping/KILLING ALL services..."
   for SERVICE in "${SERVICES[@]}"; do
     echo "Stopping $SERVICE ..."
-    sudo systemctl stop "$SERVICE"
+    systemctl --user stop "$SERVICE"
     STATUS=$?
     if [ $STATUS -eq 0 ]; then
       echo "Service $SERVICE stopped successfully."
@@ -67,7 +66,7 @@ if [[ "$confirm" =~ ^[Yy]$ ]]; then
     idx=$((i-1))
     SERVICE="${SERVICES[$idx]}"
     echo "Restarting $SERVICE ..."
-    sudo systemctl restart "$SERVICE"
+    systemctl --user restart "$SERVICE"
     STATUS=$?
     if [ $STATUS -eq 0 ]; then
       echo "Service $SERVICE restarted successfully."

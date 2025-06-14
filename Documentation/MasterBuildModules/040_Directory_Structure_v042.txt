@@ -1,7 +1,7 @@
 ================================================================================
 Document: 040_Directory_Structure
 Version: v042
-Date: UTC:2025-06-10 14:17
+Date: UTC:2025-06-13 12:42
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -70,14 +70,14 @@ rigd_tbot/
 │       ├── tradebot.service              	# Systemd or process manager service definition for bot daemon
 │       └── upload_backups_to_cloud.sh   	# CLI: Uploads backup archives to S3/cloud/offsite vault
 │
-├── systemd_units/
-│   ├── tbot_bot.path				# tbot Core Path Monitor
-│   ├── tbot_bot.service              		# tbot Core Bot Runtime
-│   ├── tbot_provisioning.service           	# tbot Provisioning Orchestrator
-│   ├── tbot_web_bootstrap.service		# tbot Web UI (Bootstrap/Config Phase)
-│   ├── tbot_web_main.service           	# tbot Web UI (Main/Dashboard Phase)
-│   ├── tbot_web_registration.service		# tbot Web UI (Registration Phase)
-│   └── tbot.target				# Orchestration unit that ensures all TradeBot services run as a group
+├── systemd_units/	
+│   ├── tbot_bot.path				# tbot Core Path Monitor 				→ symlink: ~/.config/systemd/user/
+│   ├── tbot_bot.service              		# tbot Core Bot Runtime					→ symlink: ~/.config/systemd/user/
+│   ├── tbot_provisioning.service           	# tbot Provisioning Orchestrator			→ symlink: ~/.config/systemd/user/	
+│   ├── tbot_web_bootstrap.service		# tbot Web UI (Bootstrap/Config Phase)			→ symlink: ~/.config/systemd/user/
+│   ├── tbot_web_main.service           	# tbot Web UI (Main/Dashboard Phase)			→ symlink: ~/.config/systemd/user/
+│   ├── tbot_web_registration.service		# tbot Web UI (Registration Phase)			→ symlink: ~/.config/systemd/user/
+│   └── tbot.target				# Master Orchestration unit for all TradeBot services	→ symlink: ~/.config/systemd/user/
 │
 ├── tbot_bot/                                	# Core engine: execution, strategy, reporting, and config
 │   ├── __init__.py
@@ -257,9 +257,8 @@ rigd_tbot/
 │   │   ├── decrypt_secrets.py                # Loads/decrypts *.json.enc secrets using Fernet keys from storage/keys/; called by config/runtime modules
 │   │   ├── encrypt_secrets.py                # Encrypts/rotates all secret/config JSONs in storage/secrets/ using Fernet keys from storage/keys/
 │   │   ├── path_resolver.py                  # Resolves storage/output/config paths for all modules, based on BOT_IDENTITY and file category; called by all runtime modules for dynamic file routing
+│   │   ├── phase_supervisor.py			# Single entry point: orchestrates all systemd services for TradeBot and Web UI phases. Ensures only one phase service is active at a time by monitoring bot_state.txt.
 │   │   ├── service_bot.py                    # (Optional) Systemd-compatible daemon: manages TradeBot process as a background service (not required for bootstrap)
-│   │   ├── tmp/
-│   │   │   └── *.json                        # Temporary plain config (pre-encryption, pre-secrets); BOT_IDENTITY, etc.
 │   │   ├── utils_coa_web.py                  # Loads/validates/manages COA for bot exec and Web UI; called by coa_web.py, accounting_config.py
 │   │   ├── utils_config.py                   # Loads/validates all bot/env config files (.env, .env_bot, runtime envs)
 │   │   ├── utils_identity.py                 # Computes/parses BOT_IDENTITY_STRING; manages all identity metadata for file/output routing

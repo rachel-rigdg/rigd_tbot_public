@@ -1,14 +1,15 @@
 # tbot_bot.service
+
 [Unit]
 Description=RIGD TradeBot Core Bot Runtime
 After=network.target
 
 [Service]
 Type=simple
-User=tbot
 WorkingDirectory=/home/tbot/rigd_tbot/
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/home/tbot/rigd_tbot/venv/bin/python3 -m tbot_bot.runtime.main
 Restart=on-failure
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
