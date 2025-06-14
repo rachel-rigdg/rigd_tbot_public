@@ -57,7 +57,7 @@ def stop_all_services(except_unit=None):
             subprocess.run(["systemctl", "--user", "stop", unit], check=False)
 
 def start_service(unit):
-    subprocess.run(["systemctl", "--user", "restart", unit], check=False)
+    subprocess.run(["systemctl", "--user", "start", unit], check=False)
 
 def supervisor_loop():
     print("[phase_supervisor] TradeBot phase supervisor started. Monitoring bot_state.txt...")
