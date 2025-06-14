@@ -15,21 +15,21 @@ BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 WEB_DIR = ROOT_DIR.parent / "tbot_web" / "py"
 
 PHASE_APPS = {
-    "initialize":      "portal_web_configuration.py",
-    "provisioning":    "portal_web_provision.py",
-    "bootstrapping":   "portal_web_bootstrap.py",
-    "registration":    "portal_web_registration.py",
-    "main":            "portal_web_main.py",
-    "idle":            "portal_web_main.py",
-    "analyzing":       "portal_web_main.py",
-    "monitoring":      "portal_web_main.py",
-    "trading":         "portal_web_main.py",
-    "updating":        "portal_web_main.py",
-    "shutdown":        "portal_web_main.py",
-    "graceful_closing_positions": "portal_web_main.py",
-    "emergency_closing_positions": "portal_web_main.py",
-    "shutdown_triggered": "portal_web_main.py",
-    "error":           "portal_web_main.py",
+    "initialize":      "portal_web_configuration",
+    "provisioning":    "portal_web_provision",
+    "bootstrapping":   "portal_web_bootstrap",
+    "registration":    "portal_web_registration",
+    "main":            "portal_web_main",
+    "idle":            "portal_web_main",
+    "analyzing":       "portal_web_main",
+    "monitoring":      "portal_web_main",
+    "trading":         "portal_web_main",
+    "updating":        "portal_web_main",
+    "shutdown":        "portal_web_main",
+    "graceful_closing_positions": "portal_web_main",
+    "emergency_closing_positions": "portal_web_main",
+    "shutdown_triggered": "portal_web_main",
+    "error":           "portal_web_main",
 }
 
 BOT_START_PHASES = {
@@ -53,15 +53,14 @@ def is_port_open(port):
         print(f"[phase_supervisor] is_port_open({port}): {result}")
         return result
 
-def start_flask_app(script_path, port):
-    module_name = f"tbot_web.py.{script_path.stem}"
+def start_flask_app(module_name, port):
     if is_port_open(port):
         print(f"[phase_supervisor] Flask app for port {port} already running: {module_name}")
         return None  # Already running
-    print(f"[phase_supervisor] Launching Flask app: python3 -m {module_name} (port {port})")
+    print(f"[phase_supervisor] Launching Flask app: python3 -m tbot_web.py.{module_name} (port {port})")
     try:
         proc = subprocess.Popen(
-            ["python3", "-m", module_name],
+            ["python3", "-m", f"tbot_web.py.{module_name}"],
         )
         print(f"[phase_supervisor] Launched process PID={proc.pid} for {module_name}")
         return proc
@@ -110,9 +109,8 @@ def supervisor_loop():
                 "error": 6905,
             }
             port = port_map.get(phase, 6901)
-            script = PHASE_APPS[phase]
-            script_path = WEB_DIR / script
-            active_process = start_flask_app(script_path, port)
+            module_name = PHASE_APPS[phase]
+            active_process = start_flask_app(module_name, port)
             # Start bot only after registration phase or later
             if phase in BOT_START_PHASES:
                 print(f"[phase_supervisor] Starting tbot_bot.service for phase: {phase}")
