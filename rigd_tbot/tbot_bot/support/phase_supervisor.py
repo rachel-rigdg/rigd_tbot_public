@@ -6,7 +6,9 @@ import time
 from pathlib import Path
 import sys
 
-sys.stdout = open(str(Path(__file__).resolve().parents[1] / "phase_supervisor.log"), "a")
+LOG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs" / "phase_supervisor.log"
+LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+sys.stdout = open(str(LOG_PATH), "a")
 sys.stderr = sys.stdout
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -37,7 +39,6 @@ ALL_UNITS = [
     "tbot_web_bootstrap.service",
     "tbot_web_registration.service",
     "tbot_web_main.service"
-    # do NOT include "tbot_bot.service" for stop loop below
 ]
 
 def read_bot_state():
