@@ -6,11 +6,6 @@ import time
 from pathlib import Path
 import sys
 
-LOG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs" / "phase_supervisor.log"
-LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-sys.stdout = open(str(LOG_PATH), "a")
-sys.stderr = sys.stdout
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
@@ -46,7 +41,7 @@ def read_bot_state():
         return "initialize"
     try:
         state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        print(f"[phase_supervisor] read_bot_state() returned: {state!r}")
+        print(f"[phase_supervisor] read_bot_state() returned: {state!r}", flush=True)
         return state
     except Exception:
         return "initialize"
@@ -60,19 +55,20 @@ def start_service(unit):
     subprocess.run(["systemctl", "--user", "start", unit], check=False)
 
 def supervisor_loop():
-    print("[phase_supervisor] TradeBot phase supervisor started. Monitoring bot_state.txt...")
+    print("[phase_supervisor] TradeBot phase supervisor started. Monitoring bot_state.txt...", flush=True)
     last_phase = None
     bot_started = False
     while True:
         phase = read_bot_state()
         if phase not in PHASE_UNITS:
-            print(f"[phase_supervisor] Unrecognized phase '{phase}', defaulting to 'initialize'")
+            print(f"[phase_supervisor] Unrecognized phase '{phase}', defaulting to 'initialize'", flush=True)
             phase = "initialize"
         active_unit = PHASE_UNITS[phase]
 
         if phase != last_phase:
-            print(f"[phase_supervisor] Phase transition detected: {last_phase} -> {phase}")
+            print(f"[phase_supervisor] Phase transition detected: {last_phase} -> {phase}", flush=True)
             stop_all_services(except_unit=active_unit)
+            time.sleep(5)  # Wait for port release
             start_service(active_unit)
             if phase == "main" and not bot_started:
                 start_service(PHASE_UNITS["bot"])
@@ -81,4 +77,9 @@ def supervisor_loop():
         time.sleep(2)
 
 if __name__ == "__main__":
+    LOG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs" / "phase_supervisor.log"
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    sys.stdout = open(str(LOG_PATH), "a")
+    sys.stderr = sys.stdout
+    print("LOG TEST", flush=True)
     supervisor_loop()
