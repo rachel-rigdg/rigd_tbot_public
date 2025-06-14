@@ -1,6 +1,6 @@
 #!/bin/bash
 # run_tbot.sh
-# Launches TradeBot web router and phase supervisor (do not start core bot until provisioning is complete).
+# Launches TradeBot phase supervisor only (direct Flask apps launched by supervisor).
 
 set -e
 
@@ -25,13 +25,15 @@ ln -sf "$SYSTEMD_UNIT_PATH"/phase_supervisor.service ~/.config/systemd/user/
 
 systemctl --user daemon-reload
 
-systemctl --user enable tbot_web_router.service
-systemctl --user start tbot_web_router.service
+echo "$LOG_TAG Disabling and stopping tbot_web_router.service (replaced by phase_supervisor)..."
+systemctl --user disable tbot_web_router.service || true
+systemctl --user stop tbot_web_router.service || true
 
+echo "$LOG_TAG Enabling and starting phase_supervisor.service..."
 systemctl --user enable phase_supervisor.service
 systemctl --user start phase_supervisor.service
 
-# DO NOT enable/start tbot_bot.service here; it must be started only after provisioning and registration are complete.
+# DO NOT enable/start tbot_bot.service here; it must be started only after provisioning and registration are complete by phase_supervisor.
 
 PYTHON_BIN="python3"
 WEB_DIR="$ROOT_DIR/tbot_web"
@@ -52,4 +54,4 @@ else
     echo "$LOG_TAG No browser launcher available. UI available at: $URL"
 fi
 
-echo "$LOG_TAG Web router and phase supervisor launched. TradeBot ready for UI/phase testing."
+echo "$LOG_TAG Phase supervisor launched. TradeBot ready for UI/phase testing."
