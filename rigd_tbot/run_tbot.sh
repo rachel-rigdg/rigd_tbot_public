@@ -11,14 +11,15 @@ SYSTEMD_UNIT_PATH="$ROOT_DIR/systemd_units"
 LOG_TAG="[run_tbot_webui_launcher]"
 
 echo "$LOG_TAG Killing any existing TradeBot systemd processes..."
-systemctl --user stop tbot_web_bootstrap.service tbot_provisioning.service tbot_web_registration.service tbot_web_main.service tbot_bot.service phase_supervisor.service || true
+systemctl --user stop tbot_web_configuration.service tbot_provisioning.service tbot_web_bootstrap.service tbot_web_registration.service tbot_web_main.service tbot_bot.service phase_supervisor.service || true
 systemctl --user daemon-reexec
 systemctl --user daemon-reload
 
 echo "$LOG_TAG Copying systemd unit files for ALL phases and supervisor..."
 mkdir -p ~/.config/systemd/user/
-ln -sf "$SYSTEMD_UNIT_PATH"/tbot_web_bootstrap.service ~/.config/systemd/user/
+ln -sf "$SYSTEMD_UNIT_PATH"/tbot_web_configuration.service ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_provisioning.service ~/.config/systemd/user/
+ln -sf "$SYSTEMD_UNIT_PATH"/tbot_web_bootstrap.service ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_web_registration.service ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_web_main.service ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_bot.service ~/.config/systemd/user/

@@ -3,12 +3,13 @@
 # Interactive multi-select user-mode systemd service restarter with confirmation.
 
 SERVICES=(
-  "tbot_bot.path"
-  "tbot_bot.service"
+  "tbot_web_configuration.service"
   "tbot_provisioning.service"
   "tbot_web_bootstrap.service"
   "tbot_web_registration.service"
   "tbot_web_main.service"
+  "tbot_bot.service"
+  "tbot_bot.path"
   "tbot_web.target"
 )
 
