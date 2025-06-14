@@ -9,7 +9,7 @@ Type=simple
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment="PROVISIONING_PHASE=1"
 WorkingDirectory=%h/rigd_tbot
-ExecStart=/usr/bin/env python3 tbot_bot/config/provisioning_runner.py
+ExecStart=/usr/bin/env python3 -m tbot_bot.config.provisioning_runner
 Restart=no
 
 [Install]

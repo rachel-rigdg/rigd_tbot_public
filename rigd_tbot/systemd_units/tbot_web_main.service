@@ -10,7 +10,7 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment="FLASK_SECRET_KEY=changeme-unsafe-dev-key"
 Environment="BOT_WEB_PHASE=main"
 WorkingDirectory=%h/rigd_tbot
-ExecStart=/usr/bin/env python3 tbot_web/py/portal_web_main.py
+ExecStart=/usr/bin/env python3 -m tbot_web.py.portal_web_main
 Restart=on-failure
 
 [Install]

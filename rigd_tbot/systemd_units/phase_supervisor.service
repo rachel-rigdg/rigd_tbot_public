@@ -8,7 +8,7 @@ After=network.target
 Type=simple
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WorkingDirectory=%h/rigd_tbot
-ExecStart=/usr/bin/env python3 tbot_bot/support/phase_supervisor.py
+ExecStart=/usr/bin/env python3 -m tbot_bot.support.phase_supervisor
 Restart=always
 
 [Install]
