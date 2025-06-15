@@ -1,7 +1,7 @@
 ================================================================================
 Document: 090_Runtime_and_Lifecycle
-Version: v042
-Date: UTC:2025-06-13 12:42
+Version: v044
+Date: UTC:2025-06-15 04:30:00
 ================================================================================
 
 This module documents the runtime session lifecycle, phases, shutdown protocols, and design confirmations.

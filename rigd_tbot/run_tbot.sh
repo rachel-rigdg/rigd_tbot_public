@@ -1,6 +1,6 @@
 #!/bin/bash
 # run_tbot.sh
-# Launches TradeBot web router and phase supervisor (do not start core bot until provisioning is complete).
+# Launches TradeBot unified entrypoint (main.py manages all phases and Flask apps).
 
 set -e
 
@@ -8,40 +8,25 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_UNIT_PATH="$ROOT_DIR/systemd_units"
-LOG_TAG="[run_tbot_webui_launcher]"
+LOG_TAG="[run_tbot_launcher]"
 
-echo "$LOG_TAG Stopping any existing TradeBot systemd processes..."
-systemctl --user stop tbot_bot.service tbot_web_router.service phase_supervisor.service || true
+echo "$LOG_TAG Stopping any existing TradeBot core systemd process..."
+systemctl --user stop tbot_bot.service || true
 
 systemctl --user daemon-reexec
 systemctl --user daemon-reload
 
-echo "$LOG_TAG Linking systemd unit files for TradeBot core, web router, and phase supervisor..."
+echo "$LOG_TAG Linking systemd unit file for TradeBot core..."
 mkdir -p ~/.config/systemd/user/
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_bot.service ~/.config/systemd/user/
-ln -sf "$SYSTEMD_UNIT_PATH"/tbot_web_router.service ~/.config/systemd/user/
-ln -sf "$SYSTEMD_UNIT_PATH"/tbot_bot.path ~/.config/systemd/user/
-ln -sf "$SYSTEMD_UNIT_PATH"/phase_supervisor.service ~/.config/systemd/user/
 
 systemctl --user daemon-reload
 
-echo "$LOG_TAG Enabling and starting tbot_web_router.service..."
-systemctl --user enable tbot_web_router.service
-systemctl --user start tbot_web_router.service
-
-# Try to use systemd --user for phase_supervisor.service. If it fails, launch phase_supervisor.py in background.
-if systemctl --user enable phase_supervisor.service && systemctl --user start phase_supervisor.service; then
-    echo "$LOG_TAG phase_supervisor.service started with systemd."
-else
-    echo "$LOG_TAG WARNING: systemd --user not available or failed. Launching phase_supervisor.py directly in background."
-    nohup python3 "$ROOT_DIR/tbot_bot/support/phase_supervisor.py" > "$ROOT_DIR/tbot_bot/output/bootstrap/logs/phase_supervisor.log" 2>&1 &
-    echo "$LOG_TAG phase_supervisor.py started in background."
-fi
-
-# DO NOT enable/start tbot_bot.service here; it must be started only after provisioning and registration are complete by phase_supervisor.
+echo "$LOG_TAG Enabling and starting tbot_bot.service..."
+systemctl --user enable tbot_bot.service
+systemctl --user start tbot_bot.service
 
 PYTHON_BIN="python3"
-WEB_DIR="$ROOT_DIR/tbot_web"
 HOST=$($PYTHON_BIN - <<EOF
 import sys; sys.path.insert(0, "$ROOT_DIR")
 from tbot_bot.config.network_config import get_host_ip
@@ -59,4 +44,4 @@ else
     echo "$LOG_TAG No browser launcher available. UI available at: $URL"
 fi
 
-echo "$LOG_TAG Web router and phase supervisor launched. TradeBot ready for UI/phase testing."
+echo "$LOG_TAG TradeBot launched. Unified runtime and web UI are ready for testing."

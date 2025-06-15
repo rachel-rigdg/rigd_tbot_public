@@ -1,7 +1,7 @@
 ================================================================================
 Document: 080_Logging_and_Reporting
-Version: v042
-Date: UTC:2025-06-10 14:17
+Version: v044
+Date: UTC:2025-06-15 04:30:00
 ================================================================================
 
 This module defines the formats, storage locations, and field requirements for all TradeBot logs, trade records, summaries, and audit outputs.

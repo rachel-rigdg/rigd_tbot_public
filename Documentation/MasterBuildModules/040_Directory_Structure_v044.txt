@@ -1,7 +1,7 @@
 ================================================================================
 Document: 040_Directory_Structure
-Version: v042
-Date: UTC:2025-06-13 12:42
+Version: v044
+Date: UTC:2025-06-15 04:30:00
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -71,9 +71,7 @@ rigd_tbot/
 │       └── upload_backups_to_cloud.sh   	# CLI: Uploads backup archives to S3/cloud/offsite vault
 │
 ├── systemd_units/	
-│   ├── tbot_bot.path				# tbot Core Path Monitor 	→ symlink: ~/.config/systemd/user/
-│   ├── tbot_bot.service              		# tbot Core Bot Runtime		→ symlink: ~/.config/systemd/user/
-│   └── tbot_web_router.service 		# tbot Core Web UI Runtime	→ symlink: ~/.config/systemd/user/
+│   └── tbot_bot.service              		# tbot Core Bot Runtime	- launches:tbot_bot.runtime.main	→ symlink: ~/.config/systemd/user/
 │
 ├── tbot_bot/                                	# Core engine: execution, strategy, reporting, and config
 │   ├── __init__.py
@@ -204,7 +202,7 @@ rigd_tbot/
 │   │   ├── start_bot.py                 		# CLI entry point
 │   │   ├── status_bot.py                		# Tracks session state and health
 │   │   ├── stop_bot.py                  		# Graceful session shutdown
-│   │   ├── tbot_runner_supervisor.py    		# Oversees full lifecycle and watchdogs
+│   │   ├── tbot_runner_supervisor.py    		#  Unified bot phase and UI supervisor. Controls initialization, configuration, provisioning, bootstrapping, registration, and launches the operational bot and Oversees full lifecycle and watchdogs
 │   │   └── watchdog_bot.py              		# Broker connection monitor
 │   │
 │   ├── screeners/			            	# Screener & Symbol Selection
@@ -312,16 +310,13 @@ rigd_tbot/
     │   ├── bootstrap_utils.py                  # UI-only first-run logic: detects bootstrap status, determines page to show (config or login); calls db_bootstrap.py
     │   ├── coa_web.py                          # COA endpoints: view, edit, export; calls utils_coa_web.py, config_encryption.py
     │   ├── configuration_web.py                # Handles configuration route: displays, saves, and provisions config; calls config_encryption, key_manager, security_users
-        ├── ledger_web.py		        # Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
+    │   ├── ledger_web.py		        # Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
     │   ├── login_web.py                        # User login/logout/session; calls auth_web.py, security_users.py, session_manager.py
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state
     │   ├── logs_web.py                         # Displays log output (read-only); calls utils_log.py
     │   ├── main_web.py                         # Orchestrates main UI shell; registers routes, manages state; triggers bot start if required; links wait_for_bot.html and ledger.html
-    │   ├── portal_web_bootstrap.py             # Flask app for bootstrap phase only  - builds databases and ledgers  (runs after provisioning)
     │   ├── portal_web_configuration.py         # Flask app for initial configuration phase - initial configuration (Runs first - configuration.html UI)
-    │   ├── portal_web_main.py                  # Flask app for main operational UI (runs after registration )
-    │   ├── portal_web_provision.py              # Flask app for provisioning phase only  - sets keys and encrypts secrets (runs after configuration)
-    │   ├── portal_web_registration.py          # Flask app for registration phase only - Adds Admin User to SYSTEM_USERS.db  (runs after bootstrapping )
+    │   ├── portal_web_main.py                  # # Unified operational Flask app for all non-configuration phases (runs after successful configuration, and  bot_state.txt is not initialize  )
     │   ├── portal_web_router.py 		# Main Entry Point for Web UI -  Routes to correct Flask app, phased/lazy loads modules only as needed - Ensures only one phase service is active at a time by monitoring bot_state.txt.
     │   ├── register_web.py			# handles user registration logic and SYSTEM_USERS.db creation/updating
     │   ├── run_web.py                          # 
