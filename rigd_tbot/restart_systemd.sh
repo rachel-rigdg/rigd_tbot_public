@@ -1,23 +1,16 @@
 #!/bin/bash
 # restart_systemd.sh
-# Interactive multi-select user-mode systemd service restarter with confirmation.
+# Interactive user-mode systemd service restarter and process killer (unified core only).
 
 SERVICES=(
   "tbot_bot.service"
-  "tbot_bot.path"
-  "tbot_web_router.service"
-  "phase_supervisor.service"
 )
 
 PROCESS_PATTERNS=(
-  "tbot_web_router.py"
-  "portal_web_bootstrap.py"
+  "tbot_bot.runtime.main"
+  "tbot_runner_supervisor.py"
   "portal_web_configuration.py"
   "portal_web_main.py"
-  "portal_web_provision.py"
-  "portal_web_registration.py"
-  "tbot_bot.runtime.main"
-  "phase_supervisor.py"
 )
 
 echo "Select one or more services to restart (separate numbers with spaces):"
