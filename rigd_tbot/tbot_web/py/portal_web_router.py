@@ -1,32 +1,35 @@
 #!/usr/bin/env python3
 # tbot_web/py/portal_web_router.py
 # Routes HTTP to the correct running Flask app based on bot_state.txt.
-# Does NOT launch Flask apps; assumes phase_supervisor.py manages lifecycle.
+# Does NOT launch Flask apps; assumes supervisor manages lifecycle.
 
+import sys
 from flask import Flask, redirect, request
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import socket
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 app = Flask(__name__)
 
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 PHASE_PORTS = {
     "initialize":                   6901,
-    "provisioning":                 6902,
-    "bootstrapping":                6903,
-    "registration":                 6904,
-    "main":                         6905,
-    "idle":                         6905,
-    "analyzing":                    6905,
-    "monitoring":                   6905,
-    "trading":                      6905,
-    "updating":                     6905,
-    "shutdown":                     6905,
-    "graceful_closing_positions":   6905,
-    "emergency_closing_positions":  6905,
-    "shutdown_triggered":           6905,
-    "error":                        6905,
+    "configuration":                6901,
+    "provisioning":                 6900,
+    "bootstrapping":                6900,
+    "registration":                 6900,
+    "main":                         6900,
+    "idle":                         6900,
+    "analyzing":                    6900,
+    "monitoring":                   6900,
+    "trading":                      6900,
+    "updating":                     6900,
+    "shutdown":                     6900,
+    "graceful_closing_positions":   6900,
+    "emergency_closing_positions":  6900,
+    "shutdown_triggered":           6900,
+    "error":                        6900,
 }
 
 def is_port_open(port):
@@ -47,7 +50,6 @@ def router(path):
     state = get_bot_state()
     target_port = PHASE_PORTS.get(state, 6901)
     if not is_port_open(target_port):
-        # Target phase Flask app not running yet
         if target_port == 6901:
             return "TradeBot: System initializing. Please refresh in a moment.", 200
         else:
