@@ -52,9 +52,7 @@ Real-Time Monitoring Dashboard
 - `py/register_web.py`: Handles user registration logic and SYSTEM_USERS.db creation/updating.
 
 **Multi-Phase Flask App Structure:**
-- `portal_web_router.py`: Main Entry Point for Web UI -  Routes to correct Flask app, phased/lazy loads modules only as needed - detects `bot_state.txt` and ensures only one phase service is active at a time by monitoring bot_state.txt.
-- `portal_web_configuration.py`: Flask app for initial configuration phase (Runs first - configuration.html UI)
-- `portal_web_main.py`: Flask app for provisioning bootstrapping, and all static files and all operational blueprints (main, login, logout, settings, configuration, coa, ledger, logs, test, etc); *main/dashboard phase only*.  (runs after registration )
+- `portal_web_main.py`: Flask app for provisioning bootstrapping, and all static files and all operational blueprints (phases in this order: configuration → provisioning → bootstrapping → registration → login → main_web.py with iframe display for: status, Settings, logs, ledger, COA, test, configuration, account)
 - **Flask modularization and phase control ensures that privileged routes, registration, or dashboard features can never be loaded or called outside their authorized lifecycle phase.**
 
 

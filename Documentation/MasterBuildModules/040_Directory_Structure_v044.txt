@@ -315,11 +315,9 @@ rigd_tbot/
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state
     │   ├── logs_web.py                         # Displays log output (read-only); calls utils_log.py
     │   ├── main_web.py                         # Orchestrates main UI shell; registers routes, manages state; triggers bot start if required; links wait_for_bot.html and ledger.html
-    │   ├── portal_web_configuration.py         # Flask app for initial configuration phase - initial configuration (Runs first - configuration.html UI)
-    │   ├── portal_web_main.py                  # # Unified operational Flask app for all non-configuration phases (runs after successful configuration, and  bot_state.txt is not initialize  )
-    │   ├── portal_web_router.py 		# Main Entry Point for Web UI -  Routes to correct Flask app, phased/lazy loads modules only as needed - Ensures only one phase service is active at a time by monitoring bot_state.txt.
+    │   ├── portal_web_main.py                  # Flask app for provisioning bootstrapping, and all static files and all operational blueprints (phases in this order: configuration → provisioning → bootstrapping → registration → login → main_web.py that shows: status, Settings, logs, ledger, COA, test, configuration, account)
     │   ├── register_web.py			# handles user registration logic and SYSTEM_USERS.db creation/updating
-    │   ├── run_web.py                          # 
+    │   ├── run_web.py                          # main entry point into web UI (CLI)
     │   ├── settings_web.py                     # Bot strategy/runtime settings routes; calls utils_config.py (never handles credentials)
     │   ├── start_stop_web.py                   # API/UI for bot control lifecycle (start/stop); writes control files
     │   ├── status_web.py                       # Serves live bot/system status; reports active session/metrics from status sources
