@@ -86,8 +86,10 @@ def main():
     print(f"[main_bot] portal_web_main.py started with PID {flask_proc.pid}")
 
     try:
+        # ENFORCE: block all imports and logic until bot is operational
         wait_for_operational_phase()
 
+        # Import runtime modules and secrets only after provisioning/bootstrapping
         print("[main_bot] Importing strategy, config, and operational modules...")
         from tbot_bot.config.env_bot import get_bot_config
         from tbot_bot.strategy.strategy_router import run_strategy
