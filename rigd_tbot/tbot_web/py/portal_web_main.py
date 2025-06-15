@@ -102,6 +102,7 @@ def create_unified_app():
             app.register_blueprint(main_blueprint)
             print("[portal_web_main] Registered: main_blueprint")
         else:  # main or any post-bootstrapping phase
+            # Only import runtime blueprints if NOT in configuration, provisioning, or bootstrapping
             from .main_web import main_blueprint
             from .login_web import login_blueprint
             from .logout_web import logout_blueprint
