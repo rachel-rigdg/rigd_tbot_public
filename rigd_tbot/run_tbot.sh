@@ -26,22 +26,4 @@ echo "$LOG_TAG Enabling and starting tbot_bot.service..."
 systemctl --user enable tbot_bot.service
 systemctl --user start tbot_bot.service
 
-PYTHON_BIN="python3"
-HOST=$($PYTHON_BIN - <<EOF
-import sys; sys.path.insert(0, "$ROOT_DIR")
-from tbot_bot.config.network_config import get_host_ip
-print(get_host_ip())
-EOF
-)
-PORT=6900
-URL="http://${HOST}:${PORT}"
-
-if command -v open > /dev/null; then
-    open "$URL"
-elif command -v xdg-open > /dev/null; then
-    xdg-open "$URL"
-else
-    echo "$LOG_TAG No browser launcher available. UI available at: $URL"
-fi
-
 echo "$LOG_TAG TradeBot launched. Unified runtime and web UI are ready for testing."
