@@ -1,112 +1,100 @@
-#!/usr/bin/env python3
 # tbot_bot/runtime/tbot_runner_supervisor.py
-# Unified bot phase and UI supervisor. Controls initialization, configuration, provisioning, bootstrapping, registration, and launches the operational bot as specified.
+# Oversees session state, handles retries, enforces global watchdog logic
 
-import subprocess
+import os
 import time
-import sys
+import subprocess
 from pathlib import Path
-import signal
+from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.utils_log import log_event  # UPDATED: from utils_log
+from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.runtime.status_bot import update_bot_state
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# Load configuration (post-v1.0.0 — single-broker compliant)
+config = get_bot_config()
+SLEEP_TIME_RAW = str(config.get("SLEEP_TIME", "2s")).strip()
+SLEEP_TIME = float(SLEEP_TIME_RAW[:-1]) if SLEEP_TIME_RAW.endswith("s") else float(SLEEP_TIME_RAW)
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
-CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
-BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
-WEB_DIR = ROOT_DIR / "tbot_web" / "py"
-LOG_PATH = ROOT_DIR / "tbot_bot" / "output" / "bootstrap" / "logs" / "tbot_runner_supervisor.log"
+# Control flag directory and files (systemd-safe)
+CONTROL_DIR = Path("tbot_bot/control")
+START_FILE = CONTROL_DIR / "control_start.txt"
+STOP_FILE = CONTROL_DIR / "control_stop.txt"
 
-PHASE_APPS = {
-    "initialize":      ("portal_web_configuration", 6901),
-    "configuration":   ("portal_web_configuration", 6901),
-    "provisioning":    ("portal_web_main", 6900),
-    "bootstrapping":   ("portal_web_main", 6900),
-    "registration":    ("portal_web_main", 6900),
-    "main":            ("portal_web_main", 6900),
-    "idle":            ("portal_web_main", 6900),
-    "analyzing":       ("portal_web_main", 6900),
-    "monitoring":      ("portal_web_main", 6900),
-    "trading":         ("portal_web_main", 6900),
-    "updating":        ("portal_web_main", 6900),
-    "shutdown":        ("portal_web_main", 6900),
-    "graceful_closing_positions": ("portal_web_main", 6900),
-    "emergency_closing_positions": ("portal_web_main", 6900),
-    "shutdown_triggered": ("portal_web_main", 6900),
-    "error":           ("portal_web_main", 6900),
-}
+# Log output path (resolved via identity-aware path_resolver)
+LOG_PATH = get_output_path("logs", "supervisor.log")
 
+# Bot entrypoint — must reference updated session runner
+BOT_ENTRY = Path("tbot_bot/runtime/main.py")
+
+# Ensure directories exist
+CONTROL_DIR.mkdir(parents=True, exist_ok=True)
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-def log(msg):
+def log(msg: str):
+    """
+    Internal logger for supervisor actions — writes to output/logs/supervisor.log
+    """
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
     with LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] {msg}\n")
 
-def read_bot_state():
-    try:
-        val = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        log(f"[supervisor] BOT_STATE_PATH: {BOT_STATE_PATH} value: {val}")
-        return val
-    except Exception as ex:
-        log(f"[supervisor] ERROR reading bot_state.txt: {ex}")
-        return "initialize"
+def clear_flags():
+    """
+    Clears control_start.txt and control_stop.txt to avoid stale triggers.
+    """
+    for flag in [START_FILE, STOP_FILE]:
+        try:
+            if flag.exists():
+                flag.unlink()
+        except Exception as e:
+            log(f"Failed to clear flag {flag.name}: {e}")
 
-def start_flask_app(module_name, port):
-    log(f"[supervisor] Launching Flask app: python3 -m tbot_web.py.{module_name} (port {port})")
-    env = dict(os.environ)
-    env["PORT"] = str(port)
-    try:
-        proc = subprocess.Popen(
-            ["python3", "-m", f"tbot_web.py.{module_name}"],
-            cwd=WEB_DIR,
-            env=env
-        )
-        log(f"[supervisor] Launched process PID={proc.pid} for {module_name}")
-        return proc
-    except Exception as ex:
-        log(f"[supervisor] ERROR launching {module_name}: {ex}")
-        return None
-
-def kill_process(proc):
-    if not proc:
-        return
-    try:
-        log(f"[supervisor] Terminating Flask app PID={proc.pid}")
-        proc.terminate()
-        proc.wait(timeout=5)
-        log(f"[supervisor] Flask app PID={proc.pid} terminated.")
-    except Exception:
-        log(f"[supervisor] Killing Flask app PID={proc.pid}")
-        proc.kill()
-
-def supervisor_loop():
-    log("[supervisor] tbot_runner_supervisor started.")
-    active_process = None
-    last_phase = None
+def main():
+    bot_process = None
+    log("Supervisor launched and monitoring control flags...")
 
     while True:
-        phase = read_bot_state()
-        if phase not in PHASE_APPS:
-            log(f"[supervisor] Unrecognized phase '{phase}', defaulting to 'initialize'")
-            phase = "initialize"
+        try:
+            # Launch bot if START_FILE is present and no bot is running
+            if START_FILE.exists() and not bot_process:
+                log("START signal detected.")
+                update_bot_state("idle")  # Ensure bot starts in idle state
+                clear_flags()
+                bot_process = subprocess.Popen(
+                    ["python3", str(BOT_ENTRY)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=BOT_ENTRY.parent,
+                    text=True
+                )
+                log(f"Bot launched with PID {bot_process.pid}")
 
-        if phase != last_phase:
-            log(f"[supervisor] Phase changed: {last_phase} -> {phase}")
+            # Terminate bot if STOP_FILE is present
+            elif STOP_FILE.exists() and bot_process:
+                log("STOP signal detected.")
+                update_bot_state("shutdown")  # Set state to shutdown before killing bot
+                clear_flags()
+                bot_process.terminate()
+                try:
+                    bot_process.wait(timeout=10)
+                    log("Bot terminated gracefully.")
+                except subprocess.TimeoutExpired:
+                    bot_process.kill()
+                    log("Bot forcibly killed after timeout.")
+                bot_process = None
 
-            # Kill any previous Flask app
-            kill_process(active_process)
-            active_process = None
+            # Check if process exited unexpectedly
+            if bot_process and bot_process.poll() is not None:
+                exit_code = bot_process.returncode
+                log(f"Bot exited with code {exit_code}")
+                update_bot_state("idle")  # Set state back to idle if bot unexpectedly exits
+                bot_process = None
 
-            module_name, port = PHASE_APPS[phase]
-            active_process = start_flask_app(module_name, port)
+        except Exception as e:
+            log(f"Supervisor exception: {e}")
+            log_event("supervisor", f"Loop error: {e}")
 
-        last_phase = phase
-        time.sleep(2)
-
-def handle_sigterm(sig, frame):
-    log("[supervisor] SIGTERM received, shutting down supervisor.")
-    sys.exit(0)
+        time.sleep(SLEEP_TIME)
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGTERM, handle_sigterm)
-    supervisor_loop()
+    main()

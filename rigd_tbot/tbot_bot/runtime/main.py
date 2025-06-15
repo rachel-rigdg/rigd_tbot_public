@@ -1,6 +1,7 @@
 # tbot_bot/runtime/main.py
 # Main entrypoint for TradeBot (single systemd-launched entry).
-# Launches tbot_runner_supervisor for UI/phase management and waits for operational phase before running strategies.
+# Launches a single unified Flask app (portal_web_main.py) for all phases, 
+# waits for configuration/provisioning to complete, then runs strategies.
 
 import os
 import sys
@@ -9,7 +10,6 @@ import subprocess
 from pathlib import Path
 from datetime import datetime, time as dt_time
 
-# Set up control files and status
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
 START_FLAG = CONTROL_DIR / "control_start.txt"
@@ -18,11 +18,10 @@ KILL_FLAG = CONTROL_DIR / "control_kill.txt"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
-RUNNER_SUPERVISOR_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "tbot_runner_supervisor.py"
+WEB_MAIN_PATH = ROOT_DIR / "tbot_web" / "py" / "portal_web_main.py"
 
-# Define market hours gating (UTC time)
-MARKET_OPEN_TIME = dt_time(hour=13, minute=30)   # 09:30 EST in UTC
-MARKET_CLOSE_TIME = dt_time(hour=20, minute=0)   # 16:00 EST in UTC
+MARKET_OPEN_TIME = dt_time(hour=13, minute=30)
+MARKET_CLOSE_TIME = dt_time(hour=20, minute=0)
 
 def parse_sleep_time(s):
     try:
@@ -49,7 +48,7 @@ def is_market_open(now_time=None, TEST_MODE_FLAG=None):
     if TEST_MODE_FLAG and TEST_MODE_FLAG.exists():
         return True
     now = now_time or datetime.utcnow()
-    if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
+    if now.weekday() >= 5:
         return False
     return MARKET_OPEN_TIME <= now.time() <= MARKET_CLOSE_TIME
 
@@ -69,16 +68,16 @@ def wait_for_operational_phase():
         time.sleep(1)
 
 def main():
-    # Launch UI/phase supervisor (idempotent; only starts if not already running)
-    supervisor_proc = subprocess.Popen(
-        ["python3", str(RUNNER_SUPERVISOR_PATH)],
+    # Launch single unified Flask app (portal_web_main.py) for all phases, if not already running
+    flask_proc = subprocess.Popen(
+        ["python3", str(WEB_MAIN_PATH)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
     try:
         wait_for_operational_phase()
 
-        # --- Lazy imports: only after configuration/provisioning complete ---
+        # --- Lazy imports: only after config/provisioning complete ---
         from tbot_bot.config.env_bot import get_bot_config
         from tbot_bot.strategy.strategy_router import run_strategy
         from tbot_bot.runtime.status_bot import update_bot_state, start_heartbeat
@@ -164,12 +163,10 @@ def main():
             print("[main_bot] Executing graceful shutdown after strategy completion. Closing positions.")
             log_event("main_bot", "Executing graceful shutdown after strategy completion. Closing positions.")
             update_bot_state("graceful_closing_positions")
-            # TODO: Insert real close positions logic here
 
         update_bot_state("shutdown")
 
     except Exception as e:
-        # handle_error is lazy-loaded, so must import here as well in case of error before import
         try:
             from tbot_bot.runtime.status_bot import update_bot_state
             from tbot_bot.config.error_handler_bot import handle as handle_error
@@ -179,7 +176,7 @@ def main():
             pass
     finally:
         try:
-            supervisor_proc.terminate()
+            flask_proc.terminate()
         except Exception:
             pass
 
