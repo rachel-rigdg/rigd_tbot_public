@@ -24,6 +24,7 @@ CATEGORIES = {
 }
 
 def get_bot_identity(explicit_identity: str = None) -> str:
+    # ENFORCE: never trigger any secret or identity load unless after provisioning/bootstrapping
     if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (system is in bootstrap mode)")
     identity = explicit_identity if explicit_identity else load_bot_identity(default=None)
@@ -61,6 +62,7 @@ def file_exists_resolved(bot_identity: str = None, category: str = None, filenam
         return False
 
 def get_secret_path(filename: str) -> str:
+    # Only resolve secret paths, never trigger secret load/init
     return str(PROJECT_ROOT / "tbot_bot" / "storage" / "secrets" / filename)
 
 def get_schema_path(filename: str) -> str:
