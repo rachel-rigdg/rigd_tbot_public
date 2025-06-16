@@ -29,7 +29,7 @@
             <fieldset>
                 <legend>Admin User Details</legend>
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" maxlength="32" required value="{{ username or '' }}" />
+                <input type="text" id="username" name="username" maxlength="32" required value="{{ username | default('') }}" />
                
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required />
@@ -38,7 +38,7 @@
                 <input type="password" id="confirm_password" name="confirm_password" required />
 
                 <label for="email">Email</label>
-                <input type="email" id="email" name="email" maxlength="64" required value="{{ email or '' }}" />
+                <input type="email" id="email" name="email" maxlength="64" required value="{{ email | default('') }}" />
 
             </fieldset>
             <br>

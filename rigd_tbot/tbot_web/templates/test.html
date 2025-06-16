@@ -17,15 +17,28 @@
             .then(response => response.json())
             .then(data => {
                 document.getElementById('test-log-output').textContent = data.logs || '';
-                document.getElementById('test-status').textContent = data.status || '';
-                if (data.status === "completed" || data.status === "idle" || data.status === "error") {
+                const statusEl = document.getElementById('test-status');
+                statusEl.textContent = data.status || '';
+                statusEl.className = ''; // Reset classes
+                if (data.status === "completed") {
+                    statusEl.classList.add('status-completed');
                     clearInterval(logPoller);
+                } else if (data.status === "idle") {
+                    statusEl.classList.remove('status-running', 'status-error', 'status-completed');
+                    clearInterval(logPoller);
+                } else if (data.status === "error") {
+                    statusEl.classList.add('status-error');
+                    clearInterval(logPoller);
+                } else {
+                    statusEl.classList.add('status-running');
                 }
             });
         }
         function triggerTestMode() {
             document.getElementById("trigger-btn").disabled = true;
-            document.getElementById("test-status").textContent = "triggered";
+            const statusEl = document.getElementById('test-status');
+            statusEl.textContent = "triggered";
+            statusEl.className = 'status-running';
             fetch("{{ url_for('test_web.trigger_test_mode') }}", {method: "POST"})
                 .then(() => startLogPolling());
         }

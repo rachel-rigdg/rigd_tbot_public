@@ -50,28 +50,28 @@
                     <tr class="{{ entry.status }}">
                         <form method="post" action="{{ url_for('ledger_web.edit_ledger_entry_route', entry_id=entry.id) }}">
                         <td>
-                            <input type="text" name="date" value="{{ entry.date }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %} required>
+                            <input type="text" name="date" value="{{ entry.date }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
                         </td>
                         <td>
-                            <input type="text" name="symbol" value="{{ entry.symbol }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %} required>
+                            <input type="text" name="symbol" value="{{ entry.symbol }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
                         </td>
                         <td>
-                            <input type="text" name="type" value="{{ entry.type }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %} required>
+                            <input type="text" name="type" value="{{ entry.type }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
                         </td>
                         <td>
-                            <input type="text" name="amount" value="{{ entry.amount }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %} required>
+                            <input type="text" name="amount" value="{{ entry.amount }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
                         </td>
                         <td>
-                            <input type="text" name="account" value="{{ entry.account }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %}>
+                            <input type="text" name="account" value="{{ entry.account }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
                         </td>
                         <td>
-                            <input type="text" name="trade_id" value="{{ entry.trade_id }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %}>
+                            <input type="text" name="trade_id" value="{{ entry.trade_id }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
                         </td>
                         <td>
-                            <input type="text" name="tags" value="{{ entry.tags }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %}>
+                            <input type="text" name="tags" value="{{ entry.tags }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
                         </td>
                         <td>
-                            <input type="text" name="notes" value="{{ entry.notes }}" {% if entry.status != "mismatch" and entry.status != "resolved" %}readonly{% endif %}>
+                            <input type="text" name="notes" value="{{ entry.notes }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
                         </td>
                         <td>
                             {% if entry.status == "mismatch" %}
