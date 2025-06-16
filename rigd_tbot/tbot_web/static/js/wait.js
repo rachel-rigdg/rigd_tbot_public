@@ -1,8 +1,7 @@
 // tbot_web/static/js/wait.js
-// Provides shared API helpers and utility functions for frontend JavaScript modules
-// Requires shared_utils.js to be loaded first
+// Fix redirect logic to include registration as a bootstrap state to prevent redirect loops
 
-const bootstrapStates = ["provisioning", "bootstrapping", "initialize"];
+const bootstrapStates = ["provisioning", "bootstrapping", "initialize", "registration"];
 
 async function checkBotState() {
     const data = await apiGet("/main/state");
@@ -12,7 +11,7 @@ async function checkBotState() {
     }
     const state = data.bot_state || data.state;
     // Redirect only when NOT in a bootstrap/init/registration state
-    if (!bootstrapStates.includes(state) && state !== "registration") {
+    if (!bootstrapStates.includes(state)) {
         window.location.replace("/main");
     } else {
         setTimeout(checkBotState, 2000);
