@@ -8,7 +8,7 @@ import json
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 import subprocess
 
-configuration_blueprint = Blueprint("configuration_web", __name__)
+configuration_blueprint = Blueprint("configuration_web", __name__, url_prefix="/configuration")
 
 RUNTIME_CONFIG_KEY_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "runtime_config.key"
 RUNTIME_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
@@ -48,7 +48,7 @@ def save_runtime_config(config: dict):
     RUNTIME_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     RUNTIME_CONFIG_PATH.write_bytes(enc_json)
 
-@configuration_blueprint.route("/configuration", methods=["GET"])
+@configuration_blueprint.route("/", methods=["GET"])
 def show_configuration():
     if not is_first_bootstrap():
         return redirect(url_for("main.main_page"))
@@ -63,7 +63,7 @@ def show_configuration():
         config = get_default_config()
     return render_template("configuration.html", config=config)
 
-@configuration_blueprint.route("/configuration", methods=["POST"])
+@configuration_blueprint.route("/", methods=["POST"])
 def save_configuration():
     if not can_provision() or not is_first_bootstrap():
         flash("Provisioning is locked after initial bootstrap. Use Settings to update configuration.", "error")
@@ -144,4 +144,8 @@ def save_configuration():
     session["trigger_provisioning"] = True
     session.modified = True
     flash("Configuration saved. Proceeding to provisioning...", "success")
-    return redirect(url_for("main.main_page"))
+
+    if is_first_bootstrap():
+        return redirect(url_for("register_web.register_page"))
+    else:
+        return redirect(url_for("main.main_page"))

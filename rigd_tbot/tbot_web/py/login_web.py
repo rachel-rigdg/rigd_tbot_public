@@ -13,16 +13,16 @@ SESSION_TIMEOUT = int(os.getenv("SESSION_TIMEOUT", "300"))
 API_LOGIN_LIMIT = os.getenv("API_LOGIN_LIMIT", "5/minute")
 SECRET_KEY = os.getenv("SECRET_KEY", "use-secure-random-key-in-production")
 
-login_blueprint = Blueprint("login_web", __name__)
+login_blueprint = Blueprint("login_web", __name__, url_prefix="/login")
 limiter = Limiter(get_remote_address, default_limits=[])
 
 @limiter.limit(API_LOGIN_LIMIT)
-@login_blueprint.route("/login", methods=["GET", "POST"])
+@login_blueprint.route("/", methods=["GET", "POST"])
 def login():
     """
     POST → Validate username and password against SYSTEM_USERS.db.
     GET  → Render login form.
-    Redirect to /register if no users exist.
+    Redirect to /registration if no users exist.
     """
     if not user_exists():
         flash("No admin user exists. Please register.", "warning")
