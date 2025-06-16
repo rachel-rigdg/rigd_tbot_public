@@ -5,7 +5,7 @@ from tbot_web.support.auth_web import upsert_user, get_db_connection
 from sqlite3 import OperationalError
 from pathlib import Path
 
-register_web = Blueprint("register_web", __name__)
+register_web = Blueprint("register_web", __name__, url_prefix="/registration")
 
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
@@ -23,7 +23,6 @@ def user_exists():
 def register_page():
     already_exists = user_exists()
     if already_exists:
-        # If admin user exists and state is registration, promote to idle
         try:
             if BOT_STATE_PATH.exists():
                 state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
@@ -51,7 +50,6 @@ def register_page():
             upsert_user(username, password, email)
             flash("Admin user created successfully. Please log in.", "success")
             try:
-                # If state is registration, promote to idle
                 if BOT_STATE_PATH.exists():
                     state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
                     if state == "registration":
