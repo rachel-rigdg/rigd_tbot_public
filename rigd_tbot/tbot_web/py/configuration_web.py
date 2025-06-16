@@ -6,6 +6,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 import json
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
+import subprocess
 
 configuration_blueprint = Blueprint("configuration_web", __name__)
 
@@ -133,7 +134,14 @@ def save_configuration():
     except Exception as e:
         print(f"[configuration_web] ERROR writing PROVISION_FLAG: {e}")
 
+    if is_first_bootstrap():
+        try:
+            subprocess.Popen(["python3", str(Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "provisioning_runner.py")])
+            print("[configuration_web] provisioning_runner.py launched")
+        except Exception as e:
+            print(f"[configuration_web] ERROR launching provisioning_runner.py: {e}")
+
     session["trigger_provisioning"] = True
     session.modified = True
     flash("Configuration saved. Proceeding to provisioning...", "success")
-    return redirect(url_for("main.provisioning_route"))
+    return redirect(url_for("main.main_page"))
