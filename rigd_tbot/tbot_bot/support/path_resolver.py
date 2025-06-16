@@ -8,7 +8,7 @@ from pathlib import Path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 
 try:
-    from tbot_web.py.bootstrap_utils import is_first_bootstrap
+    from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 except ImportError:
     is_first_bootstrap = lambda: False  # fallback for non-web contexts
 

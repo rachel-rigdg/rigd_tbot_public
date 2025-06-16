@@ -1,7 +1,7 @@
 # tbot_web/py/main_web.py
 
 from flask import Blueprint, redirect, url_for, render_template, session, request, jsonify
-from tbot_web.py.bootstrap_utils import is_first_bootstrap
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from ..support.configuration_loader import load_encrypted_config
 from ..support.default_config_loader import get_default_config
 from tbot_web.support.auth_web import user_exists

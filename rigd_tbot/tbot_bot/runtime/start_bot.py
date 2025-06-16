@@ -9,6 +9,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / "tbot_bot" / "supp
 
 import sys
 import traceback
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from tbot_bot.config.env_bot import get_bot_config         # Loads and validates decrypted .env_bot
 from tbot_bot.enhancements.build_check import run_build_check  # Verifies system readiness before trading
 from tbot_bot.runtime.main import main                     # Core bot lifecycle handler
@@ -17,6 +18,11 @@ from tbot_bot.config.error_handler_bot import handle as handle_error  # Centrali
 from tbot_bot.support.utils_time import utc_now            # UPDATED: Provides UTC timestamping
 
 def start_bot():
+    if is_first_bootstrap():
+        print("[start_bot] System is in bootstrap phase. Configuration not complete. Startup aborted.")
+        log_event("start_bot", "System is in bootstrap phase. Configuration not complete. Startup aborted.")
+        sys.exit(0)
+
     config = get_bot_config()
 
     try:

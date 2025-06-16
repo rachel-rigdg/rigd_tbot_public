@@ -77,6 +77,25 @@ def wait_for_operational_phase():
         time.sleep(1)
 
 def main():
+    # --- Bootstrap Check ---
+    try:
+        from tbot_bot.support.bootstrap_utils import is_first_bootstrap
+    except ImportError:
+        print("[main_bot][ERROR] Failed to import is_first_bootstrap; assuming not first bootstrap.")
+        is_first_bootstrap = lambda: False
+
+    if is_first_bootstrap():
+        print("[main_bot] First bootstrap detected. Launching portal_web_main.py only for configuration.")
+        flask_proc = subprocess.Popen(
+            ["python3", str(WEB_MAIN_PATH)],
+            stdout=None,
+            stderr=None
+        )
+        print(f"[main_bot] portal_web_main.py started with PID {flask_proc.pid} (bootstrap mode)")
+        flask_proc.wait()
+        print("[main_bot] Exiting after initial configuration/bootstrap phase.")
+        sys.exit(0)
+
     print("[main_bot] Launching unified Flask app (portal_web_main.py)...")
     flask_proc = subprocess.Popen(
         ["python3", str(WEB_MAIN_PATH)],

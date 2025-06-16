@@ -9,7 +9,7 @@ import tempfile
 import os
 import json
 
-from tbot_web.py.bootstrap_utils import is_first_bootstrap
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
