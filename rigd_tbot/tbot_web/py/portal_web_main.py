@@ -38,30 +38,30 @@ def create_unified_app():
     app.config["SESSION_COOKIE_SECURE"] = False
     app.config["SESSION_COOKIE_HTTPONLY"] = True
 
-    # Statically register all blueprints at startup
-    from .main_web import main_blueprint
-    from .configuration_web import configuration_blueprint
-    from .login_web import login_blueprint
-    from .logout_web import logout_blueprint
-    from .status_web import status_blueprint
-    from .logs_web import logs_blueprint
-    from .start_stop_web import start_stop_blueprint
-    from .settings_web import settings_blueprint
-    from .coa_web import coa_web
-    from .ledger_web import ledger_web
-    from .test_web import test_web
+    # Use absolute imports for blueprints
+    from tbot_web.py.main_web import main_blueprint
+    from tbot_web.py.configuration_web import configuration_blueprint
+    from tbot_web.py.login_web import login_blueprint
+    from tbot_web.py.logout_web import logout_blueprint
+    from tbot_web.py.status_web import status_blueprint
+    from tbot_web.py.logs_web import logs_blueprint
+    from tbot_web.py.start_stop_web import start_stop_blueprint
+    from tbot_web.py.settings_web import settings_blueprint
+    from tbot_web.py.coa_web import coa_web
+    from tbot_web.py.ledger_web import ledger_web
+    from tbot_web.py.test_web import test_web
     try:
-        from .provisioning_web import provisioning_blueprint
+        from tbot_web.py.provisioning_web import provisioning_blueprint
         app.register_blueprint(provisioning_blueprint, url_prefix="/provisioning")
     except ImportError:
         pass
     try:
-        from .bootstrap_web import bootstrap_blueprint
+        from tbot_web.py.bootstrap_web import bootstrap_blueprint
         app.register_blueprint(bootstrap_blueprint, url_prefix="/bootstrapping")
     except ImportError:
         pass
     try:
-        from .register_web import register_web
+        from tbot_web.py.register_web import register_web
         app.register_blueprint(register_web, url_prefix="/registration")
     except ImportError:
         pass
