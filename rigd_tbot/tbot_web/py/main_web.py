@@ -2,13 +2,11 @@
 
 from flask import Blueprint, redirect, url_for, render_template, session, request, jsonify
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
-from ..support.configuration_loader import load_encrypted_config
 from ..support.default_config_loader import get_default_config
 from tbot_web.support.auth_web import user_exists
 from pathlib import Path
 
 main_blueprint = Blueprint("main", __name__)
-TMP_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "support" / "tmp" / "bootstrap_config.json"
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
 PHASE1_STATES = ("initialize", "provisioning", "bootstrapping")

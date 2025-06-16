@@ -36,15 +36,13 @@ def parse_sleep_time(s):
         print(f"[main_bot][parse_sleep_time] Failed, defaulting to 1.0")
         return 1.0
 
-def safe_exit(update_bot_state):
-    print("[main_bot][safe_exit] Updating state to shutdown and exiting.")
-    update_bot_state("shutdown")
+def safe_exit():
+    print("[main_bot][safe_exit] Exiting.")
     sys.exit(0)
 
-def close_all_positions_immediately(update_bot_state, log_event):
+def close_all_positions_immediately(log_event):
     print("[main_bot] Immediate kill detected. Closing all positions now.")
     log_event("main_bot", "Immediate kill detected. Closing all positions now.")
-    update_bot_state("emergency_closing_positions")
     # TODO: Insert real close positions logic here
 
 def is_market_open(now_time=None, TEST_MODE_FLAG=None):
@@ -77,7 +75,6 @@ def wait_for_operational_phase():
         time.sleep(1)
 
 def main():
-    # --- Bootstrap Check ---
     try:
         from tbot_bot.support.bootstrap_utils import is_first_bootstrap
     except ImportError:
@@ -105,18 +102,12 @@ def main():
     print(f"[main_bot] portal_web_main.py started with PID {flask_proc.pid}")
 
     try:
-        # ENFORCE: block all imports and logic until bot is operational
         wait_for_operational_phase()
-
-        # Import runtime modules and secrets only after provisioning/bootstrapping
-        print("[main_bot] Importing strategy, config, and operational modules...")
         from tbot_bot.config.env_bot import get_bot_config
         from tbot_bot.strategy.strategy_router import run_strategy
-        from tbot_bot.runtime.status_bot import update_bot_state, start_heartbeat
         from tbot_bot.enhancements.build_check import run_build_check
         from tbot_bot.config.error_handler_bot import handle as handle_error
         from tbot_bot.runtime.watchdog_bot import start_watchdog
-        from tbot_bot.trading.kill_switch import check_daily_loss_limit
         from tbot_bot.support.utils_log import log_event
 
         config = get_bot_config()
@@ -128,20 +119,13 @@ def main():
         SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
         print("[main_bot] Running build check and initialization...")
-        update_bot_state("idle")
         run_build_check()
-        update_bot_state("monitoring")
-        start_heartbeat()
         start_watchdog()
 
-        if check_daily_loss_limit():
-            print("[main_bot] Daily loss limit hit; triggering shutdown.")
-            update_bot_state("shutdown_triggered")
-            return
         if KILL_FLAG.exists():
             print("[main_bot] KILL_FLAG exists. Immediate kill routine.")
-            close_all_positions_immediately(update_bot_state, log_event)
-            safe_exit(update_bot_state)
+            close_all_positions_immediately(log_event)
+            safe_exit()
 
         if TEST_MODE_FLAG.exists():
             print("[main_bot] TEST_MODE detected. Forcing all strategies sequentially.")
@@ -161,12 +145,11 @@ def main():
         for strat_name in strategies:
             strat_name = strat_name.strip().lower()
             print(f"[main_bot] Executing strategy: {strat_name}")
-            update_bot_state(f"analyzing_{strat_name}")
 
             if KILL_FLAG.exists():
                 print("[main_bot] KILL_FLAG exists. Immediate kill during strategy loop.")
-                close_all_positions_immediately(update_bot_state, log_event)
-                safe_exit(update_bot_state)
+                close_all_positions_immediately(log_event)
+                safe_exit()
 
             now_dt = datetime.utcnow()
             if not is_market_open(now_dt, TEST_MODE_FLAG) and not STRATEGY_OVERRIDE and not TEST_MODE_FLAG.exists():
@@ -180,9 +163,7 @@ def main():
                 continue
 
             print(f"[main_bot] Running strategy: {strat_name}")
-            update_bot_state("trading", strategy=strat_name)
             run_strategy(override=strat_name)
-            update_bot_state(f"completed_{strat_name}")
             print(f"[main_bot] Completed strategy: {strat_name}")
             time.sleep(SLEEP_TIME)
 
@@ -204,17 +185,13 @@ def main():
         if graceful_stop:
             print("[main_bot] Executing graceful shutdown after strategy completion. Closing positions.")
             log_event("main_bot", "Executing graceful shutdown after strategy completion. Closing positions.")
-            update_bot_state("graceful_closing_positions")
 
-        print("[main_bot] TradeBot session complete. Updating state to shutdown.")
-        update_bot_state("shutdown")
+        print("[main_bot] TradeBot session complete. Shutting down.")
 
     except Exception as e:
         print(f"[main_bot][ERROR] Exception: {e}")
         try:
-            from tbot_bot.runtime.status_bot import update_bot_state
             from tbot_bot.config.error_handler_bot import handle as handle_error
-            update_bot_state("error")
             handle_error(e, strategy_name="main", broker="n/a", category="LogicError")
         except Exception as ex2:
             print(f"[main_bot][ERROR] Exception during error handler: {ex2}")
