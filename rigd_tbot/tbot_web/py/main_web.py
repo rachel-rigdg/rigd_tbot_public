@@ -39,10 +39,10 @@ def root_router():
         return render_template("wait.html", bot_state=state)
 
     if state == PHASE2_STATE:
-        return redirect(url_for("register_web.register_page"))
+        return redirect(url_for("register_web.register"))
 
     if not user_exists():
-        return redirect(url_for("register_web.register_page"))
+        return redirect(url_for("register_web.register"))
 
     return render_template("main.html", bot_state=state)
 
@@ -61,9 +61,9 @@ def main_page():
     if state in PHASE1_STATES:
         return redirect(url_for("main.root_router"))
     if state == PHASE2_STATE:
-        return redirect(url_for("register_web.register_page"))
+        return redirect(url_for("register_web.register"))
     if not user_exists():
-        return redirect(url_for("register_web.register_page"))
+        return redirect(url_for("register_web.register"))
     return render_template("main.html", bot_state=state)
 
 @main_blueprint.route("/main/state", methods=["GET"])
