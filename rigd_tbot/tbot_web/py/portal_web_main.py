@@ -50,7 +50,6 @@ def create_unified_app():
     from .coa_web import coa_web
     from .ledger_web import ledger_web
     from .test_web import test_web
-    # Optional: provisioning/registration blueprints
     try:
         from .provisioning_web import provisioning_blueprint
         app.register_blueprint(provisioning_blueprint, url_prefix="/provisioning")
@@ -79,24 +78,20 @@ def create_unified_app():
     app.register_blueprint(ledger_web, url_prefix="/ledger")
     app.register_blueprint(test_web, url_prefix="/test")
 
-    if is_first_bootstrap():
-        @app.before_request
-        def force_configuration():
+    @app.before_request
+    def enforce_bootstrap():
+        if is_first_bootstrap():
             if not (
                 (request.endpoint or "").startswith("configuration_web")
                 or (request.endpoint or "").startswith("main.provisioning_route")
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("configuration_web.show_configuration"))
-        print("==== ROUTES (BOOTSTRAP MODE) ====")
-        for rule in app.url_map.iter_rules():
-            print(rule, rule.endpoint)
-        print("===============")
-    else:
-        print("==== ROUTES (NORMAL MODE) ====")
-        for rule in app.url_map.iter_rules():
-            print(rule, rule.endpoint)
-        print("===============")
+
+    print("==== ROUTES ====")
+    for rule in app.url_map.iter_rules():
+        print(rule, rule.endpoint)
+    print("===============")
 
     @app.route("/")
     def root_router():
