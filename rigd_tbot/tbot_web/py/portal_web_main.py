@@ -1,5 +1,6 @@
 # tbot_web/py/portal_web_main.py
-# Unified single Flask app for ALL bot phases, **blueprints are lazy-loaded** only when needed based on bot_state.txt
+# Unified single Flask app for ALL bot phases; all blueprints are statically registered up-front.
+# First bootstrap is enforced by a before_request redirect, never by dynamic blueprint loading.
 
 import os
 import sys
@@ -15,33 +16,19 @@ STATIC_FOLDER = os.path.join(BASE_DIR, "static")
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
-PHASES = {
-    "initialize": "configuration",
-    "configuration": "configuration",
-    "provisioning": "provisioning",
-    "bootstrapping": "bootstrapping",
-    "registration": "registration",
-    "main": "main",
-    "idle": "main",
-    "analyzing": "main",
-    "monitoring": "main",
-    "trading": "main",
-    "updating": "main",
-    "shutdown": "main",
-    "graceful_closing_positions": "main",
-    "emergency_closing_positions": "main",
-    "shutdown_triggered": "main",
-    "error": "main",
-}
+try:
+    from tbot_bot.support.bootstrap_utils import is_first_bootstrap
+except ImportError:
+    is_first_bootstrap = lambda: False
 
 def get_bot_state():
     try:
         state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         print(f"[portal_web_main] get_bot_state: state={state}")
-        return PHASES.get(state, "main")
+        return state
     except Exception as e:
         print(f"[portal_web_main] get_bot_state EXCEPTION: {e}")
-        return "main"
+        return "unknown"
 
 def create_unified_app():
     print("[portal_web_main] Creating Flask app...")
@@ -51,120 +38,80 @@ def create_unified_app():
     app.config["SESSION_COOKIE_SECURE"] = False
     app.config["SESSION_COOKIE_HTTPONLY"] = True
 
-    loaded_phase = None
+    # Statically register all blueprints at startup
+    from .main_web import main_blueprint
+    from .configuration_web import configuration_blueprint
+    from .login_web import login_blueprint
+    from .logout_web import logout_blueprint
+    from .status_web import status_blueprint
+    from .logs_web import logs_blueprint
+    from .start_stop_web import start_stop_blueprint
+    from .settings_web import settings_blueprint
+    from .coa_web import coa_web
+    from .ledger_web import ledger_web
+    from .test_web import test_web
+    # Optional: provisioning/registration blueprints
+    try:
+        from .provisioning_web import provisioning_blueprint
+        app.register_blueprint(provisioning_blueprint, url_prefix="/provisioning")
+    except ImportError:
+        pass
+    try:
+        from .bootstrap_web import bootstrap_blueprint
+        app.register_blueprint(bootstrap_blueprint, url_prefix="/bootstrapping")
+    except ImportError:
+        pass
+    try:
+        from .register_web import register_web
+        app.register_blueprint(register_web, url_prefix="/registration")
+    except ImportError:
+        pass
 
-    @app.before_request
-    def lazy_load_blueprint():
-        nonlocal loaded_phase
-        state = get_bot_state()
-        phase = PHASES.get(state, "main")
-        print(f"[portal_web_main] before_request: loaded_phase={loaded_phase}, requested_phase={phase}")
+    app.register_blueprint(main_blueprint)
+    app.register_blueprint(configuration_blueprint)
+    app.register_blueprint(login_blueprint, url_prefix="/login")
+    app.register_blueprint(logout_blueprint, url_prefix="/logout")
+    app.register_blueprint(status_blueprint, url_prefix="/status")
+    app.register_blueprint(logs_blueprint, url_prefix="/logs")
+    app.register_blueprint(start_stop_blueprint, url_prefix="/control")
+    app.register_blueprint(settings_blueprint, url_prefix="/settings")
+    app.register_blueprint(coa_web, url_prefix="/coa")
+    app.register_blueprint(ledger_web, url_prefix="/ledger")
+    app.register_blueprint(test_web, url_prefix="/test")
 
-        if loaded_phase == phase:
-            print(f"[portal_web_main] Phase '{phase}' already loaded. No action.")
-            return
-
-        keep = ["static"]
-        for bp in list(app.blueprints):
-            if bp not in keep:
-                print(f"[portal_web_main] Removing blueprint: {bp}")
-                app.blueprints.pop(bp)
-
-        print(f"[portal_web_main] Loading blueprints for phase: {phase}")
-        if phase == "configuration":
-            from .configuration_web import configuration_blueprint
-            app.register_blueprint(configuration_blueprint, url_prefix="/configuration")
-            print("[portal_web_main] Registered: configuration_blueprint")
-            from .main_web import main_blueprint
-            app.register_blueprint(main_blueprint)
-            print("[portal_web_main] Registered: main_blueprint")
-        elif phase == "provisioning":
-            from .provisioning_web import provisioning_blueprint
-            app.register_blueprint(provisioning_blueprint, url_prefix="/provisioning")
-            print("[portal_web_main] Registered: provisioning_blueprint")
-            from .main_web import main_blueprint
-            app.register_blueprint(main_blueprint)
-            print("[portal_web_main] Registered: main_blueprint")
-        elif phase == "bootstrapping":
-            from .bootstrap_web import bootstrap_blueprint
-            app.register_blueprint(bootstrap_blueprint, url_prefix="/bootstrapping")
-            print("[portal_web_main] Registered: bootstrap_blueprint")
-            from .main_web import main_blueprint
-            app.register_blueprint(main_blueprint)
-            print("[portal_web_main] Registered: main_blueprint")
-        elif phase == "registration":
-            from .register_web import register_web
-            app.register_blueprint(register_web, url_prefix="/registration")
-            print("[portal_web_main] Registered: register_web")
-            from .main_web import main_blueprint
-            app.register_blueprint(main_blueprint)
-            print("[portal_web_main] Registered: main_blueprint")
-        else:
-            from .main_web import main_blueprint
-            from .login_web import login_blueprint
-            from .logout_web import logout_blueprint
-            from .status_web import status_blueprint
-            from .logs_web import logs_blueprint
-            from .start_stop_web import start_stop_blueprint
-            from .settings_web import settings_blueprint
-            from .coa_web import coa_web
-            from .ledger_web import ledger_web
-            from .test_web import test_web
-            app.register_blueprint(main_blueprint)
-            print("[portal_web_main] Registered: main_blueprint")
-            app.register_blueprint(login_blueprint, url_prefix="/login")
-            print("[portal_web_main] Registered: login_blueprint")
-            app.register_blueprint(logout_blueprint, url_prefix="/logout")
-            print("[portal_web_main] Registered: logout_blueprint")
-            app.register_blueprint(status_blueprint, url_prefix="/status")
-            print("[portal_web_main] Registered: status_blueprint")
-            app.register_blueprint(logs_blueprint, url_prefix="/logs")
-            print("[portal_web_main] Registered: logs_blueprint")
-            app.register_blueprint(start_stop_blueprint, url_prefix="/control")
-            print("[portal_web_main] Registered: start_stop_blueprint")
-            app.register_blueprint(settings_blueprint, url_prefix="/settings")
-            print("[portal_web_main] Registered: settings_blueprint")
-            app.register_blueprint(coa_web, url_prefix="/coa")
-            print("[portal_web_main] Registered: coa_web")
-            app.register_blueprint(ledger_web, url_prefix="/ledger")
-            print("[portal_web_main] Registered: ledger_web")
-            app.register_blueprint(test_web, url_prefix="/test")
-            print("[portal_web_main] Registered: test_web")
-        loaded_phase = phase
-        print(f"[portal_web_main] loaded_phase set to: {loaded_phase}")
+    if is_first_bootstrap():
+        @app.before_request
+        def force_configuration():
+            if not (
+                (request.endpoint or "").startswith("configuration_web")
+                or (request.endpoint or "").startswith("main.provisioning_route")
+                or request.path.startswith("/static")
+            ):
+                return redirect(url_for("configuration_web.show_configuration"))
+        print("==== ROUTES (BOOTSTRAP MODE) ====")
+        for rule in app.url_map.iter_rules():
+            print(rule, rule.endpoint)
+        print("===============")
+    else:
+        print("==== ROUTES (NORMAL MODE) ====")
+        for rule in app.url_map.iter_rules():
+            print(rule, rule.endpoint)
+        print("===============")
 
     @app.route("/")
     def root_router():
-        state = get_bot_state()
-        phase = PHASES.get(state, "main")
-        print(f"[portal_web_main] root_router: phase={phase}")
-        if phase == "configuration":
-            return redirect(url_for("configuration_web.show_configuration"))
-        elif phase == "provisioning":
-            return redirect(url_for("provisioning_web.provisioning_route"))
-        elif phase == "bootstrapping":
-            return redirect(url_for("bootstrap_web.bootstrap_route"))
-        elif phase == "registration":
-            return redirect(url_for("register_web.register_page"))
-        else:
-            return redirect(url_for("main.main_page"))
+        return redirect(url_for("main.root_router"))
 
     @app.route("/favicon.ico")
     def favicon():
         print("[portal_web_main] /favicon.ico requested")
         return send_from_directory(BASE_DIR, "favicon.ico")
 
-    @app.route("/configuration/complete", methods=["POST"])
-    def configuration_complete():
-        print("[portal_web_main] /configuration/complete POST called")
-        return jsonify({"status": "configuration complete"}), 200
-
     @app.route("/healthz")
     def healthz():
         print("[portal_web_main] /healthz requested")
         return jsonify({"status": "ok"}), 200
 
-    print("[portal_web_main] Flask app created successfully.")
     return app
 
 if __name__ == "__main__":
