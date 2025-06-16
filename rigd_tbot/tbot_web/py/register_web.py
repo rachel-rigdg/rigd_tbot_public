@@ -19,7 +19,7 @@ def user_exists():
     except OperationalError:
         return False
 
-@register_web.route("/register", methods=["GET", "POST"])
+@register_web.route("/", methods=["GET", "POST"])
 def register_page():
     already_exists = user_exists()
     if already_exists:
