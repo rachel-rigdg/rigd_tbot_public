@@ -15,7 +15,8 @@ CONFIG_REQUIRED_FILES = [
     SECRETS_DIR / "network_config.json.enc",
 ]
 
-INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping", "registration")
+INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
+
 
 def is_first_bootstrap() -> bool:
     """
