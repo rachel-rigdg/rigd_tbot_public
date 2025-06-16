@@ -10,7 +10,7 @@ def get_bot_identity_string():
         from tbot_bot.support.decrypt_secrets import load_bot_identity
         # Use bootstrap utility for guard
         try:
-            from tbot_web.py.bootstrap_utils import is_first_bootstrap
+            from tbot_bot.support.bootstrap_utils import is_first_bootstrap
             if is_first_bootstrap():
                 return "UNKNOWN_BOT"
         except ImportError:

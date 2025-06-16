@@ -1,5 +1,3 @@
-# tbot_bot.service
-
 [Unit]
 Description=RIGD TradeBot Core Bot Runtime
 After=network.target
@@ -8,6 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory=%h/rigd_tbot
 Environment=PATH=%h/rigd_tbot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=%h/rigd_tbot
 ExecStart=%h/rigd_tbot/venv/bin/python3 -m tbot_bot.runtime.main
 Restart=on-failure
 
