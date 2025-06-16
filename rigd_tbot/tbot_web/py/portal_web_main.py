@@ -62,16 +62,14 @@ def create_unified_app():
 
         if loaded_phase == phase:
             print(f"[portal_web_main] Phase '{phase}' already loaded. No action.")
-            return  # Already loaded, nothing to do
+            return
 
-        # Remove all existing blueprints except static
         keep = ["static"]
         for bp in list(app.blueprints):
             if bp not in keep:
                 print(f"[portal_web_main] Removing blueprint: {bp}")
                 app.blueprints.pop(bp)
 
-        # Dynamically import and register required blueprints for current phase
         print(f"[portal_web_main] Loading blueprints for phase: {phase}")
         if phase == "configuration":
             from .configuration_web import configuration_blueprint
@@ -101,8 +99,7 @@ def create_unified_app():
             from .main_web import main_blueprint
             app.register_blueprint(main_blueprint)
             print("[portal_web_main] Registered: main_blueprint")
-        else:  # main or any post-bootstrapping phase
-            # Only import runtime blueprints if NOT in configuration, provisioning, or bootstrapping
+        else:
             from .main_web import main_blueprint
             from .login_web import login_blueprint
             from .logout_web import logout_blueprint

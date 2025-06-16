@@ -1,4 +1,4 @@
-# tbot_web/py/bootstrap_utils.py
+# tbot_bot/support/bootstrap_utils.py
 
 from pathlib import Path
 

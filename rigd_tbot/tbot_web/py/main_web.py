@@ -24,9 +24,8 @@ def get_current_bot_state():
 
 @main_blueprint.route("/", methods=["GET"])
 def root_router():
-    state = get_current_bot_state()
-
-    if state in PHASE1_STATES:
+    # ENFORCE: Always redirect to configuration if in first bootstrap
+    if is_first_bootstrap():
         config = {}
         categories = [
             "bot_identity", "broker", "screener_api",
@@ -36,10 +35,12 @@ def root_router():
             config.update(load_encrypted_config(cat))
         if not config:
             config = get_default_config()
-        if state == "initialize":
-            return render_template("configuration.html", config=config)
-        else:
-            return render_template("wait.html", bot_state=state)
+        return render_template("configuration.html", config=config)
+
+    state = get_current_bot_state()
+
+    if state in PHASE1_STATES:
+        return render_template("wait.html", bot_state=state)
 
     if session.get("trigger_provisioning"):
         return render_template("wait.html", bot_state=state)
@@ -63,6 +64,17 @@ def provisioning_route():
 
 @main_blueprint.route("/main", methods=["GET"])
 def main_page():
+    if is_first_bootstrap():
+        config = {}
+        categories = [
+            "bot_identity", "broker", "screener_api",
+            "smtp", "network_config", "acct_api"
+        ]
+        for cat in categories:
+            config.update(load_encrypted_config(cat))
+        if not config:
+            config = get_default_config()
+        return render_template("configuration.html", config=config)
     state = get_current_bot_state()
     if state in PHASE1_STATES:
         return redirect(url_for("main.root_router"))

@@ -22,7 +22,7 @@ All UI access is role-controlled with full audit logging and encryption at rest.
 Real-Time Monitoring Dashboard 
 =============================================================================================================================================
 
-`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, and Chart of Accounts (COA) management. UI and backend components strictly follow `040_Directory_Structure_v042.txt`.
+`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, and Chart of Accounts (COA) management. UI and backend components strictly follow `040_Directory_Structure_{CURRENT_VERSION}.txt`.
 
 **Frontend UI Components:**
 - `templates/index.html`: AES-encrypted login portal; RBAC, rate-limited authentication.
@@ -46,7 +46,7 @@ Real-Time Monitoring Dashboard
 - `py/ledger_web.py`: Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
 - `py/start_stop_web.py`: Manages lifecycle controls via `control_start.flag` / `control_stop.flag`, transition verification, and logging.
-- `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, and test.html. Does not execute provisioning or bootstrapping; only checks status files for UI routing. Supports immediate TEST_MODE execution trigger detection.
+- `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, and test.html. Does not execute provisioning or bootstrapping; only checks tbot_bot/control/bot_state.txt for UI routing. Supports immediate TEST_MODE execution trigger detection.
 - `py/test_web.py`: Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
 - `py/run_web.py`: **Phase-aware Flask entrypoint**. Detects phase (bootstrap, registration, main) using `bot_state.txt`, and dynamically loads only the relevant Flask app and blueprints for that phase.
 - `py/register_web.py`: Handles user registration logic and SYSTEM_USERS.db creation/updating.
