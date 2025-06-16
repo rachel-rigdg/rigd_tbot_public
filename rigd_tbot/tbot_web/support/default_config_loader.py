@@ -4,6 +4,7 @@
 from pathlib import Path
 import re
 import sys
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 
 TEMPLATE_PATHS = [
     Path(__file__).resolve().parents[2] / "tools" / "secrets_template.txt",
@@ -28,6 +29,8 @@ def parse_env_template(path):
     return config
 
 def get_default_config():
+    if not is_first_bootstrap():
+        return {}
     config = {}
     for path in TEMPLATE_PATHS:
         config.update(parse_env_template(path))
@@ -45,19 +48,6 @@ def get_default_config():
         "BROKER_PASSWORD": "broker_password",
         "FINNHUB_API_KEY": "screener_api_key",
         "SCREENER_NAME": "screener_name",
-        # Alpaca (add more if used in UI)
-        "ALPACA_PAPER_API_KEY": "alpaca_paper_api_key",
-        "ALPACA_PAPER_SECRET_KEY": "alpaca_paper_secret_key",
-        "ALPACA_PAPER_URL": "alpaca_paper_url",
-        "ALPACA_LIVE_API_KEY": "alpaca_live_api_key",
-        "ALPACA_LIVE_SECRET_KEY": "alpaca_live_secret_key",
-        "ALPACA_LIVE_URL": "alpaca_live_url",
-        # IBKR (add more if used in UI)
-        "IBKR_PAPER_USERNAME": "ibkr_paper_username",
-        "IBKR_PAPER_ACCOUNT_NUMBER": "ibkr_paper_account_number",
-        "IBKR_PAPER_PASSWORD": "ibkr_paper_password",
-        "IBKR_LIVE_API_KEY": "ibkr_live_api_key",
-        "IBKR_LIVE_SECRET_KEY": "ibkr_live_secret_key",
         # SMTP / Alerts
         "ALERT_EMAIL": "alert_email",
         "SMTP_USER": "smtp_user",

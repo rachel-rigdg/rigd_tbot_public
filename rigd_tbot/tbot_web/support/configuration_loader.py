@@ -6,6 +6,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 from tbot_bot.support.path_resolver import get_secret_path
 from tbot_bot.config.config_encryption import load_key
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 
 def load_encrypted_config(category: str) -> dict:
     """
@@ -13,6 +14,8 @@ def load_encrypted_config(category: str) -> dict:
     Returns a dict of config key/values. Returns {} if missing or empty.
     Expects valid JSON or key=value pairs (legacy).
     """
+    if is_first_bootstrap():
+        return {}
     enc_path = Path(get_secret_path(category))
     if not enc_path.is_file():
         print(f"[configuration_loader] No config file found for {category}: {enc_path}")

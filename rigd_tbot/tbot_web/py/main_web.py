@@ -26,15 +26,7 @@ def get_current_bot_state():
 def root_router():
     # ENFORCE: Always redirect to configuration if in first bootstrap
     if is_first_bootstrap():
-        config = {}
-        categories = [
-            "bot_identity", "broker", "screener_api",
-            "smtp", "network_config", "acct_api"
-        ]
-        for cat in categories:
-            config.update(load_encrypted_config(cat))
-        if not config:
-            config = get_default_config()
+        config = get_default_config()
         return render_template("configuration.html", config=config)
 
     state = get_current_bot_state()
@@ -65,15 +57,7 @@ def provisioning_route():
 @main_blueprint.route("/main", methods=["GET"])
 def main_page():
     if is_first_bootstrap():
-        config = {}
-        categories = [
-            "bot_identity", "broker", "screener_api",
-            "smtp", "network_config", "acct_api"
-        ]
-        for cat in categories:
-            config.update(load_encrypted_config(cat))
-        if not config:
-            config = get_default_config()
+        config = get_default_config()
         return render_template("configuration.html", config=config)
     state = get_current_bot_state()
     if state in PHASE1_STATES:

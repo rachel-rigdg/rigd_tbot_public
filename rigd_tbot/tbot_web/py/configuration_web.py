@@ -5,6 +5,7 @@ from ..support.default_config_loader import get_default_config
 from pathlib import Path
 from cryptography.fernet import Fernet
 import json
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 
 configuration_blueprint = Blueprint("configuration_web", __name__)
 
@@ -48,6 +49,8 @@ def save_runtime_config(config: dict):
 
 @configuration_blueprint.route("/configuration", methods=["GET"])
 def show_configuration():
+    if not is_first_bootstrap():
+        return redirect(url_for("main.main_page"))
     state = "initialize"
     if BOT_STATE_PATH.exists():
         try:
@@ -61,7 +64,7 @@ def show_configuration():
 
 @configuration_blueprint.route("/configuration", methods=["POST"])
 def save_configuration():
-    if not can_provision():
+    if not can_provision() or not is_first_bootstrap():
         flash("Provisioning is locked after initial bootstrap. Use Settings to update configuration.", "error")
         return redirect(url_for("main.main_page"))
 
