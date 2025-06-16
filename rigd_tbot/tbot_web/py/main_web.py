@@ -1,6 +1,6 @@
 # tbot_web/py/main_web.py
 
-from flask import Blueprint, redirect, url_for, render_template, session, request, jsonify
+from flask import Blueprint, redirect, url_for, render_template, session, request, jsonify, current_app
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from ..support.default_config_loader import get_default_config
 from tbot_web.support.auth_web import user_exists
@@ -20,6 +20,11 @@ def get_current_bot_state():
     except Exception:
         return "unknown"
 
+def registered_endpoints():
+    if current_app:
+        return [rule.endpoint for rule in current_app.url_map.iter_rules()]
+    return []
+
 @main_blueprint.route("/", methods=["GET"])
 def root_router():
     if is_first_bootstrap():
@@ -38,10 +43,23 @@ def root_router():
         return render_template("wait.html", bot_state=state)
 
     if state == PHASE2_STATE:
-        return redirect(url_for("register_web.register_page"))
+        # Debug: print endpoints, check if 'register_web.register_page' exists
+        print("Registered endpoints:", registered_endpoints())
+        if "register_web.register_page" in registered_endpoints():
+            return redirect(url_for("register_web.register_page"))
+        elif "register_web.register" in registered_endpoints():
+            return redirect(url_for("register_web.register"))
+        else:
+            # Fallback to main page
+            return render_template("main.html", bot_state=state)
 
     if not user_exists():
-        return redirect(url_for("register_web.register_page"))
+        if "register_web.register_page" in registered_endpoints():
+            return redirect(url_for("register_web.register_page"))
+        elif "register_web.register" in registered_endpoints():
+            return redirect(url_for("register_web.register"))
+        else:
+            return render_template("main.html", bot_state=state)
 
     return render_template("main.html", bot_state=state)
 
@@ -60,9 +78,20 @@ def main_page():
     if state in PHASE1_STATES:
         return redirect(url_for("main.root_router"))
     if state == PHASE2_STATE:
-        return redirect(url_for("register_web.register_page"))
+        print("Registered endpoints:", registered_endpoints())
+        if "register_web.register_page" in registered_endpoints():
+            return redirect(url_for("register_web.register_page"))
+        elif "register_web.register" in registered_endpoints():
+            return redirect(url_for("register_web.register"))
+        else:
+            return render_template("main.html", bot_state=state)
     if not user_exists():
-        return redirect(url_for("register_web.register_page"))
+        if "register_web.register_page" in registered_endpoints():
+            return redirect(url_for("register_web.register_page"))
+        elif "register_web.register" in registered_endpoints():
+            return redirect(url_for("register_web.register"))
+        else:
+            return render_template("main.html", bot_state=state)
     return render_template("main.html", bot_state=state)
 
 @main_blueprint.route("/main/state", methods=["GET"])
