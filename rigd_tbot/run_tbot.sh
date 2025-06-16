@@ -5,6 +5,8 @@
 set -e
 
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export FLASK_ENV=development
+export FLASK_DEBUG=1
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_UNIT_PATH="$ROOT_DIR/systemd_units"
