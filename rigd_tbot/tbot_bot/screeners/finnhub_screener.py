@@ -197,7 +197,7 @@ def get_filtered_stocks(limit=3, strategy="open", skip_volume=False):
 
         if idx % 50 == 0:
             log(f"Checked {idx} symbols...")
-        time.sleep(1.0)
+        time.sleep(0.2)
 
     if not test_mode_active:
         results.sort(key=lambda x: x["momentum"], reverse=True)
