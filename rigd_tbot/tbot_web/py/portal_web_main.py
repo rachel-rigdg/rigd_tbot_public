@@ -82,6 +82,7 @@ def create_unified_app():
         if is_first_bootstrap():
             if not (
                 (request.endpoint or "").startswith("configuration_web")
+                or (request.endpoint or "").startswith("register_web")
                 or (request.endpoint or "").startswith("main.provisioning_route")
                 or request.path.startswith("/static")
             ):
