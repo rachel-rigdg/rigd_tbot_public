@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from tbot_bot.support.path_resolver import get_output_path, validate_bot_identity
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 
+print(load_bot_identity())
+
 logs_blueprint = Blueprint("logs_web", __name__)
 
 LOG_FILES_TO_INCLUDE = [
