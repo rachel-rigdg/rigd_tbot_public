@@ -82,7 +82,7 @@ def find_log_file(selected_log, warn_list=None):
     return None
 
 @logs_blueprint.route("/logs")
-@login_required
+# @login_required
 def logs_page():
     selected_log = request.args.get("file", LOG_FILES_TO_INCLUDE[0])
     if selected_log not in LOG_FILES_TO_INCLUDE:
