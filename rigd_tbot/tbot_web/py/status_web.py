@@ -1,7 +1,7 @@
 # tbot_web/py/status_web.py
 
 import json
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, jsonify
 from .login_web import login_required
 from pathlib import Path
 
@@ -32,3 +32,13 @@ def status_page():
         status_data = {"error": str(e)}
 
     return render_template("status.html", status=status_data)
+
+@status_blueprint.route("/api/bot_state")
+@login_required
+def bot_state_api():
+    bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+    try:
+        state = bot_state_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        state = "unknown"
+    return jsonify({"bot_state": state})

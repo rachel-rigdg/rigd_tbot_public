@@ -1,13 +1,12 @@
 // tbot_web/static/js/shared_utils.js
-// Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
 // Generic GET API helper
 async function apiGet(url) {
     try {
         const resp = await fetch(url, { cache: "no-store" });
         if (!resp.ok) throw new Error("API error " + resp.status);
         const data = await resp.json();
-        // Normalize state key for all responses
-        if (data.state && !data.bot_state) data.bot_state = data.state;
+        // Normalize bot_state key for all responses
+        if (data.bot_state === undefined && data.state !== undefined) data.bot_state = data.state;
         return data;
     } catch (err) {
         console.error("API GET failed:", url, err);
@@ -25,7 +24,7 @@ async function apiPost(url, body = {}) {
         });
         if (!resp.ok) throw new Error("API error " + resp.status);
         const data = await resp.json();
-        if (data.state && !data.bot_state) data.bot_state = data.state;
+        if (data.bot_state === undefined && data.state !== undefined) data.bot_state = data.state;
         return data;
     } catch (err) {
         console.error("API POST failed:", url, err);

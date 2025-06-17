@@ -7,34 +7,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     const configIframe = document.getElementById("config-iframe");
 
     async function checkBotStateAndRender() {
-        const data = await apiGet("/main/state");
-        if (!data) return; // API call failed
-        const state = data.bot_state || data.state;
+        try {
+            const data = await apiGet("/main/state");
+            if (!data) return; // API call failed
+            const state = data.bot_state || data.state;
 
-        if (state === "initialize" || state === "provisioning" || state === "bootstrapping") {
-            // Show config overlay/iframe until setup is completed
-            if (configOverlay) configOverlay.style.display = "flex";
-            if (configIframe) configIframe.src = "/configuration";
-        } else if (state === "registration") {
-            // Show registration overlay
-            if (configOverlay) configOverlay.style.display = "flex";
-            if (configIframe) configIframe.src = "/register";
-        } else {
-            // Hide config overlay if not needed
-            if (configOverlay) configOverlay.style.display = "none";
+            if (
+                state === "initialize" ||
+                state === "provisioning" ||
+                state === "bootstrapping"
+            ) {
+                if (configOverlay) configOverlay.style.display = "flex";
+                if (configIframe) configIframe.src = "/configuration";
+            } else if (state === "registration") {
+                if (configOverlay) configOverlay.style.display = "flex";
+                if (configIframe) configIframe.src = "/registration";
+            } else {
+                if (configOverlay) configOverlay.style.display = "none";
+            }
+            updateStatusBanner(state);
+        } catch (e) {
+            // Silent fail, will retry on next interval
         }
-        // Optionally: handle other states for dashboard status
-        updateStatusBanner(state);
     }
 
-    // Optionally poll for updates every 3 seconds
     setInterval(checkBotStateAndRender, 3000);
-
-    // Initial check
     checkBotStateAndRender();
 });
 
-// Example status banner logic
 function updateStatusBanner(state) {
     const statusBanner = document.getElementById("status-banner");
     if (!statusBanner) return;
