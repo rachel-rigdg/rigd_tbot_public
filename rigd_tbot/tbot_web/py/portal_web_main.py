@@ -64,7 +64,7 @@ def create_unified_app():
         pass
 
     # Register blueprints - register_web with url_prefix already set
-    app.register_blueprint(register_web)
+    app.register_blueprint(register_web, url_prefix="/registration")
     app.register_blueprint(main_blueprint)
     app.register_blueprint(configuration_blueprint)
     app.register_blueprint(login_blueprint, url_prefix="/login")
