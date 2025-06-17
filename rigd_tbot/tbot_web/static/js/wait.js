@@ -1,7 +1,7 @@
 // tbot_web/static/js/wait.js
-// Fix redirect logic to include registration as a bootstrap state to prevent redirect loops
+// Fix redirect logic: registration should redirect to /registration
 
-const bootstrapStates = ["provisioning", "bootstrapping", "initialize", "registration"];
+const bootstrapStates = ["provisioning", "bootstrapping", "initialize"];
 
 async function checkBotState() {
     try {
@@ -11,8 +11,9 @@ async function checkBotState() {
             return;
         }
         const state = data.bot_state || data.state;
-        // Redirect only when NOT in a bootstrap/init/registration state
-        if (!bootstrapStates.includes(state)) {
+        if (state === "registration") {
+            window.location.replace("/registration");
+        } else if (!bootstrapStates.includes(state)) {
             window.location.replace("/main");
         } else {
             setTimeout(checkBotState, 2000);

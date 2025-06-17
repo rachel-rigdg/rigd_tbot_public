@@ -12,6 +12,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (!data) return; // API call failed
             const state = data.bot_state || data.state;
 
+            if (state === "registration") {
+                window.location.replace("/registration");
+                return;
+            }
+
             if (
                 state === "initialize" ||
                 state === "provisioning" ||
@@ -19,9 +24,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             ) {
                 if (configOverlay) configOverlay.style.display = "flex";
                 if (configIframe) configIframe.src = "/configuration";
-            } else if (state === "registration") {
-                if (configOverlay) configOverlay.style.display = "flex";
-                if (configIframe) configIframe.src = "/registration";
             } else {
                 if (configOverlay) configOverlay.style.display = "none";
             }
