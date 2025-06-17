@@ -15,36 +15,40 @@ CONFIG_REQUIRED_FILES = [
     SECRETS_DIR / "network_config.json.enc",
 ]
 
-INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
+INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping", "registration")
 
 
-def is_first_bootstrap() -> bool:
+def is_first_bootstrap(quiet_mode: bool = False) -> bool:
     """
     Returns True only if bot_state.txt is missing or its stripped content matches any "initialize", "provisioning", "bootstrapping", "registration".
     Prevents provisioning/redirect after initial bootstrap.
     BOOTSTRAP_FLAG is deprecated and ignored; logic is now driven by bot_state.txt.
-    Debugs all checked paths and values to stdout for diagnostics.
+    Debugs all checked paths and values to stdout for diagnostics unless quiet_mode is True.
     """
-    print(f"[DEBUG] BOT_STATE_PATH: {BOT_STATE_PATH} (exists: {BOT_STATE_PATH.exists()})")
+    def debug_print(msg):
+        if not quiet_mode:
+            print(msg)
+
+    debug_print(f"[DEBUG] BOT_STATE_PATH: {BOT_STATE_PATH} (exists: {BOT_STATE_PATH.exists()})")
     if not BOT_STATE_PATH.exists():
-        print("[DEBUG] bot_state.txt missing")
+        debug_print("[DEBUG] bot_state.txt missing")
         return True
     try:
         state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         state = state.splitlines()[0].strip() if state else ""
-        print(f"[DEBUG] bot_state.txt state: {state}")
+        debug_print(f"[DEBUG] bot_state.txt state: {state}")
         if state in INITIALIZE_STATES:
-            print(f"[DEBUG] bot_state.txt state is {state}")
+            debug_print(f"[DEBUG] bot_state.txt state is {state}")
             return True
     except Exception as e:
-        print(f"[DEBUG] Exception reading bot_state.txt: {e}")
+        debug_print(f"[DEBUG] Exception reading bot_state.txt: {e}")
         return True
     for file_path in CONFIG_REQUIRED_FILES:
-        print(f"[DEBUG] Checking existence: {file_path} ({file_path.exists()})")
+        debug_print(f"[DEBUG] Checking existence: {file_path} ({file_path.exists()})")
         if not file_path.exists():
-            print(f"[DEBUG] Required file missing: {file_path}")
+            debug_print(f"[DEBUG] Required file missing: {file_path}")
             return True
-    print("[DEBUG] is_first_bootstrap returning False")
+    debug_print("[DEBUG] is_first_bootstrap returning False")
     return False
 
 def get_boot_identity_string():
