@@ -25,7 +25,7 @@ def root_router():
     if is_first_bootstrap():
         config = get_default_config()
         session.clear()
-        return render_template("configuration.html", config=config)
+        return redirect(url_for("login_web.login"))
 
     state = get_current_bot_state()
 
@@ -59,7 +59,7 @@ def main_page():
     if is_first_bootstrap():
         config = get_default_config()
         session.clear()
-        return render_template("configuration.html", config=config)
+        return redirect(url_for("login_web.login"))
     state = get_current_bot_state()
     if state in PHASE1_STATES:
         return render_template("wait.html", bot_state=state)
