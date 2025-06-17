@@ -15,7 +15,7 @@ RUNTIME_CONFIG_KEY_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "st
 RUNTIME_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
 PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
-SECRETS_TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "tools" / "secrets_template.txt"
+SECRETS_TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "tools" / "secrets_template.json"
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def load_defaults():
         with open(SECRETS_TEMPLATE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        logger.error(f"[configuration_web] ERROR loading default config from secrets_template.txt: {e}")
+        logger.error(f"[configuration_web] ERROR loading default config from secrets_template.json: {e}")
     return {}
 
 def save_runtime_config(config: dict):
