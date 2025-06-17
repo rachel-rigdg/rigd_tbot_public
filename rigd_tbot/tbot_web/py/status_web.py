@@ -12,17 +12,10 @@ status_blueprint = Blueprint("status_web", __name__)
 def status_page():
     """
     Loads bot status from JSON and renders to dashboard.
-    Uses universal status.json in tbot_bot/output/{BOT_IDENTITY}/status.json.
+    Uses global status.json in tbot_bot/output/logs/status.json.
     """
     status_data = {}
-    # Dynamically resolve BOT_IDENTITY and correct path via path_resolver.py
-    try:
-        import sys
-        sys.path.append(str(Path(__file__).resolve().parents[2] / "tbot_bot" / "support"))
-        from path_resolver import get_status_json_path
-        status_file_path = Path(get_status_json_path())
-    except Exception:
-        status_file_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "status.json"
+    status_file_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "status.json"
 
     try:
         with open(status_file_path, "r", encoding="utf-8") as f:
@@ -44,15 +37,7 @@ def status_page():
 @status_blueprint.route("/api/bot_state")
 @login_required
 def bot_state_api():
-    # Use path_resolver to dynamically get bot_state.txt path
-    try:
-        import sys
-        sys.path.append(str(Path(__file__).resolve().parents[2] / "tbot_bot" / "support"))
-        from path_resolver import get_bot_state_path
-        bot_state_path = Path(get_bot_state_path())
-    except Exception:
-        bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
-
+    bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
     try:
         state = bot_state_path.read_text(encoding="utf-8").strip()
     except Exception:
