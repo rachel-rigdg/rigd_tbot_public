@@ -160,4 +160,113 @@ This update implements a robust, secure user registration flow decoupled from pr
 - **All privileged setup and bot launching logic is strictly performed by backend scripts in `tbot_bot/config/` as triggered by the Web UI, never directly by Flask or web endpoints.**
 - **Systemd and Flask modularization ensures only phase-appropriate code is loaded, and no operational blueprints are active before provisioning or registration is complete.**
 
-================================================================================
+=============================================================================================================================================
+Flask Blueprint and Endpoint Mapping
+=============================================================================================================================================
+
+This section documents the mapping of Flask blueprints and their endpoints to the bot lifecycle phases and UI behavior, enforcing access control and modular app loading per bot state.
+
+--------------------------------------------------------------------------------
+Flask Blueprint Overview
+--------------------------------------------------------------------------------
+
+- `main_web.py`
+  - URL Prefix: `/`
+  - Role: Central router for main dashboard, status, logs, ledger, test UI.
+  - Loads only when bot_state in [`started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `stopped`].
+  - Renders `main.html`, `wait.html`, `test.html`, or error pages based on bot state.
+
+- `configuration_web.py`
+  - URL Prefix: `/configuration`
+  - Role: Handles credential, API, and broker configuration UI.
+  - Always accessible.
+  - Allows config saves only during [`initialize`, `provisioning`, `bootstrapping`] phases.
+  - Renders `configuration.html`.
+
+- `register_web.py`
+  - URL Prefix: `/register`
+  - Role: Handles user registration UI and backend.
+  - Accessible only in `registration` bot state.
+  - Renders `register.html`.
+
+- `status_web.py`
+  - URL Prefix: `/status`
+  - Role: Provides live bot status and health JSON API.
+  - Accessible during all active states except `initialize` and error/shutdown states.
+
+- `logs_web.py`
+  - URL Prefix: `/logs`
+  - Role: Streams bot logs.
+  - Accessible during all active states except `initialize` and error/shutdown states.
+
+- `ledger_web.py`
+  - URL Prefix: `/ledger`
+  - Role: Ledger viewing, reconciliation, and editing API.
+  - Admin-only access.
+  - Accessible when bot is active (not `initialize`, `provisioning`, `bootstrapping`, or error/shutdown).
+
+- `coa_web.py`
+  - URL Prefix: `/coa`
+  - Role: Chart of Accounts management API and UI.
+  - Admin-only access.
+  - Accessible when bot is active.
+
+- `settings_web.py`
+  - URL Prefix: `/settings`
+  - Role: Runtime config management excluding credentials.
+  - Accessible during all active states.
+
+- `start_stop_web.py`
+  - URL Prefix: `/control`
+  - Role: Handles bot lifecycle commands (start, stop, kill).
+  - Accessible during all states except `initialize`.
+
+- `test_web.py`
+  - URL Prefix: `/test`
+  - Role: TEST_MODE lifecycle management and UI.
+  - Accessible only to admin users during active states.
+
+--------------------------------------------------------------------------------
+UI Routing and Lifecycle Phase Enforcement
+--------------------------------------------------------------------------------
+
+| Bot State                      | Allowed Blueprints / Pages                                  | UI Behavior                        |
+|-------------------------------|------------------------------------------------------------|----------------------------------|
+| `initialize`, `provisioning`, `bootstrapping` | `configuration_web` only                             | Show `configuration.html` UI     |
+| `registration`                 | `register_web` only                                        | Show `register.html` UI           |
+| `started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `stopped` | `main_web`, `status_web`, `logs_web`, `ledger_web`, `coa_web`, `settings_web`, `start_stop_web`, `test_web` | Show `main.html` dashboard and related UI |
+| `graceful_closing_positions`, `emergency_closing_positions` | `main_web`, lifecycle blueprints                  | Show main.html with shutdown feedback |
+| `shutdown`, `shutdown_triggered`, `error`  | Error pages only                                        | Show error or shutdown UI; block other routes |
+
+--------------------------------------------------------------------------------
+Access Control and RBAC
+--------------------------------------------------------------------------------
+
+- All endpoints enforce RBAC via `security_users.py`.
+- Admin-only access for sensitive blueprints (`ledger_web`, `coa_web`, `test_web`).
+- Login required for all routes except initial bootstrap configuration.
+- Session management via `session_manager.py`.
+- CSRF protection applied on all form submissions via `csrf_protection.py`.
+
+--------------------------------------------------------------------------------
+Modular App Loading
+--------------------------------------------------------------------------------
+
+- `run_web.py` acts as phase-aware Flask app loader.
+- Loads only the blueprints relevant to current bot state.
+- Ensures no privileged or operational blueprints are accessible before provisioning and registration complete.
+- Facilitates phased system startup and controlled UI exposure.
+
+--------------------------------------------------------------------------------
+Trigger and Action Flow
+--------------------------------------------------------------------------------
+
+- Configuration save triggers provisioning flag file, observed by backend runner.
+- Provisioning completion triggers bot launch and bot_state transitions.
+- Start/stop/kill commands via `/control` blueprint update bot_state and coordinate strategy lifecycle.
+- UI polling endpoints (`status_web`) provide real-time bot state for client-side UI updates.
+
+=============================================================================================================================================
+End of Document
+=============================================================================================================================================
+

@@ -336,8 +336,8 @@ rigd_tbot/
     │   └── utils_web.py                       # Minor UI/web helpers, non-secret logic
     │
     └── templates/                              # Jinja2 HTML UI templates (rendered for user)
-        ├── configuration.html                  # Web form for updating email, API, and broker credential configuration via web UI 
         ├── coa.html                            # Human-readable web form/table for COA viewing and editing (editable if RBAC allows)
+        ├── configuration.html                  # Web form for updating email, API, and broker credential configuration via web UI 
         ├── index.html                          # Login page
         ├── ledger.html			        # Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
         ├── logs.html                           # Log viewer

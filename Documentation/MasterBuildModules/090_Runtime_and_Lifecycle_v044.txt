@@ -1,10 +1,10 @@
 ================================================================================
 Document: 090_Runtime_and_Lifecycle
 Version: v044
-Date: UTC:2025-06-15 04:30:00
+Date: UTC:2025-06-16 12:00:00
 ================================================================================
 
-This module documents the runtime session lifecycle, phases, shutdown protocols, and design confirmations.
+This module documents the runtime session lifecycle, phases, shutdown protocols, bot_state management, and design confirmations.
 
 Contents:
 - TradeBot Runtime Flow (Spec-Locked – Final Version, RIGD_TradingBot_{CURRENT_VERSION})
@@ -14,77 +14,51 @@ Contents:
 
 All runtime logic is immutable except via Web UI configuration changes.
 
-audit compliance.
-
+Audit compliance enforced.
 
 ================================================================================
 RIGD PHASE SUPERVISOR: USER-MODE SYSTEMD SPECIFICATION 
 ================================================================================
 
 OBJECTIVE:
-Fully eliminate `sudo` and `visudo` from all bot orchestration. The phase supervisor and systemd units must run entirely in *user mode*, allowing any `tbot`-like account to bootstrap a bot instance without elevated permissions.
+Fully eliminate `sudo` and `visudo` from all bot orchestration. The phase supervisor and systemd units run entirely in *user mode*, allowing any `tbot`-like account to bootstrap a bot instance without elevated permissions.
 
 --------------------------------------------------------------------------------
-CORE CHANGES TO IMPLEMENT (LOCKED IN)
+CORE CHANGES TO IMPLEMENT 
 --------------------------------------------------------------------------------
 
 1. Replace All `sudo systemctl` with `systemctl --user`
-	- Applies to `phase_supervisor.py` and any launch scripts
-	- e.g. `systemctl --user restart tbot_bot.service`
+    - Applies to `main.py` and all launch scripts
+    - e.g. `systemctl --user restart tbot_bot.service`
 
 2. Unit Files Directory
-	- Move all `.service` files to:
-	`/home/tbot/.config/systemd/user/`
-	- Remove any `User=...` directive (not valid in user units)
-	- Ensure `[Install]` section uses: `WantedBy=default.target`
+    - Move all `.service` files to:
+      `/home/tbot/.config/systemd/user/`
+    - Remove any `User=...` directive (not valid in user units)
+    - Ensure `[Install]` section uses: `WantedBy=default.target`
 
 3. Enable User-Level Systemd Session
-	```bash
-	loginctl enable-linger tbot
+    ```bash
+    loginctl enable-linger tbot
+    ```
 
 4. Environment Setup
+    - Add to ~/.bashrc or loader script:
+      `export XDG_RUNTIME_DIR=/run/user/$(id -u)`
 
-	Add to ~/.bashrc (or loader script):
-
-	export XDG_RUNTIME_DIR=/run/user/$(id -u)
-
-5.Update Supervisor Launch
-
-	Supervisor must run with:
-	systemctl --user start phase_supervisor.service
-	Do Not Use sudo in Code or Scripts
-	No sudo calls anywhere in *.py or run_tbot.sh
-
-INTERNAL ASSISTANT INSTRUCTION BLOCK (LOCKED)
-When modifying any service-related logic or orchestration scripts in the RIGD TradeBot project:
-
-Enforce systemctl --user (never sudo systemctl)
-
-Phase supervisor must use user-level systemd
-
-Unit files must live at ~/.config/systemd/user/
-
-Ensure environment includes XDG_RUNTIME_DIR
-
-Never reference sudo, visudo, or privileged paths
-
-This is now the permanent spec for all future implementations.
-
+5. Supervisor Launch
+    - Run supervisor with:
+      `systemctl --user start tbot_bot.service`
+    - No sudo usage anywhere in Python or shell scripts
 
 --------------------------------------------------------------------------------
-SYSTEMD INSTALLATION:
+SYSTEMD INSTALLATION
 --------------------------------------------------------------------------------
 
 mkdir -p ~/.config/systemd/user
 cd ~/.config/systemd/user
 
 ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_bot.service
-ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_bot.path
-ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_provisioning.service
-ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_web_bootstrap.service
-ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_web_main.service
-ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_web_registration.service
-ln -sf /home/tbot/rigd_tbot/systemd_units/tbot.target
 
 systemctl --user daemon-reexec
 systemctl --user daemon-reload
@@ -96,208 +70,180 @@ TradeBot Runtime Flow
 
 Phase 0: Pre-Session (Preparation)
 ↓
-- Edit/validate `.env_bot` (strategy, risk, runtime) and `.env` (keypaths, creds). If encrypted, decrypt `.env_bot.enc` using `security_bot.py` with AES-256 key from `ENV_BOT_KEY` in `.env` (must be at `storage/keys/env.key`).
-- Bootstrap session: create `control_start.txt` **or** submit `configuration.html` via Web UI. (No CLI bootstrapping users/creds/logs.)
-- Ensure all required encrypted secret files (`bot_identity.json.enc`, `broker.json.enc`, etc.) exist post-bootstrap; `.env_bot.enc` must exist pre-bootstrap.
+- Edit and validate `.env_bot` (strategy, risk, runtime) and `.env` (keypaths, credentials).
+- If encrypted, decrypt `.env_bot.enc` using `security_bot.py` with AES-256 key from `ENV_BOT_KEY` in `.env`.
+- Bootstrap session by creating `control_start.txt` or submitting `configuration.html` via Web UI only.
+- Ensure all encrypted secret files (`bot_identity.json.enc`, `broker.json.enc`, etc.) exist post-bootstrap.
+- `.env_bot.enc` must exist pre-bootstrap.
 
 Phase 1: System Boot Validation
 ↓
-- `security_bot.py` decrypts `.env_bot.enc` using the only valid keypath (`storage/keys/env.key`).
-- `env_bot.py` parses and validates all required vars; missing/malformed values = FATAL error, halt.
-- Run `.self_check()` for: `risk_bot.py`, `kill_switch.py`, `watchdog_bot.py`, `error_handler.py`, `strategy_router.py`. Any failure = abort + log to `output/logs/error_tracebacks.log` (UTC).
-- All checks pass → proceed to session init.
+- `security_bot.py` decrypts `.env_bot.enc` using key from `storage/keys/env.key`.
+- `env_bot.py` validates required env vars; missing/malformed values cause fatal error and halt.
+- Run `.self_check()` on critical modules (`risk_bot.py`, `kill_switch.py`, `watchdog_bot.py`, `error_handler.py`, `strategy_router.py`).
+- Failures abort session and log error in UTC to `output/logs/error_tracebacks.log`.
+- All checks pass proceed to session init.
 
 Phase 2: Session Initialization
 ↓
-- `float_bot.py` obtains current float/cash from accounting (bot never manages float/injections).
-- Load all runtime params from `.env_bot` (`MAX_TRADES`, `MAX_OPEN_POSITIONS`, `TOTAL_ALLOCATION`, `WEIGHTS`, etc.). If `DEFENSE_MODE_ACTIVE=true`, apply overrides.
-- `status_bot.py` writes initial bot/session state to `output/status.json` (strategies, limits).
+- `float_bot.py` obtains current float from accounting system (bot never manages float/injections directly).
+- Loads runtime parameters from `.env_bot` (e.g. `MAX_TRADES`, `TOTAL_ALLOCATION`).
+- If `DEFENSE_MODE_ACTIVE=true`, apply stricter overrides.
+- `status_bot.py` writes initial bot state to `output/status.json`.
 - Begin strategy cycle.
 
 Phase 3: Strategy Cycle (Open → Mid → Close, UTC)
 For each enabled strategy:
 ↓
-- `strategy_router.py` loads module per `.env_bot` toggle/schedule.
-- Strategy runs `.self_check()` (timing, API, float present). Failure = abort/log UTC.
-- `finnhub_screener.py` scans/filters symbols (volume, float, price, .env_bot filters).
-- For each candidate: calc allocation via `WEIGHTS`, enforce caps (`MAX_RISK_PER_TRADE`, `MAX_TRADES`, spread, volume).
-- On pass: submit order via `broker_api.py` (delegates to adapter), log via `trade_logger.py` to `output/trades/`.
-- On fail: log to `output/logs/unresolved_orders.log` (UTC).
-- Monitor positions (trailing stop, VWAP/VIX/filters, API health, PnL, loss limits).
-- Strategy phase ends when window closes.
-
+- Load strategy module as per `.env_bot` toggles and schedule.
+- Each strategy runs `.self_check()` (API availability, timing, float).
+- `finnhub_screener.py` filters symbols based on volume, price, fundamentals.
+- For each symbol passing filters, calculate allocation and enforce caps (`MAX_RISK_PER_TRADE`, `MAX_TRADES`, etc.).
+- Submit orders via `broker_api.py`.
+- Log trades to `output/trades/`.
+- Log unresolved orders to `output/logs/unresolved_orders.log`.
+- Monitor positions continuously (stop loss, VWAP, PnL).
+- Strategy phase ends when time window closes.
 
 Phase 4: Risk/Fault Monitoring (Continuous)
 ↓
-- `risk_bot.py`: enforce allocation, positions, defense mode.
-- `kill_switch.py`: monitor PnL/`DAILY_LOSS_LIMIT`.
-- `watchdog_bot.py`: verify API.
-- `error_handler.py`: uncaught exceptions to `output/logs/error_tracebacks.log` (UTC).
-- On breach: `kill_switch.py` halts broker, `watchdog_bot.py` suspends/halt, DEFENSE_MODE events logged (to `disaster_mode.log`, `unresolved_orders.log`, UTC).
+- Enforce risk constraints (`risk_bot.py`).
+- Monitor PnL and daily loss limits (`kill_switch.py`).
+- Verify API health (`watchdog_bot.py`).
+- Log uncaught exceptions (`error_handler.py`).
+- On breach, halt broker or suspend trading.
+- DEFENSE_MODE events logged to `disaster_mode.log`.
 
 Phase 5: Session Termination
 ↓
-- `stop_bot.py` closes open positions (API retry as needed).
-- `reporting_bot.py` writes all logs: `trade_history.csv/json`, `open.log`, `mid.log`, `close.log`, `daily_summary.json`, `disaster_mode.log`.
-- All trades/session data are routed by `accounting_api.py` (no direct ledger writes) to assigned ledger: `entities/{ENTITY}_{JURIS}/ledgers/bot/{ENTITY}_{JURIS}_{BROKER}_{BOT_ID}_BOT_ledger.db` (OFX-compliant, validated).
-- `auto_backup.py` archives logs/ledgers to `backups/` (UTC); backup failures never block reporting.
-- `status_bot.py` marks session "CLOSED" in status.json.
-- SESSION COMPLETE
+- `stop_bot.py` closes open positions gracefully.
+- `reporting_bot.py` compiles logs (trades, daily summary, disaster logs).
+- Trades and PnL routed to accounting ledger database (`entities/{ENTITY}_{JURIS}/ledgers/bot/...`).
+- `auto_backup.py` archives logs and ledgers (UTC).
+- Mark session "CLOSED" in status.json.
+- Session complete.
 
-Phase 6: Manual Review/Rebalancing
-- Operator/accounting reviews logs, history, summary.
-- Float reconciliations handled ONLY by accounting.
-- `generate_ofx.py` (accounting) for OFX export.
-- If `DEFENSE_MODE` triggered, manually reset `.env_bot` flag and document recovery in session audit logs.
+Phase 6: Manual Review / Rebalancing
+- Operator reviews logs and summary.
+- Float reconciliations managed exclusively by accounting.
+- `generate_ofx.py` used for OFX exports.
+- Manual reset of defense flags required after defense mode event.
 
 =============================================================================================================================================
-Key Design Confirmations 
+Bot State Definitions (bot_state.txt values)
 =============================================================================================================================================
 
-- Each bot instance is permanently assigned to a **single broker per session**; all trade execution, float usage, and risk enforcement are governed by `.env_bot`/`.env_bot.enc` parameters, but **float movements, final reconciliation, and official PnL are managed exclusively by the accounting system**.
-- **Bot tracks and enforces risk limits (MAX_RISK_PER_TRADE, TOTAL_ALLOCATION, MAX_TRADES, MAX_OPEN_POSITIONS, DAILY_LOSS_LIMIT, etc.) in real time**, sourced strictly from `.env_bot`.
-- **PnL calculation:** The bot computes and logs running realized PnL per session/strategy for dashboard display and risk gating (e.g., halt on DAILY_LOSS_LIMIT). **Full PnL statements, accounting period summaries, and compliance/tax outputs are handled only by the accounting system**.
-- **Float logic:** Bot reads assigned float at session start, enforces per-trade and per-session allocation, and **notifies accounting system when float deviates from target (rebalance trigger), but never initiates float transfers directly**.
-- **System-wide shutdowns (full bot halt)** triggered only by:
-    - Global market data outage (watchdog_bot.py)
-    - Broker API failure or repeated rejects (watchdog_bot.py, broker_api.py)
-    - Unhandled exceptions in core/strategy modules (error_handler.py, strategy_router.py, etc.)
-- **Defense Mode** triggers:
-    - Drawdown/risk breach (`DAILY_LOSS_LIMIT`)
-    - Win-rate below threshold
-    - Manual/session log flag
-  While active: `TOTAL_ALLOCATION` = `DEFENSE_MODE_TOTAL_ALLOCATION`, `MAX_TRADES`/`MAX_OPEN_POSITIONS` are scaled by `DEFENSE_MODE_TRADE_LIMIT_PCT`, and **stricter screening in all enhancement modules** (.env_bot-driven).
-- **All audit outputs immutable/timestamped (UTC):**
-    - `tbot_bot/output/logs/`, `tbot_bot/output/trades/`, `tbot_bot/output/summaries/`
-    - `entities/{ENTITY_CODE}_{JURISDICTION_CODE}/ledgers/bot/` (OFX/ledger)
-    - Archived on session close via `auto_backup.py`
-- **Web Dashboard (`status.html`):**
-    - Displays live strategy state, win-rate, session/day/week/month PnL, float usage/alloc, broker/API health (watchdog_bot.py), session uptime, Defense Mode/kill switch status.
-    - **PnL/float info displayed is for live monitoring—official records come only from accounting/ledger exports.**
-- **No hybrid mode:** Each bot/ledger/output is tied to one assignment for full audit clarity.
-- **Specs/process locked; all changes require `VERSION.md` doc and must be rolled out via Web UI config only.**
+- `initialize`: Initial bot startup, configuration phase.
+- `provisioning`: Generating keys, secrets, initial config encryption.
+- `bootstrapping`: Running DB init, user/account setup.
+- `registration`: User account registration UI active.
+- `started`: Bot system fully started but not actively trading/analyzing.
+- `idle`: Bot ready and primed, not actively analyzing or trading but able to start.
+- `analyzing`: Strategy analyzing market data.
+- `trading`: Active trade execution ongoing.
+- `monitoring`: Post-trade monitoring active.
+- `updating`: Runtime updates or config reloads in progress.
+- `graceful_closing_positions`: Closing positions in controlled manner on stop command.
+- `emergency_closing_positions`: Immediate position close on kill command.
+- `stopped`: Bot is halted, no strategies running; requires manual start.
+- `shutdown`: System shutdown in progress.
+- `shutdown_triggered`: Forced shutdown triggered.
+- `error`: Fatal error state; bot halted.
+
+
+=============================================================================================================================================
+UI Behavior Based on Bot State
+=============================================================================================================================================
+
+- `initialize`, `provisioning`, `bootstrapping` → show configuration.html UI for setup.
+- `registration` → show registration UI.
+- `started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating` → show main.html dashboard.
+- `graceful_closing_positions`, `emergency_closing_positions` → show main.html with graceful/hard shutdown feedback.
+- `stopped` → show main.html indicating stopped state; no strategies running.
+- `shutdown`, `shutdown_triggered`, `error` → show error or shutdown page; halt further operations.
+
+=============================================================================================================================================
+Bot Control Commands via Web UI
+=============================================================================================================================================
+
+- Start Bot:
+  - Transition bot_state.txt to `started`, then `idle` after init.
+  - Strategies not running until schedule triggers.
+- Stop Bot:
+  - Transition bot_state.txt to `graceful_closing_positions`.
+  - Strategies finish naturally, close positions.
+  - Transition to `stopped`.
+- Kill Now:
+  - Transition bot_state.txt to `emergency_closing_positions`.
+  - Immediate position close.
+  - Transition to `stopped`.
+- UI remains accessible in all states.
+
+
+=============================================================================================================================================
+Hot Configuration Updates
+=============================================================================================================================================
+
+- Configuration page accessible at all times.
+- Config changes saved instantly to encrypted runtime config.
+- Bot reads config changes dynamically without restart.
+- No re-provisioning triggered on config update.
+- Prevent accidental re-provisioning or bot restart via config save restrictions in code logic.
+
+
+=============================================================================================================================================
+Key Design Confirmations
+=============================================================================================================================================
+
+- Single broker assignment per bot session.
+- Float and risk limits strictly enforced from `.env_bot`.
+- Real-time PnL logged for dashboard; accounting provides official PnL.
+- Defense mode enforces stricter limits and screening.
+- All audit logs timestamped and immutable.
+- Web dashboard displays live states and alerts.
+- No hybrid or dual broker modes.
+- Changes managed only via Web UI configuration.
 
 =============================================================================================================================================
 TradeBot Master Build Enhancements (Post-Stabilization, Spec-Locked)
 =============================================================================================================================================
 
 1. Automated Rebalance Triggers:
-- Float deviation thresholds set in `.env_bot` (`REBALANCE_TRIGGER_PCT`).
-- `notify_rebalance_requirements.py` compares live float vs. accounting system target via secured API call (`acct_api_credentials.json.enc`).
-- If deviation > threshold, POST trigger sent to accounting; bot **never initiates ACH or ledger sync directly**.
-- Event logged to `output/logs/rebalance_request.log`, must also generate OFX-aligned audit entry (for downstream reconciliation).
-- Fully integrated with `risk_bot.py` (risk checks) and `kill_switch.py` (can pause or halt trading during rebalance event).
+- Float deviation thresholds set in `.env_bot`.
+- Accounting notified on deviation; bot never initiates transfers.
+- Event logged with UTC timestamp and session context.
 
 2. Multi-User Access Roles (RBAC):
-- `tbot_web/` dashboard supports multi-role access: `admin`, `operator`, `auditor`, `viewer`.
-- Secure login with bcrypt; roles/permissions managed in `core/databases/SYSTEM_USERS.db`.
-- All access attempts and auth failures logged in `logs/web/access.log` and `auth_failures.log`.
-- Role determines allowed UI actions: config edit, start/stop, reporting, read-only.
+- Multi-role access managed in `SYSTEM_USERS.db`.
+- Access attempts logged.
+- Role-based UI permissions.
 
 3. Strategy Optimization Module:
-- `strategy_optimizer.py` executes scheduled backtests using rolling window (past N days, param: `OPTIMIZER_BACKTEST_LOOKBACK_DAYS`).
-- Optimization methods: grid search, Bayesian, genetic; targets: entry/exit buffer, VWAP threshold, risk size.
-- Results logged in `backtest_results/strategy_tuning/`; suggested configs versioned in `env_bot.versioned/`.
-- **All optimized configs require explicit human approval via Web UI before activation—never auto-applied.**
+- Scheduled backtests with paramized methods.
+- Human approval required for config changes.
 
 4. Real-Time Alerting:
-- `notifier_bot.py` supports multi-channel notification (`email`, `slack`, `sms`, `pagerduty`), all set in `.env_bot`:
-  - `CRITICAL_ALERT_CHANNEL`, `ROUTINE_ALERT_CHANNEL`
-  - `NOTIFY_ON_FILL`, `NOTIFY_ON_EXIT`, `NOTIFY_ON_FAILURE`
-- Alert payload: timestamp, strategy, ticker, trade size, PnL, root cause/trigger.
-- Configurable per-strategy and per-event; all critical alerts must be logged.
+- Multi-channel alerts per `.env_bot`.
+- Configurable per event and strategy.
 
 5. Slippage & Latency Simulation:
-- `backtest_engine.py` supports optional simulation of order execution latency and slippage:
-  - `SLIPPAGE_SIMULATION_TYPE` in `.env_bot.test` (`none`, `rule_based`, `randomized`)
-  - `SIMULATED_LATENCY_MS` parameter for delay
-  - Slippage modeled using `SLIPPAGE_MEAN_PCT` and `SLIPPAGE_STDDEV_PCT`
-- Outputs to `backtest_results/backtest_slippage_comparison.json`; never impacts live trading.
-
-Implementation Notes:
-- All enhancements must:
-  - Implement `.self_check()` for CI and runtime validation
-  - Be fully modular (toggled via `.env_bot`)
-  - Log all output/events to dedicated file(s), never mix with core logic if disabled
-- Enhancements must not block or interfere with live core logic if toggled off
-- All code/logic adheres to safety, audit, and deterministic runtime rules for single- or multi-broker expansion
-
-**Version tag, schema changes, and new enhancements must be documented in `VERSION.md`.**
+- Optional slippage and latency simulation for backtests only.
+- No impact on live trading.
 
 =============================================================================================================================================
-Final Build Checklist 
+Final Build Checklist
 =============================================================================================================================================
 
-Configuration:
-- `.env` includes: `ENCRYPTION_KEY`, SMTP credentials, IP/PORT, login toggles. No hardcoded credentials.
-- `.env_bot` always loaded/decrypted from `.env_bot.enc` using `security_bot.py` and key from `.env`; all trading, risk, logging variables present; `VERSION_TAG` matches `VERSION.md`.
-- Bootstrap/init scripts (user/account creation, credentials, DB init) run only via Web UI portal (`configuration_web.py`). No CLI/shell-based init.
+- `.env` and `.env_bot` encryption and validation.
+- Bootstrap/init scripts run via Web UI only.
+- Environment variables fully validated.
+- Strategy modules implement `.self_check()`.
+- Logs and ledgers written as per spec.
+- Ledger files OFX-aligned, double-entry.
+- Risk, shutdown, and notifications implemented.
+- Web UI RBAC enforced.
+- Bot lifecycle state machine followed strictly.
+- Hot config updates dynamic, no restart needed.
+- All changes documented in `VERSION.md`.
 
-Environment Validation:
-- `env_bot.py` validates presence/correctness of all required keys/structure. Fatal error if missing/malformed.
-- `.env_bot.template-test` is complete, with inline comments and always up-to-date with `.env_bot` schema.
-
-Strategy Logic:
-- `main.py` loads `STRATEGY_SEQUENCE`, routes strategy calls strictly per `.env_bot` toggles.
-- All `strategy_*.py` modules implement/pass `.self_check()`; failure logs fatal reason/aborts session.
-- Enforces `.env_bot` constraints: volume, slippage, spread, blocklist, price/market-cap, concurrency.
-
-Logging:
-- All log output via `accounting_config.py`; entries include: UTC timestamp, ticker, size, entry/exit, strategy, float/broker source, error codes.
-- Output folders: `output/logs/` (per-strategy + error logs), `output/trades/` (trade history CSV/JSON, session summaries), `output/summaries/` (wrap-up/aggregate).
-- Session logs/ledgers archived post-session by `auto_backup.py`; file format (`LOG_FORMAT`) per `.env_bot` (JSON/CSV).
-
-Ledger & Accounting:
-- `reporting_bot.py` collects trade logs for ingestion.
-- `accounting_api.py` routes trades/PNL to accounting ingestion pipeline.
-- Ledger file: `entities/{ENTITY}_{JURIS}/ledgers/bot/{ENTITY}{JURIS}{BROKER}_{BOT_ID}_BOT_ledger.db`
-- Ledger must comply with `ledger_schema.py`: OFX-aligned, double-entry, all entries tagged with currency.
-- Exports handled **only** via `generate_ofx.py`; backup archives to `/backups/`.
-
-Broker Routing:
-- `broker_api.py` dispatches trades to the one assigned broker per bot (no dual/parallel).
-- `watchdog_bot.py` continuously monitors broker API connectivity, fills, health; triggers shutdown/alerts on failure.
-
-Risk/Shutdown:
-- `kill_switch.py` enforces global/per-broker `DAILY_LOSS_LIMIT`, triggers halt if violated.
-- `risk_bot.py` applies risk/session constraints: position count, per-trade allocation, concurrency, float caps.
-- `error_handler.py` logs all uncaught errors w/traceback.
-- `stop_bot.py` force-closes positions, updates session status/outputs/shutdown reason (UTC timestamped).
-
-Notifications:
-- `notifier_bot.py` sends critical alerts if enabled (`.env` SMTP + `.env_bot` toggles); routine notifications (entry/exit) per config.
-- Non-critical alerts suppressed if so configured.
-
-Testing & QA:
-- Dry run validates with actual ledgers/real config.
-- All pytest-based tests in `tbot_bot/test/` must pass.
-- `integration_test_runner.py` simulates end-to-end lifecycle.
-- `test_broker_trade_stub.py` executes/logs manual trades for validation.
-- No deprecated refs; all backtests (`tbot_bot/backtest/`) are sandboxed — never affect prod outputs.
-
-Web Interface:
-- Flask uses bcrypt-hashed user auth via `auth_web.py`, stored in `SYSTEM_USERS.db` (never plaintext).
-- Bot lifecycle controlled by `control/control_start.txt` & `control/control_stop.txt`; never via direct API/web calls.
-- UI routes (`/status`, `/logs`, `/settings`, `/configuration`) reflect live session state, RBAC enforced at all endpoints.
-- Credentials/sensitive config via encrypted secrets & secure config pages (`configuration_web.py` for creds, `settings_web.py` for runtime logic).
-- **bot_state.txt** in `tbot_bot/control/` governs UI routing and lifecycle:
-    - Valid states: `initialize`, `provisioning`, `bootstrapping`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error`
-    - UI Logic: 
-        - `initialize`, `provisioning`, `bootstrapping` → redirect to configuration.html (configuration UI)
-        - `idle`, `trading`, `monitoring`, `updating`, `analyzing` → show main.html (monitoring/dashboard UI)
-        - `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error` → show error state/page and halt further operations
-
-Deployment:
-- All code uses relative paths; cross-platform.
-- Flask web server and bot are separate processes (`start_bot.py`, `service_bot.py`).
-- Sensitive files excluded by `.scpignore_*` (never in build archives).
-- `.env_bot` version always matches `VERSION.md`.
-- Only finalized outputs/archives present in repo; no temp, test, or untracked files.
-
-Post-Session Rebalance:
-- If float deviation > `REBALANCE_THRESHOLD` (`.env_bot`), `rebalance_bot.py` emits signal; accounting handles float transfer, never the bot.
-- All rebalance triggers logged with UTC timestamp & session context.
-
-
-# All points above are non-ambiguous, spec-compliant, and enforce the current build/QA standard for RIGD_TradingBot_{CURRENT_VERSION}.
-
+# End of Document 090_Runtime_and_Lifecycle {CURRENT_VERSION}

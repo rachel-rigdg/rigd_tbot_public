@@ -7,6 +7,7 @@ from cryptography.fernet import Fernet
 import json
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 import subprocess
+import logging
 
 configuration_blueprint = Blueprint("configuration_web", __name__, url_prefix="/configuration")
 
@@ -14,15 +15,9 @@ RUNTIME_CONFIG_KEY_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "st
 RUNTIME_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
 PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+SECRETS_TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "tools" / "secrets_template.txt"
 
-def can_provision():
-    if not BOT_STATE_PATH.exists():
-        return True
-    try:
-        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        return state == "initialize"
-    except Exception:
-        return False
+logger = logging.getLogger(__name__)
 
 def load_runtime_config():
     if RUNTIME_CONFIG_KEY_PATH.exists() and RUNTIME_CONFIG_PATH.exists():
@@ -33,25 +28,35 @@ def load_runtime_config():
             config_json = fernet.decrypt(enc_bytes).decode("utf-8")
             return json.loads(config_json)
         except Exception as e:
-            print(f"[configuration_web] ERROR loading runtime config: {e}")
+            logger.error(f"[configuration_web] ERROR loading runtime config: {e}")
+    return {}
+
+def load_defaults():
+    try:
+        with open(SECRETS_TEMPLATE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"[configuration_web] ERROR loading default config from secrets_template.txt: {e}")
     return {}
 
 def save_runtime_config(config: dict):
-    if not RUNTIME_CONFIG_KEY_PATH.exists():
-        key = Fernet.generate_key()
-        RUNTIME_CONFIG_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        RUNTIME_CONFIG_KEY_PATH.write_bytes(key)
-    else:
-        key = RUNTIME_CONFIG_KEY_PATH.read_bytes()
-    fernet = Fernet(key)
-    enc_json = fernet.encrypt(json.dumps(config, indent=2).encode("utf-8"))
-    RUNTIME_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    RUNTIME_CONFIG_PATH.write_bytes(enc_json)
+    try:
+        if not RUNTIME_CONFIG_KEY_PATH.exists():
+            key = Fernet.generate_key()
+            RUNTIME_CONFIG_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+            RUNTIME_CONFIG_KEY_PATH.write_bytes(key)
+        else:
+            key = RUNTIME_CONFIG_KEY_PATH.read_bytes()
+        fernet = Fernet(key)
+        enc_json = fernet.encrypt(json.dumps(config, indent=2).encode("utf-8"))
+        RUNTIME_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        RUNTIME_CONFIG_PATH.write_bytes(enc_json)
+    except Exception as e:
+        logger.error(f"[configuration_web] ERROR saving runtime config: {e}")
+        raise
 
 @configuration_blueprint.route("/", methods=["GET"])
 def show_configuration():
-    if not is_first_bootstrap():
-        return redirect(url_for("main.main_page"))
     state = "initialize"
     if BOT_STATE_PATH.exists():
         try:
@@ -60,15 +65,11 @@ def show_configuration():
             state = "initialize"
     config = load_runtime_config()
     if not config and state == "initialize":
-        config = get_default_config()
+        config = load_defaults()
     return render_template("configuration.html", config=config)
 
 @configuration_blueprint.route("/", methods=["POST"])
 def save_configuration():
-    if not can_provision() or not is_first_bootstrap():
-        flash("Provisioning is locked after initial bootstrap. Use Settings to update configuration.", "error")
-        return redirect(url_for("main.main_page"))
-
     form = request.form
 
     bot_identity_data = {
@@ -120,29 +121,29 @@ def save_configuration():
         "alert_channels":  alert_channels,
     }
 
-    save_runtime_config(config)
-
     try:
-        BOT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
-            f.write("provisioning")
-    except Exception as e:
-        print(f"[configuration_web] ERROR writing bot_state.txt: {e}")
+        save_runtime_config(config)
+    except Exception:
+        flash("Failed to save configuration. See logs.", "error")
+        return redirect(url_for("configuration_web.show_configuration"))
 
+    first_bootstrap = is_first_bootstrap()
     try:
-        PROVISION_FLAG_PATH.touch(exist_ok=True)
-    except Exception as e:
-        print(f"[configuration_web] ERROR writing PROVISION_FLAG: {e}")
-
-    if is_first_bootstrap():
-        try:
+        if first_bootstrap:
+            BOT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
+                f.write("provisioning")
+            PROVISION_FLAG_PATH.touch(exist_ok=True)
             subprocess.Popen(["python3", str(Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "provisioning_runner.py")])
-            print("[configuration_web] provisioning_runner.py launched")
-        except Exception as e:
-            print(f"[configuration_web] ERROR launching provisioning_runner.py: {e}")
-
-    session["trigger_provisioning"] = True
-    session.modified = True
-    flash("Configuration saved. Proceeding to provisioning...", "success")
-
-    return redirect(url_for("register_web.register_page"))
+            logger.info("[configuration_web] provisioning_runner.py launched")
+            session["trigger_provisioning"] = True
+            session.modified = True
+            flash("Configuration saved. Proceeding to provisioning...", "success")
+            return redirect(url_for("register_web.register_page"))
+        else:
+            flash("Configuration saved.", "success")
+            return redirect(url_for("configuration_web.show_configuration"))
+    except Exception as e:
+        logger.error(f"[configuration_web] ERROR during provisioning trigger: {e}")
+        flash("Configuration saved, but provisioning trigger failed. Check logs.", "warning")
+        return redirect(url_for("configuration_web.show_configuration"))
