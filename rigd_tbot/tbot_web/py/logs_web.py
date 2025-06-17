@@ -2,7 +2,7 @@
 # Displays latest bot log output to the web UI with multi-directory fallback and hour filtering
 
 from flask import Blueprint, render_template, redirect, url_for, request
-from tbot_web.py.login_web import login_required
+# from tbot_web.py.login_web import login_required
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -61,15 +61,19 @@ def parse_timestamp(line):
             pass
     return None
 
-def find_log_file(selected_log):
+def find_log_file(selected_log, warn_list=None):
     paths = []
+    bot_identity_error = None
     try:
         bot_identity_string = load_bot_identity()
         validate_bot_identity(bot_identity_string)
         identity_logs = Path(get_output_path(bot_identity_string, "logs"))
         paths.append(identity_logs / selected_log)
-    except Exception:
-        pass
+    except Exception as e:
+        bot_identity_error = str(e)
+        if warn_list is not None:
+            warn_list.append(f"Warning: Could not resolve active bot identity. Using fallback log locations. Reason: {bot_identity_error}")
+    # Always try fallback locations
     paths.append(Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / selected_log)
     paths.append(Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs" / selected_log)
     for p in paths:
@@ -92,7 +96,8 @@ def logs_page():
         hour_window = 24
 
     log_content = ""
-    file_path = find_log_file(selected_log)
+    warnings = []
+    file_path = find_log_file(selected_log, warn_list=warnings)
     if file_path:
         lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
         if hour_window:
@@ -115,5 +120,6 @@ def logs_page():
         log_text=log_content,
         selected_log=selected_log,
         log_files=LOG_FILES_TO_INCLUDE,
-        selected_hours=selected_hours
+        selected_hours=selected_hours,
+        warnings=warnings
     )
