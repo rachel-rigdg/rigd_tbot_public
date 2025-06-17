@@ -13,7 +13,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const state = data.bot_state || data.state;
 
             if (state === "registration") {
-                window.location.replace("/register");
+                window.location.replace("/registration");
                 return;
             }
 
