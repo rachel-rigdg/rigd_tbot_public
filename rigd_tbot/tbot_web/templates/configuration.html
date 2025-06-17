@@ -91,11 +91,13 @@
                 <label for="broker_username">Broker Username</label>
                 <input type="text" id="broker_username" name="broker_username"  value="{{ config['broker']['BROKER_USERNAME'] if config.get('broker') else '' }}" />
                 
+                <label for="broker_password">Broker Password</label>
+                <input type="password" id="broker_password" name="broker_password" value="" placeholder="Enter new password or leave blank to keep existing" />
+                
                 <label for="broker_account_number">Broker Account Number</label>
                 <input type="text" id="broker_account_number" name="broker_account_number"  value="{{ config['broker']['BROKER_ACCOUNT_NUMBER'] if config.get('broker') else '' }}" />
                 
-                <label for="broker_password">Broker Password</label>
-                <input type="password" id="broker_password" name="broker_password" value="" placeholder="Enter new password or leave blank to keep existing" />
+                
             </fieldset>
         </div>
         <div class="fieldblock">
@@ -103,6 +105,17 @@
                 <legend>Alert Channels</legend>
                 <label for="alert_channels">Alert Channels (comma-separated)</label>
                 <input type="text" id="alert_channels" name="alert_channels" placeholder="e.g. email, slack, sms" value="{{ config['alert_channels'] if config.get('alert_channels') else 'email' }}" />
+            </fieldset>
+        </div>
+        <div class="fieldblock">
+            <fieldset>
+                <legend>Logging Verbosity</legend>
+                <label for="debug_log_level">Log Level</label>
+                <select id="debug_log_level" name="debug_log_level">
+                    <option value="quiet" {% if config.get('DEBUG_LOG_LEVEL', 'quiet') == 'quiet' %}selected{% endif %}>Quiet (errors only)</option>
+                    <option value="info" {% if config.get('DEBUG_LOG_LEVEL') == 'info' %}selected{% endif %}>Info</option>
+                    <option value="debug" {% if config.get('DEBUG_LOG_LEVEL') == 'debug' %}selected{% endif %}>Debug (all logs)</option>
+                </select>
             </fieldset>
             <br>
             <button type="submit">Save Configuration & Start Bot</button>
