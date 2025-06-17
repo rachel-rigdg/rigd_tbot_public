@@ -1,7 +1,7 @@
 # tbot_web/py/logs_web.py
 # Displays latest bot log output to the web UI with multi-directory fallback and hour filtering
 
-from flask import Blueprint, render_template, redirect, url_for, request
+from flask import Blueprint, render_template, request
 # from tbot_web.py.login_web import login_required
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from tbot_bot.support.path_resolver import get_output_path, validate_bot_identity
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 
-print(load_bot_identity())
+print("Loaded BOT_IDENTITY:", load_bot_identity())
 
 logs_blueprint = Blueprint("logs_web", __name__)
 
