@@ -109,6 +109,7 @@ def main():
         from tbot_bot.config.error_handler_bot import handle as handle_error
         from tbot_bot.runtime.watchdog_bot import start_watchdog
         from tbot_bot.support.utils_log import log_event
+        from tbot_bot.runtime.status_bot import update_bot_state, start_heartbeat
 
         config = get_bot_config()
         print(f"[main_bot] Loaded config: {config}")
@@ -121,6 +122,8 @@ def main():
         print("[main_bot] Running build check and initialization...")
         run_build_check()
         start_watchdog()
+        start_heartbeat(interval=15)
+        update_bot_state(state="idle")
 
         if KILL_FLAG.exists():
             print("[main_bot] KILL_FLAG exists. Immediate kill routine.")
@@ -167,6 +170,7 @@ def main():
                 if not is_market_open(now_dt, TEST_MODE_FLAG) and not STRATEGY_OVERRIDE and not TEST_MODE_FLAG.exists():
                     print(f"[main_bot] Outside market hours. Sleeping.")
                     log_event("main_bot", "Outside market hours. Sleeping.")
+                    update_bot_state(state="idle")
                     time.sleep(SLEEP_TIME)
                     continue
 
@@ -175,9 +179,11 @@ def main():
                     log_event("main_bot", f"Trading disabled. Skipping {strat_name}")
                     continue
 
+                update_bot_state(state="trading", strategy=strat_name)
                 print(f"[main_bot] Running strategy: {strat_name}")
                 run_strategy(override=strat_name)
                 print(f"[main_bot] Completed strategy: {strat_name}")
+                update_bot_state(state="monitoring", strategy=strat_name)
                 time.sleep(SLEEP_TIME)
 
                 if STOP_FLAG.exists():
@@ -186,6 +192,7 @@ def main():
                     safe_exit()
 
             print("[main_bot] Main loop cycle complete. Waiting for next cycle.")
+            update_bot_state(state="idle")
             time.sleep(SLEEP_TIME)
 
     except Exception as e:
