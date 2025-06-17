@@ -106,6 +106,11 @@ def create_unified_app():
         print("[portal_web_main] /healthz requested")
         return jsonify({"status": "ok"}), 200
 
+    @app.route("/api/bot_state")
+    def api_bot_state():
+        state = get_bot_state()
+        return jsonify({"bot_state": state})
+
     return app
 
 if __name__ == "__main__":
