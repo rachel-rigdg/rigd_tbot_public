@@ -127,66 +127,66 @@ def main():
             close_all_positions_immediately(log_event)
             safe_exit()
 
-        if TEST_MODE_FLAG.exists():
-            print("[main_bot] TEST_MODE detected. Forcing all strategies sequentially.")
-            log_event("main_bot", "TEST_MODE active: executing all strategies sequentially")
-            strategies = ["open", "mid", "close"]
-        else:
-            strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
-
-        print(f"[main_bot] Strategy sequence: {strategies}")
-        log_event("main_bot", f"Strategy sequence: {strategies}")
+        print(f"[main_bot] Strategy sequence: {STRATEGY_SEQUENCE}")
+        log_event("main_bot", f"Strategy sequence: {STRATEGY_SEQUENCE}")
 
         print("[main_bot] TradeBot startup successful — main runtime active.")
         log_event("main_bot", "TradeBot startup successful — main runtime active.")
 
-        graceful_stop = False
-
-        for strat_name in strategies:
-            strat_name = strat_name.strip().lower()
-            print(f"[main_bot] Executing strategy: {strat_name}")
-
+        while True:
             if KILL_FLAG.exists():
-                print("[main_bot] KILL_FLAG exists. Immediate kill during strategy loop.")
+                print("[main_bot] KILL_FLAG exists. Immediate kill during runtime loop.")
                 close_all_positions_immediately(log_event)
                 safe_exit()
 
             now_dt = datetime.utcnow()
-            if not is_market_open(now_dt, TEST_MODE_FLAG) and not STRATEGY_OVERRIDE and not TEST_MODE_FLAG.exists():
-                print(f"[main_bot] Outside market hours. Skipping {strat_name}.")
-                log_event("main_bot", f"Outside market hours. Skipping {strat_name}.")
-                continue
+            strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
 
-            if DISABLE_ALL_TRADES and not TEST_MODE_FLAG.exists():
-                print(f"[main_bot] Trading disabled. Skipping {strat_name}")
-                log_event("main_bot", f"Trading disabled. Skipping {strat_name}")
-                continue
+            for strat_name in strategies:
+                strat_name = strat_name.strip().lower()
+                print(f"[main_bot] Executing strategy: {strat_name}")
 
-            print(f"[main_bot] Running strategy: {strat_name}")
-            run_strategy(override=strat_name)
-            print(f"[main_bot] Completed strategy: {strat_name}")
+                if KILL_FLAG.exists():
+                    print("[main_bot] KILL_FLAG exists. Immediate kill during strategy loop.")
+                    close_all_positions_immediately(log_event)
+                    safe_exit()
+
+                if TEST_MODE_FLAG.exists():
+                    print("[main_bot] TEST_MODE detected. Forcing all strategies sequentially.")
+                    log_event("main_bot", "TEST_MODE active: executing all strategies sequentially")
+                    run_strategy(override="open")
+                    run_strategy(override="mid")
+                    run_strategy(override="close")
+                    try:
+                        TEST_MODE_FLAG.unlink()
+                        log_event("main_bot", "TEST_MODE flag cleared after test run completion")
+                    except Exception as e:
+                        log_event("main_bot", f"Failed to clear TEST_MODE flag: {e}")
+                    break
+
+                if not is_market_open(now_dt, TEST_MODE_FLAG) and not STRATEGY_OVERRIDE and not TEST_MODE_FLAG.exists():
+                    print(f"[main_bot] Outside market hours. Sleeping.")
+                    log_event("main_bot", "Outside market hours. Sleeping.")
+                    time.sleep(SLEEP_TIME)
+                    continue
+
+                if DISABLE_ALL_TRADES and not TEST_MODE_FLAG.exists():
+                    print(f"[main_bot] Trading disabled. Skipping {strat_name}")
+                    log_event("main_bot", f"Trading disabled. Skipping {strat_name}")
+                    continue
+
+                print(f"[main_bot] Running strategy: {strat_name}")
+                run_strategy(override=strat_name)
+                print(f"[main_bot] Completed strategy: {strat_name}")
+                time.sleep(SLEEP_TIME)
+
+                if STOP_FLAG.exists():
+                    print("[main_bot] Graceful stop detected. Will shut down after current strategy.")
+                    log_event("main_bot", "Graceful stop detected. Will shut down after current strategy.")
+                    safe_exit()
+
+            print("[main_bot] Main loop cycle complete. Waiting for next cycle.")
             time.sleep(SLEEP_TIME)
-
-            if TEST_MODE_FLAG.exists():
-                print("[main_bot] TEST_MODE completed; clearing flag.")
-                try:
-                    TEST_MODE_FLAG.unlink()
-                    log_event("main_bot", "TEST_MODE flag cleared after test run completion")
-                except Exception as e:
-                    log_event("main_bot", f"Failed to clear TEST_MODE flag: {e}")
-                break
-
-            if STOP_FLAG.exists():
-                print("[main_bot] Graceful stop detected. Will shut down after current strategy.")
-                log_event("main_bot", "Graceful stop detected. Will shut down after current strategy.")
-                graceful_stop = True
-                break
-
-        if graceful_stop:
-            print("[main_bot] Executing graceful shutdown after strategy completion. Closing positions.")
-            log_event("main_bot", "Executing graceful shutdown after strategy completion. Closing positions.")
-
-        print("[main_bot] TradeBot session complete. Shutting down.")
 
     except Exception as e:
         print(f"[main_bot][ERROR] Exception: {e}")
