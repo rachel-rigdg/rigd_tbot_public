@@ -145,7 +145,4 @@ def save_configuration():
     session.modified = True
     flash("Configuration saved. Proceeding to provisioning...", "success")
 
-    if is_first_bootstrap():
-        return redirect(url_for("register_web.register_page"))
-    else:
-        return redirect(url_for("main.main_page"))
+    return redirect(url_for("register_web.register_page"))
