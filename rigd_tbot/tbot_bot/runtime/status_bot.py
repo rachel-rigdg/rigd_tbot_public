@@ -14,7 +14,7 @@ from datetime import datetime
 from threading import Lock, Thread
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
-from tbot_bot.support.utils_log import log_event
+from tbot_bot.support.utils_log import log_event, get_log_settings
 from pathlib import Path
 
 STATUS_FILE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "status.json"
@@ -170,9 +170,13 @@ def start_heartbeat(interval: int = 15):
     Provides real-time confirmation of bot liveness for watchdogs and UI dashboards.
     """
     def heartbeat_loop():
+        from tbot_bot.support.utils_log import get_log_settings
+        DEBUG_LOG_LEVEL, ENABLE_LOGGING, LOG_FORMAT = get_log_settings()
         while True:
             status = bot_status.to_dict()
-            log_event("heartbeat", f"Heartbeat OK – State: {status['state']}, Strategy: {status['active_strategy']}, Win Rate: {status['win_rate']}%")
+            # Suppress heartbeat logging in quiet mode
+            if DEBUG_LOG_LEVEL != "quiet":
+                log_event("heartbeat", f"Heartbeat OK – State: {status['state']}, Strategy: {status['active_strategy']}, Win Rate: {status['win_rate']}%")
             bot_status.save_status()
             time.sleep(interval)
 

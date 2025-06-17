@@ -109,6 +109,7 @@ def save_configuration():
 
     language_code = form.get("language_code", "").strip() or "en"
     alert_channels = form.get("alert_channels", "").strip() or "email"
+    debug_log_level = form.get("debug_log_level", "").strip() or "quiet"
 
     config = {
         "bot_identity":    bot_identity_data,
@@ -119,6 +120,7 @@ def save_configuration():
         "acct_api":        acct_api_data,
         "language_code":   language_code,
         "alert_channels":  alert_channels,
+        "DEBUG_LOG_LEVEL": debug_log_level,
     }
 
     try:

@@ -108,10 +108,11 @@ def main():
         from tbot_bot.enhancements.build_check import run_build_check
         from tbot_bot.config.error_handler_bot import handle as handle_error
         from tbot_bot.runtime.watchdog_bot import start_watchdog
-        from tbot_bot.support.utils_log import log_event
+        from tbot_bot.support.utils_log import log_event, get_log_settings
         from tbot_bot.runtime.status_bot import update_bot_state, start_heartbeat
 
         config = get_bot_config()
+        DEBUG_LOG_LEVEL, ENABLE_LOGGING, LOG_FORMAT = get_log_settings()
         print(f"[main_bot] Loaded config: {config}")
         DISABLE_ALL_TRADES = config.get("DISABLE_ALL_TRADES", False)
         SLEEP_TIME_STR = config.get("SLEEP_TIME", "1s")
@@ -126,19 +127,25 @@ def main():
         update_bot_state(state="idle")
 
         if KILL_FLAG.exists():
-            print("[main_bot] KILL_FLAG exists. Immediate kill routine.")
+            if DEBUG_LOG_LEVEL != "quiet":
+                print("[main_bot] KILL_FLAG exists. Immediate kill routine.")
+            log_event("main_bot", "Immediate kill detected. Closing all positions now.", level="error")
             close_all_positions_immediately(log_event)
             safe_exit()
 
-        print(f"[main_bot] Strategy sequence: {STRATEGY_SEQUENCE}")
+        if DEBUG_LOG_LEVEL != "quiet":
+            print(f"[main_bot] Strategy sequence: {STRATEGY_SEQUENCE}")
         log_event("main_bot", f"Strategy sequence: {STRATEGY_SEQUENCE}")
 
-        print("[main_bot] TradeBot startup successful — main runtime active.")
+        if DEBUG_LOG_LEVEL != "quiet":
+            print("[main_bot] TradeBot startup successful — main runtime active.")
         log_event("main_bot", "TradeBot startup successful — main runtime active.")
 
         while True:
             if KILL_FLAG.exists():
-                print("[main_bot] KILL_FLAG exists. Immediate kill during runtime loop.")
+                if DEBUG_LOG_LEVEL != "quiet":
+                    print("[main_bot] KILL_FLAG exists. Immediate kill during runtime loop.")
+                log_event("main_bot", "Immediate kill during runtime loop.", level="error")
                 close_all_positions_immediately(log_event)
                 safe_exit()
 
@@ -147,15 +154,19 @@ def main():
 
             for strat_name in strategies:
                 strat_name = strat_name.strip().lower()
-                print(f"[main_bot] Executing strategy: {strat_name}")
+                if DEBUG_LOG_LEVEL != "quiet":
+                    print(f"[main_bot] Executing strategy: {strat_name}")
 
                 if KILL_FLAG.exists():
-                    print("[main_bot] KILL_FLAG exists. Immediate kill during strategy loop.")
+                    if DEBUG_LOG_LEVEL != "quiet":
+                        print("[main_bot] KILL_FLAG exists. Immediate kill during strategy loop.")
+                    log_event("main_bot", "Immediate kill during strategy loop.", level="error")
                     close_all_positions_immediately(log_event)
                     safe_exit()
 
                 if TEST_MODE_FLAG.exists():
-                    print("[main_bot] TEST_MODE detected. Forcing all strategies sequentially.")
+                    if DEBUG_LOG_LEVEL != "quiet":
+                        print("[main_bot] TEST_MODE detected. Forcing all strategies sequentially.")
                     log_event("main_bot", "TEST_MODE active: executing all strategies sequentially")
                     run_strategy(override="open")
                     run_strategy(override="mid")
@@ -168,30 +179,36 @@ def main():
                     break
 
                 if not is_market_open(now_dt, TEST_MODE_FLAG) and not STRATEGY_OVERRIDE and not TEST_MODE_FLAG.exists():
-                    print(f"[main_bot] Outside market hours. Sleeping.")
+                    if DEBUG_LOG_LEVEL != "quiet":
+                        print(f"[main_bot] Outside market hours. Sleeping.")
                     log_event("main_bot", "Outside market hours. Sleeping.")
                     update_bot_state(state="idle")
                     time.sleep(SLEEP_TIME)
                     continue
 
                 if DISABLE_ALL_TRADES and not TEST_MODE_FLAG.exists():
-                    print(f"[main_bot] Trading disabled. Skipping {strat_name}")
+                    if DEBUG_LOG_LEVEL != "quiet":
+                        print(f"[main_bot] Trading disabled. Skipping {strat_name}")
                     log_event("main_bot", f"Trading disabled. Skipping {strat_name}")
                     continue
 
                 update_bot_state(state="trading", strategy=strat_name)
-                print(f"[main_bot] Running strategy: {strat_name}")
+                if DEBUG_LOG_LEVEL != "quiet":
+                    print(f"[main_bot] Running strategy: {strat_name}")
                 run_strategy(override=strat_name)
-                print(f"[main_bot] Completed strategy: {strat_name}")
+                if DEBUG_LOG_LEVEL != "quiet":
+                    print(f"[main_bot] Completed strategy: {strat_name}")
                 update_bot_state(state="monitoring", strategy=strat_name)
                 time.sleep(SLEEP_TIME)
 
                 if STOP_FLAG.exists():
-                    print("[main_bot] Graceful stop detected. Will shut down after current strategy.")
+                    if DEBUG_LOG_LEVEL != "quiet":
+                        print("[main_bot] Graceful stop detected. Will shut down after current strategy.")
                     log_event("main_bot", "Graceful stop detected. Will shut down after current strategy.")
                     safe_exit()
 
-            print("[main_bot] Main loop cycle complete. Waiting for next cycle.")
+            if DEBUG_LOG_LEVEL != "quiet":
+                print("[main_bot] Main loop cycle complete. Waiting for next cycle.")
             update_bot_state(state="idle")
             time.sleep(SLEEP_TIME)
 
@@ -204,7 +221,8 @@ def main():
             print(f"[main_bot][ERROR] Exception during error handler: {ex2}")
     finally:
         try:
-            print("[main_bot] Terminating Flask process...")
+            if DEBUG_LOG_LEVEL != "quiet":
+                print("[main_bot] Terminating Flask process...")
             flask_proc.terminate()
         except Exception as ex3:
             print(f"[main_bot] Exception terminating Flask process: {ex3}")

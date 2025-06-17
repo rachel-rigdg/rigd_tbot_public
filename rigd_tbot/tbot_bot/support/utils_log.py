@@ -45,10 +45,13 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
         return
 
     level = level.lower()
+    # QUIET: Only errors/critical allowed
     if DEBUG_LOG_LEVEL == "quiet" and level not in ("error", "critical"):
         return
+    # INFO: Only info/warning/error/critical allowed (not debug)
     if DEBUG_LOG_LEVEL == "info" and level == "debug":
         return
+    # DEBUG: All logs allowed
 
     log_entry = {
         "timestamp": utc_now().isoformat(),
@@ -72,10 +75,12 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
             if extra:
                 line += f" | {json.dumps(extra)}"
 
+        # Only print to stdout if not quiet or is error/critical
+        if not (DEBUG_LOG_LEVEL == "quiet" and level not in ("error", "critical")):
+            print(line)
+
         with open(filepath, "a") as f:
             f.write(line + "\n")
-
-        print(line)
 
     except Exception as e:
         # Always print, even if writing to file fails
