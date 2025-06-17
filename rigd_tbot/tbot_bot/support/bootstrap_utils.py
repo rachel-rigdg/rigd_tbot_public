@@ -44,7 +44,7 @@ def is_first_bootstrap(quiet_mode: bool = False) -> bool:
         debug_print(f"[DEBUG] Exception reading bot_state.txt: {e}")
         return True
     for file_path in CONFIG_REQUIRED_FILES:
-        debug_print(f"[DEBUG] Checking existence: {file_path} ({file_path.exists()})")
+      #  debug_print(f"[DEBUG] Checking existence: {file_path} ({file_path.exists()})")
         if not file_path.exists():
             debug_print(f"[DEBUG] Required file missing: {file_path}")
             return True
