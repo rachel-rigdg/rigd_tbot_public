@@ -80,10 +80,8 @@ def create_unified_app():
     # Universe cache inspection/rebuild endpoints (after registration only)
     app.register_blueprint(universe_bp, url_prefix="/universe")
 
-    @app.before_request
+     @app.before_request
     def enforce_bootstrap():
-        state = get_bot_state()
-        # Only allow all endpoints after registration phase is complete
         if is_first_bootstrap():
             if not (
                 (request.endpoint or "").startswith("configuration_web")
@@ -92,21 +90,7 @@ def create_unified_app():
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("configuration_web.show_configuration"))
-        # During initialize, provisioning, bootstrapping, or registration, restrict to config/register only
-        bootstrap_states = [
-            "initialize", "provisioning", "bootstrapping", "registration"
-        ]
-        if state in bootstrap_states:
-            allowed_endpoints = [
-                "configuration_web.show_configuration",
-                "register_web.register",
-                "static"
-            ]
-            if (request.endpoint not in allowed_endpoints
-                and not (request.endpoint or "").startswith("static")):
-                if state == "registration":
-                    return redirect(url_for("register_web.register"))
-                return redirect(url_for("configuration_web.show_configuration"))
+
 
     print("==== ROUTES ====")
     for rule in app.url_map.iter_rules():
