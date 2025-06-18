@@ -7,7 +7,7 @@ import json
 import io
 
 from tbot_web.support.auth_web import rbac_required
-from tbot_bot.support.utils_coa_web import (
+from tbot_web.support.utils_coa_web import (
     load_coa_metadata_and_accounts,
     save_coa_json,
     export_coa_markdown,
