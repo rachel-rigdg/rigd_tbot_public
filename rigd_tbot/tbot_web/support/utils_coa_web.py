@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 # Paths (must be resolved via path_resolver in production)
-from .path_resolver import (
+from tbot_bot.support.path_resolver import (
     resolve_coa_json_path,
     resolve_coa_metadata_path,
     resolve_coa_audit_log_path,
