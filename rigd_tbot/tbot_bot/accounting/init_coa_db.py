@@ -17,30 +17,45 @@ from tbot_bot.support.path_resolver import resolve_coa_db_path, resolve_coa_temp
 def utc_now():
     return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
 
-def export_json_and_metadata(coa_db_path, coa_accounts, entity_code, jurisdiction_code, broker_code, bot_id, coa_version, currency_code):
-    # Write COA JSON file for web
-    json_out_path = str(Path(coa_db_path).parent / "coa.json")
-    with open(json_out_path, "w", encoding="utf-8") as f:
-        json.dump(coa_accounts, f, indent=2)
-    # Write metadata file
-    metadata = {
-        "currency_code": currency_code,
-        "entity_code": entity_code,
-        "jurisdiction_code": jurisdiction_code,
-        "broker_code": broker_code,
-        "bot_id": bot_id,
-        "coa_version": coa_version,
-        "created_at_utc": utc_now(),
-        "last_updated_utc": utc_now()
-    }
-    metadata_out_path = str(Path(coa_db_path).parent / "coa_metadata.json")
-    with open(metadata_out_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
-    # Initialize audit log
-    audit_log_path = str(Path(coa_db_path).parent / "coa_audit_log.json")
-    if not os.path.exists(audit_log_path):
-        with open(audit_log_path, "w", encoding="utf-8") as f:
-            json.dump([], f)
+def export_json_and_metadata_from_db(coa_db_path):
+    try:
+        conn = sqlite3.connect(coa_db_path)
+        # Fetch accounts
+        cursor = conn.execute("SELECT account_json FROM coa_accounts")
+        coa_accounts = [json.loads(row[0]) for row in cursor.fetchall()]
+        # Fetch metadata
+        cursor = conn.execute("SELECT currency_code, entity_code, jurisdiction_code, broker_code, bot_id, coa_version, created_at_utc, last_updated_utc FROM coa_metadata")
+        row = cursor.fetchone()
+        if row:
+            metadata = {
+                "currency_code": row[0],
+                "entity_code": row[1],
+                "jurisdiction_code": row[2],
+                "broker_code": row[3],
+                "bot_id": row[4],
+                "coa_version": row[5],
+                "created_at_utc": row[6],
+                "last_updated_utc": row[7]
+            }
+        else:
+            metadata = {}
+        conn.close()
+        # Write COA JSON file for web
+        json_out_path = str(Path(coa_db_path).parent / "coa.json")
+        with open(json_out_path, "w", encoding="utf-8") as f:
+            json.dump(coa_accounts, f, indent=2)
+        # Write metadata file
+        metadata_out_path = str(Path(coa_db_path).parent / "coa_metadata.json")
+        with open(metadata_out_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+        # Initialize audit log if missing
+        audit_log_path = str(Path(coa_db_path).parent / "coa_audit_log.json")
+        if not os.path.exists(audit_log_path):
+            with open(audit_log_path, "w", encoding="utf-8") as f:
+                json.dump([], f)
+        print(f"[init_coa_db] COA JSON, metadata, and audit log exported from DB.")
+    except Exception as e:
+        print(f"[init_coa_db] export_json_and_metadata_from_db ERROR: {e}")
 
 def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None, coa_version="v1.0.0", currency_code="USD"):
     print(f"[init_coa_db] Starting COA DB initialization...")
@@ -60,10 +75,10 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
     print(f"[init_coa_db] COA template path: {coa_template_path}")
     os.makedirs(os.path.dirname(coa_db_path), exist_ok=True)
     try:
-        with open(coa_template_path, "r", encoding="utf-8") as template_file:
-            coa_accounts = json.load(template_file)
-        print(f"[init_coa_db] Number of COA accounts in template: {len(coa_accounts)}")
         if not os.path.exists(coa_db_path):
+            with open(coa_template_path, "r", encoding="utf-8") as template_file:
+                coa_accounts = json.load(template_file)
+            print(f"[init_coa_db] Number of COA accounts in template: {len(coa_accounts)}")
             conn = sqlite3.connect(coa_db_path)
             conn.execute(
                 "CREATE TABLE coa_metadata (currency_code TEXT NOT NULL, entity_code TEXT NOT NULL, jurisdiction_code TEXT NOT NULL, broker_code TEXT NOT NULL, bot_id TEXT NOT NULL, coa_version TEXT NOT NULL, created_at_utc TEXT NOT NULL, last_updated_utc TEXT NOT NULL)"
@@ -83,7 +98,7 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
             print(f"[init_coa_db] COA DB created successfully at: {coa_db_path}")
         else:
             print(f"[init_coa_db] COA DB already exists: {coa_db_path}, skipping creation.")
-        export_json_and_metadata(coa_db_path, coa_accounts, entity_code, jurisdiction_code, broker_code, bot_id, coa_version, currency_code)
+        export_json_and_metadata_from_db(coa_db_path)
     except Exception as e:
         print(f"[init_coa_db] ERROR: {e}")
 

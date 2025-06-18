@@ -1,4 +1,4 @@
-# tbot_bot/support/utils_coa_web.py
+# tbot_web/support/utils_coa_web.py
 # Loads, validates, and manages the bot’s Chart of Accounts (COA); interfaces with tbot_ledger_coa.json and provides COA to other modules
 
 import json
