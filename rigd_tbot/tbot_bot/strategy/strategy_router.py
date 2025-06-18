@@ -20,6 +20,12 @@ STRAT_OPEN_ENABLED = config.get("STRAT_OPEN_ENABLED", True)
 STRAT_MID_ENABLED = config.get("STRAT_MID_ENABLED", True)
 STRAT_CLOSE_ENABLED = config.get("STRAT_CLOSE_ENABLED", True)
 
+# Screener selection variables from .env_bot
+SCREENER_SOURCE = config.get("SCREENER_SOURCE", "FINNHUB").strip().upper()
+OPEN_SCREENER = config.get("OPEN_SCREENER", SCREENER_SOURCE).strip().upper()
+MID_SCREENER = config.get("MID_SCREENER", SCREENER_SOURCE).strip().upper()
+CLOSE_SCREENER = config.get("CLOSE_SCREENER", SCREENER_SOURCE).strip().upper()
+
 # Parse strategy start times from config
 def parse_start_time(tstr):
     try:
@@ -49,6 +55,24 @@ def is_test_mode_active() -> bool:
     test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
     return test_flag_path.exists()
 
+# Helper to import screener dynamically
+def get_screener_class(source_name):
+    src = source_name.strip().upper()
+    if src == "ALPACA":
+        from tbot_bot.screeners.alpaca_screener import AlpacaScreener
+        return AlpacaScreener
+    elif src == "FINNHUB":
+        from tbot_bot.screeners.finnhub_screener import FinnhubScreener
+        return FinnhubScreener
+    elif src == "IBKR":
+        from tbot_bot.screeners.ibkr_screener import IBKRScreener
+        return IBKRScreener
+    elif src == "TRADIER":
+        from tbot_bot.screeners.tradier_screener import TradierScreener
+        return TradierScreener
+    else:
+        raise ValueError(f"Unknown screener source: {src}")
+
 # Main strategy routing function
 def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
@@ -59,10 +83,10 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
     if is_test_mode_active():
         log_event("router", "TEST_MODE active: executing all strategies sequentially")
         results = []
-        for strat in ["open", "mid", "close"]:
+        for strat, screener_name in zip(["open", "mid", "close"], [OPEN_SCREENER, MID_SCREENER, CLOSE_SCREENER]):
             try:
-                log_event("router", f"TEST_MODE executing strategy: {strat}")
-                result = execute_strategy(strat)
+                log_event("router", f"TEST_MODE executing strategy: {strat} with screener: {screener_name}")
+                result = execute_strategy(strat, screener_override=screener_name)
                 results.append(result)
             except Exception as e:
                 log_event("router", f"TEST_MODE error executing {strat}: {e}")
@@ -81,36 +105,43 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
 
     # Check for manual override (if provided)
     if override:
-        log_event("router", f"Manual strategy override: {override}")
-        return execute_strategy(override.strip().lower())
+        strat_name = override.strip().lower()
+        screener_override = {
+            "open": OPEN_SCREENER,
+            "mid": MID_SCREENER,
+            "close": CLOSE_SCREENER
+        }.get(strat_name, SCREENER_SOURCE)
+        log_event("router", f"Manual strategy override: {override} with screener: {screener_override}")
+        return execute_strategy(strat_name, screener_override=screener_override)
 
     # Iterate through the strategy sequence and select the strategy to execute
-    for s in STRATEGY_SEQUENCE:
+    for s, screener_name in zip(STRATEGY_SEQUENCE, [OPEN_SCREENER, MID_SCREENER, CLOSE_SCREENER]):
         if s == "open" and STRAT_OPEN_ENABLED and now >= START_TIME_OPEN:
-            return execute_strategy("open")
+            return execute_strategy("open", screener_override=OPEN_SCREENER)
         elif s == "mid" and STRAT_MID_ENABLED and now >= START_TIME_MID:
-            return execute_strategy("mid")
+            return execute_strategy("mid", screener_override=MID_SCREENER)
         elif s == "close" and STRAT_CLOSE_ENABLED and now >= START_TIME_CLOSE:
-            return execute_strategy("close")
+            return execute_strategy("close", screener_override=CLOSE_SCREENER)
 
     # If no strategy is executed, wait for the configured sleep time
     time.sleep(SLEEP_TIME)
     return StrategyResult(skipped=True)
 
 # Executes the selected strategy and returns the result
-def execute_strategy(name: str) -> StrategyResult:
+def execute_strategy(name: str, screener_override: str = None) -> StrategyResult:
     """
-    Dispatches control to the selected strategy module.
+    Dispatches control to the selected strategy module, injecting screener class from .env_bot.
     """
     n = name.strip().lower()
+    screener_class = get_screener_class(screener_override or SCREENER_SOURCE)
     try:
-        log_event("router", f"Executing strategy: {n}")
+        log_event("router", f"Executing strategy: {n} with screener: {screener_class.__name__}")
         if n == "open":
-            return run_open_strategy()
+            return run_open_strategy(screener_class=screener_class)
         elif n == "mid":
-            return run_mid_strategy()
+            return run_mid_strategy(screener_class=screener_class)
         elif n == "close":
-            return run_close_strategy()
+            return run_close_strategy(screener_class=screener_class)
         else:
             raise ValueError(f"Unknown strategy: {n}")
     except Exception as e:

@@ -35,6 +35,9 @@
         <form action="{{ url_for('status_web.status_page') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button">Status</button>
         </form>
+        <form action="{{ url_for('universe.universe_status') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Universe</button>
+        </form>
         <form action="{{ url_for('logs_web.logs_page') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button">Logs</button>
         </form>

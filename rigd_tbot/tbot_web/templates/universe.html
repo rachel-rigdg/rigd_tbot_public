@@ -1,0 +1,64 @@
+<!-- tbot_web/templates/universe.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Universe Cache Inspection</title>
+    <meta charset="utf-8">
+    <style>
+        table { font-size: 12px; border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #aaa; padding: 4px; }
+        th { background: #eee; }
+        .pagination { margin-top: 12px; }
+        .pagination a { margin: 0 3px; text-decoration: none; }
+        .searchbox { margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+    <h2>Universe Cache Inspection</h2>
+    <p><b>Status:</b> {{ status_msg }}</p>
+    <p><b>Cache File:</b> {{ cache_path }}</p>
+    <p><b>Symbol Count (filtered):</b> {{ symbol_count }}</p>
+    <form method="get" action="{{ url_for('universe.universe_status') }}" class="searchbox">
+        <input type="text" name="search" placeholder="Search symbol..." value="{{ search }}">
+        <input type="hidden" name="per_page" value="{{ per_page }}">
+        <button type="submit">Search</button>
+        <a href="{{ url_for('universe.universe_status') }}">Clear</a>
+    </form>
+    <form action="{{ url_for('universe.universe_rebuild') }}" method="post" style="margin-bottom:14px;">
+        <button type="submit">Force Rebuild</button>
+    </form>
+    <a href="{{ url_for('universe.universe_export', fmt='csv') }}">Export CSV</a> |
+    <a href="{{ url_for('universe.universe_export', fmt='json') }}">Export JSON</a>
+    <table>
+        <tr>
+            <th>Symbol</th>
+            <th>Exchange</th>
+            <th>Last Close</th>
+            <th>Market Cap</th>
+            <th>Company Name</th>
+            <th>Sector</th>
+        </tr>
+        {% for s in sample_symbols %}
+        <tr>
+            <td>{{ s.symbol }}</td>
+            <td>{{ s.exchange }}</td>
+            <td>{{ s.lastClose }}</td>
+            <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
+            <td>{{ s.companyName if s.companyName else "" }}</td>
+            <td>{{ s.sector if s.sector else "" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    <div class="pagination">
+        {% if page > 1 %}
+            <a href="{{ url_for('universe.universe_status', search=search, per_page=per_page, page=1) }}">&laquo; First</a>
+            <a href="{{ url_for('universe.universe_status', search=search, per_page=per_page, page=page-1) }}">&#60; Prev</a>
+        {% endif %}
+        Page {{ page }} of {{ total_pages }}
+        {% if page < total_pages %}
+            <a href="{{ url_for('universe.universe_status', search=search, per_page=per_page, page=page+1) }}">Next &#62;</a>
+            <a href="{{ url_for('universe.universe_status', search=search, per_page=per_page, page=total_pages) }}">Last &raquo;</a>
+        {% endif %}
+    </div>
+</body>
+</html>

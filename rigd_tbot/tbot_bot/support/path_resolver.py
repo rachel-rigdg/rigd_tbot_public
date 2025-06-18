@@ -20,7 +20,7 @@ CATEGORIES = {
     "ledgers": "ledgers",
     "summaries": "summaries",
     "trades": "trades",
-    "screeners": "screeners"
+    "screeners": "screeners"  # Added screeners category here
 }
 
 def get_bot_identity(explicit_identity: str = None) -> str:
@@ -106,6 +106,18 @@ def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str
     validate_bot_identity(bot_identity)
     return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_COA_v1.0.0.db")
 
+def resolve_universe_cache_path(bot_identity: str = None) -> str:
+    """
+    Returns full path to the symbol universe cache JSON file.
+    Path: tbot_bot/output/{bot_identity}/screeners/symbol_universe.json
+    """
+    identity = get_bot_identity(bot_identity)
+    validate_bot_identity(identity)
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
+    screeners_dir = base_output_dir / "screeners"
+    screeners_dir.mkdir(parents=True, exist_ok=True)
+    return str(screeners_dir / "symbol_universe.json")
+
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -125,5 +137,6 @@ __all__ = [
     "resolve_coa_metadata_path",
     "resolve_coa_audit_log_path",
     "resolve_ledger_schema_path",
-    "resolve_coa_schema_path"
+    "resolve_coa_schema_path",
+    "resolve_universe_cache_path"
 ]

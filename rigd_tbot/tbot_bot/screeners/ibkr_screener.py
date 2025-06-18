@@ -1,0 +1,96 @@
+# tbot_bot/screeners/ibkr_screener.py
+# summary: Screens symbols using IBKR price, volume, and VWAP data (strategy-specific filters)
+# Updated: Uses cached universe and quote-only fetches per TradeBot specification
+
+import time
+from tbot_bot.screeners.screener_base import ScreenerBase
+from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.decrypt_secrets import decrypt_json
+
+# Placeholder: replace with real IBKR API imports and logic as needed
+def ibkr_get_quote(symbol):
+    """
+    Replace this stub with real IBKR market data API call.
+    Return dict: {"symbol":..., "c":..., "o":..., "vwap":...}
+    """
+    # Example (mock): simulate current, open, vwap
+    import random
+    c = round(random.uniform(10, 200), 2)
+    o = round(c * random.uniform(0.97, 1.03), 2)
+    vwap = (c + o) / 2
+    return {"symbol": symbol, "c": c, "o": o, "vwap": vwap}
+
+config = get_bot_config()
+LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
+MIN_PRICE = float(config.get("MIN_PRICE", 5))
+MAX_PRICE = float(config.get("MAX_PRICE", 100))
+FRACTIONAL = config.get("FRACTIONAL", True)
+
+def log(msg):
+    if LOG_LEVEL == "verbose":
+        print(msg)
+
+class IBKRScreener(ScreenerBase):
+    """
+    IBKR screener: loads eligible symbols from universe cache,
+    fetches latest quotes from IBKR, filters per strategy.
+    """
+    def fetch_live_quotes(self, symbols):
+        """
+        Fetches latest price/open/vwap for each symbol using IBKR API.
+        Returns list of dicts: [{"symbol":..., "c":..., "o":..., "vwap":...}, ...]
+        """
+        quotes = []
+        for idx, symbol in enumerate(symbols):
+            try:
+                quote = ibkr_get_quote(symbol)
+                if quote and all(k in quote for k in ("c", "o", "vwap")):
+                    quotes.append(quote)
+            except Exception as e:
+                log(f"Exception fetching quote for {symbol}: {e}")
+                continue
+            if idx % 50 == 0:
+                log(f"Fetched {idx} quotes...")
+            time.sleep(0.2)  # Throttle if needed
+        return quotes
+
+    def filter_candidates(self, quotes):
+        """
+        Filters the list of quote dicts using price, gap, and other rules.
+        Returns eligible symbol dicts.
+        """
+        strategy = self.env.get("STRATEGY_NAME", "open")
+        gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
+        max_gap = float(self.env.get(gap_key, 0.1))
+
+        results = []
+        for q in quotes:
+            symbol = q["symbol"]
+            current = float(q.get("c", 0))
+            open_ = float(q.get("o", 0))
+            vwap = float(q.get("vwap", 0))
+
+            if current <= 0 or open_ <= 0 or vwap <= 0:
+                continue
+            if current < MIN_PRICE:
+                continue
+            if current > MAX_PRICE and not FRACTIONAL:
+                continue
+
+            gap = abs((current - open_) / open_)
+            if gap > max_gap:
+                continue
+
+            momentum = abs(current - open_) / open_
+            results.append({
+                "symbol": symbol,
+                "price": current,
+                "vwap": vwap,
+                "momentum": momentum
+            })
+        results.sort(key=lambda x: x["momentum"], reverse=True)
+        return results
+
+# Usage example:
+# screener = IBKRScreener()
+# candidates = screener.run_screen()
