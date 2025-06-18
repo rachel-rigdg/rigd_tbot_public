@@ -91,3 +91,5 @@ def get_bot_config() -> Dict[str, Any]:
     validate_bot_config(config)
     logger.debug("Bot config loaded and validated successfully")
     return config
+
+load_env_bot_config = get_bot_config
