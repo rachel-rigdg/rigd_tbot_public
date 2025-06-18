@@ -74,6 +74,16 @@ def wait_for_operational_phase():
             print(f"[main_bot][wait_for_operational_phase] Exception: {e}")
         time.sleep(1)
 
+def refresh_status_after_provisioning():
+    """
+    Refreshes the bot status and starts heartbeat after provisioning/config is complete.
+    """
+    from tbot_bot.runtime.status_bot import bot_status, start_heartbeat
+    from tbot_bot.config.env_bot import get_bot_config
+    bot_status.update_config(get_bot_config())
+    bot_status.save_status()
+    start_heartbeat(interval=15)
+
 def main():
     try:
         from tbot_bot.support.bootstrap_utils import is_first_bootstrap
@@ -103,13 +113,14 @@ def main():
 
     try:
         wait_for_operational_phase()
+        refresh_status_after_provisioning()  # --- ADDED: always refresh after operational phase
         from tbot_bot.config.env_bot import get_bot_config
         from tbot_bot.strategy.strategy_router import run_strategy
         from tbot_bot.enhancements.build_check import run_build_check
         from tbot_bot.config.error_handler_bot import handle as handle_error
         from tbot_bot.runtime.watchdog_bot import start_watchdog
         from tbot_bot.support.utils_log import log_event, get_log_settings
-        from tbot_bot.runtime.status_bot import update_bot_state, start_heartbeat
+        from tbot_bot.runtime.status_bot import update_bot_state
 
         config = get_bot_config()
         DEBUG_LOG_LEVEL, ENABLE_LOGGING, LOG_FORMAT = get_log_settings()
@@ -123,7 +134,6 @@ def main():
         print("[main_bot] Running build check and initialization...")
         run_build_check()
         start_watchdog()
-        start_heartbeat(interval=15)
         update_bot_state(state="idle")
 
         if KILL_FLAG.exists():
@@ -221,9 +231,9 @@ def main():
             print(f"[main_bot][ERROR] Exception during error handler: {ex2}")
     finally:
         try:
-            if DEBUG_LOG_LEVEL != "quiet":
+            if 'flask_proc' in locals() and flask_proc:
                 print("[main_bot] Terminating Flask process...")
-            flask_proc.terminate()
+                flask_proc.terminate()
         except Exception as ex3:
             print(f"[main_bot] Exception terminating Flask process: {ex3}")
 
