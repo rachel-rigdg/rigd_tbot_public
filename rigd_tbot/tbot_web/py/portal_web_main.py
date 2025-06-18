@@ -80,7 +80,7 @@ def create_unified_app():
     # Universe cache inspection/rebuild endpoints (after registration only)
     app.register_blueprint(universe_bp, url_prefix="/universe")
 
-     @app.before_request
+    @app.before_request
     def enforce_bootstrap():
         if is_first_bootstrap():
             if not (
