@@ -178,6 +178,7 @@ rigd_tbot/
 │   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db        	# OFX-compliant ledger for live trading data per broker
 │   │       │
 │   │       ├── screeners/
+│   │       │   └── symbol_universe.json		# Stores filtered symbol metadata for next-day screeners.
 │   │       │
 │   │       ├── summaries/
 │   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_daily_summary.json  	# JSON performance summary for session (PnL, latency, counts, risk triggers)
@@ -206,7 +207,12 @@ rigd_tbot/
 │   │   └── watchdog_bot.py              		# Broker connection monitor
 │   │
 │   ├── screeners/			            	# Screener & Symbol Selection
-│   │   └── finnhub_screener.py          		# Symbol scanner via Finnhub API, filters symbols using fundamentals and real-time metrics
+│   │   ├── alpaca_screener.py                  # alpaca API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
+│   │   ├── finnhub_screener.py          	# Finnhub API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
+│   │   ├── ibkr_screener.py                    # Finnhub API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
+│   │   ├── screener_base.py                    # Abstract base for all screener modules. Defines core interface, loads universe, etc.
+│   │   ├── screener_utils.py                   # Shared utility for loading/saving universe, filtering, etc.
+│   │   └── symbol_universe_refresh.py          #  scheduled process to update symbol universe after hours.
 │   │
 │   ├── storage/				   # Persistent runtime data: encrypted secrets, keys, backups, and exports
 │   │   ├── backups/                                 # Daily encrypted ledger/config backups (UTC timestamped)
