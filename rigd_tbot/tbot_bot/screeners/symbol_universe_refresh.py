@@ -22,18 +22,119 @@ logging.basicConfig(
 )
 LOG = logging.getLogger("symbol_universe_refresh")
 
-# --- Mock or Import Broker Symbol Loader Here ---
 def fetch_broker_symbol_metadata() -> List[Dict]:
     """
-    Replace this stub with a unified broker API call that returns all US symbols and metadata:
-    Each dict must include: symbol, exchange, lastClose, marketCap, name, sector, industry, volume.
+    Fetches all US symbols/metadata from the configured provider in .env_bot (SCREENER_SOURCE).
+    Returns a list of dicts: symbol, exchange, lastClose, marketCap, name, sector, industry, volume.
     """
-    # Placeholder example
-    return [
-        {"symbol": "AAPL", "exchange": "NASDAQ", "lastClose": 190.5, "marketCap": 2900000000000, "name": "Apple Inc.", "sector": "Technology", "industry": "Consumer Electronics", "volume": 1000000},
-        {"symbol": "IBM", "exchange": "NYSE", "lastClose": 160.3, "marketCap": 145000000000, "name": "IBM Corp", "sector": "Technology", "industry": "Information Tech", "volume": 500000},
-        # ... Add all fetched symbols
-    ]
+    env = load_env_bot_config()
+    screener_source = env.get("SCREENER_SOURCE", "FINNHUB").strip().upper()
+    if screener_source == "FINNHUB":
+        return fetch_finnhub_symbols(env)
+    elif screener_source == "ALPACA":
+        return fetch_alpaca_symbols(env)
+    elif screener_source == "TRADIER":
+        return fetch_tradier_symbols(env)
+    elif screener_source == "IBKR":
+        return fetch_ibkr_symbols(env)
+    else:
+        raise RuntimeError(f"Unsupported SCREENER_SOURCE: {screener_source}")
+
+def fetch_finnhub_symbols(env):
+    import requests
+    FINNHUB_API_KEY = env.get("FINNHUB_API_KEY") or env.get("FINNHUB_TOKEN") or env.get("FINNHUB_TOKEN", "")
+    if not FINNHUB_API_KEY:
+        raise RuntimeError("FINNHUB_API_KEY not set in config")
+    symbols = []
+    for exch in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(","):
+        url = f"https://finnhub.io/api/v1/stock/symbol?exchange={exch.strip()}&token={FINNHUB_API_KEY}"
+        r = requests.get(url)
+        if r.status_code != 200:
+            continue
+        for s in r.json():
+            symbol = s.get("symbol")
+            # Profile lookup for market cap, sector, etc.
+            profile_url = f"https://finnhub.io/api/v1/stock/profile2?symbol={symbol}&token={FINNHUB_API_KEY}"
+            profile = requests.get(profile_url)
+            p = profile.json() if profile.status_code == 200 else {}
+            # Quote for price/volume
+            quote_url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_API_KEY}"
+            quote = requests.get(quote_url)
+            q = quote.json() if quote.status_code == 200 else {}
+            # Compose result
+            symbols.append({
+                "symbol": symbol,
+                "exchange": exch.strip(),
+                "lastClose": q.get("pc") or q.get("c"),
+                "marketCap": p.get("marketCapitalization"),
+                "name": p.get("name") or s.get("description") or "",
+                "sector": p.get("finnhubIndustry") or "",
+                "industry": "",
+                "volume": q.get("v") or 0
+            })
+    return symbols
+
+def fetch_alpaca_symbols(env):
+    import requests
+    api_key = env.get("ALPACA_API_KEY", "")
+    secret_key = env.get("ALPACA_SECRET_KEY", "")
+    headers = {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": secret_key,
+    }
+    url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity"
+    r = requests.get(url, headers=headers)
+    if r.status_code != 200:
+        raise RuntimeError("Failed to fetch symbols from Alpaca")
+    data = r.json()
+    results = []
+    for s in data:
+        symbol = s["symbol"]
+        exch = s.get("exchange", "")
+        # Market cap and sector not available directly
+        # Optionally, fetch from a secondary API/source if needed
+        results.append({
+            "symbol": symbol,
+            "exchange": exch,
+            "lastClose": s.get("last_close", 0),
+            "marketCap": None,
+            "name": s.get("name") or "",
+            "sector": "",
+            "industry": "",
+            "volume": 0
+        })
+    return results
+
+def fetch_tradier_symbols(env):
+    import requests
+    api_key = env.get("TRADIER_API_KEY", "")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+    }
+    url = "https://api.tradier.com/v1/markets/symbols"
+    r = requests.get(url, headers=headers)
+    if r.status_code != 200:
+        raise RuntimeError("Failed to fetch symbols from Tradier")
+    data = r.json().get("symbols", {}).get("symbol", [])
+    results = []
+    for s in data:
+        results.append({
+            "symbol": s.get("symbol", ""),
+            "exchange": s.get("exchange", ""),
+            "lastClose": None,
+            "marketCap": None,
+            "name": s.get("description", ""),
+            "sector": "",
+            "industry": "",
+            "volume": 0
+        })
+    return results
+
+def fetch_ibkr_symbols(env):
+    # Implement per your IBKR integration; stubbed here
+    # IBKR does not provide a public full US equity list via web API
+    return []
 
 def main():
     # 1. Load config
