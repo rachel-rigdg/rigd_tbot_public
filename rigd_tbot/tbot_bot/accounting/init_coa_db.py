@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from cryptography.fernet import Fernet
 from tbot_bot.support.path_resolver import resolve_coa_db_path, resolve_coa_template_path
+from tbot_bot.accounting.coa_utils import export_coa_json, export_coa_metadata, export_coa_audit_log
 
 def utc_now():
     return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
@@ -36,6 +37,11 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
     os.makedirs(os.path.dirname(coa_db_path), exist_ok=True)
     if os.path.exists(coa_db_path):
         print(f"[init_coa_db] COA DB already exists: {coa_db_path}, skipping creation.")
+        # Always attempt to export COA JSON and metadata, even if DB already exists
+        identity = f"{entity_code}_{jurisdiction_code}_{broker_code}_{bot_id}"
+        export_coa_json(identity)
+        export_coa_metadata(identity)
+        export_coa_audit_log(identity)
         return
     try:
         with open(coa_template_path, "r", encoding="utf-8") as template_file:
@@ -58,6 +64,11 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
         conn.commit()
         conn.close()
         print(f"[init_coa_db] COA DB created successfully at: {coa_db_path}")
+        # Export COA JSON and metadata for web UI after DB creation
+        identity = f"{entity_code}_{jurisdiction_code}_{broker_code}_{bot_id}"
+        export_coa_json(identity)
+        export_coa_metadata(identity)
+        export_coa_audit_log(identity)
     except Exception as e:
         print(f"[init_coa_db] ERROR: {e}")
 
