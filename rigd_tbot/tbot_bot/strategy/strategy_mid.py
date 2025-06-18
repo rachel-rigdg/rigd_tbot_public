@@ -9,7 +9,6 @@ from tbot_bot.support.utils_log import log_event
 from tbot_bot.trading.utils_etf import get_inverse_etf
 from tbot_bot.trading.utils_puts import get_put_option
 from tbot_bot.trading.utils_shorts import get_short_instrument
-from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.enhancements.adx_filter import adx_filter
@@ -56,15 +55,15 @@ def is_test_mode_active():
 def self_check():
     return STRAT_MID_ENABLED and VWAP_THRESHOLD > 0
 
-def analyze_vwap_signals(start_time):
+def analyze_vwap_signals(start_time, screener_class):
     log_event("strategy_mid", "Starting VWAP deviation analysis...")
     signals = []
     analysis_minutes = 1 if is_test_mode_active() else MID_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
-
+    screener = screener_class(strategy="mid")
     while utc_now() < deadline:
         try:
-            screener_data = get_filtered_stocks(limit=50, strategy="mid")
+            screener_data = screener.run_screen(limit=50)
         except Exception as e:
             handle_error("strategy_mid", "LogicError", e)
             break
@@ -177,12 +176,12 @@ def execute_mid_trades(signals, start_time):
     log_event("strategy_mid", f"Trades executed: {len(trades)}")
     return trades
 
-def run_mid_strategy():
+def run_mid_strategy(screener_class):
     if not self_check():
         log_event("strategy_mid", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)
 
     start_time = utc_now()
-    signals = analyze_vwap_signals(start_time)
+    signals = analyze_vwap_signals(start_time, screener_class)
     trades = execute_mid_trades(signals, start_time)
     return StrategyResult(trades=trades, skipped=False)

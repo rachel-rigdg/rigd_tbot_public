@@ -9,7 +9,6 @@ from tbot_bot.support.utils_log import log_event
 from tbot_bot.trading.utils_etf import get_inverse_etf
 from tbot_bot.trading.utils_puts import get_put_option
 from tbot_bot.trading.utils_shorts import get_short_instrument
-from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.enhancements.vix_gatekeeper import is_vix_above_threshold
@@ -57,7 +56,7 @@ def is_test_mode_active():
 def self_check():
     return STRAT_CLOSE_ENABLED and VIX_THRESHOLD >= 0
 
-def analyze_closing_signals(start_time):
+def analyze_closing_signals(start_time, screener_class):
     log_event("strategy_close", "Starting EOD momentum/fade analysis...")
     analysis_minutes = 1 if is_test_mode_active() else CLOSE_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
@@ -67,9 +66,10 @@ def analyze_closing_signals(start_time):
         log_event("strategy_close", "VIX filter blocked strategy.")
         return signals
 
+    screener = screener_class(strategy="close")
     while utc_now() < deadline:
         try:
-            screener_data = get_filtered_stocks(limit=50, strategy="close")
+            screener_data = screener.run_screen(limit=50)
         except Exception as e:
             handle_error("strategy_close", "LogicError", e)
             break
@@ -190,13 +190,13 @@ def monitor_closing_trades(signals, start_time):
     log_event("strategy_close", f"Trades completed: {len(trades)}")
     return trades
 
-def run_close_strategy():
+def run_close_strategy(screener_class):
     if not self_check():
         log_event("strategy_close", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)
 
     start_time = utc_now()
-    signals = analyze_closing_signals(start_time)
+    signals = analyze_closing_signals(start_time, screener_class)
     if not signals:
         return StrategyResult(skipped=True)
     trades = monitor_closing_trades(signals, start_time)

@@ -9,7 +9,6 @@ from tbot_bot.support.utils_log import log_event
 from tbot_bot.trading.utils_etf import get_inverse_etf
 from tbot_bot.trading.utils_puts import get_put_option
 from tbot_bot.trading.utils_shorts import get_short_instrument
-from tbot_bot.screeners.finnhub_screener import get_filtered_stocks
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.strategy.strategy_meta import StrategyResult
@@ -57,13 +56,16 @@ def is_test_mode_active():
 def self_check():
     return STRAT_OPEN_ENABLED and STRAT_OPEN_BUFFER > 0
 
-def analyze_opening_range(start_time):
+def analyze_opening_range(start_time, screener_class):
     log_event("strategy_open", "Starting opening range analysis...")
     analysis_minutes = 1 if is_test_mode_active() else OPEN_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
+    screener = screener_class(strategy="open")
+    global range_data
+    range_data = {}
     while utc_now() < deadline:
         try:
-            candidates = get_filtered_stocks(strategy="open")
+            candidates = screener.run_screen()
         except Exception as e:
             handle_error("strategy_open", "LogicError", e)
             break
@@ -87,15 +89,16 @@ def analyze_opening_range(start_time):
     log_event("strategy_open", f"Range data collected for {len(range_data)} symbols.")
     return range_data
 
-def detect_breakouts(start_time):
+def detect_breakouts(start_time, screener_class):
     log_event("strategy_open", "Monitoring for breakouts...")
     trades = []
     breakout_minutes = 1 if is_test_mode_active() else OPEN_BREAKOUT_TIME
     deadline = start_time + timedelta(minutes=breakout_minutes)
-
+    screener = screener_class(strategy="open")
+    global range_data
     while utc_now() < deadline:
         try:
-            candidates = get_filtered_stocks(strategy="open")
+            candidates = screener.run_screen()
         except Exception as e:
             handle_error("strategy_open", "LogicError", e)
             break
@@ -192,13 +195,13 @@ def detect_breakouts(start_time):
 
     return trades
 
-def run_open_strategy():
+def run_open_strategy(screener_class):
     if not self_check():
         log_event("strategy_open", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)
 
     start_time = utc_now()
-    analyze_opening_range(start_time)
-    trades = detect_breakouts(start_time)
+    analyze_opening_range(start_time, screener_class)
+    trades = detect_breakouts(start_time, screener_class)
     log_event("strategy_open", f"Open strategy completed: {len(trades)} trades placed")
     return StrategyResult(trades=trades, skipped=False)
