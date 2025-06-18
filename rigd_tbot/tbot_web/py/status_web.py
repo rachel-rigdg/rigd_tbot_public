@@ -3,6 +3,7 @@
 import json
 from flask import Blueprint, render_template, jsonify
 from .login_web import login_required
+from tbot_bot.support.path_resolver import resolve_status_log_path
 from pathlib import Path
 
 status_blueprint = Blueprint("status_web", __name__)
@@ -15,7 +16,7 @@ def status_page():
     Uses global status.json in tbot_bot/output/logs/status.json.
     """
     status_data = {}
-    status_file_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "status.json"
+    status_file_path = Path(resolve_status_log_path())
 
     try:
         with open(status_file_path, "r", encoding="utf-8") as f:

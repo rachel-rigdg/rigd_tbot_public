@@ -20,11 +20,10 @@ CATEGORIES = {
     "ledgers": "ledgers",
     "summaries": "summaries",
     "trades": "trades",
-    "screeners": "screeners"  # Added screeners category here
+    "screeners": "screeners"
 }
 
 def get_bot_identity(explicit_identity: str = None) -> str:
-    # ENFORCE: never trigger any secret or identity load unless after provisioning/bootstrapping
     if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (system is in bootstrap mode)")
     identity = explicit_identity if explicit_identity else load_bot_identity(default=None)
@@ -62,7 +61,6 @@ def file_exists_resolved(bot_identity: str = None, category: str = None, filenam
         return False
 
 def get_secret_path(filename: str) -> str:
-    # Only resolve secret paths, never trigger secret load/init
     return str(PROJECT_ROOT / "tbot_bot" / "storage" / "secrets" / filename)
 
 def get_schema_path(filename: str) -> str:
@@ -109,14 +107,34 @@ def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str
 def resolve_universe_cache_path(bot_identity: str = None) -> str:
     """
     Returns full path to the symbol universe cache JSON file.
-    Path: tbot_bot/output/{bot_identity}/screeners/symbol_universe.json
+    Path: tbot_bot/output/screeners/symbol_universe.json
     """
-    identity = get_bot_identity(bot_identity)
-    validate_bot_identity(identity)
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "symbol_universe.json")
+
+def resolve_status_log_path(bot_identity: str = None) -> str:
+    """
+    Returns the canonical path for the logs/status.json file.
+    Path: tbot_bot/output/logs/status.json
+    """
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
+    logs_dir = base_output_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    return str(logs_dir / "status.json")
+
+def resolve_status_summary_path(bot_identity: str = None) -> str:
+    """
+    Returns the canonical path for the summaries/status.json file.
+    Path: tbot_bot/output/{bot_identity}/summaries/status.json
+    """
+    identity = get_bot_identity(bot_identity)
+    validate_bot_identity(identity)
+    summaries_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity / "summaries"
+    summaries_dir.mkdir(parents=True, exist_ok=True)
+    return str(summaries_dir / "status.json")
+
 
 __all__ = [
     "get_bot_identity",
@@ -138,5 +156,7 @@ __all__ = [
     "resolve_coa_audit_log_path",
     "resolve_ledger_schema_path",
     "resolve_coa_schema_path",
-    "resolve_universe_cache_path"
+    "resolve_universe_cache_path",
+    "resolve_status_log_path",
+    "resolve_status_summary_path"
 ]

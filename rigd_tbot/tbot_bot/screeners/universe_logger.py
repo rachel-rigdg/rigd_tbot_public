@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Log file location (relative to project root)
 def get_universe_log_path():
-    # Writes to output/{BOT_IDENTITY}/screeners/universe_ops.log
+    # Writes to output/screeners/universe_ops.log
     from tbot_bot.support.path_resolver import resolve_universe_cache_path
     # Use the same folder as the universe cache file
     cache_path = resolve_universe_cache_path()
@@ -60,5 +60,5 @@ def log_universe_event(event: str, details: dict = None, level: str = "info"):
 
 # Usage example:
 # log_universe_event("universe_build_started", {"exchanges": ["NYSE", "NASDAQ"]})
-# log_universe_event("universe_build_complete", {"count": 1856, "path": "/output/US_CA_ALPACA_001/screeners/symbol_universe.json"})
+# log_universe_event("universe_build_complete", {"count": 1856, "path": "/output/screeners/symbol_universe.json"})
 # log_universe_event("universe_cache_load_error", {"reason": "stale cache"}, level="error")
