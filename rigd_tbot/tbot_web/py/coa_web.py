@@ -40,6 +40,7 @@ def identity_guard():
 @coa_web.route("/coa", methods=["GET"])
 @rbac_required()
 def coa_management():
+    print("[DEBUG] session:", dict(session))  # <--- Add this line
     user = session.get("user", "unknown")
     user_is_admin = session.get("role", "") == "admin"
     if identity_guard():

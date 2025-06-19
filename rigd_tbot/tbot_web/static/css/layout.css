@@ -90,10 +90,10 @@ z-index: 1000;
     position: fixed;
     bottom: 0;
     width: 100%;
-    min-height: 8em;
+    min-height: 6em;
     text-align: center;
     background-color: #00000044;
     color: #ffffff;
-    padding-bottom: 2em;
+    padding-bottom: 1em;
     z-index: 100;
 }
