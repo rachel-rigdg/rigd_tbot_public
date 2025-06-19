@@ -72,11 +72,17 @@ def get_cache_path(filename: str) -> str:
 def get_bot_state_path() -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "control" / "bot_state.txt")
 
-def resolve_coa_json_path() -> str:
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa.json")
-
 def resolve_coa_template_path() -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_template.json")
+
+def resolve_ledger_schema_path():
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_schema.sql")
+
+def resolve_coa_schema_path():
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "coa_schema.sql")
+
+def resolve_coa_json_path() -> str:
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa.json")
 
 def resolve_coa_metadata_path() -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_metadata.json")
@@ -84,11 +90,20 @@ def resolve_coa_metadata_path() -> str:
 def resolve_coa_audit_log_path() -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_audit.log")
 
-def resolve_ledger_schema_path():
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_schema.sql")
+def resolve_coa_json_path(bot_identity: str = None) -> str:
+    identity = get_bot_identity(bot_identity)
+    validate_bot_identity(identity)
+    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa.json")
 
-def resolve_coa_schema_path():
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "coa_schema.sql")
+def resolve_coa_metadata_path(bot_identity: str = None) -> str:
+    identity = get_bot_identity(bot_identity)
+    validate_bot_identity(identity)
+    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_metadata.json")
+
+def resolve_coa_audit_log_path(bot_identity: str = None) -> str:
+    identity = get_bot_identity(bot_identity)
+    validate_bot_identity(identity)
+    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_audit_log.json")
 
 def resolve_output_folder_path(bot_identity: str) -> str:
     validate_bot_identity(bot_identity)
