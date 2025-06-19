@@ -1,0 +1,64 @@
+# Chart of Accounts (COA) — TEST/USA vv1.0.0
+**Currency:** USD
+
+**COA Version:** v1.0.0
+**Created:** 2025-06-19T04:01:45.471006+00:00
+**Last Updated:** 2025-06-19T04:01:45.471006+00:00
+
+- **1000**: Bank and Cash Accounts
+  - **1010**: Float Injection – From RIGD Group
+  - **1020**: Float Returned – To RIGD Group
+  - **1030**: Alpaca – Cash
+  - **1040**: IBKR – Cash
+  - **1050**: Tradier – Cash
+  - **1060**: Robinhood – Cash
+- **1100**: Assets
+  - **1110**: Brokerage Accounts – Equities
+    - **1111**: Alpaca – Equities
+    - **1112**: IBKR – Equities
+    - **1113**: Tradier – Equities
+    - **1114**: Robinhood – Equities
+- **2000**: Liabilities
+  - **2010**: Broker Payables (Accrued Fees)
+  - **2020**: Market Data Payables (Accrued Subscriptions)
+- **3000**: Equity
+  - **3010**: Capital Float Ledger
+  - **3020**: Daily Float Allocation History
+  - **3030**: Opening Balance
+  - **3040**: Accumulated Profit
+- **4000**: Income
+  - **4010**: Realized Gains – Alpaca
+  - **4020**: Realized Gains – IBKR
+  - **4030**: Realized Gains – Tradier
+  - **4040**: Realized Gains – Robinhood
+  - **4050**: Qualified Dividends
+  - **4060**: Short-Term Capital Gains
+  - **4070**: Long-Term Capital Gains
+- **5000**: Expenses
+  - **5010**: Broker Fees – Alpaca
+  - **5020**: Broker Fees – IBKR
+  - **5030**: Broker Fees – Tradier
+  - **5040**: Broker Fees – Robinhood
+  - **5050**: Slippage / Execution Losses
+  - **5060**: API Timeout Penalties
+  - **5070**: Bot Infrastructure Costs
+- **9100**: Exports
+  - **9110**: Daily P&L Export – Manager.io Format
+  - **9120**: CSV/JSON Trade Log Export
+  - **9130**: SQLite Ledger Backup
+  - **9140**: Broker Confirm Archive (PDFs)
+  - **9150**: End-of-Day Snapshot (Holdings + Cash)
+- **9200**: Logging / Execution References
+  - **9210**: Trade UUID
+  - **9220**: Broker Confirm #
+  - **9230**: Strategy Tag
+  - **9240**: Source Method Tag
+  - **9250**: EOD Synced Flag
+  - **9260**: Reconciliation Passed Flag
+- **9300**: System Integrity
+  - **9310**: Failures & Rejected Orders
+  - **9320**: Manual Overrides
+  - **9330**: Ledger Lock Flag (YES/NO)
+  - **9340**: Ledger Status: ACTIVE / DECOMMISSIONED
+  - **9350**: Final Entry Timestamp
+  - **9360**: Debug / Strategy Tags
