@@ -51,7 +51,7 @@ def coa_management():
         )
     try:
         coa_data = load_coa_metadata_and_accounts()
-        coa_json = json.dumps(coa_data['accounts'], indent=2)
+        coa_json = json.dumps(coa_data.get('accounts', []), indent=2)
         return render_template(
             "coa.html",
             user_is_admin=user_is_admin,
@@ -81,10 +81,12 @@ def coa_api():
         return jsonify({"error": "Bot identity not available, please complete configuration."}), 400
     try:
         coa_data = load_coa_metadata_and_accounts()
+        metadata = coa_data.get("metadata", {})
+        accounts = coa_data.get("accounts", [])
         audit_history = get_coa_audit_log(limit=50)
         return jsonify({
-            "metadata": coa_data["metadata"],
-            "accounts": coa_data["accounts"],
+            "metadata": metadata,
+            "accounts": accounts,
             "history": audit_history
         })
     except FileNotFoundError:
@@ -104,7 +106,7 @@ def coa_edit():
         new_accounts = json.loads(raw_json)
         validate_coa_json(new_accounts)
         old_data = load_coa_metadata_and_accounts()
-        diff = compute_coa_diff(old_data['accounts'], new_accounts)
+        diff = compute_coa_diff(old_data.get('accounts', []), new_accounts)
         save_coa_json(new_accounts, user=user, diff=diff)
         return redirect(url_for("coa_web.coa_management"))
     except Exception as e:
@@ -121,7 +123,7 @@ def coa_export_markdown():
         md = export_coa_markdown(coa_data)
         buf = io.BytesIO(md.encode('utf-8'))
         ts = utcnow().strftime("%Y%m%dT%H%M%SZ")
-        filename = f"COA_{coa_data['metadata']['entity_code']}_{ts}.md"
+        filename = f"COA_{coa_data.get('metadata', {}).get('entity_code','')}_{ts}.md"
         return send_file(buf, mimetype="text/markdown", as_attachment=True, download_name=filename)
     except FileNotFoundError:
         return "COA or metadata file not found. Please initialize via admin tools.", 400
@@ -139,7 +141,7 @@ def coa_export_csv():
         csv_txt = export_coa_csv(coa_data)
         buf = io.BytesIO(csv_txt.encode('utf-8'))
         ts = utcnow().strftime("%Y%m%dT%H%M%SZ")
-        filename = f"COA_{coa_data['metadata']['entity_code']}_{ts}.csv"
+        filename = f"COA_{coa_data.get('metadata', {}).get('entity_code','')}_{ts}.csv"
         return send_file(buf, mimetype="text/csv", as_attachment=True, download_name=filename)
     except FileNotFoundError:
         return "COA or metadata file not found. Please initialize via admin tools.", 400
