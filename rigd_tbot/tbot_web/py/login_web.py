@@ -33,6 +33,7 @@ def login():
         if validate_user(username, password):
             session["authenticated"] = True
             session["user"] = username
+            session["role"] = "admin"  # temporary fix for local admin
             return redirect(url_for("main.main_page"))
         else:
             return render_template("index.html", error="Invalid username or password")

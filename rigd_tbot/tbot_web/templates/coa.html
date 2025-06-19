@@ -57,7 +57,7 @@
                     <button type="submit">Export as CSV</button>
                 </form>
             </div>
-       
+            {% if user_is_admin %}
             <div id="coa-edit-area">
                 <button id="edit-coa-btn" onclick="toggleEditMode();return false;">Edit COA</button>
                 <div id="coa-editor" style="display:none;">
@@ -71,7 +71,7 @@
                     </div>
                 </div>
             </div>
-    
+            {% endif %}
         </section>
         <section>
             <h2>COA Change History (Audit Log)</h2>
