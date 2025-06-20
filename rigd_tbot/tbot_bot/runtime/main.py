@@ -19,6 +19,7 @@ TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 WEB_MAIN_PATH = ROOT_DIR / "tbot_web" / "py" / "portal_web_main.py"
+STATUS_BOT_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "status_bot.py"
 
 MARKET_OPEN_TIME = dt_time(hour=13, minute=30)
 MARKET_CLOSE_TIME = dt_time(hour=20, minute=0)
@@ -36,8 +37,14 @@ def parse_sleep_time(s):
         print(f"[main_bot][parse_sleep_time] Failed, defaulting to 1.0")
         return 1.0
 
-def safe_exit():
+def safe_exit(status_proc=None):
     print("[main_bot][safe_exit] Exiting.")
+    if status_proc is not None:
+        try:
+            print("[main_bot] Terminating status_bot process...")
+            status_proc.terminate()
+        except Exception as ex:
+            print(f"[main_bot] Exception terminating status_bot process: {ex}")
     sys.exit(0)
 
 def close_all_positions_immediately(log_event):
@@ -84,6 +91,16 @@ def refresh_status_after_provisioning():
     bot_status.save_status()
     start_heartbeat(interval=15)
 
+def is_status_bot_running():
+    import psutil
+    for proc in psutil.process_iter(["cmdline"]):
+        try:
+            if "status_bot.py" in " ".join(proc.info["cmdline"]):
+                return True
+        except Exception:
+            continue
+    return False
+
 def main():
     try:
         from tbot_bot.support.bootstrap_utils import is_first_bootstrap
@@ -111,9 +128,22 @@ def main():
     )
     print(f"[main_bot] portal_web_main.py started with PID {flask_proc.pid}")
 
+    wait_for_operational_phase()
+
+    status_proc = None
+    if not is_status_bot_running():
+        print("[main_bot] Launching status_bot.py (single instance after operational phase)...")
+        status_proc = subprocess.Popen(
+            ["python3", str(STATUS_BOT_PATH)],
+            stdout=None,
+            stderr=None
+        )
+        print(f"[main_bot] status_bot.py started with PID {status_proc.pid}")
+    else:
+        print("[main_bot] status_bot.py already running. Skipping launch.")
+
     try:
-        wait_for_operational_phase()
-        refresh_status_after_provisioning()  # --- ADDED: always refresh after operational phase
+        refresh_status_after_provisioning()
         from tbot_bot.config.env_bot import get_bot_config
         from tbot_bot.strategy.strategy_router import run_strategy
         from tbot_bot.enhancements.build_check import run_build_check
@@ -141,7 +171,7 @@ def main():
                 print("[main_bot] KILL_FLAG exists. Immediate kill routine.")
             log_event("main_bot", "Immediate kill detected. Closing all positions now.", level="error")
             close_all_positions_immediately(log_event)
-            safe_exit()
+            safe_exit(status_proc)
 
         if DEBUG_LOG_LEVEL != "quiet":
             print(f"[main_bot] Strategy sequence: {STRATEGY_SEQUENCE}")
@@ -157,7 +187,7 @@ def main():
                     print("[main_bot] KILL_FLAG exists. Immediate kill during runtime loop.")
                 log_event("main_bot", "Immediate kill during runtime loop.", level="error")
                 close_all_positions_immediately(log_event)
-                safe_exit()
+                safe_exit(status_proc)
 
             now_dt = datetime.utcnow()
             strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
@@ -172,7 +202,7 @@ def main():
                         print("[main_bot] KILL_FLAG exists. Immediate kill during strategy loop.")
                     log_event("main_bot", "Immediate kill during strategy loop.", level="error")
                     close_all_positions_immediately(log_event)
-                    safe_exit()
+                    safe_exit(status_proc)
 
                 if TEST_MODE_FLAG.exists():
                     if DEBUG_LOG_LEVEL != "quiet":
@@ -215,7 +245,7 @@ def main():
                     if DEBUG_LOG_LEVEL != "quiet":
                         print("[main_bot] Graceful stop detected. Will shut down after current strategy.")
                     log_event("main_bot", "Graceful stop detected. Will shut down after current strategy.")
-                    safe_exit()
+                    safe_exit(status_proc)
 
             if DEBUG_LOG_LEVEL != "quiet":
                 print("[main_bot] Main loop cycle complete. Waiting for next cycle.")
@@ -236,6 +266,12 @@ def main():
                 flask_proc.terminate()
         except Exception as ex3:
             print(f"[main_bot] Exception terminating Flask process: {ex3}")
+        try:
+            if 'status_proc' in locals() and status_proc:
+                print("[main_bot] Terminating status_bot process...")
+                status_proc.terminate()
+        except Exception as ex4:
+            print(f"[main_bot] Exception terminating status_bot process: {ex4}")
 
 if __name__ == "__main__":
     main()
