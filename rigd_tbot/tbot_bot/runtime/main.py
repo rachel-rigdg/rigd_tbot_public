@@ -19,7 +19,6 @@ TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 WEB_MAIN_PATH = ROOT_DIR / "tbot_web" / "py" / "portal_web_main.py"
-STATUS_BOT_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "status_bot.py"
 
 MARKET_OPEN_TIME = dt_time(hour=13, minute=30)
 MARKET_CLOSE_TIME = dt_time(hour=20, minute=0)
@@ -75,6 +74,16 @@ def wait_for_operational_phase():
             print(f"[main_bot][wait_for_operational_phase] Exception: {e}")
         time.sleep(1)
 
+def refresh_status_after_provisioning():
+    """
+    Refreshes the bot status and starts heartbeat after provisioning/config is complete.
+    """
+    from tbot_bot.runtime.status_bot import bot_status, start_heartbeat
+    from tbot_bot.config.env_bot import get_bot_config
+    bot_status.update_config(get_bot_config())
+    bot_status.save_status()
+    start_heartbeat(interval=15)
+
 def main():
     try:
         from tbot_bot.support.bootstrap_utils import is_first_bootstrap
@@ -102,16 +111,9 @@ def main():
     )
     print(f"[main_bot] portal_web_main.py started with PID {flask_proc.pid}")
 
-    print("[main_bot] Launching status_bot.py...")
-    status_proc = subprocess.Popen(
-        ["python3", str(STATUS_BOT_PATH)],
-        stdout=None,
-        stderr=None
-    )
-    print(f"[main_bot] status_bot.py started with PID {status_proc.pid}")
-
     try:
         wait_for_operational_phase()
+        refresh_status_after_provisioning()  # --- ADDED: always refresh after operational phase
         from tbot_bot.config.env_bot import get_bot_config
         from tbot_bot.strategy.strategy_router import run_strategy
         from tbot_bot.enhancements.build_check import run_build_check
@@ -234,12 +236,6 @@ def main():
                 flask_proc.terminate()
         except Exception as ex3:
             print(f"[main_bot] Exception terminating Flask process: {ex3}")
-        try:
-            if 'status_proc' in locals() and status_proc:
-                print("[main_bot] Terminating status_bot process...")
-                status_proc.terminate()
-        except Exception as ex4:
-            print(f"[main_bot] Exception terminating status_bot process: {ex4}")
 
 if __name__ == "__main__":
     main()
