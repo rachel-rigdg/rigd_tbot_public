@@ -1,4 +1,8 @@
 # tbot_bot/runtime/main.py
+# Main entrypoint for TradeBot (single systemd-launched entry).
+# Launches a single unified Flask app (portal_web_main.py) for all phases, 
+# waits for configuration/provisioning to complete, then runs strategies.
+
 import os
 import sys
 import time
@@ -78,11 +82,24 @@ def wait_for_operational_phase():
         time.sleep(1)
 
 def refresh_status_after_provisioning():
+    """
+    Refreshes the bot status and starts heartbeat after provisioning/config is complete.
+    """
     from tbot_bot.runtime.status_bot import bot_status, start_heartbeat
     from tbot_bot.config.env_bot import get_bot_config
     bot_status.update_config(get_bot_config())
     bot_status.save_status()
     start_heartbeat(interval=15)
+
+def is_status_bot_running():
+    import psutil
+    for proc in psutil.process_iter(["cmdline"]):
+        try:
+            if "status_bot.py" in " ".join(proc.info["cmdline"]):
+                return True
+        except Exception:
+            continue
+    return False
 
 def main():
     try:
@@ -113,13 +130,17 @@ def main():
 
     wait_for_operational_phase()
 
-    print("[main_bot] Launching status_bot.py (single instance after operational phase)...")
-    status_proc = subprocess.Popen(
-        ["python3", str(STATUS_BOT_PATH)],
-        stdout=None,
-        stderr=None
-    )
-    print(f"[main_bot] status_bot.py started with PID {status_proc.pid}")
+    status_proc = None
+    if not is_status_bot_running():
+        print("[main_bot] Launching status_bot.py (single instance after operational phase)...")
+        status_proc = subprocess.Popen(
+            ["python3", str(STATUS_BOT_PATH)],
+            stdout=None,
+            stderr=None
+        )
+        print(f"[main_bot] status_bot.py started with PID {status_proc.pid}")
+    else:
+        print("[main_bot] status_bot.py already running. Skipping launch.")
 
     try:
         refresh_status_after_provisioning()
