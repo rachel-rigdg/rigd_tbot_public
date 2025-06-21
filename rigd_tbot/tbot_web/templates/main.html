@@ -60,8 +60,10 @@
 
     <footer class="footer dropShadow">
         <div class="startKillContainer center">
+            <div class="center">
             <strong>Current Bot State:</strong>
                 <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
+            </div>
             <form action="{{ url_for('start_stop_web.trigger_start') }}" method="post" target="viewFrame">
                 <button type="submit" id="start-bot">Start Bot</button>
             </form>

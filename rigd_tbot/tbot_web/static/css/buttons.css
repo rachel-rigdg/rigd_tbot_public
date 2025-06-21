@@ -1,6 +1,6 @@
 /* tbot_web/static/css/buttons.css */
 button, .tab-button {
-    min-width: 120px;
+    min-width: 80px;
     padding: 8px 8px;
     background-color: #333333;
     color: white;

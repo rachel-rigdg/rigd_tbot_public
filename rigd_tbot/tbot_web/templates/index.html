@@ -9,17 +9,17 @@
 
 </head>
 <body class="login-page">
-    <div class="main-container content">
+    <div class="main-container content center">
         <div><h1>TradeBot Login</h1></div><br>
         <form id="login-form" method="POST" action="/login">
             <!-- Username field (not used, preserved for visual consistency) -->
             <label for="username">Username:</label>
             <input type="text" id="username" name="username" required autofocus>
-
+            <br>
             <!-- Password field (validated against encrypted .env password) -->
             <label for="password">Password:</label>
             <input type="password" id="password" name="password" required>
-
+            <br>
             <button type="submit">Login</button>
         </form>
         {% if error %}

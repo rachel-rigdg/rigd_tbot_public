@@ -3,6 +3,7 @@
     .tab-container, .startKillContainer {
         flex-direction: column;
         gap: 1em;
+        max-height:2em;
     }
     .tab-button, button {
         width: 90vw;
