@@ -20,8 +20,9 @@
 }
 
 .dashboard-footer {
-    min-height: 200px;     /* increase as needed */
-    padding: 2.5em 0 2.5em 0;
+    min-height: 100px;     /* increase as needed */
+    padding: 2em 0 2em 0;
+    bottom:0
 }
 
 
@@ -53,7 +54,7 @@ z-index: 1000;
     width: 100%;
     height: 100%;
     top:0
-    min-height: 100vh;
+    min-height: 80vh;
     display: flex;
     flex-direction: column;
 }
@@ -84,7 +85,7 @@ z-index: 1000;
 .content {
     display: flex;
     justify-content: center;
-    height: 100vh;
+    height: 90vh;
     top:0;
 }
 .center {
@@ -96,7 +97,7 @@ z-index: 1000;
     position: fixed;
     bottom: 0;
     width: 100%;
-    min-height: 3em;
+    min-height: 1em;
     text-align: center;
     background-color: #00000044;
     color: #ffffff;

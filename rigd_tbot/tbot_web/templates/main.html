@@ -26,17 +26,17 @@
         <span></span>
     </label>
     <nav class="hamburger-menu">
+        <div class="center">
         <strong>Current State:</strong>
                 <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
                 <br>
-        <form action="{{ url_for('register_web.register_page') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Register</button>
-        </form>     
-        <form action="{{ url_for('settings_web.settings_page') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Settings</button>
-        </form>
+        </div>
+        
         <form action="{{ url_for('status_web.status_page') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button">Status</button>
+        </form>
+        <form action="{{ url_for('settings_web.settings_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Settings</button>
         </form>
         <form action="{{ url_for('universe.universe_status') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button">Universe</button>
@@ -69,9 +69,9 @@
             <button type="submit" id="kill-bot">Kill Now</button>
         </form>
     </nav>
-
+    <br>
+    <br>
     <footer class="footer dropShadow">
-        <br>
                 
         <p><strong>RIGD Tbot</strong> –  &copy; 2025 RIGD Holdings – TBot Monitoring Interface</p>
     </footer>
