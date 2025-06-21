@@ -26,6 +26,9 @@
         <span></span>
     </label>
     <nav class="hamburger-menu">
+        <strong>Current State:</strong>
+                <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
+                <br>
         <form action="{{ url_for('register_web.register_page') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button">Register</button>
         </form>     
@@ -56,25 +59,18 @@
         <form action="{{ url_for('logout_web.logout') }}" method="get">
             <button type="submit" id="logout-btn" class="tab-button">Log Out</button>
         </form>
+        <form action="{{ url_for('start_stop_web.trigger_start') }}" method="post" target="viewFrame">
+            <button type="submit" id="start-bot">Start Bot</button>
+        </form>
+        <form action="{{ url_for('start_stop_web.trigger_stop') }}" method="post" target="viewFrame">
+            <button type="submit" id="stop-bot">Stop Bot</button>
+        </form>
+        <form action="{{ url_for('start_stop_web.trigger_kill') }}" method="post" target="viewFrame">
+            <button type="submit" id="kill-bot">Kill Now</button>
+        </form>
     </nav>
 
     <footer class="footer dropShadow">
-        <div class="startKillContainer center">
-            <div class="center">
-            <strong>Current Bot State:</strong>
-                <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
-            </div>
-            <br>
-            <form action="{{ url_for('start_stop_web.trigger_start') }}" method="post" target="viewFrame">
-                <button type="submit" id="start-bot">Start Bot</button>
-            </form>
-            <form action="{{ url_for('start_stop_web.trigger_stop') }}" method="post" target="viewFrame">
-                <button type="submit" id="stop-bot">Stop Bot</button>
-            </form>
-            <form action="{{ url_for('start_stop_web.trigger_kill') }}" method="post" target="viewFrame">
-                <button type="submit" id="kill-bot">Kill Now</button>
-            </form>
-        </div>
         <br>
                 
         <p><strong>RIGD Tbot</strong> –  &copy; 2025 RIGD Holdings – TBot Monitoring Interface</p>

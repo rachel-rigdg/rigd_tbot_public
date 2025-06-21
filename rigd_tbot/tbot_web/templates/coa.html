@@ -91,6 +91,9 @@
                 </table>
             </div>
         </section>
+        <footer>
+            <small>RIGD GROUP LLC — TradeBot v038 | UTC <span id="utc-time"></span></small>
+        </footer>
     </div>
     <script>
         // UTC clock
@@ -156,7 +159,7 @@
             accounts.forEach((acc, idx) => {
                 const row = document.createElement('div');
                 row.className = 'coa-row';
-                row.style.marginLeft = (depth * 28) + "px";
+                row.style.marginLeft = (depth * 20) + "px";
 
                 // Code
                 const code = document.createElement('input');

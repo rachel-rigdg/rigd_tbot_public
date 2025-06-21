@@ -70,8 +70,8 @@ z-index: 1000;
 }
 .title {
     display: block;
-    min-width: 100%;
     text-align: center;
+    padding: 1em;
 }
 .fieldblock {
     position: relative;
