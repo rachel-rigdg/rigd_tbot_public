@@ -82,7 +82,7 @@ rigd_tbot/
 │   │   ├── accounting_api.py                    # Exports finalized trade/report data to accounting system endpoint (post-trade only, no live config)
 │   │   ├── accounting_config.py                 # Validates and creates required output folder structure; enforces ledger/COA existence and schema compliance
 │   │   ├── coa_utils.py                         # COA DB utilities: create/import/export/validate COA db (metadata + hierarchy), supports Web UI editing
-│   │   ├── init_coa_db.py                       # Bootstrap script: initializes a new COA DB using tbot_ledger_coa.json as hierarchy/template (called only at provisioning/reset)
+│   │   ├── init_coa_db.py                       # Bootstrap script: initializes a new COA DB using tbot_ledger_coa_template.json as hierarchy/template (called only at provisioning/reset)
 │   │   ├── init_ledger_db.py                    # Bootstrap script: initializes a new bot ledger DB file using tbot_ledger_schema.sql (called only at provisioning/reset)
 │   │   ├── ledger_utils.py                      # Ledger DB utilities: create OFX-compliant ledger db, schema validation, audit helpers (no COA/metadata logic)
 │   │   ├── tbot_ledger_coa_template.json        # Editable COA hierarchy/template (codes/names/structure, referenced and modified via coa.html)
@@ -287,7 +287,7 @@ rigd_tbot/
 │       ├── orders_bot.py                    # Handles order submission, modifies/fills, and broker feedback
 │       ├── reporting_bot.py                 # Pushes trades to accounting system; manages ledger output and COA compliance
 │       ├── risk_bot.py                      # Enforces all risk constraints (caps, allocations, Defense Mode, open trades)
-│       ├── utils_coa.py                     # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa.json and supports Web UI editing
+│       ├── utils_coa.py                     # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa_template.json and supports Web UI editing
 │       ├── utils_etf.py                      # Resolves ETF and inverse ETF tickers for supported symbols (top 20+ ETFs, as per project specifications)
 │       ├── utils_puts.py                      # Returns put option contract specs for any supported broker
 │       └── utils_shorts.py                    # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives
@@ -309,7 +309,7 @@ rigd_tbot/
     │       │
     │       ├── components
     │       │   ├── buttons.css                     # Button styling and layout rules
-    │       │   ├── hamburger.css                   # Hamburger menu animation and mobile nav
+    │       │   ├── hamburger.css                   # Hamburger menu animation and mobile nav wait.html
     │       │   ├── spinner.css                     # Spinner and progress indicator animation
     │       │   └── tabs.css                        # Tab navigation styles
     │       │
@@ -337,7 +337,7 @@ rigd_tbot/
     │   ├── login_web.py                        # User login/logout/session; calls auth_web.py, security_users.py, session_manager.py
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state
     │   ├── logs_web.py                         # Displays log output (read-only); calls utils_log.py
-    │   ├── main_web.py                         # Orchestrates main UI shell; registers routes, manages state; triggers bot start if required; links wait_for_bot.html and ledger.html
+    │   ├── main_web.py                         # Orchestrates main UI shell; registers routes, manages state; triggers bot start if required; links wait.html and ledger.html
     │   ├── portal_web_main.py                  # Flask app for provisioning bootstrapping, and all static files and all operational blueprints (phases in this order: configuration → provisioning → bootstrapping → registration → login → main_web.py that shows: status, Settings, logs, ledger, COA, test, configuration, account)
     │   ├── register_web.py			# handles user registration logic and SYSTEM_USERS.db creation/updating
     │   ├── run_web.py                          # main entry point into web UI (CLI)
@@ -356,7 +356,7 @@ rigd_tbot/
     │   ├── default_config_loader.py           # Loads config defaults/templates for UI (never touches secrets/keys)
     │   ├── security_users.py                  # RBAC/user CRUD; Fernet key helpers for user/auth secrets
     │   ├── session_manager.py                 # Web session management, token handling, timeouts
-    │   ├── utils_coa_web.py			# Loads, validates, and manages the bot’s Chart of Accounts (COA); interfaces with tbot_ledger_coa.json and provides COA to other modules
+    │   ├── utils_coa_web.py			# Loads, validates, and manages the bot’s Chart of Accounts (COA); interfaces with tbot_ledger_coa_template.json and provides COA to other modules
     │   └── utils_web.py                       # Minor UI/web helpers, non-secret logic
     │
     └── templates/                              # Jinja2 HTML UI templates (rendered for user)
