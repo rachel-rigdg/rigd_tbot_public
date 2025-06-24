@@ -46,14 +46,14 @@ def remove_test_flag():
     if TEST_FLAG_PATH.exists():
         TEST_FLAG_PATH.unlink()
 
-@test_web.route("/", methods=["GET"])
+@test_web.route("/test/", methods=["GET"])
 @admin_required
 def test_page():
     status = get_test_status()
     logs = read_test_logs()
     return render_template("test.html", test_active=is_test_active(), test_status=status, test_logs=logs)
 
-@test_web.route("/trigger", methods=["POST"])
+@test_web.route("/test/trigger", methods=["POST"])
 @admin_required
 def trigger_test_mode():
     with LOCK:
@@ -62,7 +62,7 @@ def trigger_test_mode():
         create_test_flag()
     return jsonify({"result": "started"})
 
-@test_web.route("/logs", methods=["GET"])
+@test_web.route("/test/logs", methods=["GET"])
 @admin_required
 def get_test_logs():
     logs = read_test_logs()

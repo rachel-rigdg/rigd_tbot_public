@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/shared/forms.css">
     <link rel="stylesheet" href="/static/css/components/buttons.css">
     <link rel="stylesheet" href="/static/css/pages/configuration.css">
+    <script src="/static/js/configuration.js"></script>
 </head>
 <body>
     <div class="container-config">
@@ -17,7 +18,7 @@
         <h1>T-BOT Initial Configuration</h1>  
         </div>
         
-        <form method="POST" action="{{ url_for('configuration_web.save_configuration') }}">
+        <form id="config-form" method="POST" action="{{ url_for('configuration_web.save_configuration') }}">
             <div class="fieldblock-config">
             <fieldset >
                 <legend>Identity Settings</legend>
