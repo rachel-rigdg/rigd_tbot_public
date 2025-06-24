@@ -54,10 +54,11 @@ def get_db_connection():
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
-def upsert_user(username: str, password: str, email: str = None) -> None:
+def upsert_user(username: str, password: str, email: str = None, role: str = "viewer") -> None:
     """
     Inserts or updates a user record in SYSTEM_USERS.db.
     Password is securely hashed and encrypted using Fernet.
+    Role is required; first user should be 'admin'.
     Raises ValueError if username/password missing.
     """
     if not username or not password:
@@ -76,16 +77,37 @@ def upsert_user(username: str, password: str, email: str = None) -> None:
         conn.execute(
             """
             INSERT INTO system_users (username, password_hash, email, role, account_status)
-            VALUES (?, ?, ?, 'admin', 'active')
-            ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, email = excluded.email;
+            VALUES (?, ?, ?, ?, 'active')
+            ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, email = excluded.email, role = excluded.role;
             """,
-            (username, encrypted_pw, email)
+            (username, encrypted_pw, email, role)
         )
         conn.commit()
-        log_event("auth_web", f"User {username} created or updated.")
+        log_event("auth_web", f"User {username} created or updated with role {role}.")
     except Exception as e:
         log_event("auth_web", f"Failed to upsert user {username}: {e}", level="error")
         raise
+    finally:
+        conn.close()
+
+def get_user_role(username: str) -> str:
+    """
+    Fetches the user's role from SYSTEM_USERS.db.
+    Returns 'viewer' if not found or on error.
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "SELECT role FROM system_users WHERE username = ?",
+            (username,)
+        )
+        row = cursor.fetchone()
+        if row and row[0]:
+            return row[0]
+        return "viewer"
+    except Exception as e:
+        log_event("auth_web", f"Failed to fetch role for user {username}: {e}", level="error")
+        return "viewer"
     finally:
         conn.close()
 

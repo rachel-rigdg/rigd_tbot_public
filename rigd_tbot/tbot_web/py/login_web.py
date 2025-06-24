@@ -6,7 +6,7 @@ from flask import Blueprint, request, redirect, render_template, session, url_fo
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
-from tbot_web.support.auth_web import validate_user, user_exists
+from tbot_web.support.auth_web import validate_user, user_exists, get_user_role
 from pathlib import Path
 
 SESSION_TIMEOUT = int(os.getenv("SESSION_TIMEOUT", "300"))
@@ -31,9 +31,10 @@ def login():
         username = request.form.get("username", "")
         password = request.form.get("password", "")
         if validate_user(username, password):
+            user_role = get_user_role(username)
             session["authenticated"] = True
             session["user"] = username
-            session["role"] = "admin"  # temporary fix for local admin
+            session["role"] = user_role
             return redirect(url_for("main.main_page"))
         else:
             return render_template("index.html", error="Invalid username or password")
@@ -46,6 +47,7 @@ def logout():
     """
     session.pop("authenticated", None)
     session.pop("user", None)
+    session.pop("role", None)
     return redirect(url_for("login_web.login"))
 
 def login_required(f):

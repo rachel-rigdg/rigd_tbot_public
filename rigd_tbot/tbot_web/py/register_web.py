@@ -19,6 +19,19 @@ def user_exists():
     except OperationalError:
         return False
 
+def get_next_user_role():
+    """Assign 'admin' to first user, else 'viewer' by default."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute("SELECT COUNT(*) FROM system_users;")
+        count = cursor.fetchone()[0]
+        conn.close()
+        if count == 0:
+            return "admin"
+        return "viewer"
+    except Exception:
+        return "admin"
+
 @register_web.route("/", methods=["GET", "POST"])
 def register_page():
     already_exists = user_exists()
@@ -46,9 +59,10 @@ def register_page():
         if password != confirm:
             flash("Passwords do not match.", "error")
             return render_template("register.html", username=username, email=email)
+        role = get_next_user_role()
         try:
-            upsert_user(username, password, email)
-            flash("Admin user created successfully. Please log in.", "success")
+            upsert_user(username, password, email, role=role)
+            flash(f"{role.capitalize()} user created successfully. Please log in.", "success")
             try:
                 if BOT_STATE_PATH.exists():
                     state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()

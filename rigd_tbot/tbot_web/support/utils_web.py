@@ -20,7 +20,7 @@ def login_required(func: Callable) -> Callable:
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        if 'username' not in session:
+        if not session.get("authenticated"):
             flash("Please login to access this page.", "warning")
             return redirect(url_for("login_web.login"))
         return func(*args, **kwargs)
@@ -29,12 +29,12 @@ def login_required(func: Callable) -> Callable:
 def role_required(required_role: str):
     """
     Decorator factory to require a specific user role.
-    Requires session to have 'user_role' attribute.
+    Requires session to have 'role' attribute.
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            user_role = session.get("user_role", None)
+            user_role = session.get("role", None)
             if user_role != required_role:
                 flash("You do not have permission to access this page.", "error")
                 return redirect(url_for("login_web.login"))
@@ -48,7 +48,7 @@ def admin_required(func: Callable) -> Callable:
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        user_role = session.get("user_role", None)
+        user_role = session.get("role", None)
         if user_role != "admin":
             flash("Admin privileges required.", "error")
             return redirect(url_for("login_web.login"))
@@ -59,7 +59,7 @@ def is_admin() -> bool:
     """
     Returns True if current user session is admin.
     """
-    return session.get("user_role", None) == "admin"
+    return session.get("role", None) == "admin"
 
 def safe_int(value: Optional[str], default: int = 0) -> int:
     """
