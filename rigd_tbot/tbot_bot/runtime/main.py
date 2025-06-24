@@ -70,6 +70,8 @@ def wait_for_operational_phase():
         "main", "idle", "analyzing", "monitoring", "trading", "updating"
     }
     print("[main_bot] Waiting for bot_state.txt to reach operational phase...")
+    last_phase = None
+    wait_displayed = False
     while True:
         try:
             phase = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
@@ -77,6 +79,10 @@ def wait_for_operational_phase():
             if phase in operational_phases:
                 print(f"[main_bot][wait_for_operational_phase] Entered operational phase: {phase}")
                 return
+            if phase in ("provisioning", "bootstrapping") and not wait_displayed:
+                print("[main_bot][wait_for_operational_phase] Still provisioning/bootstrapping; displaying wait page...")
+                wait_displayed = True
+            last_phase = phase
         except Exception as e:
             print(f"[main_bot][wait_for_operational_phase] Exception: {e}")
         time.sleep(1)

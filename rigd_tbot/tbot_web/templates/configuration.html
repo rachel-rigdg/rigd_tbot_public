@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/static/css/shared/forms.css">
     <link rel="stylesheet" href="/static/css/components/buttons.css">
     <link rel="stylesheet" href="/static/css/pages/configuration.css">
-    <script src="/static/js/configuration.js"></script>
+    <script src="/static/js/configuration.js" defer></script>
 </head>
 <body>
     <div class="container-config">
@@ -101,8 +101,6 @@
                 <br><br>
                 <label for="broker_account_number">Broker Account Number</label>
                 <input type="text" id="broker_account_number" name="broker_account_number"  value="{{ config['broker']['BROKER_ACCOUNT_NUMBER'] if config.get('broker') else '' }}" />
-                
-                
             </fieldset>
         </div><br><br>
         <div class="fieldblock-config">

@@ -1,7 +1,7 @@
 // tbot_web/static/js/wait.js
 // Fix redirect logic: registration should redirect to /registration/
 
-const bootstrapStates = ["provisioning", "bootstrapping", "initialize", "registration"];
+const bootstrapStates = ["initialize", "provisioning", "bootstrapping"];
 
 async function checkBotState() {
     try {

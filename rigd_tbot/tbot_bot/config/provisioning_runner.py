@@ -105,8 +105,12 @@ def main():
                 clear_provision_flag()
                 write_status(status_path, "running", "Creating control_start.txt to launch bot via systemd.")
                 create_control_start_flag()
+                set_bot_state("bootstrapping")
+                write_status(status_path, "bootstrapping", "Provisioning and bootstrapping complete, initializing core databases before registration.")
+                # Wait for database bootstrap completion, then registration
+                time.sleep(1)
                 set_bot_state("registration")
-                write_status(status_path, "waiting_registration", "Provisioning and bootstrapping complete, registration required before bot launch.")
+                write_status(status_path, "waiting_registration", "Bootstrapping complete, registration required before bot launch.")
                 already_provisioned = True
             except Exception as e:
                 tb = traceback.format_exc()

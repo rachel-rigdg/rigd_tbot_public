@@ -9,7 +9,6 @@ from pathlib import Path
 main_blueprint = Blueprint("main", __name__)
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
-# Treat registration as bootstrap phase for routing
 PHASE1_STATES = ("initialize", "provisioning", "bootstrapping", "registration")
 
 def get_current_bot_state():
@@ -31,7 +30,9 @@ def root_router():
 
     if state in PHASE1_STATES:
         if state == "registration":
-            return redirect(url_for("register_web.register_page"))
+            if not user_exists():
+                return redirect(url_for("register_web.register_page"))
+            return render_template("wait.html", bot_state=state)
         return render_template("wait.html", bot_state=state)
 
     if session.get("trigger_provisioning"):
@@ -51,7 +52,9 @@ def provisioning_route():
     state = get_current_bot_state()
     if state in PHASE1_STATES:
         if state == "registration":
-            return redirect(url_for("register_web.register_page"))
+            if not user_exists():
+                return redirect(url_for("register_web.register_page"))
+            return render_template("wait.html", bot_state=state)
         return render_template("wait.html", bot_state=state)
     return redirect(url_for("main.root_router"))
 
@@ -64,7 +67,9 @@ def main_page():
     state = get_current_bot_state()
     if state in PHASE1_STATES:
         if state == "registration":
-            return redirect(url_for("register_web.register_page"))
+            if not user_exists():
+                return redirect(url_for("register_web.register_page"))
+            return render_template("wait.html", bot_state=state)
         return render_template("wait.html", bot_state=state)
     if not user_exists():
         return redirect(url_for("register_web.register_page"))

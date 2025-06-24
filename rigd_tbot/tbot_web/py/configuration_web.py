@@ -141,7 +141,7 @@ def save_configuration():
             session["trigger_provisioning"] = True
             session.modified = True
             flash("Configuration saved. Proceeding to provisioning...", "success")
-            return redirect(url_for("register_web.register_page"))
+            return redirect(url_for("main.root_router"))
         else:
             flash("Configuration saved.", "success")
             return redirect(url_for("configuration_web.show_configuration"))
