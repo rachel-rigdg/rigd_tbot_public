@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>TEST_MODE — Bot Test Sequence</title>
-    <link rel="stylesheet" href="../static/css/main.css">
-    <link rel="stylesheet" href="../static/css/tabs.css">
-    <link rel="stylesheet" href="../static/css/spinner.css">
-    <link rel="stylesheet" href="../static/css/test.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tabs.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/spinner.css') }}">
     <script>
         let logPoller = null;
         function startLogPolling() {
