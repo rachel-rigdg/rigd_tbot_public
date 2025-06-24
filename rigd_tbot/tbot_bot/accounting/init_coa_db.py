@@ -1,5 +1,5 @@
 # tbot_bot/accounting/init_coa_db.py
-# Bootstrap script: initializes new COA DB at output/IDENTITY/ledgers/ using tbot_ledger_coa.json as hierarchy/template
+# Bootstrap script: initializes new COA DB at output/IDENTITY/ledgers/ using tbot_ledger_coa_template.json as hierarchy/template
 
 import sys
 from pathlib import Path

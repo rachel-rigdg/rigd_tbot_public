@@ -33,7 +33,7 @@ Each COA (in both JSON and SQLite/DB forms) must include the following metadata,
 
 ## COA Account Hierarchy (Example Structure)
 
-See `tbot_bot/accounting/tbot_ledger_coa.json` for the full hierarchical account structure. Top-level categories include:
+See `tbot_bot/accounting/tbot_ledger_coa_template.json` for the full hierarchical account structure. Top-level categories include:
 
 - **1000 Bank and Cash Accounts**
 - **1100 Assets**
@@ -51,7 +51,7 @@ All account codes, names, and hierarchy are version-controlled and validated at 
 
 ## Schema Enforcement
 
-- All ledger files **must** match the schema in `tbot_bot/accounting/tbot_ledger_schema.sql` and the account structure in `tbot_bot/accounting/tbot_ledger_coa.json`.
+- All ledger files **must** match the schema in `tbot_bot/accounting/tbot_ledger_schema.sql` and the account structure in `tbot_bot/accounting/tbot_ledger_coa_template.json`.
 - Any mismatch or invalid COA structure detected by `utils_coa_web.py` or `coa_utils_ledger.py` will halt execution and log a fatal error.
 - COA is stored and validated as both a JSON structure and an SQLite table (`coa_metadata`, `coa_accounts`).
 
@@ -102,6 +102,6 @@ All account codes, names, and hierarchy are version-controlled and validated at 
 
 ---
 
-*For full COA account definitions, see `tbot_bot/accounting/tbot_ledger_coa.json` and in-UI hierarchy display.*
+*For full COA account definitions, see `tbot_bot/accounting/tbot_ledger_coa_template.json` and in-UI hierarchy display.*
 
 *End of Document*

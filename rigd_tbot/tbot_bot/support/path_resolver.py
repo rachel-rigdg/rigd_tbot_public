@@ -82,7 +82,7 @@ def resolve_coa_schema_path():
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "coa_schema.sql")
 
 def resolve_coa_json_path() -> str:
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa.json")
+    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_template.json")
 
 def resolve_coa_metadata_path() -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_metadata.json")

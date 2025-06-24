@@ -1,5 +1,5 @@
 # tbot_bot/test/test_coa_consistency.py
-# Confirms the bot’s COA matches tbot_ledger_coa.json and schema; validates correct integration with utils_coa_web.py and coa_utils_ledger.py
+# Confirms the bot’s COA matches tbot_ledger_coa_template.json and schema; validates correct integration with utils_coa_web.py and coa_utils_ledger.py
 
 import unittest
 import json

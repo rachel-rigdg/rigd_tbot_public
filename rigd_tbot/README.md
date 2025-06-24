@@ -90,7 +90,7 @@ Deployment Notes
 COA/Schema Enforcement 
 --------------------------------------------------------------------------------
 
-- All bot ledger files **must** match the schema defined in `tbot_bot/accounting/tbot_ledger_schema.sql` and the COA defined in `tbot_bot/accounting/tbot_ledger_coa.json`.
+- All bot ledger files **must** match the schema defined in `tbot_bot/accounting/tbot_ledger_schema.sql` and the COA defined in `tbot_bot/accounting/tbot_ledger_coa_template.json`.
 - The COA must be present in each bot ledger as a dedicated table (`coa_metadata`) containing: `currency_code`, `entity_code`, `jurisdiction_code`, `coa_version`, `created_at_utc`, `last_updated_utc`.
 - Any schema or COA mismatch at runtime (detected by `build_check.py` or ledger init scripts) must block execution and log a fatal error.
 - The bot’s COA is self-contained and managed exclusively via the tbot_web UI (`coa_web.py`, `coa.html`). All edits and exports are performed here; no external push/pull from accounting.
@@ -139,7 +139,7 @@ Accounting:
 - All trades and ledgers are available for post-session ingestion/export by the accounting system for audit, reporting, and reconciliation.
 - Ledger format: `{ENTITY}_{JURIS}_{BROKER}_{BOT_ID}_BOT_ledger.db`
 - Structure in `ledger_schema.py`, OFX-compliant
-- **COA required:** Each ledger is initialized and validated against `tbot_ledger_schema.sql` and `tbot_ledger_coa.json`, with a `coa_metadata` table and account hierarchy included at creation.
+- **COA required:** Each ledger is initialized and validated against `tbot_ledger_schema.sql` and `tbot_ledger_coa_template.json`, with a `coa_metadata` table and account hierarchy included at creation.
 - OFX exports only via `generate_ofx.py`
 - TradeBot does not emit CSV for ledgers; all CSV/JSON outputs are for human audit only
 
