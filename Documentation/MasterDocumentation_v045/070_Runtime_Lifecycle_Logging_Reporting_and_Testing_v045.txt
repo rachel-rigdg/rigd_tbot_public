@@ -1,0 +1,632 @@
+================================================================================
+Document: 070
+Runtime_Lifecycle_Logging_Reporting_and_Testing
+Version: v045
+Date: UTC:2025-06-24 00:00:00
+================================================================================
+
+This module documents the runtime session lifecycle, phases, shutdown protocols, bot_state management, and design confirmations.
+
+Contents:
+- TradeBot Runtime Flow (Spec-Locked – Final Version, RIGD_TradingBot_{CURRENT_VERSION})
+- Key Design Confirmations (Spec-Locked — RIGD_TradingBot_{CURRENT_VERSION})
+- TradeBot Master Build Enhancements (Post-Stabilization, Spec-Locked)
+- Final Build Checklist — RIGD_TradingBot_{CURRENT_VERSION} (Spec-Locked)
+
+All runtime logic is immutable except via Web UI configuration changes.
+
+Audit compliance enforced.
+
+================================================================================
+RIGD PHASE SUPERVISOR: USER-MODE SYSTEMD SPECIFICATION 
+================================================================================
+
+OBJECTIVE:
+Fully eliminate `sudo` and `visudo` from all bot orchestration. The phase supervisor and systemd units run entirely in *user mode*, allowing any `tbot`-like account to bootstrap a bot instance without elevated permissions.
+
+--------------------------------------------------------------------------------
+CORE CHANGES TO IMPLEMENT 
+--------------------------------------------------------------------------------
+
+1. Replace All `sudo systemctl` with `systemctl --user`
+    - Applies to `main.py` and all launch scripts
+    - e.g. `systemctl --user restart tbot_bot.service`
+
+2. Unit Files Directory
+    - Move all `.service` files to:
+      `/home/tbot/.config/systemd/user/`
+    - Remove any `User=...` directive (not valid in user units)
+    - Ensure `[Install]` section uses: `WantedBy=default.target`
+
+3. Enable User-Level Systemd Session
+    ```bash
+    loginctl enable-linger tbot
+    ```
+
+4. Environment Setup
+    - Add to ~/.bashrc or loader script:
+      `export XDG_RUNTIME_DIR=/run/user/$(id -u)`
+
+5. Supervisor Launch
+    - Run supervisor with:
+      `systemctl --user start tbot_bot.service`
+    - No sudo usage anywhere in Python or shell scripts
+
+--------------------------------------------------------------------------------
+SYSTEMD INSTALLATION
+--------------------------------------------------------------------------------
+
+mkdir -p ~/.config/systemd/user
+cd ~/.config/systemd/user
+
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_bot.service
+
+systemctl --user daemon-reexec
+systemctl --user daemon-reload
+
+
+=============================================================================================================================================
+TradeBot Runtime Flow 
+=============================================================================================================================================
+
+Phase 0: Pre-Session (Preparation)
+↓
+- Edit and validate `.env_bot` (strategy, risk, runtime) and `.env` (keypaths, credentials).
+- If encrypted, decrypt `.env_bot.enc` using `security_bot.py` with AES-256 key from `ENV_BOT_KEY` in `.env`.
+- Bootstrap session by creating `control_start.txt` or submitting `configuration.html` via Web UI only.
+- Ensure all encrypted secret files (`bot_identity.json.enc`, `broker.json.enc`, etc.) exist post-bootstrap.
+- `.env_bot.enc` must exist pre-bootstrap.
+
+Phase 1: System Boot Validation
+↓
+- `security_bot.py` decrypts `.env_bot.enc` using key from `storage/keys/env.key`.
+- `env_bot.py` validates required env vars; missing/malformed values cause fatal error and halt.
+- Run `.self_check()` on critical modules (`risk_bot.py`, `kill_switch.py`, `watchdog_bot.py`, `error_handler.py`, `strategy_router.py`).
+- Failures abort session and log error in UTC to `output/logs/error_tracebacks.log`.
+- All checks pass proceed to session init.
+
+Phase 2: Session Initialization
+↓
+- `float_bot.py` obtains current float from accounting system (bot never manages float/injections directly).
+- Loads runtime parameters from `.env_bot` (e.g. `MAX_TRADES`, `TOTAL_ALLOCATION`).
+- If `DEFENSE_MODE_ACTIVE=true`, apply stricter overrides.
+- `status_bot.py` writes initial bot state to `output/status.json`.
+- Begin strategy cycle.
+
+Phase 3: Strategy Cycle (Open → Mid → Close, UTC)
+For each enabled strategy:
+↓
+- Load strategy module as per `.env_bot` toggles and schedule.
+- Each strategy runs `.self_check()` (API availability, timing, float).
+- `finnhub_screener.py` filters symbols based on volume, price, fundamentals.
+- For each symbol passing filters, calculate allocation and enforce caps (`MAX_RISK_PER_TRADE`, `MAX_TRADES`, etc.).
+- Submit orders via `broker_api.py`.
+- Log trades to `output/trades/`.
+- Log unresolved orders to `output/logs/unresolved_orders.log`.
+- Monitor positions continuously (stop loss, VWAP, PnL).
+- Strategy phase ends when time window closes.
+
+Phase 4: Risk/Fault Monitoring (Continuous)
+↓
+- Enforce risk constraints (`risk_bot.py`).
+- Monitor PnL and daily loss limits (`kill_switch.py`).
+- Verify API health (`watchdog_bot.py`).
+- Log uncaught exceptions (`error_handler.py`).
+- On breach, halt broker or suspend trading.
+- DEFENSE_MODE events logged to `disaster_mode.log`.
+
+Phase 5: Session Termination
+↓
+- `stop_bot.py` closes open positions gracefully.
+- `reporting_bot.py` compiles logs (trades, daily summary, disaster logs).
+- Trades and PnL routed to accounting ledger database (`entities/{ENTITY}_{JURIS}/ledgers/bot/...`).
+- `auto_backup.py` archives logs and ledgers (UTC).
+- Mark session "CLOSED" in status.json.
+- Session complete.
+
+Phase 6: Manual Review / Rebalancing
+- Operator reviews logs and summary.
+- Float reconciliations managed exclusively by accounting.
+- `generate_ofx.py` used for OFX exports.
+- Manual reset of defense flags required after defense mode event.
+
+=============================================================================================================================================
+Bot State Definitions (bot_state.txt values)
+=============================================================================================================================================
+
+- `initialize`: Initial bot startup, configuration phase.
+- `provisioning`: Generating keys, secrets, initial config encryption.
+- `bootstrapping`: Running DB init, user/account setup.
+- `registration`: User account registration UI active.
+- `started`: Bot system fully started but not actively trading/analyzing.
+- `idle`: Bot ready and primed, not actively analyzing or trading but able to start.
+- `analyzing`: Strategy analyzing market data.
+- `trading`: Active trade execution ongoing.
+- `monitoring`: Post-trade monitoring active.
+- `updating`: Runtime updates or config reloads in progress.
+- `graceful_closing_positions`: Closing positions in controlled manner on stop command.
+- `emergency_closing_positions`: Immediate position close on kill command.
+- `stopped`: Bot is halted, no strategies running; requires manual start.
+- `shutdown`: System shutdown in progress.
+- `shutdown_triggered`: Forced shutdown triggered.
+- `error`: Fatal error state; bot halted.
+
+
+=============================================================================================================================================
+UI Behavior Based on Bot State
+=============================================================================================================================================
+
+- `initialize`, `provisioning`, `bootstrapping` → show configuration.html UI for setup.
+- `registration` → show registration UI.
+- `started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating` → show main.html dashboard.
+- `graceful_closing_positions`, `emergency_closing_positions` → show main.html with graceful/hard shutdown feedback.
+- `stopped` → show main.html indicating stopped state; no strategies running.
+- `shutdown`, `shutdown_triggered`, `error` → show error or shutdown page; halt further operations.
+
+=============================================================================================================================================
+Bot Control Commands via Web UI
+=============================================================================================================================================
+
+- Start Bot:
+  - Transition bot_state.txt to `started`, then `idle` after init.
+  - Strategies not running until schedule triggers.
+- Stop Bot:
+  - Transition bot_state.txt to `graceful_closing_positions`.
+  - Strategies finish naturally, close positions.
+  - Transition to `stopped`.
+- Kill Now:
+  - Transition bot_state.txt to `emergency_closing_positions`.
+  - Immediate position close.
+  - Transition to `stopped`.
+- UI remains accessible in all states.
+
+
+=============================================================================================================================================
+Hot Configuration Updates
+=============================================================================================================================================
+
+- Configuration page accessible at all times.
+- Config changes saved instantly to encrypted runtime config.
+- Bot reads config changes dynamically without restart.
+- No re-provisioning triggered on config update.
+- Prevent accidental re-provisioning or bot restart via config save restrictions in code logic.
+
+
+=============================================================================================================================================
+Key Design Confirmations
+=============================================================================================================================================
+
+- Single broker assignment per bot session.
+- Float and risk limits strictly enforced from `.env_bot`.
+- Real-time PnL logged for dashboard; accounting provides official PnL.
+- Defense mode enforces stricter limits and screening.
+- All audit logs timestamped and immutable.
+- Web dashboard displays live states and alerts.
+- No hybrid or dual broker modes.
+- Changes managed only via Web UI configuration.
+
+=============================================================================================================================================
+TradeBot Master Build Enhancements (Post-Stabilization, Spec-Locked)
+=============================================================================================================================================
+
+1. Automated Rebalance Triggers:
+- Float deviation thresholds set in `.env_bot`.
+- Accounting notified on deviation; bot never initiates transfers.
+- Event logged with UTC timestamp and session context.
+
+2. Multi-User Access Roles (RBAC):
+- Multi-role access managed in `SYSTEM_USERS.db`.
+- Access attempts logged.
+- Role-based UI permissions.
+
+3. Strategy Optimization Module:
+- Scheduled backtests with paramized methods.
+- Human approval required for config changes.
+
+4. Real-Time Alerting:
+- Multi-channel alerts per `.env_bot`.
+- Configurable per event and strategy.
+
+5. Slippage & Latency Simulation:
+- Optional slippage and latency simulation for backtests only.
+- No impact on live trading.
+
+=============================================================================================================================================
+Final Build Checklist
+=============================================================================================================================================
+
+- `.env` and `.env_bot` encryption and validation.
+- Bootstrap/init scripts run via Web UI only.
+- Environment variables fully validated.
+- Strategy modules implement `.self_check()`.
+- Logs and ledgers written as per spec.
+- Ledger files OFX-aligned, double-entry.
+- Risk, shutdown, and notifications implemented.
+- Web UI RBAC enforced.
+- Bot lifecycle state machine followed strictly.
+- Hot config updates dynamic, no restart needed.
+- All changes documented in `VERSION.md`.
+
+
+
+
+
+================================================================================
+Logging_and_Reporting
+{CURRENT_VERSION}
+================================================================================
+
+This module defines the formats, storage locations, and field requirements for all TradeBot logs, trade records, summaries, and audit outputs.
+
+Contents:
+- Logging & Reporting Format
+- Modular Strategy Reporting & Audit Output Specification
+
+All outputs are UTC-timestamped, deterministic, OFX-aligned, and compliance-ready.
+
+**Policy:**  
+All provisioning, credential creation, encrypted config management, and COA operations are performed *exclusively* via the TradeBot Web UI. No external or accounting system may provision, inject, or modify any credential, secret, key, or config file after bootstrap. Only ledger export and float assignment for audit are accounting roles.
+
+
+{BOT_IDENTITY} = {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}
+
+=============================================================================================================================================
+Logging & Reporting Format 
+=============================================================================================================================================
+
+**Overview:**  
+Each bot instance writes structured outputs to isolated, per-bot subdirectories for audit trails, dashboards, compliance, and reconciliation. *All outputs and filenames are governed by `.env_bot` and path resolver logic; no runtime mode switching, no dual-broker operation.*
+
+---
+
+**Primary Output Directories**
+
+| Directory                                 | Contents                                               |
+|--------------------------------------------|--------------------------------------------------------|
+| `output/{BOT_IDENTITY}/logs/`              | Strategy execution logs, error traces, broker issues   |
+| `output/{BOT_IDENTITY}/trades/`            | Per-session trade history logs (`csv` or `json`)       |
+| `output/{BOT_IDENTITY}/summaries/`         | Session summaries: PnL, stats, win-rate                |
+| `backups/`                                | Auto-archived logs, ledgers, config backups (rotated)  |
+
+---
+
+**Filename Structure**
+
+| Type               | Example Filename                   | Notes                                        |
+|--------------------|------------------------------------|----------------------------------------------|
+| Strategy Logs      | `open.log`, `mid.log`, `close.log` | One per strategy, per bot/session            |
+| Trade History      | `trade_history.csv`, `.json`       | All executed trades, full session            |
+| Unresolved Orders  | `unresolved_orders.log`            | Rejects, partials, stale orders              |
+| Daily Summary      | `daily_summary.json`               | End-of-session PnL/stats/metrics             |
+
+*All output filenames are always resolved per bot identity and session by the path resolver.*
+
+---
+
+**Log Format**
+
+Set via `.env_bot`:
+
+- `LOG_FORMAT=csv`  → human-readable
+- `LOG_FORMAT=json` → structured for dashboard/ingestion
+
+Only one format is written per session.
+
+---
+
+**Required Fields – `trade_history.json`**
+
+Each entry must include:
+
+- `timestamp`          (ISO 8601 UTC)
+- `strategy_name`      (open, mid, close)
+- `ticker`             (equity/ETF symbol)
+- `side`               (long/short)
+- `size`               (quantity)
+- `entry_price`        (float)
+- `exit_price`         (float)
+- `PnL`                (realized)
+- `broker`             (from `.env_bot`)
+- `error_code`         (if any; e.g., rejection)
+
+---
+
+**Ledger Routing – Single-Broker Enforcement**
+
+All trades route to the correct ledger using:
+
+- `ENTITY_CODE`, `JURISDICTION_CODE`, `BROKER_CODE`, `BOT_ID`
+- Suffix: `_BOT_ledger.db`
+
+Ledger path format:  
+`output/{BOT_IDENTITY}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+
+*Runtime config controls location and naming—never hardcoded.*
+
+---
+
+**Export + Archive Flow**
+
+1. `reporting_bot.py` collects/export logs after each session
+2. Ledger/export paths resolved by config and path_resolver
+3. `generate_ofx.py` produces OFX export
+4. `auto_backup.py` compresses/archives all output
+
+---
+
+**Principles**
+
+- Logs = parallel audit artifacts—never re-imported into ledgers
+- No live/paper split—bot operates on one ledger/output set
+- All outputs are deterministic, UTC-stamped, and account-mapped
+
+---
+
+**Use Cases**
+
+- Daily/periodic PnL reports
+- Compliance/audit verification
+- Dashboard ingestion
+- Historical/strategy analytics
+- Tax/regulatory export (OFX, CSV, JSON)
+
+---
+
+==========================================================
+Modular Strategy Reporting & Audit Output Specification
+==========================================================
+
+**Objective:**  
+Support per-strategy, per-session reporting for live audit, optimization, and validation.
+
+---
+
+**1. Logs and Summaries Per Strategy**
+
+Each strategy **must** generate:
+
+- `open.log`, `mid.log`, `close.log`              # Per-strategy logs
+- `trade_history.json`, `trade_history.csv`        # Trade-by-trade session record
+- `daily_summary.json`                             # PnL, stats, outcomes
+
+**Fields in all logs/trade records:**
+
+- `strategy_name`
+- `signal_trigger_time`
+- `entry_timestamp`
+- `exit_timestamp`
+- `trade_side` (long/short)
+- `entry_price`
+- `exit_price`
+- `size`
+- `PnL`
+- `broker`
+- `exit_reason` (stop_loss, timeout, manual, target_hit)
+
+---
+
+**2. Daily Summary Metrics**
+
+Each `daily_summary.json` must include:
+
+- `win_rate_per_strategy`
+- `total_trades`
+- `average_pnl_per_trade`
+- `max_gain`
+- `max_loss`
+- `trade_count_vs_signals_triggered`
+- `average_holding_time`
+- `most_profitable_tickers`
+- `worst_tickers`
+
+---
+
+**3. Web UI Reporting**
+
+Expose core metrics/logs in the dashboard:
+
+- Win rate, PnL, trade count (open/mid/close)
+- Load/display JSON stats on `status.html`
+- Optionally: overlay PnL/trade charts by session/strategy
+
+---
+
+**4. Runtime Validation**
+
+In `env_bot.py`:
+
+- Enforce that keys exist and are valid:
+    - `ENABLE_LOGGING=true`
+    - `LOG_FORMAT=json` or `csv`
+- Raise fatal error if missing/invalid, with a clear operator message
+
+---
+
+**5. Tuning & Optimization**
+
+- `tuning_tracker.py`:
+  - Loads/compares logs across runs
+  - Recommends optimal values for buffers/thresholds (e.g., `STRAT_*_BUFFER`)
+  - Exports table: buffer → win%, avg PnL, duration, block/reject counts, ticker frequency
+
+---
+
+**Policy & Security:**
+
+- All reporting, logs, and summaries are deterministic, UTC-stamped, and compliant with the required field layout.
+- No log post-processing outside reporting modules or explicit audit export.
+- Logs/trade records are never imported back into ledgers.
+
+---
+
+
+
+================================================================================
+TEST_MODE
+{CURRENT_VERSION}
+================================================================================
+
+TEST_MODE Specification for RIGD TradeBot
+
+OVERVIEW:
+TEST_MODE is a transient, runtime-only mode triggered by the presence of `tbot_bot/control/test_mode.flag`.
+It enables full end-to-end dry-run validation of TradeBot execution without live trades or persistent data changes.
+
+PURPOSE:
+- Validate scheduling, strategies, screener filtering, order logic, logs, ledgers, and UI display.
+- Prevent real capital usage, real orders, notifications, or permanent ledger changes.
+- Allow automated/manual testing via Web UI or CLI triggers.
+
+TRIGGERING:
+- Presence of `test_mode.flag` enables TEST_MODE.
+- Setting TEST_MODE via Web UI writes this flag.
+- Test completes after sequential execution of `strategy_open`, `strategy_mid`, `strategy_close`.
+- Upon completion, flag is auto-deleted, returning bot to normal mode.
+- UI optionally includes dedicated `test.html` page for triggering and monitoring tests.
+
+BEHAVIOR:
+
+1. Screener:
+ - Ignores fundamentals; filters symbols only by price.
+ - Enables rapid symbol pipeline validation.
+
+2. Strategies:
+ - Analysis/monitoring windows forced to 1 minute.
+ - Executes all three strategies sequentially immediately on flag set.
+ - Bypasses normal schedule (`START_TIME_*`, `TRADING_DAYS`).
+ - Stub order submission: no live broker calls.
+ - Capital allocation and risk limits ignored or simulated.
+ - Outputs/logs/ledgers routed to ephemeral test paths.
+ - Suppresses notifications/alerts.
+
+3. Trade Execution:
+ - `orders_bot.py` simulates order success; no API calls.
+ - Logs all simulated trades with TEST_MODE tag.
+
+4. Logging & Reporting:
+ - Separate test-only logs and ledger files used.
+ - No changes to live data.
+ - Audit logs capture test start/end and all events.
+
+5. UI & Control:
+ - `test_web.py` toggles flag file.
+ - Dedicated `test.html` page allows test trigger and log streaming.
+ - UI disables live trading actions while test active.
+ - Displays test progress, results, and completion status.
+ - Auto-reset of flag after test ends.
+
+6. Lifecycle:
+ - Single run per flag set; non-persistent across restarts.
+ - Prevents accidental persistent TEST_MODE.
+ - Clear differentiation from live mode in all outputs.
+
+SECURITY & COMPLIANCE:
+- Immutable audit logging of test mode lifecycle and all simulated actions.
+- No live trades or financial exposure.
+- Flag file access secured to admin users only.
+
+FILES AFFECTED:
+- `tbot_bot/control/test_mode.flag`
+- `tbot_bot/config/env_bot.py` (read test_mode.flag)
+- `tbot_bot/screeners/finnhub_screener.py`
+- `tbot_bot/strategy/*.py` (open, mid, close)
+- `tbot_bot/trading/orders_bot.py`
+- `tbot_bot/trading/notifier_bot.py`
+- `tbot_bot/reporting/reporting_bot.py`
+- `tbot_bot/accounting/ledger_utils.py`
+- `tbot_web/py/settings_web.py`
+- `tbot_web/py/ledger_web.py` (optional logs display)
+- `tbot_web/py/main_web.py` or `strategy_router.py` (immediate execution)
+- `tbot_web/py/test_web.py` and `templates/test.html` (dedicated UI)
+- `tbot_web/templates/settings.html` (toggle update)
+
+TEST VALIDATION:
+- Full pytest integration in `tbot_bot/test/` with test_mode flag.
+- Logs and ledgers segregated in test runs.
+- UI test page verified for trigger and progress display.
+
+CHANGE HISTORY:
+- v042: Added dedicated UI page and flag file control.
+- v041: Deprecated persistent TEST_MODE in `.env_bot.enc`.
+- Prior versions used persistent config flag; now replaced with ephemeral runtime flag.
+
+
+
+================================================================================
+Testing_and_Validation
+{CURRENT_VERSION}
+================================================================================
+
+This module defines the comprehensive testing and CI validation framework for TradeBot v1.0+.
+
+Contents:
+- Testing and Validation Suite (Lossless Compression Spec v1.1)
+
+All tests are required pre-deployment; any test failure is a fatal compliance violation.
+
+=============================================================================================================================================
+Testing and Validation Suite
+=============================================================================================================================================
+
+**Overview:**  
+All critical bot logic, modules, and outputs must be validated via an explicit, automated testing framework. All tests must be run and pass before any production deployment, upgrade, or strategy change.  
+*No runtime/test code may bypass test enforcement or version checks.*
+
+**Testing Directory:**  
+`tbot_bot/test/`
+
+**Test Modules:**
+- `test_main_bot.py`           # Lifecycle loop, strategy routing, logger flow, shutdown/resume checks
+- `test_env_bot.py`            # .env_bot variable coverage, error, defaults, VERSION_TAG matches VERSION.md (build fails if mismatch)
+- `test_backtest_engine.py`    # Simulated trades on historical data, rule and fill consistency, no drift
+- `test_strategy_selfcheck.py` # All .self_check() methods must return True, logs all failures
+- `test_logging_format.py`     # Log structure matches output JSON schema and all required fields
+- `test_broker_trade_stub.py`  # Randomized micro-trades, broker order submission/logging/flow
+- `test_screener_random.py`    # Symbol screener, randomized eligibility/filter logic
+- `test_strategy_tuner.py`     # All strategy modules in isolation: tickers, thresholds, entry/exit logic, config
+- `integration_test_runner.py` # Full-session simulation, end-to-end (provisioning, config, trading, shutdown)
+
+*Planned:*
+- `test_broker.py` – **Manual live trade placement/close for broker readiness/validation.**
+
+**Framework:**
+- All tests use pytest, CLI/CI-compatible, modular for batch or single-run
+- Output: `--junitxml` plus CI/CD test reporters (GitHub Actions, GitLab, Jenkins, etc.)
+
+**Test Command:**
+pytest tbot_bot/test/
+
+
+**Integration Test Flow:**
+- Loads `.env_bot.test`
+- Launches `main_bot.py`, injects mock historical data, runs `start_bot.py` (dry mode)
+- Confirms: strategy execution order (`STRATEGY_SEQUENCE`), log and output file generation, all triggers/errors, trade/log/export correctness, session integrity
+
+**CI/DevOps:**
+- Compatible with all major CI runners; headless, no GUI or broker API required
+- Custom `.env_bot.test` allowed for CI override, secrets stubbed for test mode
+
+**Requirements:**
+- Python 3.11+, pytest, pydantic, all packages from `requirements.txt`
+
+**Test Mode:**
+- `integration_test_runner.py` executes only if `TEST_MODE=true`
+- All test outputs route to logs; test failures to stdout/stderr
+
+**Version Enforcement:**
+- `test_env_bot.py` must verify `.env_bot["VERSION_TAG"]` matches `VERSION.md` (fatal if mismatch; blocks deployment)
+
+**Required Validation for All Tests:**
+- All output/log/trade/ledger files must match the runtime schema as enforced in `050_Trading_Bot_Core_Specs_v041.txt`
+- All ledger outputs must match required fields in `070_Accounting_Integration_v041.txt`
+- All reporting and audit files are UTC timestamped, deterministic, and scoped to `{BOT_IDENTITY}`
+
+**Summary:**  
+All code, strategy, config, and provisioning updates are blocked if any test fails. CI/CD must gate on full test pass for any merge/release. Audit logs, trade logs, ledgers, and summaries are validated as part of the integration test suite.
+
+
+
+
+
+
+

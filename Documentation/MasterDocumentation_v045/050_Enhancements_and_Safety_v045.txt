@@ -1,0 +1,156 @@
+================================================================================
+Document: 050
+Enhancements_and_Safety
+Version: v045
+Date: UTC:2025-06-24 00:00:00
+================================================================================
+
+This module specifies optional enhancement modules, filters, and core safety systems, including error management.
+
+Contents:
+- Enhancement Module Activation (Comprehensive — All Modules Listed)
+- Centralized Error Management (Lossless Compression, Spec v1.1)
+
+
+All modules require runtime self-check compliance and strict audit logging.
+
+
+
+
+=============================================================================================================================================
+Enhancement Module Activation 
+=============================================================================================================================================
+
+**Overview:**  
+TradeBot includes modular enhancements in `/tbot_bot/enhancements/` to refine signal quality, block trades under poor conditions, and perform diagnostics. Enhancements are plug-ins activated via strategy context or `.env_bot`.
+
+All enhancements are independently testable and auto-invoked from `strategy_router.py` or individual strategies. Each returns a boolean (`True`=allow, `False`=block). Failures log warnings but default to core logic unless fatal. Outcomes are logged to strategy logs and summaries, not accounting ledgers.
+
+---
+
+**Enhancements Directory – All Modules:**
+
+1. **adx_filter.py**  
+   Blocks trades during trending ADX (typically ADX > 25); used in `strategy_mid.py`. Always-on (future toggle: `ADX_FILTER_ENABLED=true`).
+
+2. **black_scholes_filter.py**  
+   Validates put/call option pricing using Black-Scholes-Merton model (multi-jurisdiction ready via `{JURISDICTION_CODE}`).  
+   - Dynamically adjusts `risk_free_rate` by `JURISDICTION_CODE` from `bot_identity.json.enc`
+   - Enabled via `.env_bot` toggle: `ENABLE_BSM_FILTER=true`
+   - Rejects if deviation > `MAX_BSM_DEVIATION` (default: 15%)
+   - Logs detailed context for each rejection
+
+3. **bollinger_confluence.py**  
+   Confirms entries only if price breaches ±2σ Bollinger Band; used in `strategy_mid.py`. Inline trigger; reduces false positives in low-volatility regimes.
+
+4. **build_check.py**  
+   Validates pre-launch config and file integrity, COA/schema presence and alignment; called by `main_bot.py` or CLI. Bot halts on failure.
+
+5. **finnhub_fundamental_guard.py**  
+   Blocks trades if company fundamentals fail configured thresholds (e.g., P/E, debt/equity).
+   - Pulls data via `FINNHUB_API_KEY` (loaded from `screener_api.json.enc`)
+   - Cached to `data/cache/fundamentals_{date}.json`
+   - Enforced metrics:
+     - `peNormalizedAnnual` ≤ `MAX_PE_RATIO` (default: 50)
+     - `totalDebt/totalEquityAnnual` ≤ `MAX_DEBT_EQUITY` (default: 2.5)
+     - `marketCapitalization` ≥ `MIN_MARKET_CAP_FUNDAMENTAL` (default: 2B)
+   - Logs full rejection context to strategy logs
+
+6. **imbalance_scanner_ibkr.py**  
+   IBKR imbalance feed for close strategy gating. Reads IBKR imbalance data from 20:30–21:00 UTC; blocks trades during strong opposing pressure. Applies to `strategy_close.py` when `BROKER=ibkr`.
+
+7. **ticker_blocklist.py**  
+   Blocks duplicate ticker usage in one session. Prevents repeat trades per ticker per session; always-on; tracks traded tickers in memory/temp.
+
+8. **tuning_tracker.py**  
+   Tracks and evaluates past strategy performance for tuning guidance. Records and summarizes statistical performance; enables tuning of thresholds or parameters in live/test modes.
+
+9. **vix_gatekeeper.py**  
+   VIX-based gating logic. Blocks trades if VIX < `STRAT_CLOSE_VIX_THRESHOLD` (`.env_bot`); applies to `strategy_close.py`. Used to avoid low-volatility EOD signals.
+
+---
+
+**Best Practices:**
+- Keep enhancements decoupled from core logic.
+- Use toggles in `.env_bot` only if dynamic enable/disable needed.
+- Enhance trade quality; do not generate signals.
+- Only executed trades are recorded in ledgers; all blocks/skips are logged to operational logs and summaries only.
+
+---
+
+**Core Safety Systems:**
+
+- **kill_switch.py**: Halts trading on `DAILY_LOSS_LIMIT` breach; logs shutdown + attempts to close trades.
+- **watchdog_bot.py**: Monitors API and data feeds; suspends/cancels trading on broker or market failure.
+- **risk_bot.py**: Enforces all allocation and risk controls, validates pre-execution.
+- **error_handler.py**: Centralized error capture/logging; triggers shutdown on fatal error.
+- **security_bot.py**: Validates decryption of `.env_bot.enc`; blocks plaintext config in prod.
+
+---
+
+**Emergency Shutdown Table**
+
+| Event                         | Scope   | Action                      |
+|-------------------------------|---------|-----------------------------|
+| DAILY_LOSS_LIMIT breach       | Global  | Immediate halt              |
+| Broker API failure            | Global  | Trading suspended           |
+| Market data failure           | Global  | Full system shutdown        |
+| Critical exception            | Global  | Full shutdown               |
+| Manual override               | Scoped  | Controlled shutdown/reset   |
+
+- All actions logged and audited
+
+---
+
+**Self-Check System:**
+- Every enhancement and safety module must implement `.self_check()` or equivalent on launch.  
+- Launch blocked and cause logged on any failure.
+
+
+
+
+=============================================================================================================================================
+Centralized Error Management 
+=============================================================================================================================================
+Overview: TradeBot uses error_handler.py for runtime exception capture, deterministic escalation, and system stability. All logic is deterministic, auditable, and fatal on validation failure.
+
+Emergency Event Matrix:
+|Event|Detection|Scope|Response|Reboot|
+|-----|---------|-----|--------|------|
+|PnL Loss>DAILY_LOSS_LIMIT|kill_switch.py|Broker|Halt broker, log|No|
+|Broker API Down|watchdog_bot.py|Broker|Suspend broker|No|
+|Market Data Down|watchdog_bot.py|All|Trigger stop_bot.py|Yes|
+|.env_bot Decryption Fail|security_bot.py|All|Block launch, log|Yes|
+|Logic Error|error_handler.py|Varies|Escalate if critical|Yes|
+|Defense Mode On|risk_bot.py+.env_bot|All|Compress risk|No|
+|Validation Fail|risk_bot.py|Broker|Block trade, log|No|
+|Manual Shutdown|control_stop.txt|Any|Immediate safe shutdown|Yes|
+|System File Fail|build_check.py|All|Abort launch, log|Yes|
+
+error_handler.py:
+- Captures exceptions from all modules. Types: NetworkError (API/connectivity), BrokerError (order rejects/margin), LogicError (bad logic), ConfigError (.env_bot issues).
+- Logs: output/logs/unresolved_orders.log (JSON/CSV per .env_bot). Required: timestamp, strategy, broker, error_type, error_code, raw_exception, context.
+- Retry: exponential backoff, escalate >API_RETRY_LIMIT, trigger kill_switch.py or shutdown if unrecoverable.
+- Alerts: notifier_bot.py on critical (uses SMTP or channel in .env_bot, includes context/trace).
+- On fatal, kill_switch.py called. Logs UTC, reason.
+- Usage: All exception handling passes to error_handler.handle(); uncaught triggers fatal log and safe shutdown.
+- Dashboard: surfaced in logs_web.py/status_web.py (optional/read-only). Operates headless by default.
+
+Backtest Engine (backtest_engine.py):
+- Simulates strategy logic (no broker/ledger write, no tbot_web dep).
+- Config from .env_bot or .env_bot.test; supports toggles for filters/sensitivity.
+- Each strategy implements .simulate().
+- Outputs: trade_history_backtest.csv/json, daily_summary_backtest.json (no SQLite/OFX/live ledger).
+- Logging: same format as live (timestamp, strategy_name, ticker, side, size, entry_price, exit_price, PnL, mode=backtest).
+- Metrics: Win Rate, Max Drawdown, Avg Trade Duration, Avg PnL, Sharpe. plot_results.py for visualization.
+- CLI: python tbot_bot/backtest/backtest_engine.py --strategy=STRAT --start=YYYY-MM-DD --end=YYYY-MM-DD --data_source=CSV.
+- CI: pytest/pydantic, accepts .env_bot.test, no tbot_web/API needed.
+- Always run before deploy; validates .env_bot parsing/error handling before prod.
+
+Summary:
+- Centralized error mgmt: every runtime/validation/logic issue logged+classified.
+- Fatal = immediate halt, full context for audit.
+- All audit artifacts preserved.
+- Backtest engine = CI-ready, safe, no ledger/OFX/web.
+
+

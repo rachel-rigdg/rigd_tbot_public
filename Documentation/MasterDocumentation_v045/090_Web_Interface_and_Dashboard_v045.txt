@@ -1,0 +1,374 @@
+
+================================================================================
+Document: 090
+Web_Interface_and_Dashboard
+Version: v045
+Date: UTC:2025-06-24 00:00:00
+================================================================================
+
+
+
+================================================================================
+Web_Interface_and_Dashboard
+{CURRENT_VERSION}
+================================================================================
+
+This module details the Flask-based Web UI, dashboard features, security, RBAC, COA management, and **modular multi-phase systemd integration** for RIGD TradeBot.
+
+Contents:
+- Real-Time Monitoring Dashboard (COA Integration, v1.1)
+- TEST_MODE Runtime Control and UI Integration
+- **Phase-Specific Flask App/Blueprint Modularization** (2025-06 update)
+
+**Policy Enforcement:**  
+All provisioning, credential creation, Fernet key generation (including all *.key files), configuration management, and COA operations are *triggered exclusively* via the tbot_web Web UI. No CLI or external system may create or modify credentials, secrets, keys, or COA after bootstrap.  
+**All privileged actions (key generation, secret creation, DB initialization) are performed by backend scripts in `tbot_bot/config/`, never directly by Flask or tbot_web.**  
+Flask only writes the configuration and provisioning trigger; backend runner performs provisioning and bot launch.
+
+All UI access is role-controlled with full audit logging and encryption at rest.
+
+=============================================================================================================================================
+Real-Time Monitoring Dashboard 
+=============================================================================================================================================
+
+`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, and Chart of Accounts (COA) management. UI and backend components strictly follow `040_Directory_Structure_{CURRENT_VERSION}.txt`.
+
+**Frontend UI Components:**
+- `templates/index.html`: AES-encrypted login portal; RBAC, rate-limited authentication.
+- `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA).
+- `templates/status.html`: Displays live bot health, session lifecycle, active strategy state, float metrics, win-rate, cumulative PnL, and risk/defense/kill switch state; data sourced from `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/status.json`.
+- `templates/ledger.html`: Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies.
+- `templates/logs.html`: Streams all bot logs in real time (open.log, mid.log, close.log, unresolved_orders.log, error_tracebacks.log).
+- `templates/configuration.html`: Secure interface for credentials, email, API/broker config; encrypted at rest. Submits configuration and sets provisioning trigger/flag.
+- `templates/settings.html`: Edit and validate runtime trading parameters (timings, thresholds, risk controls); excludes credentials and COA.
+- `templates/coa.html`: COA management and export UI; displays account hierarchy, metadata, version. Supports Markdown/CSV export, audit diffs, and admin-only edit workflow—all actions logged to `logs/web/coa_edit.log`. **All Web UI logic for COA management and editing must utilize `tbot_web/support/utils_coa_web.py`.**
+- `templates/wait.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
+- `templates/test.html`: Dedicated UI page for TEST_MODE trigger and progress monitoring. Allows admin users to start the test sequence and view real-time logs and final test results.
+- `templates/register.html`:  Flask template for user registration form
+
+**Backend Flask Components (per directory spec):**
+- `py/__init__.py`: Registers Flask blueprints for all routes.
+- `py/coa_web.py`: COA management API. Uses `tbot_web/py/coa_web.py` for JSON/UI logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger/schema integration. GET/POST endpoints for viewing, exporting (Markdown/CSV/table), and editing COA. Admin-only edits with version bumps and audit logs.
+- `py/configuration_web.py`: Web UI route handling user, email, API, and broker credential configuration via encrypted multi-category config files. Only writes config and provisioning trigger; does *not* execute provisioning logic.
+- `py/settings_web.py`: Loads and validates `.env_bot` trading config; provides API for updates/errors; includes TEST_MODE flag toggle reflecting presence of `test_mode.flag`.
+- `py/status_web.py`: Serves live bot/session status with strategy metrics, system health, win-rate, PnL, float deviation, rebalance triggers, Defense/kill switch states, and alert counts as JSON.
+- `py/ledger_web.py`: Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
+- `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
+- `py/start_stop_web.py`: Manages lifecycle controls via `control_start.flag` / `control_stop.flag`, transition verification, and logging.
+- `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, and test.html. Does not execute provisioning or bootstrapping; only checks tbot_bot/control/bot_state.txt for UI routing. Supports immediate TEST_MODE execution trigger detection.
+- `py/test_web.py`: Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
+- `py/run_web.py`: **Phase-aware Flask entrypoint**. Detects phase (bootstrap, registration, main) using `bot_state.txt`, and dynamically loads only the relevant Flask app and blueprints for that phase.
+- `py/register_web.py`: Handles user registration logic and SYSTEM_USERS.db creation/updating.
+
+**Multi-Phase Flask App Structure:**
+- `portal_web_main.py`: Flask app for provisioning bootstrapping, and all static files and all operational blueprints (phases in this order: configuration → provisioning → bootstrapping → registration → login → main_web.py with iframe display for: status, Settings, logs, ledger, COA, test, configuration, account)
+- **Flask modularization and phase control ensures that privileged routes, registration, or dashboard features can never be loaded or called outside their authorized lifecycle phase.**
+
+
+**Support Modules (from tbot_web/support/):**
+- `auth_web.py`: Handles user authentication, bcrypt password hashing, validation for login/session.
+- `configuration_loader.py`: Loads and decrypts encrypted configuration files from storage/secrets/*.json.enc
+- `configuration_saver.py`: Saves and encrypts configuration files from storage/secrets/*.json.enc
+- `csrf_protection.py`: Provides CSRF protection for forms and blueprints.
+- `default_config_loader.py`: Loads config template/defaults for UI forms; never manages secrets or Fernet keys.
+- `security_users.py`: RBAC: role/permission enforcement, user CRUD, Fernet key helpers for user/auth.
+- `session_manager.py`: Handles web session lifecycle, token management, timeouts.
+- `utils_coa_web.py`: COA UI and logic helpers; used by COA endpoints for audit-compliant management.
+- `utils_web.py`: Web-only helpers, UI utilities, non-secret logic.
+
+**Provisioning/Bootstrapping (Backend Integration):**
+- **All provisioning, key generation, secret creation, and DB initialization is performed by `tbot_bot/config/provisioning_runner.py`, which is triggered by a provisioning flag/file written by the Web UI.**
+- Web UI never executes privileged actions, OS commands, or modifies keys/secrets directly.
+- Provisioning status and bot state are written to `output/{BOT_IDENTITY}/bootstrapping/provisioning_status.json`, polled by web UI (e.g., `wait.html`) to control user flow.
+- Upon completion, bot core is launched independently (never as Flask child).
+
+**Systemd Integration and Service Phases:**  
+    - `tbot_bot.service `: Launches the tbot Core Bot Runtime	- launches:tbot_bot.runtime.main	→ symlink: ~/.config/systemd/user/
+
+**Added User Registration Flow:**
+
+- `templates/register.html`: Flask template for user registration and password management.
+- `py/register_web.py`: Backend Flask blueprint managing user registration POST/GET, updating SYSTEM_USERS.db, enforcing user creation post-provisioning.
+
+**User Credential Lifecycle:**
+
+- Post-provisioning, if no users exist in `SYSTEM_USERS.db`, UI redirects automatically to `/register`.
+- User registration page persists form data, supports new user creation and password updates.
+- Login/logout (`login_web.py`) unchanged; validates against SYSTEM_USERS.db.
+
+**Provisioning and Bootstrapping:**
+
+- Backend provisioning remains responsible for key generation, encrypted config/secret files, and DB initialization.
+- Web UI triggers provisioning and user registration separately; no privileged actions in UI.
+
+**Session and Security:**
+
+- All auth and session events remain local with Fernet encryption and audit logging.
+- RBAC enforced via `security_users.py` and session tokens.
+
+**Static Assets:**
+- `static/fnt/`: Fonts.
+- `static/css/main.css`, `static/css/*.css`: Modular core/theme styling.
+- `static/js/shared_utils.js`, `static/js/wait.js`, `static/js/main_ui.js`: JavaScript helpers for the Web UI, including bot state checking, wait for initialization, and live updates on the dashboard.
+- `favicon.ico`, `favicon.gif`.
+
+**Security & Audit:**
+- Rate-limited login (`Flask-Limiter`); all access/failure events logged with user, IP, UTC timestamp.
+- RBAC: Only admins can edit COA or ledger; all actions logged (user, UTC, IP, change diff).
+- COA/config/credentials always encrypted at rest; session tokens AES-encrypted and rotated periodically by `session_manager.py`.
+- All UI/API actions log user, UTC, IP, action, status, and error context as applicable.
+
+**Live Monitoring Metrics:**
+- Current strategy/session state, UTC windows (from `.env_bot`).
+- Trade stats: signals, entry/exit, PnL per trade/aggregate, win-rate.
+- Float status: actual vs. target, deviation %, rebalance status (triggers + logs).
+- Broker/API health, connection status, retry/error counters.
+- Defense Mode, kill switch, error/exception counts, unresolved order backlog.
+- COA: metadata (currency_code, coa_version, entity, jurisdiction), last update, audit status, full account hierarchy.
+
+**Ledger Management Workflow:**
+- The web UI allows the admin to view, add, edit, and reconcile ledger entries directly, with changes tracked and versioned for audit. 
+- Manual corrections and new entries are supported through simple form-based editing, ensuring the internal ledger can be kept in sync with broker records. 
+- All edits and reconciliations are logged with timestamps and user actions for compliance. CSV broker data can be uploaded for automated cross-check and matching. 
+- The system highlights mismatches for review and provides “resolve” controls for any flagged item. Only admin users can perform these operations.
+
+**COA Management Workflow:**
+1. Admin opens `coa.html`; COA loaded from per-bot ledger file via `tbot_web/support/utils_coa_web.py`.
+2. Export COA as Markdown/CSV for audit/docs.
+3. Edits (if admin): Inline table editor, live diff/preview, change summary.
+4. On submit: New COA version written to ledger; `coa_version` and `last_updated_utc` updated via `coa_utils_ledger.py`. Full diff + metadata logged to `logs/web/coa_edit.log`.
+
+**TEST_MODE Runtime Control:**
+- `tbot_web/py/test_web.py`: Dedicated blueprint managing TEST_MODE lifecycle via `test_mode.flag`. Supports triggering, monitoring, and resetting TEST_MODE from Web UI.
+- `templates/test.html`: Web UI page providing controls to trigger TEST_MODE and view live test logs and results.
+- `settings_web.py`: Includes toggle reflecting `test_mode.flag` state; disables live trading controls when TEST_MODE active.
+- `main_web.py` and `strategy_router.py`: Detect TEST_MODE flag and immediately execute `strategy_open`, `strategy_mid`, and `strategy_close` in sequence, overriding normal schedules.
+- Logs and ledgers during TEST_MODE routed to isolated test-only paths to prevent live data contamination.
+- All UI actions during TEST_MODE are audited and restricted to admin roles.
+
+**Deployment/Isolation:**
+- Dashboard and bot logic fully decoupled (UI can be disabled with zero impact to trading).
+- HTTPS strongly recommended.
+- Non-admins: low-bandwidth, read-only access; admin: full COA/ledger control.
+- Multi-user RBAC; audit trail enforced for every change.
+
+**Testing:**
+- `test_coa_web_endpoints.py`: CI test for all COA endpoints (read/export/edit/audit), RBAC, and versioning. Must use `utils_coa_web.py` and `coa_utils_ledger.py`.
+- TEST_MODE functional test suites integrated with pytest, validating test flag behavior and UI controls.
+
+**Compliance:**
+- All COA/log/credential output local to bot—never pushed to accounting system.
+- Exports only for compliance, audit, docs.
+- Separation of concerns strictly maintained.
+- Manual CLI provisioning prohibited.
+- All user credential management occurs post-bootstrap in dedicated UI.
+
+**Summary:**
+- The dashboard is audit-compliant, supports live monitoring/control, and admin-only, per-bot COA and ledger management. All actions are versioned, locally enforced, and never propagate between systems. COA/ledger export/edit requires RBAC and logs all activity for full audit compliance, using `tbot_web/support/utils_coa_web.py` for UI/admin logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger integration.
+This update implements a robust, secure user registration flow decoupled from provisioning to prevent lockout scenarios, enforce local credential persistence, and maintain strict backend privilege separation per architecture mandates.  
+- **All privileged setup and bot launching logic is strictly performed by backend scripts in `tbot_bot/config/` as triggered by the Web UI, never directly by Flask or web endpoints.**
+- **Systemd and Flask modularization ensures only phase-appropriate code is loaded, and no operational blueprints are active before provisioning or registration is complete.**
+
+=============================================================================================================================================
+Flask Blueprint and Endpoint Mapping
+=============================================================================================================================================
+
+This section documents the mapping of Flask blueprints and their endpoints to the bot lifecycle phases and UI behavior, enforcing access control and modular app loading per bot state.
+
+--------------------------------------------------------------------------------
+Flask Blueprint Overview
+--------------------------------------------------------------------------------
+
+- `main_web.py`
+  - URL Prefix: `/`
+  - Role: Central router for main dashboard, status, logs, ledger, test UI.
+  - Loads only when bot_state in [`started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `stopped`].
+  - Renders `main.html`, `wait.html`, `test.html`, or error pages based on bot state.
+
+- `configuration_web.py`
+  - URL Prefix: `/configuration`
+  - Role: Handles credential, API, and broker configuration UI.
+  - Always accessible.
+  - Allows config saves only during [`initialize`, `provisioning`, `bootstrapping`] phases.
+  - Renders `configuration.html`.
+
+- `register_web.py`
+  - URL Prefix: `/register`
+  - Role: Handles user registration UI and backend.
+  - Accessible only in `registration` bot state.
+  - Renders `register.html`.
+
+- `status_web.py`
+  - URL Prefix: `/status`
+  - Role: Provides live bot status and health JSON API.
+  - Accessible during all active states except `initialize` and error/shutdown states.
+
+- `logs_web.py`
+  - URL Prefix: `/logs`
+  - Role: Streams bot logs.
+  - Accessible during all active states except `initialize` and error/shutdown states.
+
+- `ledger_web.py`
+  - URL Prefix: `/ledger`
+  - Role: Ledger viewing, reconciliation, and editing API.
+  - Admin-only access.
+  - Accessible when bot is active (not `initialize`, `provisioning`, `bootstrapping`, or error/shutdown).
+
+- `coa_web.py`
+  - URL Prefix: `/coa`
+  - Role: Chart of Accounts management API and UI.
+  - Admin-only access.
+  - Accessible when bot is active.
+
+- `settings_web.py`
+  - URL Prefix: `/settings`
+  - Role: Runtime config management excluding credentials.
+  - Accessible during all active states.
+
+- `start_stop_web.py`
+  - URL Prefix: `/control`
+  - Role: Handles bot lifecycle commands (start, stop, kill).
+  - Accessible during all states except `initialize`.
+
+- `test_web.py`
+  - URL Prefix: `/test`
+  - Role: TEST_MODE lifecycle management and UI.
+  - Accessible only to admin users during active states.
+
+--------------------------------------------------------------------------------
+UI Routing and Lifecycle Phase Enforcement
+--------------------------------------------------------------------------------
+
+| Bot State                      | Allowed Blueprints / Pages                                  | UI Behavior                        |
+|-------------------------------|------------------------------------------------------------|----------------------------------|
+| `initialize`, `provisioning`, `bootstrapping` | `configuration_web` only                             | Show `configuration.html` UI     |
+| `registration`                 | `register_web` only                                        | Show `register.html` UI           |
+| `started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `stopped` | `main_web`, `status_web`, `logs_web`, `ledger_web`, `coa_web`, `settings_web`, `start_stop_web`, `test_web` | Show `main.html` dashboard and related UI |
+| `graceful_closing_positions`, `emergency_closing_positions` | `main_web`, lifecycle blueprints                  | Show main.html with shutdown feedback |
+| `shutdown`, `shutdown_triggered`, `error`  | Error pages only                                        | Show error or shutdown UI; block other routes |
+
+--------------------------------------------------------------------------------
+Access Control and RBAC
+--------------------------------------------------------------------------------
+
+- All endpoints enforce RBAC via `security_users.py`.
+- Admin-only access for sensitive blueprints (`ledger_web`, `coa_web`, `test_web`).
+- Login required for all routes except initial bootstrap configuration.
+- Session management via `session_manager.py`.
+- CSRF protection applied on all form submissions via `csrf_protection.py`.
+
+--------------------------------------------------------------------------------
+Modular App Loading
+--------------------------------------------------------------------------------
+
+- `run_web.py` acts as phase-aware Flask app loader.
+- Loads only the blueprints relevant to current bot state.
+- Ensures no privileged or operational blueprints are accessible before provisioning and registration complete.
+- Facilitates phased system startup and controlled UI exposure.
+
+--------------------------------------------------------------------------------
+Trigger and Action Flow
+--------------------------------------------------------------------------------
+
+- Configuration save triggers provisioning flag file, observed by backend runner.
+- Provisioning completion triggers bot launch and bot_state transitions.
+- Start/stop/kill commands via `/control` blueprint update bot_state and coordinate strategy lifecycle.
+- UI polling endpoints (`status_web`) provide real-time bot state for client-side UI updates.
+
+
+
+================================================================================
+Web Interface Status Design
+{CURRENT_VERSION}
+================================================================================
+
+This document specifies the detailed design for the status dashboard panel in the TradeBot web interface, including system status overview, session summary, and operational notes.
+
+Contents:
+- System Status Overview Table
+- Session Status Summary Panel
+- API and data feed source modules
+- Severity and visual indicator logic
+
+The design ensures real-time operational visibility and audit compliance.
+
+=======================================================================================
+RIGD GROUP LLC — Web Interface: Status Dashboard Design 
+=======================================================================================
+
+**Table: System Status Overview**
+
+| Column                      | Description                                         | Notes                                                  |
+|-----------------------------|-----------------------------------------------------|--------------------------------------------------------|
+| Broker                      | Name of active broker                               | From decrypted `.env_bot.enc` (`BROKER_NAME`)          |
+| Trading Mode                | SINGLE                                              | All bots unified live mode; no paper mode              |
+| Float Allocation ($)        | Current deployed float for this broker              | From accounting API/config                             |
+| Defense Mode Active         | true / false                                        | Mirrors `DEFENSE_MODE_ACTIVE` in `.env_bot`            |
+| Kill Switch Armed           | true / false                                        | True at session start                                  |
+| Kill Switch Triggered       | true / false                                        | True if halted by `kill_switch.py`                     |
+| **Daily PnL ($)**           | Realized PnL this session for this broker           | From trade logger or accounting sync                   |
+| **Cumulative PnL ($)**      | Realized PnL since bot inception for this broker    | Computed from full trade/ledger history                |
+| **Win Rate (%)**            | % profitable trades this session                    | From trade logger or accounting sync                   |
+| **Cumulative Win Rate (%)** | % profitable trades since bot inception             | Computed from full trade/ledger history                |
+| Daily Loss Threshold ($)    | float * `DAILY_LOSS_LIMIT`                          | Runtime-calculated                                     |
+| Open Positions              | Number of active trades for this bot                | Enforced by `MAX_OPEN_POSITIONS`                       |
+| Max Allowed Trades          | `MAX_TRADES` or Defense Mode scaled                 | Dynamic per `risk_bot.py`                              |
+| API Status                  | healthy / degraded / down                           | From `watchdog_bot.py`                                 |
+| Strategy Running            | open / mid / close / idle                           | Live from `strategy_router.py`                         |
+| Last Trade ID               | Most recent executed trade ID                       | From `trade_logger.py`                                 |
+| Last Error Event            | Last critical warning or exception                  | From `error_handler.py`                                |
+
+**Operational Notes:**  
+- Cumulative metrics (`Cumulative PnL`, `Cumulative Win Rate`) are computed from the full persistent trade/ledger dataset for this bot instance, since creation/inception.  
+- Values update in real time as new trades are logged; recalculated on every dashboard poll.
+- Cumulative data is critical for long-term performance analysis and regulatory compliance.
+- Dashboard polls status every 15–30 seconds for live visibility.
+- Visual state: Green (OK), Yellow (Warning), Red (Critical) based on API health, Defense Mode, Kill Switch.
+- Session tags: `DEFENSE_MODE_ACTIVE=true` triggers banner and log tag.
+- All UI-visible state changes logged for 7+ days (rotated JSON).
+- All fields fully compatible with bot runtime and accounting sync.
+- **COA metadata and session status data used by the dashboard must be loaded using `utils_coa_web.py` for UI logic and `coa_utils_ledger.py` for underlying ledger/schema integration.**
+
+**API/Data Feed Source Modules:**
+- `float_bot.py`         — Provides float allocation and open positions
+- `risk_bot.py`          — Supplies Defense Mode and allocation limits
+- `kill_switch.py`       — Kill switch armed/triggered, daily loss threshold
+- `watchdog_bot.py`      — Broker API health status
+- `error_handler.py`     — Last error event, type, timestamp
+- `trade_logger.py`      — Win rate, trade count, PnL stats
+
+=======================================================================================
+Session Status Summary Panel
+
+**Panel Title:** System Session Summary
+
+| Field                | Description                                           | Notes                                                      |
+|----------------------|-------------------------------------------------------|------------------------------------------------------------|
+| Overall System Status| OK / Warning / Critical                               | Derived from: API health, Defense Mode, Kill Switch        |
+| Defense Mode Active  | true / false                                          | Mirrors `DEFENSE_MODE_ACTIVE` from `.env_bot`              |
+| Total Bots Active    | Count of TradeBot instances currently online          | E.g., 1–N; reflects all deployed bots                      |
+| Bots in Kill Switch  | Count where Kill Switch Triggered = true              | E.g., 0/3 bots                                             |
+| Active Strategy      | open / mid / close / idle                             | From `strategy_router.py`                                  |
+| Open Trades (Total)  | Total live trades across all bots                     | Sum, enforced by `MAX_OPEN_POSITIONS`                      |
+| System Uptime        | Elapsed time since bot instance started               | From `main.py` boot time                                   |
+
+**Severity Logic (Overall System Status):**
+- Defense Mode=false AND all APIs healthy AND no Kill Switch: `OK` (Green)
+- Defense Mode=true OR minor broker/API latency: `Warning` (Yellow)
+- Any Kill Switch=true OR broker API down: `Critical` (Red)
+
+**Layout:**
+- Display as horizontal bar/widget above Broker Detail Table.
+- Color bands/icons: Green (OK), Yellow (Warning), Red (Critical).
+
+**Design Rationale:**
+- At-a-glance triage: mirrors core bot safety/ops.
+- Confirms Defense Mode/Kill Switch events in real time.
+- Audit trail: all state changes, session tags, and events are logged for 7+ days.
+
+**  
+
+
+
+
+

@@ -1,0 +1,379 @@
+================================================================================
+Document: 020
+Directory_Structure
+Version: v045
+Date: UTC:2025-06-24 00:00:00
+================================================================================
+
+This document defines the authoritative directory and file structure for the RIGD TradeBot project.
+
+Contents:
+- Full Directory Structure Diagram (reflects required runtime and automation organization)
+
+All file locations and naming conventions must be strictly followed for compliance, operational integrity, and system automation.
+
+All provisioning, encryption, and secret management must be performed via the Web UI configuration step. No CLI/manual/legacy provisioning is ever allowed after bootstrap.
+
+
+================================================================================
+Overall Directory Structure Diagram 
+================================================================================
+
+rigd_tbot/
+│
+├── VERSION.md                       # Human/gpt-readable version history for project reference
+├── CHANGELOG.md                     # Optional: Commit-style technical history of all code and spec changes
+├── README.md                        # Project-wide usage, setup, and architecture summary
+├── requirements.txt                 # Python package requirements for all components
+├── .env                             # Global runtime config for Flask port, encryption, and login (plaintext)
+├── .env_bot                         # Decrypted bot runtime settings (overwritten if using encrypted version)
+├── .env_bot.template-test           # Sample config for testing/cloning bots
+├── .scpignore_env                   # File exclusion rules: env/config only
+├── .scpignore_dev                   # File exclusion rules: dev/test artifacts
+├── .scpignore_enc                   # File exclusion rules: deploys only encrypted config
+├── .scpignore_prod_archive          # File exclusion rules: production archive packaging (excludes env, ledgers, etc.)
+├── run_tbot.sh				# Unified launcher: boots TradeBot web UI, performs full bootstrap/config provisioning, then launches the bot on success
+│   
+├── tools/				# One-time encryption/auth tools (DEPRECATED for runtime; provisioning now via config Web UI scripts) - NOTE: All secret and Fernet key creation/provisioning must occur via the Web UI configuration/provisioning step. Legacy tools in /tools/ are for initial import/migration ONLY and are not used by production system after first bootstrap.
+│   ├── _init_all_core_databases.sh       # [Legacy] CLI for initial database schema setup; NOT for production use
+│   ├── build_check.py			# Full project self-check: keys, schemas, config, directory structure, file integrity
+│   ├── encrypt_env.py			# [Legacy] CLI: Encrypts .env for initial migration only; never generates Fernet keys for runtime.
+│   ├── encrypt_env_bot.py           	# [Legacy] CLI: Encrypts .env_bot as support/.env_bot.enc with Fernet key in storage/keys/env_bot.key
+│   ├── encrypt_json.py			# [Legacy] CLI: Encrypts JSON secrets in storage/secrets/ using category Fernet keys
+│   ├── hash_password.py		# [Legacy] CLI: Creates bcrypt-hashed user, Fernet key, and DB entry; superceded by Web UI
+│   ├── init_encrypted_secrets.py	# [Legacy] CLI: Generates encrypted secrets from plaintext templates for one-time bot setup
+│   ├── log_test.py			# Sanity-check: Verifies log output in active runtime environment
+│   ├── secrets_template.txt		# Sample bot configuration values (plaintext reference only)
+│   ├── server_template.txt		# Sample server setup values (plaintext reference only)
+│   ├── setup_server.sh               # [Legacy] CLI/server bootstrapping script
+│   └── sync_project.sh               # Deployment sync utility: manages live/dev folder and file syncs
+│   
+├── backups/                         # Archived audit logs, encrypted session reports, and credential backups (auto-rotated)
+│   └──  logs_*.zip                   # Zipped daily logs (all modes)
+│       └── summary_*.json               # Encrypted JSON session summaries (PnL, metrics)
+│    
+├── logs/                            # Live log files (rotated by auto_backup)
+│   ├── bot/
+│   │   └── sessions/                # Strategy/session-specific runtime logs
+│   └── web/			 # Web UI authentication logs (multi-user, full audit)
+│       ├── access.log               # Web: IP/timestamp log of all login events
+│       └── auth_failures.log        # Web: Failed login, lockout, and RBAC audit events
+│    
+├── support/				# Internal project documentation and automation scripts
+│   ├── architecture.md              # Full system/module architecture breakdown (reference)
+│   ├── API_reference.md             # CLI/internal API function reference (optional)
+│   ├── security_notes.md            # Data handling, key roles, and encryption policies (reference)
+│   │
+│   └── scripts/				# Internal automation and codebase tools (non-runtime)
+│       ├── audit_log_parser.py          	# CLI: Parse, summarize, and export audit log analytics
+│       ├── Fix_Paths.py			# Codebase repair: Recursively fixes legacy import paths in tbot_bot/
+│       ├── sync_to_accounting.py        	# CLI: Push trade data to accounting ingestion endpoint (offline/manual sync)
+│       ├── tradebot.service              	# Systemd or process manager service definition for bot daemon
+│       └── upload_backups_to_cloud.sh   	# CLI: Uploads backup archives to S3/cloud/offsite vault
+│
+├── systemd_units/	
+│   └── tbot_bot.service              		# tbot Core Bot Runtime	- launches:tbot_bot.runtime.main	→ symlink: ~/.config/systemd/user/
+│
+├── tbot_bot/                                	# Core engine: execution, strategy, reporting, and config
+│   ├── __init__.py
+│   │
+│   ├── accounting/                              # Accounting integration, ledger/COA/schema helpers (all logic for bot ledger/COA creation, validation, export)
+│   │   ├── account_transaction.py               # Builds accounting journal entries for trade export to accounting (never manages/provisions secrets/keys)
+│   │   ├── accounting_api.py                    # Exports finalized trade/report data to accounting system endpoint (post-trade only, no live config)
+│   │   ├── accounting_config.py                 # Validates and creates required output folder structure; enforces ledger/COA existence and schema compliance
+│   │   ├── coa_utils.py                         # COA DB utilities: create/import/export/validate COA db (metadata + hierarchy), supports Web UI editing
+│   │   ├── init_coa_db.py                       # Bootstrap script: initializes a new COA DB using tbot_ledger_coa.json as hierarchy/template (called only at provisioning/reset)
+│   │   ├── init_ledger_db.py                    # Bootstrap script: initializes a new bot ledger DB file using tbot_ledger_schema.sql (called only at provisioning/reset)
+│   │   ├── ledger_utils.py                      # Ledger DB utilities: create OFX-compliant ledger db, schema validation, audit helpers (no COA/metadata logic)
+│   │   ├── tbot_ledger_coa_template.json        # Editable COA hierarchy/template (codes/names/structure, referenced and modified via coa.html)
+│   │   ├── tbot_ledger_schema.sql               # SQL schema file for bot ledger DB (transactions, double-entry, audit, summary tables)
+│   │   └── README_COA.md                        # Documentation: COA/ledger schema update, UI editing instructions, compliance notes
+│   │
+│   ├── backtest/                               # Backtesting, simulation, and research
+│   │   ├── backtest_engine.py                   # Strategy replay and simulation engine
+│   │   ├── load_historical_data.py              # Loads CSV/OHLCV/tick data for backtesting
+│   │   ├── performance_metrics.py               # Computes Sharpe, win rate, drawdown, and related stats
+│   │   └── plot_results.py                      # Graphs equity curves, trades, and heatmaps
+│   │
+│   ├── broker/                                 # Broker API interface and adapters
+│   │   ├── broker_api.py                        # Unified broker interface; routes to selected broker module
+│   │   └── brokers/                             # Specific broker implementations (modular, isolated)
+│   │       ├── __init__.py                      # Enables dynamic broker module import
+│   │       ├── alpaca.py                        # Alpaca REST/WebSocket trading adapter
+│   │       ├── ibkr.py                          # IBKR TWS/Gateway adapter (async + reconnect)
+│   │       ├── tradier.py                       # Tradier REST trading adapter
+│   │       └── robinhood.py                     # Robinhood (unofficial, not for production)
+│   │
+│   ├── config/                                 # Local bot config loaders, encryption, and secure settings editors
+│   │   ├── bootstrapping_helper.py		 # Runs core DB initialization scripts (calls tbot_bot/core/scripts/*); checks and sets .bootstrapped flag (called by provisioning_runner.py)
+│   │   ├── config_encryption.py               # Fernet encrypt/decrypt for config/secrets; secure file backup (called by provisioning_helper.py and configuration_web.py)
+│   │   ├── db_bootstrap.py                    # Calls tbot_bot/core/scripts/* for DB init (delegates schema logic); invoked by provisioning_runner.py
+│   │   ├── env_bot.py                         # Loads/validates/parses .env_bot for runtime; used by UI and shell launchers (never touches keys)
+│   │   ├── error_handler.py                   # Global error logging, exception tracing, system error output (imported in all runtime modules)
+│   │   ├── network_config.py                  # Loads/decrypts encrypted network config (network_config.json.enc) using Fernet; called by bot, web, and shell
+│   │   ├── key_manager.py                     # Generates/checks/rotates Fernet keys (category-specific); called by provisioning_helper.py and provisioning_runner.py
+│   │   ├── provisioning_helper.py		 # Generates and writes all required Fernet keys and minimal secrets (idempotent); calls key_manager.py, security_users.py; invoked by provisioning_runner.py
+│   │   ├── provisioning_runner.py		 # Central orchestrator: watches for provisioning flag; calls key_manager.py, provisioning_helper.py, bootstrapping_helper.py, db_bootstrap.py; handles all setup steps and privilege/escalation
+│   │   ├── PROVISION_FLAG                    # File flag (created post-provisioning) to skip re-provisioning at startup
+│   │   ├── security_bot.py                   # Loads/decrypts .env_bot using Fernet keys from storage/keys/; used by config UI and runtime scripts
+│   │   └── settings_bot.py                   # Editor/validator for .env_bot (strategy/runtime vars); used by Web UI/scripts; never manages key files
+│   │
+│   ├── control/                                # Control signals for runtime (web/CLI triggers)
+│   │   ├── bot_state.txt                    	# Current bot state string for UI/status integration (initialize, provisioning, bootstrapping,  idle, analyzing, trading, monitoring, updating, shutdown, graceful_closing_positions, emergency_closing_positions, shutdown_triggered, error) - See 110_Web_Interface_and_Dashboard for routing and UI behavior logic.
+│   │   ├── test_mode.flag			# indicates if bot is running in test mode : (presence = true, absence = false)
+│   │   ├── control_start.flag                  # Start trigger flag for bot session launch (presence = true, absence = false)
+│   │   └── control_stop.flag                     # Stop trigger flag for safe shutdown (presence = true, absence = false)
+│   │
+│   ├── core/                                       # Persistent state, user authentication, and schema files
+│   │   ├── databases/					# created during the provisioning process
+│   │   │   ├── LEDGER_STATUS.db                     # Ledger open/closed/version status, referenced by bot/accounting sync logic
+│   │   │   ├── PASSWORD_RESET_TOKENS.db             # Stores password reset tokens (used by Web UI password reset only)
+│   │   │   ├── SYSTEM.db                            # Stores global bot settings (never overwritten by accounting)
+│   │   │   ├── SYSTEM_LOGS.db                       # Append-only event and error log for all system actions (audited by Web UI and CLI)
+│   │   │   ├── SYSTEM_USERS.db                      # Auth DB: source of truth for local login/role/session; never shared
+│   │   │   └── USER_ACTIVITY_MONITORING.db          # Logs user logins, RBAC changes, browser/IP, and session events (Web UI audit panel)
+│   │   │
+│   │   ├── schemas/
+│   │   │   ├── ledger_status_schema.sql             # DB schema for LEDGER_STATUS.db (never altered by runtime)
+│   │   │   ├── password_reset_schema.sql            # Schema for PASSWORD_RESET_TOKENS.db (Web UI reset logic)
+│   │   │   ├── system_logs_schema.sql               # Schema for SYSTEM_LOGS.db (UI/CLI logs panel)
+│   │   │   ├── system_schema.sql                    # Schema for SYSTEM.db (system settings, enforced at startup)
+│   │   │   ├── system_users_schema.sql              # Schema for SYSTEM_USERS.db (bcrypt, roles, enforced at user add/change)
+│   │   │   └── user_activity_monitoring_schema.sql  # Schema for USER_ACTIVITY_MONITORING.db (audit log structure)
+│   │   │
+│   │   └── scripts/
+│   │       ├── init_ledger_status.py                # (Re)initialize LEDGER_STATUS.db from current COA/schema
+│   │       ├── init_password_reset_tokens.py        # Initialize PASSWORD_RESET_TOKENS.db (triggered by bootstrap only)
+│   │       ├── init_system_logs.py                  # Initialize SYSTEM_LOGS.db (first boot or wipe)
+│   │       ├── init_system_users.py                 # Initialize SYSTEM_USERS.db, insert initial admin from Web UI POST only
+│   │       ├── init_system.py                       # Create SYSTEM.db (global settings), never run outside bootstrap
+│   │       ├── init_user_activity_monitoring.py     # Create USER_ACTIVITY_MONITORING.db (audit tracking), never run by hand
+│   │       └── verify_all_core_databases.py         # Script: checks integrity of all DBs, outputs state/COA, used by admin self-check
+│   │
+│   ├── data/
+│   │   └── cache/
+│   │       └── fundamentals_{date}.json           	# Ephemeral daily cache: stores API/screener data and runtime metadata for strategy logic and post-trade analysis
+│   │ 
+│   ├── enhancements/				        # Core safety/risk modules and real-time trading guards; enforced per .env_bot and strategy logic
+│   │   ├── adx_filter.py                	        # Enforces risk: blocks new trades during strong ADX/trending conditions (used by risk control in strategy logic)
+│   │   ├── black_scholes_filter.py     	        # Enforces option trade validation: checks pricing against Black-Scholes model; blocks invalid trades
+│   │   ├── bollinger_confluence.py               	# Enforces entry: requires Bollinger Band confluence for strategy trade signals
+│   │   ├── build_check.py               	    	# System requirement: pre-launch validator for keys, schemas, COA, and directory structure
+│   │   ├── finnhub_fundamental_guard.py	        # Enforces entry filter: blocks trade if company fails fundamental thresholds from screener
+│   │   ├── imbalance_scanner_ibkr.py    		# Session gatekeeper: uses IBKR imbalance feed to validate end-of-day trading in close strategy
+│   │   ├── ticker_blocklist.py                   	# Risk enforcement: blocks duplicate ticker use within the same trading session
+│   │   ├── tuning_tracker.py		                # Tracks session and strategy performance for self-tuning and audit; provides live stats to Web UI
+│   │   └── vix_gatekeeper.py                     	# Risk enforcement: blocks or disables trading when VIX exceeds threshold (checked before any entry)
+│   │
+│   ├── output/				                          					# Output Artifacts
+│   │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/       				# ← Scoped per bot ID - Entire directory mirrored to Accounting system
+│   │       ├── logs/                                							# Unified strategy logs (one per phase or failure mode)
+│   │       │   ├── open.log			                					# Log of all trades and decisions during open strategy window
+│   │       │   ├── mid.log			                					# Log of trades during midday session (position management, adjustments)
+│   │       │   ├── close.log			            						# Log of closeout phase decisions and trade executions
+│   │       │   ├── unresolved_orders.log	        						# Captures failed, rejected, or stale orders not resolved during session
+│   │       │   └── error_tracebacks.log		        					# Full Python tracebacks for all uncaught exceptions (with timestamps)
+│   │       │
+│   │       ├── ledgers/  										# created during the provisioning process
+│   │       │   ├── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA_v1.0.0.db    	# Chart of Accounts (COA) for bot ledger, schema version v1.0.0
+│   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db        	# OFX-compliant ledger for live trading data per broker
+│   │       │
+│   │       ├── screeners/
+│   │       │   └── symbol_universe.json		# Stores filtered symbol metadata for next-day screeners.
+│   │       │
+│   │       ├── summaries/
+│   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_daily_summary.json  	# JSON performance summary for session (PnL, latency, counts, risk triggers)
+│   │       │
+│   │       └── trades/
+│   │           ├── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv   	# All trade data for session (raw, human-readable)
+│   │           └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.json  	# Structured trade records for ingestion, reconciliation, and audit
+│   │
+│   ├── reporting/				    # Reporting & Logging
+│   │   ├── auto_backup.py               	    # Compresses and archives /output after session
+│   │   ├── daily_summary.py            	    # Builds trade summary stats and outcomes
+│   │   ├── log_rotation.py             	    # Cleans output folder after N days
+│   │   ├── notify_rebalance_requirements.py	    # Monitors current float for this bot, then notifies accounting system to initiate manual or automated rebalance.
+│   │   ├── report_router.py            	    # Routes finalized trade output to loggers and accounting
+│   │   ├── session_report.py           	    # Session wrap-up summary writer
+│   │   ├── status_logger.py            	    # Syncs bot state to UI (optional)
+│   │   └── trade_logger.py             	    # Records trade data to output/trades
+│   │
+│   ├── runtime/			                # Session Lifecycle
+│   │   ├── __init__.py
+│   │   ├── main.py                      		# Master controller (boot → trade → shutdown)
+│   │   ├── start_bot.py                 		# CLI entry point
+│   │   ├── status_bot.py                		# Tracks session state and health
+│   │   ├── stop_bot.py                  		# Graceful session shutdown
+│   │   ├── tbot_runner_supervisor.py    		#  Unified bot phase and UI supervisor. Controls initialization, configuration, provisioning, bootstrapping, registration, and launches the operational bot and Oversees full lifecycle and watchdogs
+│   │   └── watchdog_bot.py              		# Broker connection monitor
+│   │
+│   ├── screeners/			            	# Screener & Symbol Selection
+│   │   ├── alpaca_screener.py                  # alpaca API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
+│   │   ├── finnhub_screener.py          	# Finnhub API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
+│   │   ├── ibkr_screener.py                    # Finnhub API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
+│   │   ├── screener_base.py                    # Abstract base for all screener modules. Defines core interface, loads universe, etc.
+│   │   ├── screener_utils.py                   # Shared utility for loading/saving universe, filtering, etc.
+│   │   └── symbol_universe_refresh.py          #  scheduled process to update symbol universe after hours.
+│   │
+│   ├── storage/				   # Persistent runtime data: encrypted secrets, keys, backups, and exports
+│   │   ├── backups/                                 # Daily encrypted ledger/config backups (UTC timestamped)
+│   │   │   └── {date}/                              # Subfolder for each backup snapshot date
+│   │   │
+│   │   ├── exports/                                 # Daily export artifacts (for audit/recovery)
+│   │   │   └── {date}/                              # Subfolder for each export snapshot date
+│   │   │
+│   │   ├── keys/                                   # All Fernet encryption keys, one per secret/config category (NEVER committed) - created during the provisioning process
+│   │   │   ├── .keep                               # Ensures empty keys folder is tracked in git
+│   │   │   ├── acct_api.key                        # Fernet key for encrypting/decrypting acct_api_credentials.json.enc
+│   │   │   ├── broker.key                          # Fernet key for encrypting/decrypting broker_credentials.json.enc
+│   │   │   ├── env.key                             # Fernet key for decrypting env.json.enc (general bot config)
+│   │   │   ├── env_bot.key                         # Fernet key for decrypting .env_bot.enc (runtime bot settings)
+│   │   │   ├── login.key                           # Fernet key for encrypting SYSTEM_USERS.db (login/auth)
+│   │   │   ├── runtime_config.key		    # Fernet key for encrypting/decrypting runtime_config.json.enc (persistent bot runtime config)
+│   │   │   ├── screener_api.key                    # Fernet key for decrypting screener_api.json.enc
+│   │   │   └── smtp.key                            # Fernet key for decrypting smtp_credentials.json.enc
+│   │   │
+│   │   ├── secrets/				     # All encrypted JSON config files—each unlocked with corresponding Fernet key - created during the provisioning process
+│   │   │   ├── acct_api_credentials.json.enc       # Encrypted API token/creds for accounting endpoint (if used)
+│   │   │   ├── alert_channels.json.enc             # Encrypted alert channel configuration (email, Slack, etc.)
+│   │   │   ├── bot_identity.json.enc		        # Encrypted bot identity and entity/jurisdiction metadata
+│   │   │   ├── broker_credentials.json.enc         # Encrypted broker API credentials (ALPACA/IBKR, etc.)
+│   │   │   ├── network_config.json.enc   		    # Encrypted network config (hostname, IP, port)
+│   │   │   ├── runtime_config.json.enc		   # Encrypted persistent runtime bot configuration settings
+│   │   │   ├── smtp_credentials.json.enc           # Encrypted SMTP credentials for notifications
+│   │   │   └── screener_api.json.enc               # Encrypted screener/Finnhub API credentials
+│   │   │
+│   │   └── migration_archives/                     # Historical config/ledger/backup artifacts (for manual recovery/migration)
+│   │
+│   ├── strategy/			               # Strategy Logic
+│   │   ├── strategy_close.py            # End-of-day logic (momentum/fade)
+│   │   ├── strategy_meta.py             # Strategy thresholds and global constants
+│   │   ├── strategy_mid.py              # VWAP-based mid-session logic
+│   │   ├── strategy_open.py             # Opening range breakout logic
+│   │   └── strategy_router.py           # Directs execution based on STRATEGY_SEQUENCE and .env_bot config
+│   │ 
+│   ├── support/                              # Core support modules: runtime, encryption, path, config validation, COA utilities
+│   │   ├── .env_bot.enc                      # Encrypted runtime bot config (Fernet-encrypted; generated by Web UI/settings_web.py)
+│   │   ├── bootstrap_utils.py                  # UI-only first-run logic: detects bootstrap status, determines page to show (config or login); calls db_bootstrap.py
+│   │   ├── build_check.py                    # Validates COA/schema/key alignment and file integrity at build/startup; blocks on error (calls path_resolver.py)
+│   │   ├── decrypt_secrets.py                # Loads/decrypts *.json.enc secrets using Fernet keys from storage/keys/; called by config/runtime modules
+│   │   ├── encrypt_secrets.py                # Encrypts/rotates all secret/config JSONs in storage/secrets/ using Fernet keys from storage/keys/
+│   │   ├── path_resolver.py                  # Resolves storage/output/config paths for all modules, based on BOT_IDENTITY and file category; called by all runtime modules for dynamic file routing
+│   │   ├── service_bot.py                    # (Optional) Systemd-compatible daemon: manages TradeBot process as a background service (not required for bootstrap)
+│   │   ├── utils_coa_web.py                  # Loads/validates/manages COA for bot exec and Web UI; called by coa_web.py, accounting_config.py
+│   │   ├── utils_config.py                   # Loads/validates all bot/env config files (.env, .env_bot, runtime envs)
+│   │   ├── utils_identity.py                 # Computes/parses BOT_IDENTITY_STRING; manages all identity metadata for file/output routing
+│   │   ├── utils_log.py                      # Provides structured logging for system/trade/web/app events
+│   │   └── utils_time.py                     # Time and scheduling utilities (UTC conversion, timestamps, session windows)
+│   │
+│   ├── test/				           # Complete automated and manual test suite for all bot modules - All test scripts only read from secrets/keys created by Web UI; never modify config or secrets
+│   │   ├── integration_test_runner.py             # Simulates full bot bootstrap, strategy, and shutdown in end-to-end flow
+│   │   ├── test_backtest_engine.py                # Validates backtest engine vs. reference metrics, equity curves
+│   │   ├── test_broker_trade_stub.py              # Sends randomized test trades to broker adapters, checks order flow and logging
+│   │   ├── test_coa_consistency.py                # Confirms COA JSON/schema matches, validates COA integration with utils_coa.py
+│   │   ├── test_coa_web_endpoints.py              # End-to-end API/UI tests for COA web endpoints (/coa, /coa/api, /coa/export)
+│   │   ├── test_env_bot.py                        # Verifies .env_bot config, required variables, and structure
+│   │   ├── test_ledger_schema.py                  # Ensures all ledgers match schema, enforce double-entry and compliance
+│   │   ├── test_logging_format.py                 # Validates structure, content, and completeness of all bot log files
+│   │   ├── test_main_bot.py                       # Asserts session start/stop lifecycle, CLI/web triggers, and state changes
+│   │   ├── test_strategy_selfcheck.py             # Runs .self_check() on all strategy modules, validates config/signal paths
+│   │   ├── test_screener_random.py                # Tests screener with randomized symbols for eligibility/filtering logic
+│   │   └── test_strategy_tuner.py                 # Tests strategy modules with sample tickers; validates entry/exit, thresholds
+│   │
+│   └── trading/			                # Trade Execution
+│       ├── kill_switch.py                   # Triggers shutdown on DAILY_LOSS_LIMIT or catastrophic loss violation
+│       ├── logs_bot.py                      # Runtime logging of trade operations to output/logs
+│       ├── notifier_bot.py                  # Sends alerts to configured channels (email/Slack/SMS/PagerDuty)
+│       ├── orders_bot.py                    # Handles order submission, modifies/fills, and broker feedback
+│       ├── reporting_bot.py                 # Pushes trades to accounting system; manages ledger output and COA compliance
+│       ├── risk_bot.py                      # Enforces all risk constraints (caps, allocations, Defense Mode, open trades)
+│       ├── utils_coa.py                     # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa.json and supports Web UI editing
+│       ├── utils_etf.py                      # Resolves ETF and inverse ETF tickers for supported symbols (top 20+ ETFs, as per project specifications)
+│       ├── utils_puts.py                      # Returns put option contract specs for any supported broker
+│       └── utils_shorts.py                    # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives
+│   
+└── tbot_web/                                   # Web dashboard: bot monitoring, logs, user auth, control, and COA management
+    ├── static/                                 # Static frontend resources
+    │   ├── fnt/                                # Embedded fonts used in the interface
+    │   │
+    │   ├── js/
+    │   │   ├── main_ui.js         		# Handles live dashboard behavior, state polling, and controls config overlay in main.html
+    │   │   ├── wait.js            		# Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
+    │   │   └── shared_utils.js    		# Provides shared API helpers and utility functions for frontend JavaScript modules        
+    │   │
+    │   └── css/
+    │       ├── base
+    │       │   ├── layout.css                      # Global layout, structure, and centering for all pages
+    │       │   ├── normalize.css                      # CSS reset for cross-browser consistency
+    │       │   └── variables.css                      # Custom CSS variables for colors, fonts, spacing
+    │       │
+    │       ├── components
+    │       │   ├── buttons.css                     # Button styling and layout rules
+    │       │   ├── hamburger.css                   # Hamburger menu animation and mobile nav
+    │       │   ├── spinner.css                     # Spinner and progress indicator animation
+    │       │   └── tabs.css                        # Tab navigation styles
+    │       │
+    │       ├── pages
+    │       │   ├── configuration.css                # Configuration page (forms, blocks, horizontal wrapping)
+    │       │   ├── ledger.css                    # Ledger page: table formatting and alignment
+    │       │   ├── logs.css                     # Logs page: log view container, filter bar, color
+    │       │   ├── main.css                      # Main container, alignment, and page structure styles
+    │       │   ├── register.css                  # Register page: admin account creation form  
+    │       │   ├── settings.css                  # Settings page: settings form blocks and layout
+    │       │   ├── status.css                     # Status page: status grid, error color, responsive tweaks
+    │       │   └── test.css                     # Test mode/system test sequence page
+    │       │
+    │       └── shared
+    │           ├── forms.css                       # Form input and UI style rules
+    │           └── responsive.css                  # Responsive/adaptive layout rules
+    │
+    ├── favicon.ico / favicon.gif               # Site icon for browser tab
+    │
+    ├── py/                                     # Flask backend endpoints, blueprints, business logic
+    │   ├── __init__.py                         # Registers all Flask blueprints (main entry)
+    │   ├── coa_web.py                          # COA endpoints: view, edit, export; calls utils_coa_web.py, config_encryption.py
+    │   ├── configuration_web.py                # Handles configuration route: displays, saves, and provisions config; calls config_encryption, key_manager, security_users
+    │   ├── ledger_web.py		        # Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
+    │   ├── login_web.py                        # User login/logout/session; calls auth_web.py, security_users.py, session_manager.py
+    │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state
+    │   ├── logs_web.py                         # Displays log output (read-only); calls utils_log.py
+    │   ├── main_web.py                         # Orchestrates main UI shell; registers routes, manages state; triggers bot start if required; links wait_for_bot.html and ledger.html
+    │   ├── portal_web_main.py                  # Flask app for provisioning bootstrapping, and all static files and all operational blueprints (phases in this order: configuration → provisioning → bootstrapping → registration → login → main_web.py that shows: status, Settings, logs, ledger, COA, test, configuration, account)
+    │   ├── register_web.py			# handles user registration logic and SYSTEM_USERS.db creation/updating
+    │   ├── run_web.py                          # main entry point into web UI (CLI)
+    │   ├── settings_web.py                     # Bot strategy/runtime settings routes; calls utils_config.py (never handles credentials)
+    │   ├── start_stop_web.py                   # API/UI for bot control lifecycle (start/stop); writes control files
+    │   ├── status_web.py                       # Serves live bot/system status; reports active session/metrics from status sources
+    │   └── test_web.py				# Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
+    │
+    ├── robots.txt                              # Blocks bots and search engine indexing (security)
+    │
+    ├── support/                               # Web UI supporting modules: auth, crypto, session, CSRF, helpers
+    │   ├── auth_web.py                        # Auth helpers; bcrypt password validation/hashing
+    │   ├── configuration_loader.py		# Loads and decrypts config for UI (never handles keys)
+    │   ├── configuration_saver.py		# Saves/encrypts config from UI (never creates keys)
+    │   ├── csrf_protection.py                 # CSRF protection for web forms and blueprints
+    │   ├── default_config_loader.py           # Loads config defaults/templates for UI (never touches secrets/keys)
+    │   ├── security_users.py                  # RBAC/user CRUD; Fernet key helpers for user/auth secrets
+    │   ├── session_manager.py                 # Web session management, token handling, timeouts
+    │   ├── utils_coa_web.py			# Loads, validates, and manages the bot’s Chart of Accounts (COA); interfaces with tbot_ledger_coa.json and provides COA to other modules
+    │   └── utils_web.py                       # Minor UI/web helpers, non-secret logic
+    │
+    └── templates/                              # Jinja2 HTML UI templates (rendered for user)
+        ├── coa.html                            # Human-readable web form/table for COA viewing and editing (editable if RBAC allows)
+        ├── configuration.html                  # Web form for updating email, API, and broker credential configuration via web UI 
+        ├── index.html                          # Login page
+        ├── ledger.html			        # Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
+        ├── logs.html                           # Log viewer
+        ├── main.html                           # Dashboard shell (all UI widgets)
+        ├── register.html			# Flask template for user registration form
+        ├── settings.html                       # Web form for updating bot trading strategy and runtime config variables
+        ├── status.html                         # Displays live bot health, strategies, PnL, session state, and key metrics (live data from status.json)
+        ├── test.html				# Web UI page providing controls to trigger TEST_MODE and view live test logs and results.
+        ├── universe.html			# Web UI page providing controls to inspect and modify the symbol universe
+        └── wait.html                   	# Spinner/progress bar shown while bot is initializing; triggers transition to main.html when ready
+
+
+
+
+
