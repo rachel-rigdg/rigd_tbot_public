@@ -8,7 +8,7 @@ import sys
 import time
 import subprocess
 from pathlib import Path
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
@@ -101,6 +101,53 @@ def is_status_bot_running():
             continue
     return False
 
+def universe_needs_refresh(cache_path, cutoff_hour_utc=21):
+    from tbot_bot.support.path_resolver import resolve_universe_cache_path
+    import json
+    cache_file = Path(resolve_universe_cache_path())
+    # Force rebuild if file missing
+    if not cache_file.exists():
+        print("[main_bot][universe_check] Universe cache missing.")
+        return True
+    # Force rebuild if stale: not built since last trading day's close+1hr (21:00 UTC)
+    mtime = datetime.utcfromtimestamp(cache_file.stat().st_mtime)
+    now = datetime.utcnow()
+    # If today is a weekday and it's after cutoff_hour_utc, require today's file
+    if now.weekday() < 5 and now.hour >= cutoff_hour_utc:
+        if mtime.date() != now.date():
+            print(f"[main_bot][universe_check] Universe cache not from today. Rebuild needed.")
+            return True
+    # If older than 24 hours (fallback)
+    if (now - mtime) > timedelta(hours=24):
+        print(f"[main_bot][universe_check] Universe cache older than 24h. Rebuild needed.")
+        return True
+    # If file size is tiny, probably a stripped/placeholder
+    if cache_file.stat().st_size < 500:
+        try:
+            with cache_file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, list) or len(data) < 10:
+                print(f"[main_bot][universe_check] Universe cache is placeholder/small. Rebuild needed.")
+                return True
+        except Exception as e:
+            print(f"[main_bot][universe_check] Universe cache read error: {e}")
+            return True
+    print("[main_bot][universe_check] Universe cache is fresh and valid.")
+    return False
+
+def try_build_universe(log_event):
+    print("[main_bot][try_build_universe] Triggering symbol universe refresh...")
+    log_event("main_bot", "Triggering nightly symbol universe rebuild/check.")
+    try:
+        from tbot_bot.screeners.symbol_universe_refresh import main as refresh_main
+        refresh_main()
+        log_event("main_bot", "Symbol universe refresh completed successfully.")
+        print("[main_bot][try_build_universe] Universe refresh complete.")
+    except Exception as e:
+        log_event("main_bot", f"Universe refresh failed: {e}", level="error")
+        print(f"[main_bot][try_build_universe] Universe refresh failed: {e}")
+        raise
+
 def main():
     try:
         from tbot_bot.support.bootstrap_utils import is_first_bootstrap
@@ -151,6 +198,7 @@ def main():
         from tbot_bot.runtime.watchdog_bot import start_watchdog
         from tbot_bot.support.utils_log import log_event, get_log_settings
         from tbot_bot.runtime.status_bot import update_bot_state
+        from tbot_bot.support.path_resolver import resolve_universe_cache_path
 
         config = get_bot_config()
         DEBUG_LOG_LEVEL, ENABLE_LOGGING, LOG_FORMAT = get_log_settings()
@@ -165,6 +213,16 @@ def main():
         run_build_check()
         start_watchdog()
         update_bot_state(state="idle")
+
+        # --- Symbol Universe Rebuild/Check (self-contained, always nightly compliant) ---
+        cache_path = resolve_universe_cache_path()
+        if universe_needs_refresh(cache_path):
+            try:
+                try_build_universe(log_event)
+            except Exception as e:
+                log_event("main_bot", "Fatal: Unable to build symbol universe. Halting bot.", level="critical")
+                print("[main_bot][FATAL] Unable to build symbol universe. Exiting.")
+                safe_exit(status_proc)
 
         if KILL_FLAG.exists():
             if DEBUG_LOG_LEVEL != "quiet":
@@ -191,6 +249,15 @@ def main():
 
             now_dt = datetime.utcnow()
             strategies = [STRATEGY_OVERRIDE] if STRATEGY_OVERRIDE else STRATEGY_SEQUENCE
+
+            # Nightly universe refresh at start of new UTC day (after close+1hr)
+            if universe_needs_refresh(cache_path):
+                try:
+                    try_build_universe(log_event)
+                except Exception as e:
+                    log_event("main_bot", "Fatal: Unable to build symbol universe. Halting bot.", level="critical")
+                    print("[main_bot][FATAL] Unable to build symbol universe. Exiting.")
+                    safe_exit(status_proc)
 
             for strat_name in strategies:
                 strat_name = strat_name.strip().lower()

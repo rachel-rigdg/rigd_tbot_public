@@ -39,7 +39,16 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
         LOG.error(f"[screener_utils] Failed to load universe cache JSON: {e}")
         raise UniverseCacheError(f"Failed to load universe cache JSON: {e}")
 
-    # Basic schema and field validation
+    # Accept old/stripped placeholder: if file is a list, wrap to symbols
+    if isinstance(data, list):
+        if len(data) < 10:
+            raise UniverseCacheError("Universe cache is a placeholder/too small; trigger rebuild.")
+        data = {
+            "schema_version": SCHEMA_VERSION,
+            "build_timestamp_utc": utc_now().isoformat(),
+            "symbols": data
+        }
+
     if not isinstance(data, dict):
         raise UniverseCacheError("Universe cache JSON root is not an object")
 

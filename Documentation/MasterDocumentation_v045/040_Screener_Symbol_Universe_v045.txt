@@ -21,9 +21,11 @@ Section 1: Core Principles
 2. **Universe is created overnight** (after market close, before market open) using only NYSE/NASDAQ, with price and market cap filters applied.
 3. **API quota minimization:** Only minimal, targeted API calls are made at screener runtime (quotes only for pre-approved symbols).
 4. **Universe is consistent** for all strategies, brokers, and filter modules.
-5. **Universe is stored at a standard path**: `tbot_bot/output/symbol_universe.json`
+5. **Universe is stored at a standard path**: `tbot_bot/output/screeners/symbol_universe.json`
 6. **No screener can run** unless the universe cache exists and passes validation.
-7. **Universe refresh is scheduled**, not ad hoc, and always uses after-hours market data.
+7. **Universe refresh is scheduled or automatically triggered by the bot runtime on startup and before trading, and always uses after-hours market data.**
+8. **Manual force rebuild is always available via the Web UI.**
+9. **On first boot, a stripped-down placeholder universe is accepted but will be rebuilt before the first trading session.**
 
 --------------------------------------------------------------------------------
 Section 2: Universe Construction Workflow
@@ -52,9 +54,10 @@ Section 2: Universe Construction Workflow
          "industry": "Consumer Electronics"
      }
      ```
-   - The file is a JSON array of such objects.
+   - The file is a JSON array of such objects or, in latest spec, a JSON object with schema version, build timestamp, and a "symbols" array.
+   - On first boot, a stripped-down placeholder (small array or incomplete file) is acceptable for bootstrap only; the bot will force a complete rebuild before trading.
 
-4. **Universe file is overwritten nightly.** No incremental updates.
+4. **Universe file is overwritten nightly or on bot startup if missing or stale.** No incremental updates.
 
 5. **Universe fetch and cache script is idempotent** — rerunning it always results in a fresh, fully-filtered universe file for next-day use.
 
@@ -62,11 +65,11 @@ Section 2: Universe Construction Workflow
 Section 3: File/Script Layout & Responsibilities
 --------------------------------------------------------------------------------
 
-- `tbot_bot/screeners/symbol_universe.py` — Library module with universe fetch, filter, validate, and write logic.
-- `tbot_bot/screeners/symbol_universe_refresh.py` — CLI entry point; fetches and writes new universe (run as nightly cron job or manual call).
-- `tbot_bot/output/symbol_universe.json` — Output data file, consumed by all screeners.
-- `tbot_bot/screeners/screener_utils.py` — Loader/validator for runtime modules (ensures file exists, schema valid, etc.).
+- `tbot_bot/screeners/symbol_universe_refresh.py` — Fetches and writes new universe (triggered automatically by bot at startup and before trading; can also be called manually from CLI or Web UI).
+- `tbot_bot/output/screeners/symbol_universe.json` — Output data file, consumed by all screeners.
+- `tbot_bot/screeners/screener_utils.py` — Loader/validator for runtime modules (ensures file exists, schema valid, not stale, and not a placeholder).
 - `tbot_bot/screeners/alpaca_screener.py`, `ibkr_screener.py`, etc. — All must call screener_utils or symbol_universe loader for their symbol list.
+- **No external cron or systemd trigger is required. The bot runtime manages symbol universe freshness automatically.**
 
 --------------------------------------------------------------------------------
 Section 4: Runtime Screener Behavior
@@ -78,10 +81,12 @@ Section 4: Runtime Screener Behavior
 
 2. **Screeners may filter further** by additional strategy criteria (VWAP, volume, etc.), but these filters are always applied after the universe load.
 
-3. **If `symbol_universe.json` is missing or invalid,** screener must raise an error and abort. All errors must be logged.
+3. **If `symbol_universe.json` is missing, invalid, stale, or a placeholder,** the bot runtime will automatically trigger a rebuild before trading. If the rebuild fails, all trading is halted.
 
-4. **New symbol metadata is not added during market hours.**
-   - Universe is fixed for the trading session and only updated by the nightly refresh job.
+4. **Manual force-rebuild is always available from the Web UI `/universe` POST.**
+
+5. **New symbol metadata is not added during market hours.**
+   - Universe is fixed for the trading session and only updated by the automatic or manual rebuild triggers.
 
 --------------------------------------------------------------------------------
 Section 5: Validation & Maintenance
@@ -96,11 +101,11 @@ Section 5: Validation & Maintenance
 2. **Test/QA script:**  
    - A utility script must be included (`test_universe_cache.py`) that validates cache contents and checks schema.
 
-3. **Universe refresh must run after the market closes** (e.g., 6pm ET), never during live hours.
+3. **Universe refresh must run after the market closes** (e.g., 6pm ET), never during live hours. If the bot was offline, the first startup after close will rebuild the universe.
 
 4. **Universe file permissions:**  
    - File must be readable by the trading bot.
-   - Nightly refresh must overwrite with correct permissions and not break atomicity.
+   - Refresh must overwrite with correct permissions and not break atomicity.
 
 --------------------------------------------------------------------------------
 Section 6: API, Quota, and Performance Considerations

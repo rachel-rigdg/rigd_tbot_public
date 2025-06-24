@@ -55,6 +55,19 @@ def is_test_mode_active() -> bool:
     test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
     return test_flag_path.exists()
 
+# Symbol universe check before strategies
+def ensure_universe_valid():
+    from tbot_bot.screeners.screener_utils import is_cache_stale, UniverseCacheError
+    from tbot_bot.screeners.symbol_universe_refresh import main as refresh_main
+    try:
+        if is_cache_stale():
+            log_event("router", "Universe cache missing or stale. Triggering rebuild.")
+            refresh_main()
+            log_event("router", "Universe cache rebuild completed by strategy router.")
+    except UniverseCacheError as ue:
+        log_event("router", f"Failed to rebuild universe: {ue}")
+        raise
+
 # Helper to import screener dynamically
 def get_screener_class(source_name):
     src = source_name.strip().upper()
@@ -79,6 +92,9 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
     Main router to select and execute strategy based on UTC time, manual override,
     or TEST_MODE immediate execution bypassing schedule.
     """
+    # Ensure universe cache is valid/fresh before strategies
+    ensure_universe_valid()
+
     # If TEST_MODE active, run all strategies sequentially immediately and once
     if is_test_mode_active():
         log_event("router", "TEST_MODE active: executing all strategies sequentially")

@@ -154,9 +154,11 @@ def main():
     LOG.info("Fetching symbol metadata from broker API(s)...")
     try:
         symbols_raw = fetch_broker_symbol_metadata()
+        if not symbols_raw or len(symbols_raw) < 10:
+            raise RuntimeError("No symbols fetched from broker/API; check API key, network, or provider limits.")
     except Exception as e:
         LOG.error(f"Failed to fetch broker symbol metadata: {e}")
-        sys.exit(1)
+        raise
 
     LOG.info(f"Fetched {len(symbols_raw)} raw symbols from broker feed.")
 
@@ -184,7 +186,7 @@ def main():
         LOG.info(f"Universe cache build complete: {len(symbols_filtered)} symbols written.")
     except Exception as e:
         LOG.error(f"Failed to write universe cache: {e}")
-        sys.exit(2)
+        raise
 
     # 7. Health/Audit Summary
     audit = {
@@ -198,4 +200,8 @@ def main():
     LOG.info("Universe build summary: " + json.dumps(audit, indent=2))
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        LOG.error(f"Universe build failed and raised exception: {e}")
+        sys.exit(1)
