@@ -63,6 +63,9 @@ def show_configuration():
             state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         except Exception:
             state = "initialize"
+    # Force wait.html if not initialize (don't re-present configuration after save)
+    if state in ("provisioning", "bootstrapping", "registration"):
+        return render_template("wait.html", bot_state=state)
     config = load_runtime_config()
     if not config and state == "initialize":
         config = load_defaults()
@@ -141,7 +144,7 @@ def save_configuration():
             session["trigger_provisioning"] = True
             session.modified = True
             flash("Configuration saved. Proceeding to provisioning...", "success")
-            return redirect(url_for("main.root_router"))
+            return render_template("wait.html", bot_state="provisioning")
         else:
             flash("Configuration saved.", "success")
             return redirect(url_for("configuration_web.show_configuration"))
