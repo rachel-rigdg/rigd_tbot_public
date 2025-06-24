@@ -1,20 +1,24 @@
 <!-- tbot_web/templates/coa.html -->
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>TradeBot Chart of Accounts (COA) Management</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-    <style>
-        .coa-row { display: flex; align-items: center; margin-bottom: 6px; }
-        .coa-row input { margin-right: 8px; }
-        .coa-children { margin-left: 28px; }
-        .coa-actions button { margin-left: 4px; }
-        #coa-edit-area { margin-top: 18px; }
-        #coa-save-bar { margin-top: 12px; }
-    </style>
-</head>
+    <head>
+        <meta charset="UTF-8">
+        <title>TradeBot Chart of Accounts (COA) Management</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/static/css/base/normalize.css">
+        <link rel="stylesheet" href="/static/css/base/layout.css">
+        <link rel="stylesheet" href="/static/css/shared/forms.css">
+        <link rel="stylesheet" href="/static/css/components/buttons.css">
+        <link rel="stylesheet" href="/static/css/pages/coa.css">
+        <style>
+            .coa-row { display: flex; align-items: center; margin-bottom: 6px; }
+            .coa-row input { margin-right: 8px; }
+            .coa-children { margin-left: 28px; }
+            .coa-actions button { margin-left: 4px; }
+            #coa-edit-area { margin-top: 18px; }
+            #coa-save-bar { margin-top: 12px; }
+        </style>
+    </head>
 <body>
     <div class="container">
         <header>

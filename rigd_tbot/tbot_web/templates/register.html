@@ -7,7 +7,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Register Admin User</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+    <link rel="stylesheet" href="/static/css/base/normalize.css">
+    <link rel="stylesheet" href="/static/css/base/layout.css">
+    <link rel="stylesheet" href="/static/css/shared/forms.css">
+    <link rel="stylesheet" href="/static/css/components/buttons.css">
+    <link rel="stylesheet" href="/static/css/pages/register.css">
     <script>
       function validateForm() {
         const pw1 = document.getElementById('password').value;
@@ -21,7 +25,7 @@
     </script>
 </head>
 <body>
-    <div class="container center">
+    <div class="container-register center">
         <div class="title">
             <h1>Register Admin User</h1>
         </div>

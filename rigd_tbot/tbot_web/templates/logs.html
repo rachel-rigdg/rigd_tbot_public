@@ -5,41 +5,11 @@
     <meta charset="UTF-8">
     <title>TradeBot Logs</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-    <style>
-        .log-stream-container {
-            max-height: 600px;
-            overflow-y: auto;
-            background: #191919;
-            border: 1px solid #444;
-            padding: 0;
-            margin: 0;
-            top: 0;
-        }
-        .log-stream pre {
-            margin: 0;
-            padding: 16px;
-            white-space: pre-wrap;
-            word-break: break-word;
-            font-size: 0.93em;
-            color: #ddd;
-            background: transparent;
-        }
-        .filter-bar {
-            margin-bottom: 12px;
-        }
-        .filter-bar label, .filter-bar select {
-            font-size: 1em;
-        }
-        .log-warning {
-            background: #633;
-            color: #fff;
-            padding: 10px 16px;
-            margin-bottom: 14px;
-            border-radius: 6px;
-            font-size: 1em;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/css/base/normalize.css">
+    <link rel="stylesheet" href="/static/css/base/layout.css">
+    <link rel="stylesheet" href="/static/css/shared/forms.css">
+    <link rel="stylesheet" href="/static/css/components/buttons.css">
+    <link rel="stylesheet" href="/static/css/pages/logs.css">
     <script>
         function onLogChange() {
             const selectedLog = document.getElementById('logSelect').value;
@@ -103,7 +73,5 @@
             </div>
         </section>
     </main>
-
-   
 </body>
 </html>
