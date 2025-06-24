@@ -1,7 +1,7 @@
 ================================================================================
 Document: 025_Broker_API_Integration
-Version: v044
-Date: UTC:2025-06-17
+Version: v045
+Date: UTC:2025-06-24 00:00:00
 ================================================================================
 Overview:
 Defines broker API integration specifications for Alpaca, IBKR, and Tradier within TradeBot {CURRENT_VERSION}. Enforces unified interface, error handling, compliance, auditability, and now symbol universe caching and efficient screener support per latest requirements.

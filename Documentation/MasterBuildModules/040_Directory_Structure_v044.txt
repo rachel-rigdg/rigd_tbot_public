@@ -1,7 +1,7 @@
 ================================================================================
 Document: 040_Directory_Structure
-Version: v044
-Date: UTC:2025-06-15 04:30:00
+Version: v045
+Date: UTC:2025-06-24 00:00:00
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -301,14 +301,30 @@ rigd_tbot/
     │   │   └── shared_utils.js    		# Provides shared API helpers and utility functions for frontend JavaScript modules        
     │   │
     │   └── css/
-    │       ├── buttons.css                     # Button styling and layout rules
-    │       ├── forms.css                       # Form input and UI style rules
-    │       ├── layout.css                      # Main container, alignment, and page structure styles
-    │       ├── ledger.css                      # Ledger-specific table and input styles
-    │       ├── main.css                        # Core theme and typography rules
-    │       ├── responsive.css                  # Responsive/adaptive layout rules
-    │       ├── spinner.css                     # Spinner and progress indicator animation
-    │       └── tabs.css                        # Tab navigation styles
+    │       ├── base
+    │       │   ├── layout.css                      # Global layout, structure, and centering for all pages
+    │       │   ├── normalize.css                      # CSS reset for cross-browser consistency
+    │       │   └── variables.css                      # Custom CSS variables for colors, fonts, spacing
+    │       │
+    │       ├── components
+    │       │   ├── buttons.css                     # Button styling and layout rules
+    │       │   ├── hamburger.css                   # Hamburger menu animation and mobile nav
+    │       │   ├── spinner.css                     # Spinner and progress indicator animation
+    │       │   └── tabs.css                        # Tab navigation styles
+    │       │
+    │       ├── pages
+    │       │   ├── configuration.css                # Configuration page (forms, blocks, horizontal wrapping)
+    │       │   ├── ledger.css                    # Ledger page: table formatting and alignment
+    │       │   ├── logs.css                     # Logs page: log view container, filter bar, color
+    │       │   ├── main.css                      # Main container, alignment, and page structure styles
+    │       │   ├── register.css                  # Register page: admin account creation form  
+    │       │   ├── settings.css                  # Settings page: settings form blocks and layout
+    │       │   ├── status.css                     # Status page: status grid, error color, responsive tweaks
+    │       │   └── test.css                     # Test mode/system test sequence page
+    │       │
+    │       └── shared
+    │           ├── forms.css                       # Form input and UI style rules
+    │           └── responsive.css                  # Responsive/adaptive layout rules
     │
     ├── favicon.ico / favicon.gif               # Site icon for browser tab
     │
@@ -339,6 +355,7 @@ rigd_tbot/
     │   ├── default_config_loader.py           # Loads config defaults/templates for UI (never touches secrets/keys)
     │   ├── security_users.py                  # RBAC/user CRUD; Fernet key helpers for user/auth secrets
     │   ├── session_manager.py                 # Web session management, token handling, timeouts
+    │   ├── utils_coa_web.py			# Loads, validates, and manages the bot’s Chart of Accounts (COA); interfaces with tbot_ledger_coa.json and provides COA to other modules
     │   └── utils_web.py                       # Minor UI/web helpers, non-secret logic
     │
     └── templates/                              # Jinja2 HTML UI templates (rendered for user)
@@ -352,6 +369,7 @@ rigd_tbot/
         ├── settings.html                       # Web form for updating bot trading strategy and runtime config variables
         ├── status.html                         # Displays live bot health, strategies, PnL, session state, and key metrics (live data from status.json)
         ├── test.html				# Web UI page providing controls to trigger TEST_MODE and view live test logs and results.
+        ├── universe.html			# Web UI page providing controls to inspect and modify the symbol universe
         └── wait_for_bot.html                   # Spinner/progress bar shown while bot is initializing; triggers transition to main.html when ready
 
 
