@@ -1,4 +1,23 @@
 /* base/layout.css */
+
+
+@font-face {
+    font-family: 'London-Tube';
+    src: url('/static/fnt/London-Tube.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+html, body {
+    font-family: 'London-Tube', Arial, sans-serif;
+    font-size: 15px;
+    color: #999999;
+    background: #222222;
+    margin: 0;
+    padding: 0;
+}
+
+
 .dashboard-header {
     text-align: center;
 }
