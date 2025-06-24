@@ -1,16 +1,65 @@
-.fieldblock {
-    margin: 1.5em 0;
-    max-width: 700px;
+/* configuration.css - complete layout for horizontally stacking fieldblocks in centered form */
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
 }
-label {
+
+.container-config {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 2em;
+    box-sizing: border-box;
+}
+
+.container-config .title {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 2em;
+}
+
+.container-config form {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2em;
+    width: 100%;
+    max-width: 1600px;
+    box-sizing: border-box;
+}
+
+.fieldblock-config {
+    flex: 0 1 auto;
+    min-width: 340px;
+}
+
+.fieldblock-config fieldset {
+    width: max-content;
+    min-width: 340px;
+    padding: 1em;
+}
+
+.fieldblock-config label {
     display: inline-block;
     width: 220px;
     text-align: right;
     padding-right: 1em;
 }
-input, select {
+
+.fieldblock-config input,
+.fieldblock-config select {
     width: 320px;
 }
+
 button[type="submit"] {
     margin-top: 2em;
+    min-width: 5em;
 }

@@ -5,17 +5,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Bot Configuration</title>
-    <link rel="stylesheet" href="../static/css/main.css" />
-    <link rel="stylesheet" href="../static/css/configuration.css" />
+    <link rel="stylesheet" href="/static/css/main.css" />
+    <link rel="stylesheet" href="/static/css/configuration.css" />
+
+    <style>
+        body {
+          background: #111 !important;
+          color: #0f0 !important;
+          font-size: 20px;
+        }
+      </style>
 </head>
 <body>
-    <div class="container center">
+    <div class="container-config">
         <div class="title">
         <h1>T-BOT Initial Configuration</h1>  
         </div>
-        
+        <br><br>
         <form method="POST" action="{{ url_for('configuration_web.save_configuration') }}">
-            <div class="fieldblock">
+            <div class="fieldblock-config">
             <fieldset >
                 <legend>Identity Settings</legend>
                 <label for="entity_code">ENTITY_CODE</label>
@@ -32,7 +40,7 @@
             </fieldset>
             </div>
             <br><br>
-        <div class="fieldblock">
+        <div class="fieldblock-config">
             <fieldset >
                 <legend>Alert & Email Settings</legend>
                 <label for="alert_email">Alert Email</label>
@@ -51,7 +59,7 @@
                 <input type="number" id="smtp_port" name="smtp_port" min="1" max="65535" required value="{{ config['smtp']['SMTP_PORT'] if config.get('smtp') else '465' }}" />
             </fieldset>
         </div><br><br>
-        <div class="fieldblock">
+        <div class="fieldblock-config">
             <fieldset >
                 <legend>Network Settings</legend>
                 <label for="network_name">Network Name</label>
@@ -64,7 +72,7 @@
                 <input type="number" id="port" name="port" min="1" max="65535" required value="{{ config['network_config']['PORT'] if config.get('network_config') else '6900' }}" />
             </fieldset>
         </div><br><br>
-        <div class="fieldblock">
+        <div class="fieldblock-config">
             <fieldset >
                 <legend>Screener Settings</legend>
                 <label for="screener_name">Screener Name</label>
@@ -74,7 +82,7 @@
                 <input type="text" id="screener_api_key" name="screener_api_key"  value="{{ config['screener_api']['FINNHUB_API_KEY'] if config.get('screener_api') else '' }}" />
             </fieldset>
         </div><br><br>
-        <div class="fieldblock">
+        <div class="fieldblock-config">
             <fieldset >
                 <legend>Broker Settings</legend>
                 <label for="broker_name">Broker Name / Broker Code</label>
@@ -101,14 +109,14 @@
                 
             </fieldset>
         </div><br><br>
-        <div class="fieldblock">
+        <div class="fieldblock-config">
             <fieldset>
                 <legend>Alert Channels</legend>
                 <label for="alert_channels">Alert Channels (comma-separated)</label>
                 <input type="text" id="alert_channels" name="alert_channels" placeholder="e.g. email, slack, sms" value="{{ config['alert_channels'] if config.get('alert_channels') else 'email' }}" />
             </fieldset>
         </div><br><br>
-        <div class="fieldblock">
+        <div class="fieldblock-config">
             <fieldset>
                 <legend>Logging Verbosity</legend>
                 <label for="debug_log_level">Log Level</label>
