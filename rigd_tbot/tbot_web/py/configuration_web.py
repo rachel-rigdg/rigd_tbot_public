@@ -1,5 +1,6 @@
 # tbot_web/py/configuration_web.py
 
+
 from flask import Blueprint, request, render_template, flash, redirect, url_for, session
 from ..support.default_config_loader import get_default_config
 from pathlib import Path
@@ -63,9 +64,11 @@ def show_configuration():
             state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         except Exception:
             state = "initialize"
-    # Force wait.html if not initialize (don't re-present configuration after save)
-    if state in ("provisioning", "bootstrapping", "registration"):
+    # Force redirect if not initialize (don't re-present configuration after save)
+    if state in ("provisioning", "bootstrapping"):
         return render_template("wait.html", bot_state=state)
+    if state == "registration":
+        return redirect(url_for("register_web.register_page"))
     config = load_runtime_config()
     if not config and state == "initialize":
         config = load_defaults()
