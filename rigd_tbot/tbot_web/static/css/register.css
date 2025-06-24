@@ -1,0 +1,13 @@
+.register-page .container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+.register-page label {
+    display: inline-block;
+    width: 200px;
+    text-align: right;
+    padding-right: 1em;
+}
+.register-page input {
+    width: 300px;
+}
