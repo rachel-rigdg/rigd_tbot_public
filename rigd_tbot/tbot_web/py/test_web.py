@@ -9,7 +9,7 @@ from tbot_web.support.utils_web import admin_required
 from pathlib import Path
 
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
-TEST_LOG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "test_logs" / "test_mode.log"
+TEST_LOG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "test_mode.log"
 LOCK = threading.Lock()
 
 test_web = Blueprint("test_web", __name__, template_folder="../templates")
