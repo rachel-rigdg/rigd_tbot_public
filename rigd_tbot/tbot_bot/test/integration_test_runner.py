@@ -1,11 +1,17 @@
 # tbot_bot/test/integration_test_runner.py
 # Simulates full bot session for integration validation using runtime identity output paths
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[integration_test_runner.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
-import sys
 import time
 import traceback
 import json
@@ -92,6 +98,3 @@ def run_integration_test():
         log_event("integration_test", f"Fatal error during test: {e}")
         print("Integration test failed with error:\n", tb)
         sys.exit(1)
-
-if __name__ == "__main__":
-    run_integration_test()

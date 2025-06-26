@@ -1,5 +1,12 @@
 # tbot_bot/runtime/watchdog_bot.py
 # Broker connectivity monitor and auto-shutdown (Single-Broker Mode)
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[watchdog_bot.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 import time
 import requests
@@ -75,6 +82,3 @@ def start_watchdog():
         trigger_shutdown(reason="Broker connectivity failure detected by watchdog")
     else:
         log_event("watchdog_bot", "Broker API connectivity OK")
-
-if __name__ == "__main__":
-    start_watchdog()
