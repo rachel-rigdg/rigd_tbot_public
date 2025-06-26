@@ -1,5 +1,12 @@
 # tbot_bot/reporting/daily_summary.py
 # generate_summary(trades: List[dict], stats: dict) → writes to /output/summaries/{BOT_IDENTITY}_BOT_daily_summary.json
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[daily_summary.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 import os
 import json

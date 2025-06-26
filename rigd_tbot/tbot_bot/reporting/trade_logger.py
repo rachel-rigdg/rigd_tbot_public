@@ -1,5 +1,12 @@
 # tbot_bot/reporting/trade_logger.py
 # append_trade(trade: dict) → writes to JSON/CSV under /output/trades/
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[trade_logger.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 import os
 import json

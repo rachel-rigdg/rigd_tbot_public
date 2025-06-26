@@ -1,5 +1,12 @@
 # tbot_bot/reporting/auto_backup.py
 # Compresses and archives logs/ledgers after session end into /backups/
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[auto_backup.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 import os
 import zipfile
@@ -69,6 +76,3 @@ def run_auto_backup():
     backup_ledgers()
     zip_session_artifacts()
     print("[auto_backup] Backup complete.")
-
-if __name__ == "__main__":
-    run_auto_backup()

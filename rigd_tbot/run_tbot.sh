@@ -1,6 +1,7 @@
 #!/bin/bash
 # run_tbot.sh
-# Launches TradeBot unified entrypoint (main.py manages all phases and Flask apps).
+# Launches TradeBot unified entrypoint (main.py is a pure dispatcher: only launches Flask UI and tbot_supervisor.py).
+# All persistent worker/watcher/test runner modules are launched exclusively by tbot_supervisor.py (v045+).
 
 set -e
 
@@ -38,4 +39,4 @@ systemctl --user daemon-reload
 echo "$LOG_TAG Enabling and starting tbot_bot.service..."
 systemctl --user enable --now tbot_bot.service
 
-echo "$LOG_TAG TradeBot launched. Unified runtime and web UI are ready for testing."
+echo "$LOG_TAG TradeBot launched. Supervisor orchestration is enforced. Unified runtime and web UI are ready for testing."

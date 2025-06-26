@@ -1,5 +1,7 @@
 # tbot_bot/test/test_strategy_selfcheck.py
 # Confirms all strategy modules pass .self_check()
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
+# All process orchestration is via tbot_supervisor.py only.
 
 import pytest
 from tbot_bot.config.env_bot import get_bot_config
@@ -8,6 +10,7 @@ def test_strategy_selfchecks():
     """
     Confirms that all enabled strategies pass their .self_check() method.
     This is required before executing any session in production mode.
+    Does not launch, run, or supervise any persistent process.
     """
     config = get_bot_config()
     failures = []

@@ -1,5 +1,7 @@
 # tbot_bot/test/test_main_bot.py
 # Core lifecycle testing for single-broker unified mode
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
+# All process orchestration is via tbot_supervisor.py only.
 
 import pytest
 import os
@@ -26,6 +28,7 @@ TRADE_LOG_CSV = f"{BOT_ID}_BOT_trade_history.csv"
 def test_main_bot_initialization():
     """
     Ensure the main_bot can initialize without raising errors.
+    Never launches any watcher, worker, or test runner directly.
     """
     try:
         main_bot.run_build_check()
@@ -36,6 +39,7 @@ def test_main_bot_initialization():
 def test_main_bot_self_check():
     """
     Verifies that self_check passes for all enabled strategies in config.
+    Does not launch any persistent process.
     """
     config = get_bot_config()
     errors = []
@@ -61,6 +65,7 @@ def test_main_bot_self_check():
 def test_main_bot_logs_created():
     """
     Confirms that expected output logs exist and are non-empty.
+    Only checks artifacts; does not launch any workers.
     """
     for fname in LOG_FILES:
         path = get_output_path("logs", fname)
@@ -71,6 +76,7 @@ def test_main_bot_logs_created():
 def test_main_bot_trade_log_format():
     """
     Validates that BOT_trade_history.json has properly structured entries.
+    Does not launch, run, or supervise any bot process.
     """
     path = get_output_path("trades", TRADE_LOG_JSON)
     assert os.path.exists(path), "Missing trade history JSON log"

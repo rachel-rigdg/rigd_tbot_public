@@ -1,6 +1,8 @@
 # tbot_bot/test/test_coa_web_endpoints.py
 # Integration/endpoint test for COA Web UI endpoints (/coa, /coa/api, /coa/export), compliant with RIGD TradeBot specifications.
 # All web endpoint and CI tests must reside in tbot_bot/test/ per current directory structure.
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
+# All process orchestration is via tbot_supervisor.py only.
 
 import unittest
 from flask import Flask
@@ -54,4 +56,6 @@ class COAWebEndpointTestCase(unittest.TestCase):
         self.assertTrue(data['user_is_admin'])
 
 if __name__ == "__main__":
-    unittest.main()
+    print("[test_coa_web_endpoints.py] Direct execution is not permitted. This test must only be run via the test harness.")
+    import sys
+    sys.exit(1)

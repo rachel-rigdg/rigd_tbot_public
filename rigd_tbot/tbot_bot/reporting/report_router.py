@@ -1,5 +1,12 @@
 # tbot_bot/reporting/report_router.py
 # finalize_trade(trade: dict, strategy: str, mode: str) → routes to trade_logger, daily_summary, export_manager, email alert
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[report_router.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.trading.logs_bot import log_trade

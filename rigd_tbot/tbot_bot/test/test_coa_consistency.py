@@ -1,5 +1,7 @@
 # tbot_bot/test/test_coa_consistency.py
 # Confirms the bot’s COA matches tbot_ledger_coa_template.json and schema; validates correct integration with utils_coa_web.py and coa_utils_ledger.py
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
+# All process orchestration is via tbot_supervisor.py only.
 
 import unittest
 import json
@@ -54,4 +56,6 @@ class TestCOAConsistency(unittest.TestCase):
             self.assertIn(field, meta)
 
 if __name__ == "__main__":
-    unittest.main()
+    print("[test_coa_consistency.py] Direct execution is not permitted. This test must only be run via the test harness.")
+    import sys
+    sys.exit(1)

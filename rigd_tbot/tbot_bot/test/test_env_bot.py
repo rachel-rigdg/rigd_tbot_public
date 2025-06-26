@@ -1,5 +1,7 @@
 # tbot_bot/test/test_env_bot.py
 # Validates .env_bot parsing, defaults, and edge cases
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
+# All process orchestration is via tbot_supervisor.py only.
 
 import pytest
 from tbot_bot.config.env_bot import get_bot_config

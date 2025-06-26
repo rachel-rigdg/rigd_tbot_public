@@ -1,6 +1,13 @@
 # tbot_bot/reporting/status_logger.py
 # Writes status.json for archival/accounting summary only (never logs/status.json)
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
 # --------------------------------------------------
+
+import sys
+
+if __name__ == "__main__":
+    print("[status_logger.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 import os
 import json
@@ -23,6 +30,3 @@ def write_status():
         log_event("status_logger", f"Status written to {SUMMARY_STATUS_FILE}")
     except Exception as e:
         log_event("status_logger", f"Failed to write status.json to {SUMMARY_STATUS_FILE}: {e}")
-
-if __name__ == "__main__":
-    write_status()

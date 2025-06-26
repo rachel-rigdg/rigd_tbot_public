@@ -1,5 +1,5 @@
 [Unit]
-Description=RIGD TradeBot Core Bot Runtime
+Description=RIGD Tbot Core Bot Runtime (Supervisor Orchestration, v045+)
 After=network.target
 
 [Service]
@@ -9,6 +9,9 @@ Environment=PATH=%h/rigd_tbot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:
 Environment=PYTHONPATH=%h/rigd_tbot
 ExecStart=%h/rigd_tbot/venv/bin/python3 -m tbot_bot.runtime.main
 Restart=on-failure
+
+# All persistent worker/watcher/test runner modules are orchestrated ONLY by tbot_supervisor.py.
+# No process in tbot_bot/ may be launched by CLI, systemd, or main.py except tbot_supervisor.py (v045+).
 
 [Install]
 WantedBy=default.target

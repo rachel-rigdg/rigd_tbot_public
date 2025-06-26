@@ -1,6 +1,6 @@
 #!/bin/bash
 # restart_systemd.sh
-# Interactive user-mode systemd service restarter and process killer (unified core only).
+# Interactive user-mode systemd service restarter and process killer for RIGD TradeBot (v045+ supervisor orchestration only).
 
 SERVICES=(
   "tbot_bot.service"
@@ -8,7 +8,7 @@ SERVICES=(
 
 PROCESS_PATTERNS=(
   "tbot_bot.runtime.main"
-  "tbot_runner_supervisor.py"
+  "tbot_supervisor.py"
   "portal_web_configuration.py"
   "portal_web_main.py"
 )

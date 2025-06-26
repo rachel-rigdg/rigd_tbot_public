@@ -1,6 +1,14 @@
 # tbot_bot/test/test_broker_trade_stub.py
 # Sends randomized micro-trades to broker to validate order flow, response, and logging
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
+# All process orchestration is via tbot_supervisor.py only.
 # -------------------------------------------------------------------------------------
+
+import sys
+
+if __name__ == "__main__":
+    print("[test_broker_trade_stub.py] Direct execution is not permitted. This test must only be run via tbot_supervisor.py or the test harness.")
+    sys.exit(1)
 
 import random
 import time
@@ -76,6 +84,3 @@ def run_trade_stub():
         time.sleep(DELAY_BETWEEN_TRADES)
 
     log_event("test_trade_stub", f"Trade stub sequence completed: {successful} trades executed.")
-
-if __name__ == "__main__":
-    run_trade_stub()

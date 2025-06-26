@@ -1,5 +1,12 @@
 # tbot_bot/reporting/notify_rebalance_requirements.py
 # Monitors current float and triggers rebalance notification if deviation exceeds threshold
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[notify_rebalance_requirements.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 import time
 from tbot_bot.config.env_bot import get_bot_config

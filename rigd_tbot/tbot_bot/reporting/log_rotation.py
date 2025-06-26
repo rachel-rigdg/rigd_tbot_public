@@ -1,5 +1,12 @@
 # tbot_bot/reporting/log_rotation.py
 # rotate_logs(retention_days: int = 7) → clean up output/logs, trades, summaries for current bot identity
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[log_rotation.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 import os
 import time
@@ -40,10 +47,3 @@ def rotate_logs(retention_days: int = 7):
                     log_event("log_rotation", f"Failed to delete {full_path}: {e}", level="error")
 
     log_event("log_rotation", f"Rotation complete: scanned={scanned}, deleted={deleted}, retention={retention_days}d")
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Prune logs, trades, and summaries older than N days.")
-    parser.add_argument("--days", type=int, default=7, help="Retention period in days (default = 7)")
-    args = parser.parse_args()
-    rotate_logs(retention_days=args.days)

@@ -1,5 +1,12 @@
 # tbot_bot/reporting/session_report.py
 # Generates final report for each trading session
+# MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+
+import sys
+
+if __name__ == "__main__":
+    print("[session_report.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 import os
 import json
@@ -36,6 +43,3 @@ def generate_session_report():
     except Exception as e:
         log_event("session_report", f"Failed to generate session report: {e}")
         return False
-
-if __name__ == "__main__":
-    generate_session_report()

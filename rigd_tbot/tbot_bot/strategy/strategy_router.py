@@ -1,5 +1,7 @@
 # tbot_bot/strategy/strategy_router.py
 # Routes execution to correct strategy based on UTC time and TEST_MODE override
+# THIS MODULE IS NOT A WORKER OR SUPERVISOR. IT MUST NEVER BE LAUNCHED DIRECTLY BY main.py, CLI, or as a persistent process.
+# Only imported by tbot_supervisor.py, integration_test_runner.py, or strategy modules for routing logic.
 
 import time
 from datetime import datetime, time as dt_time
@@ -91,6 +93,8 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
     """
     Main router to select and execute strategy based on UTC time, manual override,
     or TEST_MODE immediate execution bypassing schedule.
+    Only to be called by supervisor, integration test, or higher-level modules.
+    Never launched as a persistent worker/process.
     """
     # Ensure universe cache is valid/fresh before strategies
     ensure_universe_valid()
