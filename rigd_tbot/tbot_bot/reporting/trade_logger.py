@@ -1,5 +1,7 @@
 # tbot_bot/reporting/trade_logger.py
-# append_trade(trade: dict) → writes to JSON/CSV under /output/trades/
+# WORKER. Only invoked as part of strategy runs (by main.py or strategy_router).
+# Writes only to output/{bot_id}/trades/, and never as a watcher/daemon.
+# If running in TEST_MODE, routes to test output path; all path resolution is via path_resolver.py only.
 
 import os
 import json
@@ -9,16 +11,17 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
 
-# Load config
 config = get_bot_config()
 BOT_IDENTITY = config.get("BOT_IDENTITY_STRING")
 LOG_FORMAT = config.get("LOG_FORMAT", "json").lower()
 ENABLE_LOGGING = config.get("ENABLE_LOGGING", True)
+TEST_MODE = config.get("TEST_MODE", False)  # This must be injected from flag, not .env_bot
 
 def append_trade(trade: dict):
     """
     Writes trade entry to identity-scoped /output/trades/ directory
     as JSON or CSV, with compliant naming.
+    In TEST_MODE, output is still to standard test path resolved by path_resolver.
     """
     if not ENABLE_LOGGING:
         return

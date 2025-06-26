@@ -1,6 +1,7 @@
 # tbot_bot/config/env_bot.py
 # summary: Validates and parses .env_bot configuration (encrypted only, never auto-loads at module level).
 # All config access must be explicit and deferred—no module-level loading permitted.
+# Provides TEST_MODE detection as per latest spec.
 
 import json
 import logging
@@ -10,6 +11,8 @@ from typing import Any, Dict
 
 ENCRYPTED_CONFIG_PATH = Path(__file__).resolve().parent.parent / "support" / ".env_bot.enc"
 KEY_PATH = Path(__file__).resolve().parent.parent / "storage" / "keys" / "env_bot.key"
+CONTROL_DIR = Path(__file__).resolve().parent.parent / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 REQUIRED_KEYS = [
     "VERSION_TAG", "BUILD_MODE",
@@ -91,5 +94,9 @@ def get_bot_config() -> Dict[str, Any]:
     validate_bot_config(config)
     logger.debug("Bot config loaded and validated successfully")
     return config
+
+def is_test_mode() -> bool:
+    """Returns True if test_mode.flag exists, else False. Used for main.py/test awareness."""
+    return TEST_MODE_FLAG.exists()
 
 load_env_bot_config = get_bot_config

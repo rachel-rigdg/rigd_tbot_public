@@ -1,6 +1,7 @@
 # tbot_bot/reporting/status_logger.py
-# Writes status.json for archival/accounting summary only (never logs/status.json)
-# --------------------------------------------------
+# WORKER. Only invoked to write session status summary for archival/accounting.
+# Writes output/{bot_id}/summaries/status.json only (never writes or touches output/logs/status.json).
+# Never runs as a watcher/daemon, never started except by main.py or strategy completion.
 
 import os
 import json

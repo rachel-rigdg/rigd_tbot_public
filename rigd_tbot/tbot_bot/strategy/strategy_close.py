@@ -1,5 +1,6 @@
 # tbot_bot/strategy/strategy_close.py
 # summary: Implements Late-day momentum/fade strategy with VIX gating and bi-directional logic; compresses analysis/monitor window to 1min if TEST_MODE
+# All output/logs resolved via path_resolver.py; test outputs written to test paths in TEST_MODE
 
 import time
 from datetime import timedelta

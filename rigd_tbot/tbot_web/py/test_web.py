@@ -1,5 +1,6 @@
 # tbot_web/py/test_web.py
 # Dedicated TEST_MODE UI/backend: triggers test_mode.flag, streams real-time logs/status, auto-resets on completion (admin-only)
+# v045: Only writes test_mode.flag to trigger test mode. Never launches any process. Only reads test_mode.log. Never deletes flag (runner/main.py cleans up).
 
 import os
 import threading
@@ -42,10 +43,6 @@ def create_test_flag():
     with open(TEST_FLAG_PATH, "w") as f:
         f.write("1\n")
 
-def remove_test_flag():
-    if TEST_FLAG_PATH.exists():
-        TEST_FLAG_PATH.unlink()
-
 @test_web.route("/test/", methods=["GET"])
 @admin_required
 def test_page():
@@ -69,9 +66,4 @@ def get_test_logs():
     status = get_test_status()
     return jsonify({"logs": logs, "status": status})
 
-def auto_reset_test_flag():
-    for _ in range(60):
-        if not is_test_active():
-            return
-        time.sleep(2)
-    remove_test_flag()
+# No auto-reset or flag deletion: integration_test_runner.py or main.py handles flag cleanup.
