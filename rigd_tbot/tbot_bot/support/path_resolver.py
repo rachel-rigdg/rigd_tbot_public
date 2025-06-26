@@ -12,6 +12,9 @@ try:
 except ImportError:
     is_first_bootstrap = lambda: False  # fallback for non-web contexts
 
+def is_test_mode() -> bool:
+    return os.environ.get("TBOT_TEST_MODE", "0") == "1"
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 IDENTITY_PATTERN = r"^[A-Z]{2,6}_[A-Z]{2,4}_[A-Z]{2,10}_[A-Z0-9]{2,6}$"
 
@@ -22,9 +25,6 @@ CATEGORIES = {
     "trades": "trades",
     "screeners": "screeners"
 }
-
-def is_test_mode() -> bool:
-    return os.environ.get("TBOT_TEST_MODE", "0") == "1"
 
 def get_bot_identity(explicit_identity: str = None) -> str:
     if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
@@ -152,7 +152,6 @@ def resolve_status_summary_path(bot_identity: str = None) -> str:
     summaries_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity / "summaries"
     summaries_dir.mkdir(parents=True, exist_ok=True)
     return str(summaries_dir / "status.json")
-
 
 __all__ = [
     "get_bot_identity",
