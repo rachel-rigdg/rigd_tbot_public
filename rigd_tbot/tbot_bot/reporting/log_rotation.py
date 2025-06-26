@@ -1,6 +1,5 @@
 # tbot_bot/reporting/log_rotation.py
-# WORKER. Only launched by main.py. Cleans up output/logs, trades, summaries for current bot identity.
-# All file paths resolved via path_resolver.py. Never deletes ledgers or touches outside directories.
+# rotate_logs(retention_days: int = 7) → clean up output/logs, trades, summaries for current bot identity
 
 import os
 import time
@@ -16,7 +15,7 @@ CATEGORIES = ["logs", "summaries", "trades"]
 def rotate_logs(retention_days: int = 7):
     """
     Deletes files older than retention_days in bot-scoped logs, summaries, and trades.
-    Never deletes ledgers.
+    Does NOT touch ledgers.
     """
     cutoff = time.time() - (retention_days * 86400)
     deleted = 0

@@ -2,11 +2,10 @@
 # Tracks and records state changes
 
 """
-status_bot.py – WATCHER. Only launched by main.py (never standalone, never by another worker).
-Tracks and exposes the current state of the bot for UI or external monitoring.
+status_bot.py – Tracks and exposes the current state of the bot for UI or external monitoring.
+Used by status_web.py and internal logging for diagnostics and dashboard reporting.
 Implements exhaustive status tracking and win_rate calculation per RIGD_TradingBot spec.
 Writes live status only to tbot_bot/output/logs/status.json (no identity subdir).
-Never watches or acts on any control or test_mode flags. Never runs in TEST_MODE unless required by future spec.
 """
 
 import time

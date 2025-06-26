@@ -1,7 +1,5 @@
 # tbot_bot/runtime/watchdog_bot.py
-# WATCHER. Only launched by main.py (never by another process, never standalone except for manual test).
-# Broker connectivity monitor and auto-shutdown (Single-Broker Mode).
-# Never watches or acts on control flags. Never runs in TEST_MODE unless required by future spec.
+# Broker connectivity monitor and auto-shutdown (Single-Broker Mode)
 
 import time
 import requests

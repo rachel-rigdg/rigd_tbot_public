@@ -1,6 +1,5 @@
 # tbot_bot/strategy/strategy_open.py
 # summary: Implements opening range breakout strategy with full bi-directional support and updated env references; compresses analysis/monitor window to 1min if TEST_MODE
-# Output/logs always resolved via path_resolver.py; test outputs written to test paths in TEST_MODE
 
 import time
 from datetime import timedelta

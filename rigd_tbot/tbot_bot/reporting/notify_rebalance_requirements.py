@@ -1,6 +1,5 @@
 # tbot_bot/reporting/notify_rebalance_requirements.py
-# WORKER. Only launched by main.py. Monitors current float and triggers rebalance notification if deviation exceeds threshold.
-# All paths and files resolved via path_resolver.py. Never acts on control flags.
+# Monitors current float and triggers rebalance notification if deviation exceeds threshold
 
 import time
 from tbot_bot.config.env_bot import get_bot_config

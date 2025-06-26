@@ -1,8 +1,6 @@
 # tbot_bot/support/path_resolver.py
 # Resolves dynamic paths for TradeBot modules based on identity and file category.
-# v045: All output/log file paths (including TEST_MODE/test outputs) are routed through this module.
-# All process and worker modules MUST use this for any output path resolution.
-# Never triggers provisioning/privileged init.
+# v041: Contains only runtime path logic for web UI or bot—never triggers any provisioning, bootstrapping, or privileged init.
 
 import os
 import re
@@ -40,41 +38,24 @@ def validate_bot_identity(bot_identity: str) -> None:
 def get_bot_identity_string_regex():
     return re.compile(IDENTITY_PATTERN)
 
-def is_test_mode():
-    """
-    Returns True if tbot_bot/control/test_mode.flag exists, False otherwise.
-    Used to route all test output/log files.
-    """
-    control_dir = PROJECT_ROOT / "tbot_bot" / "control"
-    return (control_dir / "test_mode.flag").exists()
-
-def get_output_path(bot_identity: str = None, category: str = None, filename: str = None, output_subdir: bool = False, test_mode: bool = None) -> str:
-    """
-    Resolves output path for live or test mode.
-    If test_mode is True or detected, logs and outputs route to /output/{bot_identity}/logs/test_mode/ etc.
-    """
+def get_output_path(bot_identity: str = None, category: str = None, filename: str = None, output_subdir: bool = False) -> str:
     identity = get_bot_identity(bot_identity)
     validate_bot_identity(identity)
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
     if category not in CATEGORIES:
         raise ValueError(f"[path_resolver] Invalid output category: {category}")
-    # Route to test subdir if in test mode
-    if test_mode is None:
-        test_mode = is_test_mode()
     subdir = base_output_dir / CATEGORIES[category]
-    if test_mode:
-        subdir = subdir / "test_mode"
     subdir.mkdir(parents=True, exist_ok=True)
     if output_subdir:
         return str(subdir)
     return str(subdir / filename) if filename else str(subdir)
 
-def resolve_category_path(category: str, filename: str = None, bot_identity: str = None, output_subdir: bool = False, test_mode: bool = None) -> str:
-    return get_output_path(bot_identity=bot_identity, category=category, filename=filename, output_subdir=output_subdir, test_mode=test_mode)
+def resolve_category_path(category: str, filename: str = None, bot_identity: str = None, output_subdir: bool = False) -> str:
+    return get_output_path(bot_identity=bot_identity, category=category, filename=filename, output_subdir=output_subdir)
 
-def file_exists_resolved(bot_identity: str = None, category: str = None, filename: str = None, test_mode: bool = None) -> bool:
+def file_exists_resolved(bot_identity: str = None, category: str = None, filename: str = None) -> bool:
     try:
-        path = get_output_path(bot_identity, category, filename, test_mode=test_mode)
+        path = get_output_path(bot_identity, category, filename)
         return os.path.exists(path)
     except Exception:
         return False
@@ -169,6 +150,7 @@ def resolve_status_summary_path(bot_identity: str = None) -> str:
     summaries_dir.mkdir(parents=True, exist_ok=True)
     return str(summaries_dir / "status.json")
 
+
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -191,6 +173,5 @@ __all__ = [
     "resolve_coa_schema_path",
     "resolve_universe_cache_path",
     "resolve_status_log_path",
-    "resolve_status_summary_path",
-    "is_test_mode"
+    "resolve_status_summary_path"
 ]

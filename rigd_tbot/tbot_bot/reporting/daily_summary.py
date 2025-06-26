@@ -1,7 +1,5 @@
 # tbot_bot/reporting/daily_summary.py
-# WORKER. Only launched by main.py. Writes daily trade summary to /output/summaries/{BOT_IDENTITY}_BOT_daily_summary.json
-# All file paths are resolved via path_resolver.py (never hardcoded).
-# Supports TEST_MODE separation if needed by output path routing.
+# generate_summary(trades: List[dict], stats: dict) → writes to /output/summaries/{BOT_IDENTITY}_BOT_daily_summary.json
 
 import os
 import json

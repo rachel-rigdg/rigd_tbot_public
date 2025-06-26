@@ -1,6 +1,5 @@
 # tbot_bot/strategy/strategy_router.py
 # Routes execution to correct strategy based on UTC time and TEST_MODE override
-# v045: TEST_MODE always executes all strategies sequentially (open, mid, close) as a single test pass. Never uses scheduler/timers in TEST_MODE.
 
 import time
 from datetime import datetime, time as dt_time
@@ -12,7 +11,6 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
-from tbot_bot.support.path_resolver import is_test_mode
 
 config = get_bot_config()
 
@@ -28,6 +26,7 @@ OPEN_SCREENER = config.get("OPEN_SCREENER", SCREENER_SOURCE).strip().upper()
 MID_SCREENER = config.get("MID_SCREENER", SCREENER_SOURCE).strip().upper()
 CLOSE_SCREENER = config.get("CLOSE_SCREENER", SCREENER_SOURCE).strip().upper()
 
+# Parse strategy start times from config
 def parse_start_time(tstr):
     try:
         h, m = map(int, tstr.strip().split(":"))
@@ -39,6 +38,7 @@ START_TIME_OPEN = parse_start_time(config.get("START_TIME_OPEN", "14:30"))
 START_TIME_MID = parse_start_time(config.get("START_TIME_MID", "15:30"))
 START_TIME_CLOSE = parse_start_time(config.get("START_TIME_CLOSE", "19:30"))
 
+# Sleep time configuration parsing
 SLEEP_TIME_STR = config.get("SLEEP_TIME", "1s")
 def parse_sleep_time(sleep_str):
     if sleep_str.endswith("s"):
@@ -49,6 +49,11 @@ def parse_sleep_time(sleep_str):
         return float(sleep_str)
 
 SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
+
+# Check for TEST_MODE flag presence
+def is_test_mode_active() -> bool:
+    test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
+    return test_flag_path.exists()
 
 # Symbol universe check before strategies
 def ensure_universe_valid():
@@ -81,16 +86,18 @@ def get_screener_class(source_name):
     else:
         raise ValueError(f"Unknown screener source: {src}")
 
+# Main strategy routing function
 def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
     Main router to select and execute strategy based on UTC time, manual override,
     or TEST_MODE immediate execution bypassing schedule.
     """
+    # Ensure universe cache is valid/fresh before strategies
     ensure_universe_valid()
 
-    # TEST_MODE: Always run all strategies sequentially once (open, mid, close)
-    if is_test_mode():
-        log_event("router", "TEST_MODE active: executing all strategies sequentially (open, mid, close)")
+    # If TEST_MODE active, run all strategies sequentially immediately and once
+    if is_test_mode_active():
+        log_event("router", "TEST_MODE active: executing all strategies sequentially")
         results = []
         for strat, screener_name in zip(["open", "mid", "close"], [OPEN_SCREENER, MID_SCREENER, CLOSE_SCREENER]):
             try:
@@ -100,11 +107,19 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
             except Exception as e:
                 log_event("router", f"TEST_MODE error executing {strat}: {e}")
                 results.append(StrategyResult(skipped=True, errors=[str(e)]))
-        # Do NOT clear test_mode.flag here (main.py or test runner handles it).
+        # After execution, delete test_mode.flag to reset
+        try:
+            test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
+            test_flag_path.unlink()
+            log_event("router", "TEST_MODE flag cleared after test sequence completion")
+        except Exception as e:
+            log_event("router", f"Failed to clear TEST_MODE flag: {e}")
+        # Return last strategy result or combined as needed (return last here)
         return results[-1]
 
     now = current_utc_time or utc_now().time()
 
+    # Check for manual override (if provided)
     if override:
         strat_name = override.strip().lower()
         screener_override = {
@@ -124,9 +139,11 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         elif s == "close" and STRAT_CLOSE_ENABLED and now >= START_TIME_CLOSE:
             return execute_strategy("close", screener_override=CLOSE_SCREENER)
 
+    # If no strategy is executed, wait for the configured sleep time
     time.sleep(SLEEP_TIME)
     return StrategyResult(skipped=True)
 
+# Executes the selected strategy and returns the result
 def execute_strategy(name: str, screener_override: str = None) -> StrategyResult:
     """
     Dispatches control to the selected strategy module, injecting screener class from .env_bot.

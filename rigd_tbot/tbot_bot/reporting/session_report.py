@@ -1,6 +1,5 @@
 # tbot_bot/reporting/session_report.py
-# WORKER. Only launched by main.py or imported. Archives daily summary to timestamped report in /output/summaries/.
-# All output paths via path_resolver.py.
+# Generates final report for each trading session
 
 import os
 import json

@@ -1,6 +1,5 @@
 # tbot_bot/strategy/strategy_mid.py
 # summary: Implements VWAP-based mid-day reversal strategy with full bi-directional logic and env-driven parameters; compresses analysis/monitor window to 1min if TEST_MODE
-# Output/logs always resolved via path_resolver.py; test outputs written to test paths in TEST_MODE
 
 import time
 from datetime import timedelta
