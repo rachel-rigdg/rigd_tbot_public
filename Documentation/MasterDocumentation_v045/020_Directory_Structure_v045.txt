@@ -200,16 +200,16 @@ rigd_tbot/
 │   │
 │   ├── runtime/
 │   │   ├── __init__.py
-│   │   ├──  main.py                            # MASTER SUPERVISOR. SINGLE SYSTEMD ENTRY for all bot operations.
-│   │   │                                       #  - Watches all control/test flags directly.
-│   │   │                                       #  - Launches portal_web_main.py (Web UI).
-│   │   │                                       #  - Launches all required watchers/workers: status_bot.py, watchdog_bot.py, tbot_runner_supervisor.py (if present), and test runners in TEST_MODE.
-│   │   │                                       #  - No watcher/worker/runner is ever launched except by main.py.
+│   │   ├──  main.py                            # ENTRY DISPATCHER. SINGLE SYSTEMD ENTRY for all bot operations.
+│   │   │                                       #  - Checks for bootstrap/init and launches portal_web_main.py (Web UI).
+│   │   │                                       #  - After successful configuration, provisioning, and bootstrapping, launches bot_supervisor.py (if present) for all persistent monitoring, phase management, and process orchestration.
+│   │   │                                       #  - No persistent supervision, bot run-loop, or process management logic in main.py.
 │   │   ├──  start_bot.py                        # CLI helper only. Writes control_start.flag; does NOT watch for flags or launch processes.
-│   │   ├──  status_bot.py                       # WATCHER. Tracks bot health/state, writes status.json, session logs. Only launched by main.py.
+│   │   ├──  status_bot.py                       # WATCHER. Tracks bot health/state, writes status.json, session logs. Only launched by bot_supervisor.py.
 │   │   ├──  stop_bot.py                         # CLI helper only. Writes control_stop.flag; does NOT watch for flags or launch processes.
-│   │   ├──  tbot_runner_supervisor.py           # WATCHER. Central bot phase and UI supervisor. Only one allowed; always launched by main.py if present. Tracks and sets phase transitions only. Never watches flags for start/stop.
-│   │   └── watchdog_bot.py                      # WATCHER. Dedicated connection/process monitor. Only launched by main.py.
+│   │   ├──  tbot_supervisor.py                  # CENTRAL SUPERVISOR. Manages all bot phase/state transitions, persistent monitoring, and all subprocess lifecycle. Only one instance allowed; always launched by main.py if present. Handles/waits for and may restart monitor, runtime, or other persistent bot subprocesses. Never runs strategy code directly.
+│   │   └── watchdog_bot.py                      # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
+
 │   │
 │   ├── screeners/			            	# Screener & Symbol Selection
 │   │   ├── alpaca_screener.py                  # alpaca API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.

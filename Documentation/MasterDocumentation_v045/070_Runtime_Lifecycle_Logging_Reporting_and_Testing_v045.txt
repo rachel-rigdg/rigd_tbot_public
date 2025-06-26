@@ -1,4 +1,4 @@
-================================================================================
+=================================================================================
 Document: 070
 Runtime_Lifecycle_Logging_Reporting_and_Testing
 Version: v045
@@ -107,8 +107,6 @@ For each enabled strategy:
 - Strategy phase ends when time window closes.
 Each strategy writes ONLY its assigned log (open/mid/close) via main.py and not by any sub-process or worker.
 
-
-
 Phase 4: Risk/Fault Monitoring (Continuous)
 ↓
 - Enforce risk constraints (`risk_bot.py`).
@@ -154,7 +152,6 @@ Bot State Definitions (bot_state.txt values)
 - `shutdown_triggered`: Forced shutdown triggered.
 - `error`: Fatal error state; bot halted.
 
-
 =============================================================================================================================================
 UI Behavior Based on Bot State
 =============================================================================================================================================
@@ -183,7 +180,6 @@ Bot Control Commands via Web UI
   - Transition to `stopped`.
 - UI remains accessible in all states.
 
-
 =============================================================================================================================================
 Hot Configuration Updates
 =============================================================================================================================================
@@ -193,7 +189,6 @@ Hot Configuration Updates
 - Bot reads config changes dynamically without restart.
 - No re-provisioning triggered on config update.
 - Prevent accidental re-provisioning or bot restart via config save restrictions in code logic.
-
 
 =============================================================================================================================================
 Key Design Confirmations
@@ -250,9 +245,6 @@ Final Build Checklist
 - Hot config updates dynamic, no restart needed.
 - No worker, watcher, or helper is ever launched except by main.py.
 
-
-
-
 ================================================================================
 Logging_and_Reporting
 {CURRENT_VERSION}
@@ -269,7 +261,6 @@ All outputs are UTC-timestamped, deterministic, OFX-aligned, and compliance-read
 
 **Policy:**  
 All provisioning, credential creation, encrypted config management, and COA operations are performed *exclusively* via the TradeBot Web UI. No external or accounting system may provision, inject, or modify any credential, secret, key, or config file after bootstrap. Only ledger export and float assignment for audit are accounting roles.
-
 
 {BOT_IDENTITY} = {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}
 
@@ -289,7 +280,7 @@ Each bot instance writes structured outputs to isolated, per-bot subdirectories 
 | `output/{BOT_IDENTITY}/logs/`              | Strategy execution logs, error traces, broker issues   |
 | `output/{BOT_IDENTITY}/trades/`            | Per-session trade history logs (`csv` or `json`)       |
 | `output/{BOT_IDENTITY}/summaries/`         | Session summaries: PnL, stats, win-rate                |
-| `backups/`                                | Auto-archived logs, ledgers, config backups (rotated)  |
+| `backups/`                                 | Auto-archived logs, ledgers, config backups (rotated)  |
 
 ---
 
@@ -350,7 +341,7 @@ Ledger path format:
 
 **Export + Archive Flow**
 
-1. `reporting_bot.py` collects/export logs after each session
+1. `reporting_bot.py` collects/exports logs after each session
 2. Ledger/export paths resolved by config and path_resolver
 3. `generate_ofx.py` produces OFX export
 4. `auto_backup.py` compresses/archives all output
@@ -388,9 +379,9 @@ Support per-strategy, per-session reporting for live audit, optimization, and va
 
 Each strategy **must** generate:
 
-- `open.log`, `mid.log`, `close.log`              # Per-strategy logs
-- `trade_history.json`, `trade_history.csv`        # Trade-by-trade session record
-- `daily_summary.json`                             # PnL, stats, outcomes
+- `open.log`, `mid.log`, `close.log`              # Per-strategy logs, written only by the assigned strategy logic, not any subprocess or worker.
+- `trade_history.json`, `trade_history.csv`        # Trade-by-trade session record.
+- `daily_summary.json`                             # PnL, stats, outcomes.
 
 **Fields in all logs/trade records:**
 
@@ -441,16 +432,16 @@ In `env_bot.py`:
 - Enforce that keys exist and are valid:
     - `ENABLE_LOGGING=true`
     - `LOG_FORMAT=json` or `csv`
-- Raise fatal error if missing/invalid, with a clear operator message
+- Raise fatal error if missing/invalid, with a clear operator message.
 
 ---
 
 **5. Tuning & Optimization**
 
 - `tuning_tracker.py`:
-  - Loads/compares logs across runs
-  - Recommends optimal values for buffers/thresholds (e.g., `STRAT_*_BUFFER`)
-  - Exports table: buffer → win%, avg PnL, duration, block/reject counts, ticker frequency
+  - Loads/compares logs across runs.
+  - Recommends optimal values for buffers/thresholds (e.g., `STRAT_*_BUFFER`).
+  - Exports table: buffer → win%, avg PnL, duration, block/reject counts, ticker frequency.
 
 ---
 
@@ -461,9 +452,6 @@ In `env_bot.py`:
 - Logs/trade records are never imported back into ledgers.
 
 ---
-
-
-
 ================================================================================
 TEST_MODE
 {CURRENT_VERSION}
@@ -548,12 +536,6 @@ TEST VALIDATION:
 - Logs and ledgers segregated in test runs.
 - UI test page verified for trigger and progress display.
 
-CHANGE HISTORY:
-- v042: Added dedicated UI page and flag file control.
-- v041: Deprecated persistent TEST_MODE in `.env_bot.enc`.
-- Prior versions used persistent config flag; now replaced with ephemeral runtime flag.
-
-
 
 ================================================================================
 Testing_and_Validation
@@ -629,6 +611,7 @@ pytest tbot_bot/test/
 All code, strategy, config, and provisioning updates are blocked if any test fails. CI/CD must gate on full test pass for any merge/release. Audit logs, trade logs, ledgers, and summaries are validated as part of the integration test suite.
 
 
+
 ================================================================================
 TESTING, WATCHER/WORKER, AND LOGGING SYSTEM DEFINITIONS
 ================================================================================
@@ -644,9 +627,10 @@ Definitions:
 tbot_bot/runtime/
 --------------------------------------------------------------------------------
 main.py
-    # MASTER SUPERVISOR. Only script launched by systemd or run_tbot.sh.
-    # Launches all required watcher/worker processes via subprocess.
-    # No watcher/worker is ever launched by another watcher/worker.
+    # ENTRY DISPATCHER. Only script launched by systemd or run_tbot.sh.
+    # Handles bootstrap, provisioning, and launches portal_web_main.py (Web UI).
+    # After successful provisioning and bootstrapping, launches tbot_supervisor.py (if present) for persistent monitoring, phase management, and process orchestration.
+    # No watcher/worker/runner is ever launched except by main.py.
     # In TEST_MODE, launches test runners directly.
     # Writes: all control flags in tbot_bot/control/
 
@@ -660,10 +644,11 @@ watchdog_bot.py
     # Monitors broker connection/heartbeat.
     # Writes: tbot_bot/output/{bot_id}/logs/heartbeat.log
 
-tbot_runner_supervisor.py
-    # (Optional) WATCHER. If used, only launched by main.py.
-    # Oversees overall phase transitions (initialize → provision → main, etc.).
-    # Writes: tbot_bot/control/bot_state.txt (phase string).
+tbot_supervisor.py
+    # PHASE SUPERVISOR. Launched by main.py (if present) after successful provisioning and bootstrapping.
+    # Central controller for bot phase/state and process supervision.
+    # Only one instance allowed; manages all bot state transitions and can start, stop, or monitor critical subprocesses (monitor, runtime, etc).
+    # Never directly runs strategy code.
 
 --------------------------------------------------------------------------------
 tbot_bot/reporting/
@@ -714,19 +699,19 @@ All modules (utils_*, path_resolver.py, etc.)
 --------------------------------------------------------------------------------
 LOG FILE LOCATIONS & RESPONSIBILITY
 --------------------------------------------------------------------------------
-tbot_bot/output/{bot_id}/logs/open.log            # Written only by: main.py (open strategy run)
-tbot_bot/output/{bot_id}/logs/mid.log             # Written only by: main.py (mid strategy run)
-tbot_bot/output/{bot_id}/logs/close.log           # Written only by: main.py (close strategy run)
-tbot_bot/output/{bot_id}/logs/error_tracebacks.log# Written only by: main.py, status_bot.py (on uncaught error)
-tbot_bot/output/{bot_id}/logs/status.json         # Written only by: status_bot.py, status_logger.py
-tbot_bot/output/{bot_id}/logs/heartbeat.log       # Written only by: watchdog_bot.py
-tbot_bot/output/{bot_id}/logs/test_mode.log       # Written only by: integration_test_runner.py (never by test_web.py)
+tbot_bot/output/{bot_id}/logs/open.log              # Written only by: main.py (open strategy run)
+tbot_bot/output/{bot_id}/logs/mid.log               # Written only by: main.py (mid strategy run)
+tbot_bot/output/{bot_id}/logs/close.log             # Written only by: main.py (close strategy run)
+tbot_bot/output/{bot_id}/logs/error_tracebacks.log  # Written only by: main.py, status_bot.py (on uncaught error)
+tbot_bot/output/{bot_id}/logs/status.json           # Written only by: status_bot.py, status_logger.py
+tbot_bot/output/{bot_id}/logs/heartbeat.log         # Written only by: watchdog_bot.py
+tbot_bot/output/{bot_id}/logs/test_mode.log         # Written only by: integration_test_runner.py (never by test_web.py)
 tbot_bot/output/{bot_id}/logs/unresolved_orders.log # Written only by: main.py, orders_bot.py
 
 --------------------------------------------------------------------------------
 CONTROL FILES & FLAGS
 --------------------------------------------------------------------------------
-tbot_bot/control/bot_state.txt        # Written by: tbot_runner_supervisor.py (if used), main.py (phase update)
+tbot_bot/control/bot_state.txt        # Written by: tbot_supervisor.py (if used), main.py (phase update)
 tbot_bot/control/test_mode.flag       # Written by: test_web.py (UI action), removed by: integration_test_runner.py or main.py
 tbot_bot/control/control_start.flag   # Written by: main_web.py (UI action), read by: main.py
 tbot_bot/control/control_stop.flag    # Written by: main_web.py (UI action), read by: main.py
@@ -736,9 +721,10 @@ SUMMARY TABLE (Add to Doc End)
 --------------------------------------------------------------------------------
 Script Name                    | Launched By           | Role        | When Launched            | Writes/Reads
 -------------------------------|-----------------------|-------------|--------------------------|------------------------
-main.py                        | systemd/CLI           | Supervisor  | always                   | all control flags
+main.py                        | systemd/CLI           | Entry Point | always                   | all control flags
 status_bot.py                  | main.py               | Watcher     | always                   | status.json, system logs
 watchdog_bot.py                | main.py               | Watcher     | always                   | heartbeat logs
+tbot_supervisor.py             | main.py               | Supervisor  | after provisioning/boot  | bot_state.txt, process mgmt
 integration_test_runner.py     | main.py, test UI/CI   | Test runner | test mode only           | test_mode.log, output logs
 test_web.py                    | web UI                | Test flag   | admin/test action        | test_mode.flag, log read
 test_*.py                      | manual/CI/pytest      | Dev/CI test | never prod               | temp logs/console only
@@ -753,9 +739,3 @@ NOTES
 - Any changes to this convention MUST be reflected here and in code comments.
 
 ================================================================================
-
-
-
-
-
-
