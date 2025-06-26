@@ -23,6 +23,9 @@ CATEGORIES = {
     "screeners": "screeners"
 }
 
+def is_test_mode() -> bool:
+    return os.environ.get("TBOT_TEST_MODE", "0") == "1"
+
 def get_bot_identity(explicit_identity: str = None) -> str:
     if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (system is in bootstrap mode)")
@@ -173,5 +176,6 @@ __all__ = [
     "resolve_coa_schema_path",
     "resolve_universe_cache_path",
     "resolve_status_log_path",
-    "resolve_status_summary_path"
+    "resolve_status_summary_path",
+    "is_test_mode"
 ]
