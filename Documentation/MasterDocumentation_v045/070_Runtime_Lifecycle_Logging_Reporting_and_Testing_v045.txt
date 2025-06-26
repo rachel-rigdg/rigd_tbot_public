@@ -105,6 +105,9 @@ For each enabled strategy:
 - Log unresolved orders to `output/logs/unresolved_orders.log`.
 - Monitor positions continuously (stop loss, VWAP, PnL).
 - Strategy phase ends when time window closes.
+Each strategy writes ONLY its assigned log (open/mid/close) via main.py and not by any sub-process or worker.
+
+
 
 Phase 4: Risk/Fault Monitoring (Continuous)
 ↓
@@ -245,8 +248,7 @@ Final Build Checklist
 - Web UI RBAC enforced.
 - Bot lifecycle state machine followed strictly.
 - Hot config updates dynamic, no restart needed.
-- All changes documented in `VERSION.md`.
-
+- No worker, watcher, or helper is ever launched except by main.py.
 
 
 
@@ -257,6 +259,7 @@ Logging_and_Reporting
 ================================================================================
 
 This module defines the formats, storage locations, and field requirements for all TradeBot logs, trade records, summaries, and audit outputs.
+Every log is written only by its named responsible script as defined below. Any change must update this doc and corresponding code comment.
 
 Contents:
 - Logging & Reporting Format
@@ -612,6 +615,7 @@ pytest tbot_bot/test/
 **Test Mode:**
 - `integration_test_runner.py` executes only if `TEST_MODE=true`
 - All test outputs route to logs; test failures to stdout/stderr
+- integration_test_runner.py writes only to test_mode.log and output artifacts; never launches or supervises other workers/watchers.
 
 **Version Enforcement:**
 - `test_env_bot.py` must verify `.env_bot["VERSION_TAG"]` matches `VERSION.md` (fatal if mismatch; blocks deployment)
@@ -624,6 +628,131 @@ pytest tbot_bot/test/
 **Summary:**  
 All code, strategy, config, and provisioning updates are blocked if any test fails. CI/CD must gate on full test pass for any merge/release. Audit logs, trade logs, ledgers, and summaries are validated as part of the integration test suite.
 
+
+================================================================================
+TESTING, WATCHER/WORKER, AND LOGGING SYSTEM DEFINITIONS
+================================================================================
+
+Definitions:
+- **Watcher:** Long-running daemon/process launched by main.py to monitor or maintain a system aspect (health, heartbeat, broker connection, etc.).
+- **Worker:** A process launched by main.py to perform an active task (strategy run, reporting, logging). Never supervises other workers.
+- **Helper/Utility:** Python module only imported, never launched as a standalone process or via subprocess. Pure logic/support.
+- **Test Runner:** Script that executes an automated test sequence. May be launched by main.py (in test mode), CI, or developer directly.
+- **Web UI Test Trigger:** Triggers a control flag (never launches processes directly); main.py is responsible for launching any required test runners.
+
+--------------------------------------------------------------------------------
+tbot_bot/runtime/
+--------------------------------------------------------------------------------
+main.py
+    # MASTER SUPERVISOR. Only script launched by systemd or run_tbot.sh.
+    # Launches all required watcher/worker processes via subprocess.
+    # No watcher/worker is ever launched by another watcher/worker.
+    # In TEST_MODE, launches test runners directly.
+    # Writes: all control flags in tbot_bot/control/
+
+status_bot.py
+    # WATCHER. Launched by main.py only.
+    # Tracks health/state, writes status.json, session logs.
+    # Writes: tbot_bot/output/{bot_id}/logs/status.json, and system logs.
+
+watchdog_bot.py
+    # WATCHER. Launched by main.py only.
+    # Monitors broker connection/heartbeat.
+    # Writes: tbot_bot/output/{bot_id}/logs/heartbeat.log
+
+tbot_runner_supervisor.py
+    # (Optional) WATCHER. If used, only launched by main.py.
+    # Oversees overall phase transitions (initialize → provision → main, etc.).
+    # Writes: tbot_bot/control/bot_state.txt (phase string).
+
+--------------------------------------------------------------------------------
+tbot_bot/reporting/
+--------------------------------------------------------------------------------
+auto_backup.py, daily_summary.py, log_rotation.py, notify_rebalance_requirements.py,
+report_router.py, session_report.py, status_logger.py, trade_logger.py
+    # WORKERS. Only launched by main.py or imported.
+    # Each worker writes to its documented output file ONLY.
+    # For example, status_logger.py writes tbot_bot/output/{bot_id}/logs/status.json
+
+--------------------------------------------------------------------------------
+tbot_bot/test/
+--------------------------------------------------------------------------------
+integration_test_runner.py
+    # TEST RUNNER. Launched by main.py (in TEST_MODE), or manually/CI.
+    # NEVER launches any watcher/worker; only starts dedicated test helpers if needed.
+    # Writes: tbot_bot/output/{bot_id}/logs/test_mode.log, and output artifacts.
+
+test_*.py
+    # DEV/CI TESTS. Run by pytest/unittest or manually.
+    # NEVER launched by production bot. NEVER writes production logs or flags.
+
+README.md (in test/)
+    # Clarifies which scripts are web UI-triggered, which are CI/dev/manual.
+
+--------------------------------------------------------------------------------
+tbot_web/py/
+--------------------------------------------------------------------------------
+test_web.py
+    # WEB UI TEST FLAG HANDLER. Triggered only by admin action via Web UI.
+    # Writes: tbot_bot/control/test_mode.flag
+    # Does NOT launch any processes directly—main.py watches this flag and launches integration_test_runner.py.
+    # Also provides log reading endpoint for UI: reads tbot_bot/output/{bot_id}/logs/test_mode.log
+
+logs_web.py
+    # LOG READER/WEB ENDPOINT. Reads from tbot_bot/output/{bot_id}/logs/*.log, never writes.
+
+ALL OTHER BLUEPRINTS (configuration_web.py, ledger_web.py, etc.):
+    # NEVER launch workers/watchers; may write control flags for main.py to pick up.
+
+--------------------------------------------------------------------------------
+tbot_bot/support/
+--------------------------------------------------------------------------------
+All modules (utils_*, path_resolver.py, etc.)
+    # HELPERS. Imported ONLY. Never launched directly or by subprocess. Never supervise or spawn any process.
+    # May read/write helper log files if documented.
+
+--------------------------------------------------------------------------------
+LOG FILE LOCATIONS & RESPONSIBILITY
+--------------------------------------------------------------------------------
+tbot_bot/output/{bot_id}/logs/open.log            # Written only by: main.py (open strategy run)
+tbot_bot/output/{bot_id}/logs/mid.log             # Written only by: main.py (mid strategy run)
+tbot_bot/output/{bot_id}/logs/close.log           # Written only by: main.py (close strategy run)
+tbot_bot/output/{bot_id}/logs/error_tracebacks.log# Written only by: main.py, status_bot.py (on uncaught error)
+tbot_bot/output/{bot_id}/logs/status.json         # Written only by: status_bot.py, status_logger.py
+tbot_bot/output/{bot_id}/logs/heartbeat.log       # Written only by: watchdog_bot.py
+tbot_bot/output/{bot_id}/logs/test_mode.log       # Written only by: integration_test_runner.py (never by test_web.py)
+tbot_bot/output/{bot_id}/logs/unresolved_orders.log # Written only by: main.py, orders_bot.py
+
+--------------------------------------------------------------------------------
+CONTROL FILES & FLAGS
+--------------------------------------------------------------------------------
+tbot_bot/control/bot_state.txt        # Written by: tbot_runner_supervisor.py (if used), main.py (phase update)
+tbot_bot/control/test_mode.flag       # Written by: test_web.py (UI action), removed by: integration_test_runner.py or main.py
+tbot_bot/control/control_start.flag   # Written by: main_web.py (UI action), read by: main.py
+tbot_bot/control/control_stop.flag    # Written by: main_web.py (UI action), read by: main.py
+
+--------------------------------------------------------------------------------
+SUMMARY TABLE (Add to Doc End)
+--------------------------------------------------------------------------------
+Script Name                    | Launched By           | Role        | When Launched            | Writes/Reads
+-------------------------------|-----------------------|-------------|--------------------------|------------------------
+main.py                        | systemd/CLI           | Supervisor  | always                   | all control flags
+status_bot.py                  | main.py               | Watcher     | always                   | status.json, system logs
+watchdog_bot.py                | main.py               | Watcher     | always                   | heartbeat logs
+integration_test_runner.py     | main.py, test UI/CI   | Test runner | test mode only           | test_mode.log, output logs
+test_web.py                    | web UI                | Test flag   | admin/test action        | test_mode.flag, log read
+test_*.py                      | manual/CI/pytest      | Dev/CI test | never prod               | temp logs/console only
+
+--------------------------------------------------------------------------------
+NOTES
+--------------------------------------------------------------------------------
+- No watcher/worker/test runner ever launches another watcher/worker. All process launches are direct from main.py.
+- Only helpers/utilities are imported; never run as standalone or as subprocesses.
+- Web UI triggers only write flags; main.py does all process launching.
+- All log file locations are exclusive: only the named script writes that file.
+- Any changes to this convention MUST be reflected here and in code comments.
+
+================================================================================
 
 
 

@@ -14,43 +14,32 @@ Master_Index_and_Summary
 
 This master index provides a comprehensive reference to all TradeBot system specification documents. Each entry includes document number, filename, title, version, timestamp, summary of contents, and cross-reference notes for quick lookup and navigation.
 
----------------------------------------------------------------------------------------------------
-| Filename                               | Title/Subject                           | Version | Date               | Summary & Key Contents                                           | Cross-Refs                 |
----------------------------------------------------------------------------------------------------
-| 000_chatKick-off.txt                   | Initial Chat Kickoff & Setup Overview  | v042    | UTC:2025-05-30 01:16| Introductory context, user objectives, workflow guidelines       | —                         |
-| 005_Version_and_ChangeLog_v042.txt    | Version Control & Change Log             | v042    | UTC:2025-05-30 01:16| Version history, schema changes, behavior deltas, build notes    | —                         |
-| 010_Objective_and_Overview_v042.txt   | TradeBot Objective & System Overview    | v042    | UTC:2025-05-30 01:16| System objective, high-level architecture, instructions, deployment notes, time zone standards | —                         |
-| 015_Optional_Expansion_Modules_v042.txt | Optional Expansion Modules Overview     | v042    | UTC:2025-05-30 01:16| Backtesting, optimization, alerting, slippage modeling, future enhancements | —                         |
-| 020_Env_Config_and_Security_v042.txt  | Environment Configuration & Security     | v042    | UTC:2025-05-30 01:16| Secure config files, encrypted deployment, environment variables, decryption workflows | —                         |
-| 025_Broker_API_Integration_v042.txt   | Broker API Integration Details             | v042    | UTC:2025-05-30 01:16| Broker-specific adapters, API contracts, error handling, connection management | —                         |
-| 030_User Credential & Configuration Lifecycle Blueprint_v042.txt | User Credential & Configuration Lifecycle | v042 | UTC:2025-05-30 01:16| User auth lifecycle, encrypted storage, broker credential import, local Web UI control | —                         |
-| 035_Encryption_and_Key_Management_v042.txt | Encryption & Key Management Policies      | v042    | UTC:2025-05-30 01:16| Fernet key usage, rotation, secure storage, ephemeral config handling | —                         |
-| 040_Directory_Structure_v042.txt       | Directory Structure & Module Layout      | v042    | UTC:2025-05-31 22:33| Project directory hierarchy, updated module names and file roles | —                         |
-| 050_Trading_Bot_Core_Specs_v042.txt   | Core Trading Bot Specifications          | v042    | UTC:2025-05-30 01:16| Trading logic, strategy modules, broker enablement, float handling, ledger routing rules | —                         |
-| 060_Enhancements_and_Safety_v042.txt  | Safety Systems & Enhancement Modules     | v042    | UTC:2025-05-30 01:16| Risk controls, kill switch, watchdog, enhancements like filters and gating | —                         |
-| 070_Accounting_Integration_v042.txt   | Accounting System Integration             | v042    | UTC:2025-05-30 01:16| Ledger schema, double-entry enforcement, OFX export, audit compliance; references renamed COA utility modules (`coa_utils_ledger.py`, `utils_coa_web.py`) for clarity | —                         |
-| 080_Logging_and_Reporting_v042.txt    | Logging, Reporting & Audit Format         | v042    | UTC:2025-05-30 01:16| Structured logs, trade history formats, summary metrics, compliance | —                         |
-| 085_TEST_MODE_v042.txt                 | TEST_MODE Specification & Runtime Control| v042    | UTC:2025-06-10 18:04| Defines transient test mode triggered via control flag file; outlines behavior, lifecycle, UI, and compliance | —                         |
-| 090_Runtime_and_Lifecycle_v042.txt    | Runtime Flow & Bot Lifecycle               | v042    | UTC:2025-05-30 01:16| Session phases, validation checks, shutdown procedures, float usage | —                         |
-| 100_Testing_and_Validation_v042.txt   | Testing & Validation Suite                  | v042    | UTC:2025-05-30 01:16| Unit tests, integration tests, backtest engine, CI compatibility  | —                         |
-| 110_Web_Interface_and_Dashboard_v042.txt | Web UI & Dashboard Specifications          | v042    | UTC:2025-05-30 01:16| Flask backend, UI components, RBAC, COA management, live status; all COA management via `utils_coa_web.py` | Cross-ref: 120_WebInterfaceStatus Design |
-| 120_WebInterfaceStatus Design_v042.txt | Detailed Dashboard Status Panel Design      | v042    | UTC:2025-05-30 01:16| Status panel fields, operational notes, visual states, API sources | Cross-ref: 110_Web_Interface_and_Dashboard |
----------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------
+| Filename                                      | Title/Subject                                  | Version | Date                | Summary & Key Contents                                                  | Cross-Refs         |
+---------------------------------------------------------------------------------------------------------------
+| 000_chatKick-off.txt                          | Initial Chat Kickoff & Setup Overview           | v045    | UTC:2025-06-24      | Project goals, workflow, onboarding, and initial constraints            | —                  |
+| 010_Introduction_Objective_and_Overview_v045.txt | Objective & System Overview                   | v045    | UTC:2025-06-24      | High-level system objective, instructions, deployment, time zone std    | —                  |
+| 020_Directory_Structure_v045.txt               | Directory Structure & Module Layout             | v045    | UTC:2025-06-24      | Authoritative directory/file structure, launch/control notes            | —                  |
+| 030_Trading_Bot_Core_Specs_v045.txt            | Core Trading Bot Specifications                 | v045    | UTC:2025-06-24      | Infrastructure, risk, strategy logic, integration, float/ledger rules   | —                  |
+| 040_Screener_Symbol_Universe_v045.txt          | Symbol Screener & Universe Controls             | v045    | UTC:2025-06-24      | Screener modules, universe management, dynamic symbol filtering         | —                  |
+| 050_Enhancements_and_Safety_v045.txt           | Safety/Enhancement Modules                      | v045    | UTC:2025-06-24      | Kill switch, risk gating, VIX, filters, session enforcement             | —                  |
+| 060_Accounting_Integration_v045.txt            | Accounting & Ledger Integration                 | v045    | UTC:2025-06-24      | OFX schema, double-entry, COA, export, reconciliation                   | —                  |
+| 070_Runtime_Lifecycle_Logging_Reporting_and_Testing_v045.txt | Runtime, Logging, Testing, & Reporting | v045    | UTC:2025-06-24      | Session lifecycle, state machine, logging/report/test specs, TEST_MODE  | —                  |
+| 080_Env_Security_Integration_and_Expansion_Modules.txt | Env, Security, & Expansion Modules        | v045    | UTC:2025-06-24      | Environment, encrypted config, key management, future enhancements      | —                  |
+| 090_Web_Interface_and_Dashboard_v045.txt       | Web UI & Dashboard Specification                | v045    | UTC:2025-06-24      | Flask UI, RBAC, bot control, dashboard logic, live status, COA mgmt     | —                  |
+---------------------------------------------------------------------------------------------------------------
 
 Usage Notes:
-- Always reference document numbers and filenames for consistent tracking.
-- Use version and timestamps to verify currency and update status.
-- Cross-reference columns highlight closely linked documents to consult in tandem.
-- This index supports ChatGPT’s long-term context retention and rapid content retrieval during development.
-
+- Reference filenames and versions for currency.
+- All content is current as of v045.
+- Old v042/legacy documents are deprecated; do not consult prior indices.
+- If in doubt, defer to the most recent versioned spec above.
 
 
 
 
 == ==============================================================================
-Document: 010_Objective_and_Overview
-Version: v045
-Date: UTC:2025-06-24 00:00:00
+Objective_and_Overview
 ================================================================================
 
 This module contains the TradeBot system objective, high-level overview, system instructions, deployment notes, platform compatibility, and time zone standards.
@@ -91,7 +80,9 @@ The system operates intraday strategies in real time with fully automated, risk-
 - **All trades and PnL activity must write to `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`**, with all ledger paths and metadata defined by internal config loaded at session start.
 - **The bot does not read, manage, or calculate float or ledger updates from any external system during runtime; all provisioning occurs during Web UI bootstrap or by manual config update only.**
 
-PnL, float tracking, and revenue movements are ingested, reconciled, and logged by the accounting system only after session completion. TEST_MODE is deprecated and fully removed; all test routines are executed strictly via tbot_bot/test/ modules only.
+PnL, float tracking, and revenue movements are ingested, reconciled, and logged by the accounting system only after session completion. 
+
+TEST_MODE is an active, runtime-only feature triggered by the presence of `tbot_bot/control/test_mode.flag`, typically set via the Web UI (`test_web.py`). When TEST_MODE is enabled, `main.py` supervises execution of dedicated test routines in `tbot_bot/test/`—these simulate end-to-end bot logic without affecting production ledgers or outputs. No production data or state is modified in TEST_MODE, and all test logs/artifacts are isolated from live outputs.
 
 ==============================
 System Instructions 
@@ -178,13 +169,15 @@ Development:
 Production:
 - Runs on Ubuntu 22.04 LTS (DigitalOcean)
 - Deployed via SCP/SFTP or `git pull` to prod branch
-- Run modes:
-  - `start_bot.py` (manual/cron)
-  - `service_bot.py` (systemd optional)
+- Run mode:
+  - `tbot_bot/runtime/main.py` is the **single systemd entrypoint** for all bot operations (launched by `tbot_bot.service`)
+  - No other script or CLI tool launches bot workers, watchers, or strategies
+  - Manual or cron launches of `start_bot.py` or `service_bot.py` are **deprecated and unsupported**; control is via Web UI flags and systemd only
 - Logs:
-  - `output/logs/*.log` – strategy + unresolved
-  - `output/summaries/` – session summaries
-  - `output/trades/` – CSV/JSON
+  - `output/{BOT_IDENTITY}/logs/*.log` – strategy logs, unresolved orders, errors
+  - `output/{BOT_IDENTITY}/summaries/` – session summaries
+  - `output/{BOT_IDENTITY}/trades/` – CSV/JSON trade histories
+
 
 Brokers:
 - One active broker per bot
