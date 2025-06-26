@@ -1,4 +1,3 @@
-
 # tbot_bot/support/path_resolver.py
 # Resolves dynamic paths for TradeBot modules based on identity and file category.
 # v041: Contains only runtime path logic for web UI or bot—never triggers any provisioning, bootstrapping, or privileged init.
