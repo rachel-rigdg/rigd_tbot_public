@@ -64,7 +64,7 @@ def rotate_all_keys_and_secrets(config: dict) -> None:
     generate_and_save_acctapi_keys()
     generate_and_save_alert_keys()
     generate_and_save_network_config_keys()
-    # Write bot_identity secret BEFORE rotating bot_identity.key to avoid key mismatch
+    # --- PATCH: ALWAYS WRITE BOT_IDENTITY SECRET USING LATEST CONFIG ---
     write_encrypted_bot_identity_secret(config.get("bot_identity", {}))
     write_encrypted_network_config_secret(config.get("network_config", {}))
     write_encrypted_alert_secret(config.get("alert_channels", {}))
@@ -100,7 +100,7 @@ def provision_keys_and_secrets(config: dict = None) -> None:
             config["bot_identity"] = bot_identity
         print(f"[provisioning_helper] bot_identity created/set: {config['bot_identity']}")
 
-        # Write bot_identity secret immediately to ensure consistency before rotating keys
+        # --- PATCH: ENSURE BOT_IDENTITY SECRET IS ALWAYS FRESH FROM CONFIG ---
         write_encrypted_bot_identity_secret(config.get("bot_identity", {}))
 
         rotate_all_keys_and_secrets(config)
