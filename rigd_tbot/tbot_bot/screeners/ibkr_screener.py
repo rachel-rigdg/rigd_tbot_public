@@ -4,8 +4,8 @@
 
 import time
 from tbot_bot.screeners.screener_base import ScreenerBase
+from tbot_bot.screeners.screener_utils import load_screener_api_config
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.decrypt_secrets import decrypt_json
 
 # Placeholder: replace with real IBKR API imports and logic as needed
 def ibkr_get_quote(symbol):
@@ -21,6 +21,7 @@ def ibkr_get_quote(symbol):
     return {"symbol": symbol, "c": c, "o": o, "vwap": vwap}
 
 config = get_bot_config()
+broker_creds = load_screener_api_config(category="broker")
 LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))

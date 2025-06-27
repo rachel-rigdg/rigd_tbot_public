@@ -5,12 +5,11 @@
 import requests
 import time
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.support.decrypt_secrets import decrypt_json
+from tbot_bot.screeners.screener_utils import load_screener_api_config
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
-
-broker_creds = decrypt_json("broker")
+broker_creds = load_screener_api_config(category="broker")
 ALPACA_API_KEY = broker_creds.get("BROKER_API_KEY", "")
 ALPACA_SECRET_KEY = broker_creds.get("BROKER_SECRET_KEY", "")
 BROKER_USERNAME = broker_creds.get("BROKER_USERNAME", "")

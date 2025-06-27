@@ -6,11 +6,11 @@ import requests
 import time
 from pathlib import Path
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.support.decrypt_secrets import decrypt_json
+from tbot_bot.screeners.screener_utils import load_screener_api_config
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
-screener_secrets = decrypt_json("screener_api")
+screener_secrets = load_screener_api_config()
 SCREENER_API_KEY = (
     screener_secrets.get("SCREENER_API_KEY", "")
     or screener_secrets.get("FINNHUB_API_KEY", "")  # legacy compat

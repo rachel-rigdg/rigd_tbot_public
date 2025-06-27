@@ -67,11 +67,9 @@ def fetch_finnhub_symbols(env):
             continue
         for s in r.json():
             symbol = s.get("symbol")
-            # Profile lookup for market cap, sector, etc.
             profile_url = f"{SCREENER_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={SCREENER_API_KEY}"
             profile = requests.get(profile_url, auth=auth)
             p = profile.json() if profile.status_code == 200 else {}
-            # Quote for price/volume
             quote_url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
             quote = requests.get(quote_url, auth=auth)
             q = quote.json() if quote.status_code == 200 else {}

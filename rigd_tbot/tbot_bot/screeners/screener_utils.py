@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 
 from tbot_bot.support.path_resolver import resolve_universe_cache_path
+from tbot_bot.support.decrypt_secrets import decrypt_json  # ADDED
 from tbot_bot.config.env_bot import load_env_bot_config
 
 LOG = logging.getLogger(__name__)
@@ -17,6 +18,17 @@ SCHEMA_VERSION = "1.0.0"
 
 class UniverseCacheError(Exception):
     pass
+
+def get_screener_secrets() -> dict:  # NEW CENTRALIZED FUNCTION
+    """
+    Loads and returns the screener_api secrets dict, decrypted from storage.
+    Used by all screener modules for uniform secret access.
+    """
+    try:
+        return decrypt_json("screener_api")
+    except Exception as e:
+        LOG.error(f"[screener_utils] Failed to load screener secrets: {e}")
+        return {}
 
 def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)
