@@ -23,7 +23,6 @@ from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
 
 # --- SURGICAL PATCH: ADD POSTCONFIG KEY/SECRET ROTATION ---
 from tbot_bot.config.key_manager import generate_all_postconfig_keys
-from tbot_bot.config.config_encryption import encrypt_all_postconfig_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -141,10 +140,8 @@ def save_configuration():
     try:
         save_runtime_config(config)
         # --- POSTCONFIG KEY + SECRET ROTATION ---
-        generate_all_postconfig_keys()
-        encrypt_all_postconfig_secrets(config)
-        # --- END PATCH ---
         if not is_first_bootstrap():
+            generate_all_postconfig_keys()
             live_config = get_live_config_for_rotation()
             if live_config:
                 rotate_all_keys_and_secrets(live_config)
