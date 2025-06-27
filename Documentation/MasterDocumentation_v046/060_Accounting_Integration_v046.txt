@@ -1,8 +1,8 @@
 ================================================================================
 Document: 060
 Accounting_Integration
-Version: v045
-Date: UTC:2025-06-24 00:00:00
+Version: v046
+Date: UTC:2025-06-27 00:00:00
 ================================================================================
 
 This module mandates alignment of TradeBot with the internal, OFX-compliant accounting and ledger structure. *No external or shared ledger/accounting system may alter, inject, or provision data into the bot’s runtime, ledger, or COA files. All accounting integration is local, explicit, and compliance-locked.*
@@ -10,6 +10,7 @@ This module mandates alignment of TradeBot with the internal, OFX-compliant acco
 Contents:
 - TBOT LEDGER INTEGRATION: ARCHITECTURE & COMPLIANCE
 - Chart of Accounts — Single-Broker TBot Architecture
+- Atomic Key/Secret Rotation Compliance
 
 Ledger integrity, OFX compliance, and audit traceability are enforced at every stage.
 
@@ -55,6 +56,10 @@ CORE INTEGRATION RULES
 6. **STRICT SYSTEM INDEPENDENCE**
    - No runtime or test logic may query, ingest, or update external accounting systems or ledgers.
    - All trade/test actions are local to the bot’s ledgers and logs.
+
+7. **Atomic Key/Secret Rotation**
+   - All Fernet keys and corresponding encrypted secrets used for accounting, ledger, and export modules are automatically regenerated and re-encrypted atomically whenever any config, credential, or sensitive secret is modified or a user is created/modified.  
+   - Key/secret rotation does not require manual steps; all affected files are backed up before any overwrite and no old key or secret is reused.
 
 ----------------------------------------------------------------------  
 MANDATORY FIELDS FOR EACH TRADE/ACTION  
@@ -213,7 +218,5 @@ Export Constraints and Enforcement
 - All structure, compliance, and export logic is enforced by local accounting modules.
 
 **Note:** Inverse ETF, leveraged, or synthetic trades are recorded as normal, with tags. No special COA accounts are required.
-
-
 
 

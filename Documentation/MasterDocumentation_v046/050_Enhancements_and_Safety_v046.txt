@@ -1,8 +1,8 @@
 ================================================================================
 Document: 050
 Enhancements_and_Safety
-Version: v045
-Date: UTC:2025-06-24 00:00:00
+Version: v046
+Date: UTC:2025-06-27 00:00:00
 ================================================================================
 
 This module specifies optional enhancement modules, filters, and core safety systems, including error management.
@@ -10,11 +10,10 @@ This module specifies optional enhancement modules, filters, and core safety sys
 Contents:
 - Enhancement Module Activation (Comprehensive — All Modules Listed)
 - Centralized Error Management (Lossless Compression, Spec v1.1)
+- Atomic Key/Secret Rotation Compliance
 
 
 All modules require runtime self-check compliance and strict audit logging.
-
-
 
 
 =============================================================================================================================================
@@ -85,6 +84,7 @@ All enhancements are independently testable and auto-invoked from `strategy_rout
 - **risk_bot.py**: Enforces all allocation and risk controls, validates pre-execution.
 - **error_handler.py**: Centralized error capture/logging; triggers shutdown on fatal error.
 - **security_bot.py**: Validates decryption of `.env_bot.enc`; blocks plaintext config in prod.
+- **Atomic Key/Secret Rotation:** All Fernet keys and corresponding encrypted secrets are automatically regenerated and re-encrypted atomically when any config, credential, or sensitive secret is modified or a user is created/modified. Manual key rotation is not required. Backups of all affected files are created before overwrite. No old key/secret is reused.
 
 ---
 
@@ -105,8 +105,6 @@ All enhancements are independently testable and auto-invoked from `strategy_rout
 **Self-Check System:**
 - Every enhancement and safety module must implement `.self_check()` or equivalent on launch.  
 - Launch blocked and cause logged on any failure.
-
-
 
 
 =============================================================================================================================================
@@ -152,5 +150,4 @@ Summary:
 - Fatal = immediate halt, full context for audit.
 - All audit artifacts preserved.
 - Backtest engine = CI-ready, safe, no ledger/OFX/web.
-
 

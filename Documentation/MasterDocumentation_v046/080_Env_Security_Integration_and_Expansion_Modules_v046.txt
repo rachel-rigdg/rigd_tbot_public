@@ -1,11 +1,9 @@
-
 ================================================================================
 Document:080
 Env_Security_Integration_and_Expansion_Modules
-Version: v045
-Date: UTC:2025-06-24 00:00:00
+Version: v046
+Date: UTC:2025-06-27 00:00:00
 ================================================================================
-
 
 
 ================================================================================
@@ -36,6 +34,7 @@ Modules Included:
 - Automated config encryption/decryption workflows (`tools/encrypt_env_bot.py`)
 - Secure ephemeral key storage strategies for container/cloud deployments
 - Audit trails for key usage and config changes
+- **All expansion modules that generate, modify, or rely on sensitive config, secrets, or credentials must trigger full key/secret atomic rotation on change. Rotation and re-encryption are fully automated, with all prior files backed up; no manual operator action required.**
 
 4. Reporting & Compliance Extensions
 - Extended reporting API for tax, regulatory filings
@@ -48,11 +47,14 @@ Implementation Notes:
 - Modules must implement `.self_check()` to integrate with system health.
 - Any config toggles required must be clearly documented in `.env_bot` schema.
 - Use strict logging standards and audit trails.
+- **Expansion modules must use only system APIs for all key, secret, and config management—direct file writes or ad hoc key handling are forbidden.**
+- **Key/secret rotation and encryption workflows must align with system core logic; all updates to sensitive data automatically invoke atomic key rotation and re-encryption for the affected category and all related secrets/configs.**
 
 Compliance:
 - Modules adhere strictly to {CURRENT_VERSION} build instructions and audit requirements.
 - No runtime config or credential leaks permitted.
 - Must operate independently of Web UI unless explicitly integrated.
+
 
 
 ================================================================================
@@ -331,9 +333,8 @@ RISK_FREE_RATE=0.045
 RISK_FREE_RATE_SOURCE=dynamic       
 
 
-
 =============================================================================================================================================
-Secure Environment Variables (UPDATED – Ephemeral Encrypted Deployment)
+Secure Environment Variables (UPDATED – Ephemeral Encrypted Deployment, Automated Key Rotation)
 =============================================================================================================================================
 
 Overview:
@@ -345,20 +346,24 @@ Security Goals:
 - `.env_bot` and all sensitive config data are encrypted at rest using AES-256 (Fernet).
 - Encrypted config files reside under `tbot_bot/support/` as `.env_bot.enc` and other category-specific encrypted files (`.bot_identity.enc`, `.broker.enc`, etc.).
 - Corresponding encryption keys reside under `tbot_bot/storage/keys/`.
+- **Whenever any secret or key is created or modified, the system performs a fully automated atomic rotation and re-encryption of all key/secret pairs.** This ensures forward secrecy and eliminates partial update risk.
+- All prior key and secret files are versioned and backed up before overwrites.
 - Decryption keys and encrypted files are **never committed to source control** (enforced by `.gitignore` and `.scpignore`).
 - The system performs **runtime decryption in-memory only**, avoiding persistent plaintext files on disk.
 - Post-decryption, sensitive data is immediately overwritten or discarded after use.
 - All decryption errors are logged securely for audit purposes.
 
 Module Locations & Responsibilities:
-- Encryption and decryption logic centralized in:
+- Encryption, decryption, and key/secret rotation logic are centralized in:
   - `tbot_bot/support/encrypt_secrets.py`
   - `tbot_bot/support/decrypt_secrets.py`
-  - `tbot_bot/config/security_bot.py` (manages bot config encryption, key validation, and secret writes)
+  - `tbot_bot/config/security_bot.py` (manages bot config encryption, key validation, atomic rotation, and secret writes)
+  - `tbot_bot/config/key_manager.py` (manages generation and full-rotation of all Fernet keys)
 - The Web UI configuration module (`tbot_web/py/configuration_web.py`) handles:
   - Writing encrypted secret category files into `tbot_bot/support/`.
   - Initializing core databases.
   - Encrypting `.env_bot` in-memory and saving `.env_bot.enc`.
+  - **Triggering full key/secret rotation and re-encryption whenever config or credentials are modified.**
 - `tbot_bot/config/env_bot.py` loads and validates decrypted bot config at runtime.
 - All secret keys and encrypted files are accessed via absolute paths resolved by `tbot_bot/support/path_resolver.py`.
 
@@ -368,60 +373,70 @@ Ephemeral .env.enc Support:
 - No plaintext `.env` is ever persisted on disk in production.
 - `.env_bot` follows similar ephemeral encrypted deployment, ensuring sensitive bot config is protected.
 
-Encryption/Decryption Workflow:
+Encryption/Decryption & Rotation Workflow:
 1. Populate plaintext `.env_bot` with required variables.
 2. Encrypt `.env_bot` using `tools/encrypt_env_bot.py` to produce `.env_bot.enc`.
-3. Upload `.env_bot.enc` and corresponding keys (`env.key`, `env_enc.key`, etc.) to deployment servers.
-4. At runtime, decrypt `.env_bot.enc` **in memory**; load and validate keys.
-5. All category-specific encrypted JSON files (`bot_identity.json.enc`, `broker.json.enc`, etc.) are written and read from `tbot_bot/support/` during Web UI config lifecycle.
-6. The bootstrap process initializes missing secret category files from Web UI input.
+3. **Whenever any secret category or credential is created, updated, or removed, the system automatically generates new Fernet keys for all secret categories, re-encrypts all config/secret files, and backs up the old keys/secrets.**
+4. Upload `.env_bot.enc` and all corresponding new keys (`env.key`, `env_enc.key`, etc.) to deployment servers.
+5. At runtime, decrypt `.env_bot.enc` **in memory**; load and validate keys.
+6. All category-specific encrypted JSON files (`bot_identity.json.enc`, `broker.json.enc`, etc.) are written and read from `tbot_bot/support/` during Web UI config lifecycle.
+7. The bootstrap process initializes missing secret category files from Web UI input.
 
 Validation and Error Handling:
 - Decryption failures or missing required environment variables cause fatal startup errors.
 - All such errors are logged with timestamps and module context.
 - Clear human-readable error messages are displayed to operators without revealing secrets.
 - Access to encryption keys must be strictly restricted in production environments.
+- **Key/secret rotation failures are fatal and block startup. All failures are logged and trigger a backup/rollback attempt.**
 
 Recovery:
 - Restore encrypted secrets and keys from secure backups if files are lost or corrupted.
 - Re-encrypt plaintext secrets if needed using `tools/encrypt_env_bot.py` and related scripts.
+- **On any config or personnel change, perform a full key rotation to ensure no prior access remains.**
 - Rotate encryption keys on personnel changes or compromise.
 
 Best Practices:
 - Never store plaintext secrets in version control or on persistent disk.
 - Use ephemeral decrypted configs only in RAM or secure temporary storage.
 - Exclude all decrypted secrets and encryption keys via `.gitignore` and `.scpignore`.
-- Log all secret access and decryption events for audit trails.
+- Log all secret access, decryption, and key rotation events for audit trails.
 - Perform thorough staging environment testing before production deployment.
 
 Compliance and Verification:
 - The `build_check.py` tool verifies presence, integrity, and consistency of all required encrypted config and key files before session start.
 - Runtime config loads are monitored and audited by the logging subsystem.
+- **Key/secret rotation, backup, and audit are fully enforced at the system level and are required for all production deployments.**
 
 ---
 
 **Summary Table:**
 
-| File                | Type           | Storage Location                     | Deployment State       | Encryption Key Location              |
-|---------------------|----------------|------------------------------------|-----------------------|------------------------------------|
-| `.env`              | Global config  | Project root                       | Optional (plaintext)   | -                                  |
-| `.env.enc`          | Global config  | Project root                       | Recommended (encrypted)| `storage/keys/env_enc.key`          |
-| `.env_bot`          | Bot config     | Project root (temp only)           | Forbidden (prod)       | -                                  |
-| `.env_bot.enc`      | Bot config     | `tbot_bot/support/`                | Required (encrypted)   | `storage/keys/env.key`              |
-| `bot_identity.json.enc` | Bot identity  | `tbot_bot/support/`               | Created during bootstrap | `storage/keys/bot_identity.key`  |
-| `broker.json.enc`       | Broker creds  | `tbot_bot/support/`                | Created during bootstrap | `storage/keys/broker.key`         |
-| `smtp.json.enc`         | SMTP creds    | `tbot_bot/support/`                | Created during bootstrap | `storage/keys/smtp.key`           |
-| `screener_api.json.enc` | Screener API  | `tbot_bot/support/`                | Created during bootstrap | `storage/keys/screener_api.key`   |
-| `network_config.json.enc` | Network config | `tbot_bot/support/`              | Created during bootstrap | `storage/keys/network.key`        |
-| `alert_channels.json.enc` | Alert channels | `tbot_bot/support/`              | Created during bootstrap | `storage/keys/alert.key`          |
+| File                       | Type           | Storage Location           | Deployment State          | Encryption Key Location               |
+|----------------------------|----------------|----------------------------|--------------------------|---------------------------------------|
+| `.env`                     | Global config  | Project root               | Optional (plaintext)     | -                                     |
+| `.env.enc`                 | Global config  | Project root               | Recommended (encrypted)  | `storage/keys/env_enc.key`            |
+| `.env_bot`                 | Bot config     | Project root (temp only)   | Forbidden (prod)         | -                                     |
+| `.env_bot.enc`             | Bot config     | `tbot_bot/support/`        | Required (encrypted)     | `storage/keys/env_bot.key`            |
+| `bot_identity.json.enc`    | Bot identity   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/bot_identity.key`       |
+| `broker.json.enc`          | Broker creds   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/broker.key`             |
+| `smtp.json.enc`            | SMTP creds     | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/smtp.key`               |
+| `screener_api.json.enc`    | Screener API   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/screener_api.key`       |
+| `network_config.json.enc`  | Network config | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/network_config.key`     |
+| `alert_channels.json.enc`  | Alert channels | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/alert_channels.key`     |
+| `acct_api.json.enc`        | Acct API       | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/acct_api.key`           |
+| `broker_credentials.json.enc`| Broker API   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/broker_credentials.key` |
+| `smtp_credentials.json.enc`| SMTP API       | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/smtp_credentials.key`   |
+| `acct_api_credentials.json.enc`| Acct API   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/acct_api_credentials.key`|
 
 ---
 
 **NOTE:**
-- All encrypted secret category files under `tbot_bot/support/` are generated and managed exclusively by the Web UI configuration bootstrap process.
+- All encrypted secret category files under `tbot_bot/support/` are generated, rotated, and managed exclusively by the Web UI configuration/bootstrap process and the key/secret manager modules.
+- **Whenever any secret or credential is created or modified, the system triggers full atomic rotation and re-encryption of all key/secret pairs, with versioned backup.**
 - No plaintext secrets should be stored outside the Web UI input or staging environment files.
 - The bot runtime relies exclusively on the encrypted `.env_bot.enc` and the category files to operate securely.
 - Encrypted files and keys must never be committed to any version control system.
+- All prior keys/secrets are backed up under `tbot_bot/storage/backups/` upon rotation.
 
 ---
 
@@ -543,6 +558,8 @@ BROKER_URL=               # Full API base URL (e.g., https://paper-api.alpaca.ma
 - No broker-specific variable names (e.g., `ALPACA_API_KEY`, `IBKR_API_HOST`) are permitted in the config, adapters, or runtime logic.
 - Broker adapters are responsible for mapping these generic variables to the exact fields and authentication flows required by their respective APIs.
 - All secret fields must be sourced via secure decryption (never from plaintext `.env` in production).
+- On any update or provisioning of broker credentials, the full set of encrypted keys and secrets are rotated and re-encrypted atomically, with backup of all previous key/secret versions under `storage/backups/`.
+
 
 **Example Usage in Broker Adapter:**
 ```python
@@ -615,6 +632,7 @@ This blueprint defines user credential management, configuration file lifecycle,
 - User registration and password change are handled by a persistent registration form (`register.html`) and endpoint (`register_web.py`).
 - After first successful provisioning and bootstrapping, if no users exist in the database, the bot automatically redirects to the registration page.
 - To change username or password later, user navigates to registration page to update credentials, which persist in SYSTEM_USERS.db and update encrypted keys as needed.
+- Any update to user credentials or passwords triggers atomic regeneration and re-encryption of all Fernet keys and associated secrets to enforce system-wide cryptographic freshness and mitigate credential compromise risks.
 
 ### 2.3 Backup & Recovery
 
@@ -646,7 +664,7 @@ This blueprint defines user credential management, configuration file lifecycle,
 
 ### 3.3 Key File Provisioning Policy
 
-- **All Fernet key files are provisioned and checked by the backend (`key_manager.py`/`provisioning_helper.py`), triggered by the Web UI.**
+- **All Fernet key files are provisioned, checked, and, on any update or change, atomically regenerated and re-encrypted by the backend (key_manager.py/provisioning_helper.py), triggered by the Web UI. Previous keys and encrypted secrets are backed up to storage/backups/ at every operation to allow safe rollback and full auditability.**
 - Keys are written only to `tbot_bot/storage/keys/`.
 - *Manual/CLI key creation is forbidden* and will be flagged as noncompliant.
 
@@ -678,6 +696,9 @@ This blueprint defines user credential management, configuration file lifecycle,
 | `session_manager.py`        | Session state, token handling                   | No key or secret storage                                     |
 | `utils_web.py`              | Web-only helpers, non-secret logic              | No config/secret/key writes                                  |
 
+- Any time `register_web.py` creates or updates a user, or SYSTEM_USERS.db is modified, a full key and secret atomic rotation is performed by backend scripts—triggered automatically. All prior keys and secrets are backed up to `storage/backups/` at each change event.
+
+
 ---
 
 ## 6. Separation of Concerns Table
@@ -701,6 +722,8 @@ This blueprint defines user credential management, configuration file lifecycle,
 - All events are logged (UTC, user, checksum, result). Plaintext/temporary artifacts are forbidden.
 - Key lifecycle is managed with strict rotation; manual key file creation is forbidden.
 - Decryption failures cause logged, user-safe fatal errors.
+- On any user or secret update, the system performs full atomic key rotation and re-encryption of all secrets, with automated backup of all old key/secret files for audit and rollback.
+
 
 ---
 
@@ -712,9 +735,10 @@ This blueprint defines user credential management, configuration file lifecycle,
 - **User Registration:** After initial provisioning, registration is enforced if no user exists in SYSTEM_USERS.db.
 - **No CLI-based provisioning:** No key, credential, or config files may be created outside of the UI-triggered provisioning flow and backend runner.  
 - **Audit:** All changes and events are audit-logged for compliance.
+- **Key/Secret Atomic Rotation:** All key and secret creation, update, or user change events trigger full system-wide atomic rotation and re-encryption, with all previous keys/secrets archived.
+
 
 ---
-
 ================================================================================
 Encryption_and_Key_Management
 {CURRENT_VERSION}
@@ -740,6 +764,7 @@ Key Management Policies
   - Key generation, validation, rotation are performed only via the configuration/provisioning workflow (`tbot_web/py/configuration_web.py`, `key_manager.py`, `security_users.py`).  
   - Manual or CLI-based key generation is strictly forbidden after bootstrap.
 - **Rotation is atomic and logged:**  
+  - Any time user credentials or secrets are created, updated, or changed (including registration, password change, or SYSTEM_USERS.db update), all Fernet keys and all encrypted secrets are atomically regenerated and all previous versions are backed up to `storage/backups/`.
   - Key rotations, re-provisioning, or recovery are performed from the Web UI only.  
   - All events are logged with UTC timestamp, user, affected category, and change context.
 - **No key file is ever committed to VCS, backup, or exported:**  
@@ -753,6 +778,7 @@ Encryption Workflows
 - Decrypt only on runtime startup or configuration reload; any failure is fatal and blocks the process.
 - Plaintext configs (if any) are ephemeral—held only in RAM or secure temp, then destroyed/overwritten after use.
 - All encryption and decryption events are logged for audit review.
+- On any user or secret update, the system performs full atomic key rotation and re-encryption of all secrets, with automated backup of all old key/secret files for audit and rollback.
 
 --------------------------------------------------------------------------------
 Secure Backup & Recovery
@@ -799,8 +825,6 @@ Summary
 - Encryption and key management is centralized, automated, and strictly audited via the TradeBot Web UI.  
 - No manual key or credential handling is permitted.  
 - All failures or policy violations trigger fatal errors and are recorded for compliance review.
+- All key and secret creation, update, or user change events trigger full system-wide atomic rotation and re-encryption, with all previous keys/secrets archived.
 - The bot state machine (`bot_state.txt`) governs runtime session transitions, UI routing, and error states, and must always be kept in sync with session events for full compliance.
-
-
-
 

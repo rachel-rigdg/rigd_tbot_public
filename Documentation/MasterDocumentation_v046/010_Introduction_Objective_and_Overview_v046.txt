@@ -1,11 +1,9 @@
-
 ================================================================================
 Document: 010
 010_Introduction_Objective_and_Overview
-Version: v045
-Date: UTC:2025-06-24 00:00:00
+Version: v046
+Date: UTC:2025-06-27 00:00:00
 ================================================================================
-
 
 
 ================================================================================
@@ -35,10 +33,7 @@ Usage Notes:
 - Old v042/legacy documents are deprecated; do not consult prior indices.
 - If in doubt, defer to the most recent versioned spec above.
 
-
-
-
-== ==============================================================================
+================================================================================
 Objective_and_Overview
 ================================================================================
 
@@ -52,6 +47,7 @@ Contents:
 - Time Zone Standards
 
 All specifications and requirements are mandatory and governed by the RIGD Trading Bot build process.
+
 
 ==============================
 Objective (UPDATED)
@@ -112,7 +108,10 @@ System Instructions
 
 12. **The Chart of Accounts (COA) for the bot is fully self-contained and managed solely through a dedicated COA Management page in the tbot_web UI. All creation, modification, and export of the COA must occur via the Web UI. No CLI utilities, accounting system pushes, or external edits are permitted. The COA must be versioned, validated at runtime, and stored as both a JSON structure and a SQLite metadata table. All Web UI COA operations must use `utils_coa_web.py` and all ledger/schema operations must use `coa_utils_ledger.py`.**
 
-13. Improvisation is FORBIDDEN. Clarify ambiguities before code changes. STRICT deterministic, auditable logic only.
+13. **All Fernet keys and corresponding encrypted secrets (including those for ledger, COA, user credentials, and all config) must be rotated atomically and re-encrypted whenever any config, credential, or sensitive secret is modified, or a user is created/modified. This process is fully automated, with all affected files backed up before any overwrite. Old keys/secrets are never reused, and rotation requires no manual action.**  
+
+14. Improvisation is FORBIDDEN. Clarify ambiguities before code changes. STRICT deterministic, auditable logic only.
+
 
 ================================================================================
 Deployment Notes 
@@ -155,6 +154,7 @@ COA/Schema Enforcement
 - All account transactions are validated against the COA at time of entry.
 - **COA operations in the UI must use `utils_coa_web.py`; ledger and schema checks must use `coa_utils_ledger.py`.**
 
+
 ================================================================================
 Current Platforms (Single Broker)
 ================================================================================
@@ -177,7 +177,6 @@ Production:
   - `output/{BOT_IDENTITY}/logs/*.log` – strategy logs, unresolved orders, errors
   - `output/{BOT_IDENTITY}/summaries/` – session summaries
   - `output/{BOT_IDENTITY}/trades/` – CSV/JSON trade histories
-
 
 Brokers:
 - One active broker per bot
@@ -220,7 +219,7 @@ Security:
 - `.env_bot` encrypted → `.env_bot.enc` via `tools/encrypt_env_bot.py`
 - AES key in `.env` as `ENV_BOT_KEY`
 - All encrypted files ignored via `.scpignore_*`
-- All core configuration and COA management is handled exclusively through the Web UI; no CLI-based COA/credential initialization.
+- **All core configuration, COA management, and secrets (including those for accounting and credentials) are subject to atomic Fernet key and secret rotation. Whenever any sensitive config or credential is changed, or any user is created/modified, all relevant keys and encrypted secrets are automatically regenerated and re-encrypted, with robust backup and no manual action required.**
 
 Backup:
 - Logs + ledgers archived via `auto_backup.py`
