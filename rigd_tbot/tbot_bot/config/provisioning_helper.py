@@ -18,7 +18,6 @@ from tbot_web.support.security_users import (
     write_encrypted_screener_api_secret,
     write_encrypted_acctapi_secret,
 )
-from tbot_bot.config.key_manager import main as key_manager_main
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import json
@@ -76,7 +75,7 @@ def provision_keys_and_secrets(config: dict = None) -> None:
             config["bot_identity"] = bot_identity
         print(f"[provisioning_helper] bot_identity created/set: {config['bot_identity']}")
 
-        key_manager_main()
+        # Generate all Fernet keys (idempotent)
         generate_and_save_bot_identity_key()
         generate_or_load_login_keypair()
         generate_and_save_broker_keys()
@@ -87,6 +86,7 @@ def provision_keys_and_secrets(config: dict = None) -> None:
         generate_and_save_network_config_keys()
         print("[provisioning_helper] All keys written.")
 
+        # Write encrypted secrets for all required categories, matching correct config section
         write_encrypted_bot_identity_secret(config.get("bot_identity", {}))
         write_encrypted_network_config_secret(config.get("network_config", {}))
         write_encrypted_alert_secret(config.get("alert_channels", {}))
