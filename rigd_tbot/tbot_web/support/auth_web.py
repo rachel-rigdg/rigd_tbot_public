@@ -90,24 +90,81 @@ def upsert_user(username: str, password: str, email: str = None, role: str = "vi
     finally:
         conn.close()
 
-def get_user_role(username: str) -> str:
+def get_user_by_email(email: str):
     """
-    Fetches the user's role from SYSTEM_USERS.db.
-    Returns 'viewer' if not found or on error.
+    Fetch user record by email.
+    Returns dict or None.
     """
     conn = get_db_connection()
     try:
         cursor = conn.execute(
-            "SELECT role FROM system_users WHERE username = ?",
+            "SELECT username, email, role FROM system_users WHERE email = ? AND account_status = 'active'",
+            (email,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return {"username": row[0], "email": row[1], "role": row[2]}
+        return None
+    except Exception as e:
+        log_event("auth_web", f"Failed to get user by email {email}: {e}", level="error")
+        return None
+    finally:
+        conn.close()
+
+def get_user_by_username(username: str):
+    """
+    Fetch user record by username.
+    Returns dict or None.
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "SELECT username, email, role FROM system_users WHERE username = ? AND account_status = 'active'",
             (username,)
         )
         row = cursor.fetchone()
-        if row and row[0]:
-            return row[0]
-        return "viewer"
+        if row:
+            return {"username": row[0], "email": row[1], "role": row[2]}
+        return None
     except Exception as e:
-        log_event("auth_web", f"Failed to fetch role for user {username}: {e}", level="error")
-        return "viewer"
+        log_event("auth_web", f"Failed to get user by username {username}: {e}", level="error")
+        return None
+    finally:
+        conn.close()
+
+def list_users():
+    """
+    Returns a list of all active users as dicts.
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "SELECT username, email, role FROM system_users WHERE account_status = 'active' ORDER BY username"
+        )
+        rows = cursor.fetchall()
+        return [{"username": r[0], "email": r[1], "role": r[2]} for r in rows]
+    except Exception as e:
+        log_event("auth_web", f"Failed to list users: {e}", level="error")
+        return []
+    finally:
+        conn.close()
+
+def delete_user(username: str) -> bool:
+    """
+    Deletes a user by username.
+    Returns True if deleted, False otherwise.
+    """
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            "DELETE FROM system_users WHERE username = ?",
+            (username,)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        log_event("auth_web", f"Failed to delete user {username}: {e}", level="error")
+        return False
     finally:
         conn.close()
 
