@@ -25,25 +25,22 @@ POSTCONFIG_KEYS = [
     "alert_channels"
 ]
 
-def generate_key_file(key_name: str, force=False):
+def generate_key_file(key_name: str):
     key_path = KEY_DIR / f"{key_name}.key"
-    if not key_path.exists() or force:
+    if not key_path.exists():
         key = Fernet.generate_key()
         if len(base64.urlsafe_b64decode(key)) != 32:
             raise ValueError(f"Invalid Fernet key generated for: {key_name}")
         key_path.write_text(key.decode("utf-8"))
         os.chmod(key_path, 0o600)
-        if force:
-            log_event("key_manager", f"Generated new Fernet key (overwritten): {key_path}")
-        else:
-            log_event("key_manager", f"Generated new Fernet key: {key_path}")
+        log_event("key_manager", f"Generated new Fernet key: {key_path}")
     else:
         log_event("key_manager", f"Key already exists, not overwriting: {key_path}")
 
-def generate_all_postconfig_keys(force=False):
+def generate_all_postconfig_keys():
     for key_name in POSTCONFIG_KEYS:
-        generate_key_file(key_name, force=force)
+        generate_key_file(key_name)
 
-def main(force=False):
-    generate_all_postconfig_keys(force=force)
+def main():
+    generate_all_postconfig_keys()
     log_event("key_manager", "All Fernet keys generated and validated.")

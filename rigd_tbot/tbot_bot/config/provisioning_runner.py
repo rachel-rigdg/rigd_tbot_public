@@ -93,9 +93,10 @@ def main():
             try:
                 set_bot_state("provisioning")
                 write_status(status_path, "pending", "Provisioning started.")
-                write_status(status_path, "running", "Key generation and re-encryption.")
+                write_status(status_path, "running", "Key generation.")
                 key_manager_main()
-                provisioning_helper_main(force_keys=True)
+                write_status(status_path, "running", "Provisioning secrets and minimal config.")
+                provisioning_helper_main()
                 write_status(status_path, "running", "Running bootstrapping helper.")
                 bootstrapping_helper_main()
                 write_status(status_path, "running", "Database initialization.")
@@ -106,6 +107,7 @@ def main():
                 create_control_start_flag()
                 set_bot_state("bootstrapping")
                 write_status(status_path, "bootstrapping", "Provisioning and bootstrapping complete, initializing core databases before registration.")
+                # Wait for database bootstrap completion, then registration
                 time.sleep(1)
                 set_bot_state("registration")
                 write_status(status_path, "waiting_registration", "Bootstrapping complete, registration required before bot launch.")
