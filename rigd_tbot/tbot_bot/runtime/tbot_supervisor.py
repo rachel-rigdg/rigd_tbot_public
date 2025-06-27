@@ -19,7 +19,17 @@ CONTROL_STOP_FLAG = CONTROL_DIR / "control_stop.flag"
 
 STATUS_BOT_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "status_bot.py"
 WATCHDOG_BOT_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "watchdog_bot.py"
-# Add other watcher/worker paths here as needed
+STRATEGY_ROUTER_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "strategy_router.py"
+STRATEGY_OPEN_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "strategy_open.py"
+STRATEGY_MID_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "strategy_mid.py"
+STRATEGY_CLOSE_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "strategy_close.py"
+RISK_MODULE_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "risk_module.py"
+KILL_SWITCH_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "kill_switch.py"
+LOG_ROTATION_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "log_rotation.py"
+TRADE_LOGGER_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "trade_logger.py"
+STATUS_LOGGER_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "status_logger.py"
+SYMBOL_UNIVERSE_REFRESH_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "symbol_universe_refresh.py"
+INTEGRATION_TEST_RUNNER_PATH = ROOT_DIR / "tbot_bot" / "test" / "integration_test_runner.py"
 
 def read_bot_state():
     try:
@@ -44,20 +54,29 @@ def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
     processes = {}
 
-    # Launch persistent watchers (status_bot, watchdog_bot)
-    if not ensure_singleton("status_bot.py"):
-        print("[tbot_supervisor] Launching status_bot.py...")
-        processes["status_bot"] = launch_subprocess(STATUS_BOT_PATH)
-    else:
-        print("[tbot_supervisor] status_bot.py already running.")
+    launch_targets = [
+        ("status_bot", STATUS_BOT_PATH),
+        ("watchdog_bot", WATCHDOG_BOT_PATH),
+        ("strategy_router", STRATEGY_ROUTER_PATH),
+        ("strategy_open", STRATEGY_OPEN_PATH),
+        ("strategy_mid", STRATEGY_MID_PATH),
+        ("strategy_close", STRATEGY_CLOSE_PATH),
+        ("risk_module", RISK_MODULE_PATH),
+        ("kill_switch", KILL_SWITCH_PATH),
+        ("log_rotation", LOG_ROTATION_PATH),
+        ("trade_logger", TRADE_LOGGER_PATH),
+        ("status_logger", STATUS_LOGGER_PATH),
+        ("symbol_universe_refresh", SYMBOL_UNIVERSE_REFRESH_PATH)
+    ]
 
-    if not ensure_singleton("watchdog_bot.py"):
-        print("[tbot_supervisor] Launching watchdog_bot.py...")
-        processes["watchdog_bot"] = launch_subprocess(WATCHDOG_BOT_PATH)
-    else:
-        print("[tbot_supervisor] watchdog_bot.py already running.")
+    for name, path in launch_targets:
+        script_name = str(path.name)
+        if not ensure_singleton(script_name):
+            print(f"[tbot_supervisor] Launching {script_name}...")
+            processes[name] = launch_subprocess(path)
+        else:
+            print(f"[tbot_supervisor] {script_name} already running.")
 
-    # Main phase/process supervision loop
     try:
         while True:
             state = read_bot_state()
@@ -65,31 +84,23 @@ def main():
                 print(f"[tbot_supervisor] Detected shutdown/error state: {state}. Terminating subprocesses and exiting.")
                 break
 
-            # TEST_MODE support: launch test runner if flag is present
             if TEST_MODE_FLAG.exists():
-                print("[tbot_supervisor] TEST_MODE flag detected. Launching test runner...")
-                TEST_RUNNER_PATH = ROOT_DIR / "tbot_bot" / "test" / "integration_test_runner.py"
+                print("[tbot_supervisor] TEST_MODE flag detected. Launching integration_test_runner.py...")
                 if not ensure_singleton("integration_test_runner.py"):
-                    processes["test_runner"] = launch_subprocess(TEST_RUNNER_PATH)
-                # Wait for test runner to finish and remove flag
+                    processes["test_runner"] = launch_subprocess(INTEGRATION_TEST_RUNNER_PATH)
                 while TEST_MODE_FLAG.exists():
                     time.sleep(1)
                 print("[tbot_supervisor] TEST_MODE complete. Test runner finished.")
 
-            # Start/stop logic for control flags
             if CONTROL_START_FLAG.exists():
-                # Set bot state to "started"
                 BOT_STATE_PATH.write_text("started", encoding="utf-8")
                 print("[tbot_supervisor] CONTROL_START_FLAG detected. Set bot state to 'started'.")
                 CONTROL_START_FLAG.unlink(missing_ok=True)
 
             if CONTROL_STOP_FLAG.exists():
-                # Set bot state to "graceful_closing_positions"
                 BOT_STATE_PATH.write_text("graceful_closing_positions", encoding="utf-8")
                 print("[tbot_supervisor] CONTROL_STOP_FLAG detected. Set bot state to 'graceful_closing_positions'.")
                 CONTROL_STOP_FLAG.unlink(missing_ok=True)
-
-            # TODO: Launch/monitor additional workers if required by phase
 
             time.sleep(2)
 
@@ -97,7 +108,6 @@ def main():
         print("[tbot_supervisor] KeyboardInterrupt received, terminating.")
 
     finally:
-        # Terminate all launched child processes
         for pname, proc in processes.items():
             try:
                 print(f"[tbot_supervisor] Terminating {pname} process...")
