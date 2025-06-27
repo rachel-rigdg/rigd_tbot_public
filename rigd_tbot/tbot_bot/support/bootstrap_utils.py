@@ -9,10 +9,7 @@ BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 CONFIG_REQUIRED_FILES = [
     KEYS_DIR / "bot_identity.key",
-    KEYS_DIR / "login.key",
     SECRETS_DIR / "bot_identity.json.enc",
-    SECRETS_DIR / "broker_credentials.json.enc",
-    SECRETS_DIR / "network_config.json.enc",
 ]
 
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping", "registration")
