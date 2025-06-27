@@ -64,6 +64,7 @@ def rotate_all_keys_and_secrets(config: dict) -> None:
     generate_and_save_acctapi_keys()
     generate_and_save_alert_keys()
     generate_and_save_network_config_keys()
+    # Write bot_identity secret BEFORE rotating bot_identity.key to avoid key mismatch
     write_encrypted_bot_identity_secret(config.get("bot_identity", {}))
     write_encrypted_network_config_secret(config.get("network_config", {}))
     write_encrypted_alert_secret(config.get("alert_channels", {}))
@@ -91,7 +92,7 @@ def provision_keys_and_secrets(config: dict = None) -> None:
                 raise FileNotFoundError("[provisioning_helper] No config found in runtime_config or TMP_CONFIG_PATH")
 
         bot_identity = config.get("bot_identity", {})
-        if "BOT_IDENTITY_STRING" not in bot_identity:
+        if "BOT_IDENTITY_STRING" not in bot_identity or not bot_identity["BOT_IDENTITY_STRING"]:
             bot_identity["BOT_IDENTITY_STRING"] = (
                 f"{bot_identity.get('ENTITY_CODE', '')}_{bot_identity.get('JURISDICTION_CODE', '')}_"
                 f"{bot_identity.get('BROKER_CODE', '')}_{bot_identity.get('BOT_ID', '')}"
@@ -99,31 +100,13 @@ def provision_keys_and_secrets(config: dict = None) -> None:
             config["bot_identity"] = bot_identity
         print(f"[provisioning_helper] bot_identity created/set: {config['bot_identity']}")
 
-        # Write bot_identity encrypted secret FIRST to ensure it exists before keys generation
-        generate_and_save_bot_identity_key()
+        # Write bot_identity secret immediately to ensure consistency before rotating keys
         write_encrypted_bot_identity_secret(config.get("bot_identity", {}))
-        print("[provisioning_helper] bot_identity secret written before key rotation.")
 
-        # Now generate other keys and rotate all secrets
-        key_manager_main()
-        generate_or_load_login_keypair()
-        generate_and_save_broker_keys()
-        generate_and_save_smtp_keys()
-        generate_and_save_screener_keys()
-        generate_and_save_acctapi_keys()
-        generate_and_save_alert_keys()
-        generate_and_save_network_config_keys()
-
-        write_encrypted_network_config_secret(config.get("network_config", {}))
-        write_encrypted_alert_secret(config.get("alert_channels", {}))
-        write_encrypted_broker_secret(config.get("broker", {}))
-        write_encrypted_smtp_secret(config.get("smtp", {}))
-        write_encrypted_screener_api_secret(config.get("screener_api", {}))
-        write_encrypted_acctapi_secret(config.get("acct_api", {}))
-
-        log_event("provisioning", "All Fernet keys rotated and all secrets re-encrypted.")
+        rotate_all_keys_and_secrets(config)
         print("[provisioning_helper] All keys written and all secrets re-encrypted.")
 
+        log_event("provisioning", "Provisioning completed: keys generated and secrets written.")
         set_bot_state("bootstrapping")
         print("[provisioning_helper] Provisioning completed successfully.")
     except Exception as e:
