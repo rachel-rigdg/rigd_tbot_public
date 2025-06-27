@@ -2,7 +2,7 @@
 # Handles user password reset and credential changes; ensures atomic Fernet key/secret rotation post-reset per RIGD spec
 
 from flask import Blueprint, request, render_template, flash, redirect, url_for, session
-from tbot_web.support.auth_web import upsert_user, get_db_connection, get_user_by_email
+from tbot_web.support.auth_web import upsert_user, get_db_connection  # Removed get_user_by_email import
 from tbot_web.py.login_web import login_required
 from pathlib import Path
 import sys
@@ -14,6 +14,17 @@ from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 password_reset_blueprint = Blueprint("password_reset_web", __name__, url_prefix="/password_reset")
 
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+
+# Replace get_user_by_email call with equivalent using get_db_connection or modify as needed
+def get_user_by_email(email: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT username, email, role FROM users WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {"username": row[0], "email": row[1], "role": row[2]}
+    return None
 
 @password_reset_blueprint.route("/", methods=["GET", "POST"])
 def request_reset():
