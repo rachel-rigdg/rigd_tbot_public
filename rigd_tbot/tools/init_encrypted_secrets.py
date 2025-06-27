@@ -39,15 +39,14 @@ template = {
         "BOT_IDENTITY_STRING": f'{flat_data.get("ENTITY_CODE")}_{flat_data.get("JURISDICTION_CODE")}_{flat_data.get("BROKER_CODE")}_{flat_data.get("BOT_ID")}'
     },
     "broker": {
-        k: v for k, v in flat_data.items() if k.startswith("ALPACA_") or k.startswith("IBKR_") or k.startswith("BROKER_")
+        k: v for k, v in flat_data.items() if k.startswith("ALPACA_") or k.startswith("IBKR_")
     },
     "screener_api": {
-        "SCREENER_NAME": flat_data.get("SCREENER_NAME"),
         "SCREENER_API_KEY": flat_data.get("SCREENER_API_KEY") or flat_data.get("FINNHUB_API_KEY"),
-        "SCREENER_URL": flat_data.get("SCREENER_URL"),
-        "SCREENER_USERNAME": flat_data.get("SCREENER_USERNAME"),
-        "SCREENER_PASSWORD": flat_data.get("SCREENER_PASSWORD"),
-        "FINNHUB_API_KEY": flat_data.get("FINNHUB_API_KEY")  # legacy compat for old readers
+        "SCREENER_URL": flat_data.get("SCREENER_URL", "https://finnhub.io/api/v1/"),
+        "SCREENER_USERNAME": flat_data.get("SCREENER_USERNAME", ""),
+        "SCREENER_PASSWORD": flat_data.get("SCREENER_PASSWORD", ""),
+        "SCREENER_NAME": flat_data.get("SCREENER_NAME", "Finnhub")
     },
     "smtp": {
         k: v for k, v in flat_data.items() if k.startswith("SMTP_") or k == "ALERT_EMAIL"
@@ -95,5 +94,32 @@ for category, key_path in KEYS.items():
     with open(output_file, "wb") as f:
         f.write(encrypted)
     print(f"[init_encrypted_secrets] Wrote: {output_file}")
+
+# === Write unified runtime config for bot identity and all secrets ===
+runtime_config = {
+    "bot_identity": template["env"],
+    "broker": template["broker"],
+    "screener_api": template["screener_api"],
+    "smtp": template["smtp"],
+    "acct_api": template["acct_api"],
+    "network_config": template["network_config"],
+}
+
+runtime_key_path = KEYS_DIR / "runtime_config.key"
+runtime_secret_path = SECRETS_DIR / "runtime_config.json.enc"
+
+if not runtime_key_path.exists() or runtime_key_path.stat().st_size == 0:
+    rkey = Fernet.generate_key()
+    runtime_key_path.write_text(rkey.decode(), encoding="utf-8")
+    print(f"[init_encrypted_secrets] Created key: {runtime_key_path}")
+else:
+    rkey = runtime_key_path.read_text(encoding="utf-8").strip().encode()
+
+rfernet = Fernet(rkey)
+runtime_bytes = json.dumps(runtime_config).encode("utf-8")
+encrypted_runtime = rfernet.encrypt(runtime_bytes)
+with open(runtime_secret_path, "wb") as f:
+    f.write(encrypted_runtime)
+print(f"[init_encrypted_secrets] Wrote: {runtime_secret_path}")
 
 print("[init_encrypted_secrets] Complete.")
