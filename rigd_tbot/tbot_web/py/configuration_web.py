@@ -1,6 +1,5 @@
 # tbot_web/py/configuration_web.py
 
-
 from flask import Blueprint, request, render_template, flash, redirect, url_for, session
 from ..support.default_config_loader import get_default_config
 from pathlib import Path
@@ -9,6 +8,7 @@ import json
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 import subprocess
 import logging
+import sys
 
 configuration_blueprint = Blueprint("configuration_web", __name__, url_prefix="/configuration")
 
@@ -17,6 +17,9 @@ RUNTIME_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storag
 PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 SECRETS_TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "tools" / "secrets_template.json"
+
+from tbot_bot.support.config_fetch import get_live_config_for_rotation
+from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +134,12 @@ def save_configuration():
 
     try:
         save_runtime_config(config)
+        # Rotate all keys and secrets after config save (skip during first bootstrap)
+        if not is_first_bootstrap():
+            live_config = get_live_config_for_rotation()
+            if live_config:
+                rotate_all_keys_and_secrets(live_config)
+        # End
     except Exception:
         flash("Failed to save configuration. See logs.", "error")
         return redirect(url_for("configuration_web.show_configuration"))

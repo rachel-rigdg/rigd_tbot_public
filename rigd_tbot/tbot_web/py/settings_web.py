@@ -19,6 +19,10 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 from tbot_bot.config.security_bot import encrypt_env_bot_from_bytes
 
+# Import canonical config fetch and rotation helper
+from tbot_bot.support.config_fetch import get_live_config_for_rotation
+from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
+
 settings_blueprint = Blueprint("settings_web", __name__)
 
 SECTION_TITLES = {
@@ -132,6 +136,10 @@ def update_settings():
         validate_bot_config(data)
         raw_bytes = json.dumps(data, indent=2).encode("utf-8")
         encrypt_env_bot_from_bytes(raw_bytes, rotate_key=False)
+        # After successful settings update, rotate keys/secrets with canonical config (skip during first bootstrap)
+        live_config = get_live_config_for_rotation()
+        if live_config:
+            rotate_all_keys_and_secrets(live_config)
         return jsonify({"status": "updated"})
     except Exception as e:
         return jsonify({"status": "error", "detail": "Bot identity not available, please complete configuration"}), 400

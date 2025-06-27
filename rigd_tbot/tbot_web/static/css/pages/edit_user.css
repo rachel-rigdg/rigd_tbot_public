@@ -1,0 +1,81 @@
+/* /static/css/pages/edit_user.css */
+
+body {
+    background: #333333;
+    font-family: Arial, Helvetica, sans-serif;
+    max-width: 440px;
+    margin: 32px auto 0 auto;
+    padding: 24px;
+    border-radius: 7px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+  }
+  
+  h2 {
+    margin-bottom: 20px;
+    text-align: center;
+    color: #334;
+  }
+  
+  form {
+    margin-bottom: 20px;
+    background: #fff;
+    padding: 18px 16px 14px 16px;
+    border-radius: 5px;
+    box-shadow: 0 1px 4px rgba(80,80,110,0.07);
+  }
+  
+  label {
+    display: block;
+    margin-bottom: 7px;
+    font-weight: bold;
+    color: #445;
+  }
+  
+  input[type="email"],
+  input[type="text"],
+  input[type="password"] {
+    width: 100%;
+    padding: 7px 8px;
+    margin-bottom: 13px;
+    border: 1px solid #b5bac6;
+    border-radius: 3px;
+    font-size: 15px;
+    background: #fafcff;
+  }
+  
+  button[type="submit"] {
+    margin-top: 8px;
+    width: 100%;
+    padding: 8px 0;
+    background: #297bc2;
+    color: #fff;
+    font-weight: 600;
+    font-size: 15px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.14s;
+  }
+  
+  button[type="submit"]:hover {
+    background: #195184;
+  }
+  
+  ul {
+    margin: 0 0 16px 0;
+    padding-left: 16px;
+    color: #b23c3c;
+  }
+  
+  a {
+    display: inline-block;
+    margin-top: 10px;
+    text-decoration: underline;
+    color: #265088;
+    font-size: 15px;
+  }
+  
+  a:hover {
+    color: #16355c;
+  }
+  

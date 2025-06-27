@@ -7,6 +7,10 @@ from cryptography.fernet import Fernet
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.utils_time import utc_now
 
+from tbot_bot.support.config_fetch import get_live_config_for_rotation
+from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
+
 # Constants
 ROOT = Path(__file__).resolve().parents[1] / "storage"
 KEY_DIR = ROOT / "keys"
@@ -49,14 +53,23 @@ def encrypt_all_secrets(secret_data_map: dict):
         encrypt_json(name, data)
     log_event("encrypt_secrets", f"All secrets encrypted/rotated at {utc_now().isoformat()}")
 
+def rotate_all_keys_and_secrets_cli():
+    """
+    CLI entrypoint: Performs atomic rotation using the canonical config, post-bootstrap only.
+    """
+    if not is_first_bootstrap():
+        config = get_live_config_for_rotation()
+        if config:
+            rotate_all_keys_and_secrets(config)
+            print("[encrypt_secrets] All keys and secrets rotated successfully.")
+        else:
+            print("[encrypt_secrets] No config found, rotation skipped.")
+    else:
+        print("[encrypt_secrets] Rotation not allowed during first bootstrap.")
+
 # Example direct usage
 if __name__ == "__main__":
     try:
-        from tbot_bot.support.decrypt_secrets import decrypt_json
-
-        plaintext = decrypt_json("env")
-        encrypt_json("env", plaintext)
-        print(f"[encrypt_secrets] Successfully re-encrypted env.json.enc")
-
+        rotate_all_keys_and_secrets_cli()
     except Exception as e:
         print(f"[encrypt_secrets] Error: {e}")

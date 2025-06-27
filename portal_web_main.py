@@ -64,7 +64,7 @@ def create_unified_app():
     except ImportError:
         pass
 
-    # Always register required blueprints
+    # Register blueprints - register_web with url_prefix already set
     app.register_blueprint(register_web, url_prefix="/registration")
     app.register_blueprint(main_blueprint)
     app.register_blueprint(configuration_blueprint)
@@ -77,34 +77,11 @@ def create_unified_app():
     app.register_blueprint(coa_web, url_prefix="/coa")
     app.register_blueprint(ledger_web, url_prefix="/ledger")
     app.register_blueprint(test_web, url_prefix="/test")
+    # Universe cache inspection/rebuild endpoints (after registration only)
     app.register_blueprint(universe_bp, url_prefix="/universe")
-
-    # Conditionally register post-bootstrap blueprints ONLY after first bootstrap is complete
-    post_bootstrap_blueprints = []
-    try:
-        from tbot_web.py.password_reset_web import password_reset_blueprint
-        from tbot_web.py.users_web import users_blueprint
-        post_bootstrap_blueprints += [
-            (password_reset_blueprint, "/password_reset"),
-            (users_blueprint, "/users")
-        ]
-    except ImportError:
-        pass
-    try:
-        from tbot_web.py.account_web import account_blueprint
-        post_bootstrap_blueprints.append((account_blueprint, "/account"))
-    except ImportError:
-        pass
 
     @app.before_request
     def enforce_bootstrap():
-        # Register post-bootstrap blueprints at runtime, after first bootstrap completes
-        if not hasattr(app, "_post_bootstrap_blueprints_registered"):
-            if not is_first_bootstrap():
-                for blueprint, url_prefix in post_bootstrap_blueprints:
-                    app.register_blueprint(blueprint, url_prefix=url_prefix)
-                app._post_bootstrap_blueprints_registered = True
-
         if is_first_bootstrap():
             if not (
                 (request.endpoint or "").startswith("configuration_web")
@@ -113,6 +90,7 @@ def create_unified_app():
                 or request.path.startswith("/static")
             ):
                 return redirect(url_for("configuration_web.show_configuration"))
+
 
     print("==== ROUTES ====")
     for rule in app.url_map.iter_rules():

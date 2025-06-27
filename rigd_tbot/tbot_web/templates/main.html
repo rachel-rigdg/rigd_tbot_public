@@ -61,6 +61,17 @@
         <form action="{{ url_for('test_web.test_page') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button" >TEST</button>
         </form>
+        <!-- BEGIN: New buttons for user/account/admin flows -->
+        <form action="{{ account_url or url_for('account_web.account_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Account</button>
+        </form>
+        <form action="{{ password_reset_url or url_for('password_reset_web.request_reset') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">Reset Password</button>
+        </form>
+        <form action="{{ users_url or url_for('users_web.users_list') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button">User Admin</button>
+        </form>
+        <!-- END: New buttons -->
         <form action="{{ url_for('logout_web.logout') }}" method="get">
             <button type="submit" id="logout-btn" class="tab-button">Log Out</button>
         </form>

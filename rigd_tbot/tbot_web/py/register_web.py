@@ -4,10 +4,15 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from tbot_web.support.auth_web import upsert_user, get_db_connection
 from sqlite3 import OperationalError
 from pathlib import Path
+import sys
 
 register_web = Blueprint("register_web", __name__, url_prefix="/registration")
 
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+
+# Use new config fetch helper for post-bootstrap rotation
+from tbot_bot.support.config_fetch import get_live_config_for_rotation
+from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
 
 def user_exists():
     try:
@@ -62,6 +67,17 @@ def register_page():
         role = get_next_user_role()
         try:
             upsert_user(username, password, email, role=role)
+            # Rotate all keys and secrets after user registration (skip during first bootstrap)
+            try:
+                # Only run if not first bootstrap (registration state should be 'idle' after initial)
+                if BOT_STATE_PATH.exists():
+                    state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+                    if state != "registration":
+                        config = get_live_config_for_rotation()
+                        if config:
+                            rotate_all_keys_and_secrets(config)
+            except Exception:
+                pass
             flash(f"{role.capitalize()} user created successfully. Please log in.", "success")
             try:
                 if BOT_STATE_PATH.exists():
