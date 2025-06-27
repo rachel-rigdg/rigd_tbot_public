@@ -42,24 +42,38 @@ def fetch_broker_symbol_metadata() -> List[Dict]:
 
 def fetch_finnhub_symbols(env):
     import requests
-    FINNHUB_API_KEY = env.get("FINNHUB_API_KEY") or env.get("FINNHUB_TOKEN") or env.get("FINNHUB_TOKEN", "")
-    if not FINNHUB_API_KEY:
-        raise RuntimeError("FINNHUB_API_KEY not set in config")
+    screener_block = env.get("SCREENER_API", {}) if "SCREENER_API" in env else env
+    SCREENER_API_KEY = (
+        screener_block.get("SCREENER_API_KEY")
+        or env.get("SCREENER_API_KEY")
+        or env.get("FINNHUB_API_KEY")
+        or env.get("FINNHUB_TOKEN", "")
+    )
+    SCREENER_URL = (
+        screener_block.get("SCREENER_URL")
+        or env.get("SCREENER_URL")
+        or "https://finnhub.io/api/v1/"
+    )
+    SCREENER_USERNAME = screener_block.get("SCREENER_USERNAME", "") or env.get("SCREENER_USERNAME", "")
+    SCREENER_PASSWORD = screener_block.get("SCREENER_PASSWORD", "") or env.get("SCREENER_PASSWORD", "")
+    if not SCREENER_API_KEY:
+        raise RuntimeError("SCREENER_API_KEY not set in config")
     symbols = []
     for exch in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(","):
-        url = f"https://finnhub.io/api/v1/stock/symbol?exchange={exch.strip()}&token={FINNHUB_API_KEY}"
-        r = requests.get(url)
+        url = f"{SCREENER_URL.rstrip('/')}/stock/symbol?exchange={exch.strip()}&token={SCREENER_API_KEY}"
+        auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
+        r = requests.get(url, auth=auth)
         if r.status_code != 200:
             continue
         for s in r.json():
             symbol = s.get("symbol")
             # Profile lookup for market cap, sector, etc.
-            profile_url = f"https://finnhub.io/api/v1/stock/profile2?symbol={symbol}&token={FINNHUB_API_KEY}"
-            profile = requests.get(profile_url)
+            profile_url = f"{SCREENER_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={SCREENER_API_KEY}"
+            profile = requests.get(profile_url, auth=auth)
             p = profile.json() if profile.status_code == 200 else {}
             # Quote for price/volume
-            quote_url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_API_KEY}"
-            quote = requests.get(quote_url)
+            quote_url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
+            quote = requests.get(quote_url, auth=auth)
             q = quote.json() if quote.status_code == 200 else {}
             # Compose result
             symbols.append({
@@ -76,14 +90,17 @@ def fetch_finnhub_symbols(env):
 
 def fetch_alpaca_symbols(env):
     import requests
-    api_key = env.get("ALPACA_API_KEY", "")
-    secret_key = env.get("ALPACA_SECRET_KEY", "")
+    api_key = env.get("BROKER_API_KEY", "") or env.get("ALPACA_API_KEY", "")
+    secret_key = env.get("BROKER_SECRET_KEY", "") or env.get("ALPACA_SECRET_KEY", "")
+    username = env.get("BROKER_USERNAME", "")
+    password = env.get("BROKER_PASSWORD", "")
+    url = env.get("BROKER_URL", "https://paper-api.alpaca.markets") + "/v2/assets?status=active&asset_class=us_equity"
     headers = {
         "APCA-API-KEY-ID": api_key,
         "APCA-API-SECRET-KEY": secret_key,
     }
-    url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity"
-    r = requests.get(url, headers=headers)
+    auth = (username, password) if username and password else None
+    r = requests.get(url, headers=headers, auth=auth)
     if r.status_code != 200:
         raise RuntimeError("Failed to fetch symbols from Alpaca")
     data = r.json()
@@ -91,8 +108,6 @@ def fetch_alpaca_symbols(env):
     for s in data:
         symbol = s["symbol"]
         exch = s.get("exchange", "")
-        # Market cap and sector not available directly
-        # Optionally, fetch from a secondary API/source if needed
         results.append({
             "symbol": symbol,
             "exchange": exch,
@@ -107,13 +122,21 @@ def fetch_alpaca_symbols(env):
 
 def fetch_tradier_symbols(env):
     import requests
-    api_key = env.get("TRADIER_API_KEY", "")
+    screener_block = env.get("SCREENER_API", {}) if "SCREENER_API" in env else env
+    api_key = (
+        screener_block.get("SCREENER_API_KEY")
+        or env.get("SCREENER_API_KEY")
+        or env.get("TRADIER_API_KEY", "")
+    )
+    username = screener_block.get("SCREENER_USERNAME", "") or env.get("SCREENER_USERNAME", "")
+    password = screener_block.get("SCREENER_PASSWORD", "") or env.get("SCREENER_PASSWORD", "")
+    url = screener_block.get("SCREENER_URL", "") or env.get("SCREENER_URL", "https://api.tradier.com/v1/markets/symbols")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
     }
-    url = "https://api.tradier.com/v1/markets/symbols"
-    r = requests.get(url, headers=headers)
+    auth = (username, password) if username and password else None
+    r = requests.get(url, headers=headers, auth=auth)
     if r.status_code != 200:
         raise RuntimeError("Failed to fetch symbols from Tradier")
     data = r.json().get("symbols", {}).get("symbol", [])
@@ -132,12 +155,9 @@ def fetch_tradier_symbols(env):
     return results
 
 def fetch_ibkr_symbols(env):
-    # Implement per your IBKR integration; stubbed here
-    # IBKR does not provide a public full US equity list via web API
     return []
 
 def main():
-    # 1. Load config
     env = load_env_bot_config()
     exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
@@ -150,8 +170,6 @@ def main():
 
     LOG.info(f"Universe build parameters: exchanges={exchanges}, price=[{min_price},{max_price}), cap=[{min_cap},{max_cap}], max_size={max_size}, blocklist={blocklist_path}")
 
-    # 2. Load broker symbols (should fetch all possible for the session)
-    LOG.info("Fetching symbol metadata from broker API(s)...")
     try:
         symbols_raw = fetch_broker_symbol_metadata()
         if not symbols_raw or len(symbols_raw) < 10:
@@ -162,10 +180,8 @@ def main():
 
     LOG.info(f"Fetched {len(symbols_raw)} raw symbols from broker feed.")
 
-    # 3. Load manual blocklist
     blocklist = load_blocklist(blocklist_path)
 
-    # 4. Filter by exchange, price, cap, blocklist, and max size
     symbols_filtered = filter_symbols(
         symbols=symbols_raw,
         exchanges=exchanges,
@@ -177,10 +193,8 @@ def main():
         max_size=max_size
     )
 
-    # 5. Prepare JSON for cache (sorted by symbol for consistency)
     symbols_filtered.sort(key=lambda x: x["symbol"])
 
-    # 6. Save universe cache atomically
     try:
         save_universe_cache(symbols_filtered, bot_identity=bot_identity)
         LOG.info(f"Universe cache build complete: {len(symbols_filtered)} symbols written.")
@@ -188,7 +202,6 @@ def main():
         LOG.error(f"Failed to write universe cache: {e}")
         raise
 
-    # 7. Health/Audit Summary
     audit = {
         "build_time_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
         "total_symbols_fetched": len(symbols_raw),

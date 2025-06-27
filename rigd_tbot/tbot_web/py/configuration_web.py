@@ -67,7 +67,6 @@ def show_configuration():
             state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         except Exception:
             state = "initialize"
-    # Force redirect if not initialize (don't re-present configuration after save)
     if state in ("provisioning", "bootstrapping"):
         return render_template("wait.html", bot_state=state)
     if state == "registration":
@@ -98,8 +97,11 @@ def save_configuration():
         "BROKER_PASSWORD":       form.get("broker_password", "").strip(),
     }
     screener_api_data = {
-        "SCREENER_NAME":  form.get("screener_name", "").strip(),
-        "FINNHUB_API_KEY":form.get("screener_api_key", "").strip()
+        "SCREENER_NAME":     form.get("screener_name", "").strip(),
+        "SCREENER_USERNAME": form.get("screener_username", "").strip(),
+        "SCREENER_PASSWORD": form.get("screener_password", "").strip(),
+        "SCREENER_URL":      form.get("screener_url", "").strip(),
+        "SCREENER_API_KEY":  form.get("screener_api_key", "").strip()
     }
     smtp_data = {
         "ALERT_EMAIL":    form.get("alert_email", "").strip(),
@@ -134,12 +136,10 @@ def save_configuration():
 
     try:
         save_runtime_config(config)
-        # Rotate all keys and secrets after config save (skip during first bootstrap)
         if not is_first_bootstrap():
             live_config = get_live_config_for_rotation()
             if live_config:
                 rotate_all_keys_and_secrets(live_config)
-        # End
     except Exception:
         flash("Failed to save configuration. See logs.", "error")
         return redirect(url_for("configuration_web.show_configuration"))

@@ -72,10 +72,19 @@
             <fieldset >
                 <legend>Screener Settings</legend>
                 <label for="screener_name">Screener Name</label>
-                <input type="text" id="screener_name" name="screener_name" maxlength="64"  value="{{ config['screener_api']['SCREENER_NAME'] if config.get('screener_api') else 'finnhub' }}" />
+                <input type="text" id="screener_name" name="screener_name" maxlength="64" value="{{ config['screener_api']['SCREENER_NAME'] if config.get('screener_api') else 'Finnhub' }}" />
+                <br><br>
+                <label for="screener_username">Screener Username (optional)</label>
+                <input type="text" id="screener_username" name="screener_username" value="{{ config['screener_api']['SCREENER_USERNAME'] if config.get('screener_api') else '' }}" />
+                <br><br>
+                <label for="screener_password">Screener Password (optional)</label>
+                <input type="password" id="screener_password" name="screener_password" value="" placeholder="Enter new password or leave blank to keep existing" />
+                <br><br>
+                <label for="screener_url">Screener URL</label>
+                <input type="text" id="screener_url" name="screener_url" value="{{ config['screener_api']['SCREENER_URL'] if config.get('screener_api') else 'https://finnhub.io/api/v1/' }}" />
                 <br><br>
                 <label for="screener_api_key">Screener API Key</label>
-                <input type="text" id="screener_api_key" name="screener_api_key"  value="{{ config['screener_api']['FINNHUB_API_KEY'] if config.get('screener_api') else '' }}" />
+                <input type="text" id="screener_api_key" name="screener_api_key" value="{{ config['screener_api']['SCREENER_API_KEY'] if config.get('screener_api') else '' }}" />
             </fieldset>
         </div><br><br>
         <div class="fieldblock-config">
@@ -85,22 +94,22 @@
                 <input type="text" id="broker_name" name="broker_name" maxlength="32" required value="{{ config['broker']['BROKER_CODE'] if config.get('broker') else 'ALPACA' }}" />
                 <br><br>
                 <label for="broker_url">Broker URL</label>
-                <input type="text" id="broker_url" name="broker_url"  value="{{ config['broker']['BROKER_URL'] if config.get('broker') else '' }}" />
+                <input type="text" id="broker_url" name="broker_url" value="{{ config['broker']['BROKER_URL'] if config.get('broker') else '' }}" />
                 <br><br>
                 <label for="broker_api_key">Broker API Key</label>
-                <input type="text" id="broker_api_key" name="broker_api_key"  value="{{ config['broker']['BROKER_API_KEY'] if config.get('broker') else '' }}" />
+                <input type="text" id="broker_api_key" name="broker_api_key" value="{{ config['broker']['BROKER_API_KEY'] if config.get('broker') else '' }}" />
                 <br><br>
                 <label for="broker_secret_key">Broker Secret Key</label>
-                <input type="text" id="broker_secret_key" name="broker_secret_key"  value="{{ config['broker']['BROKER_SECRET_KEY'] if config.get('broker') else '' }}" />
+                <input type="text" id="broker_secret_key" name="broker_secret_key" value="{{ config['broker']['BROKER_SECRET_KEY'] if config.get('broker') else '' }}" />
                 <br><br>
                 <label for="broker_username">Broker Username</label>
-                <input type="text" id="broker_username" name="broker_username"  value="{{ config['broker']['BROKER_USERNAME'] if config.get('broker') else '' }}" />
+                <input type="text" id="broker_username" name="broker_username" value="{{ config['broker']['BROKER_USERNAME'] if config.get('broker') else '' }}" />
                 <br><br>
                 <label for="broker_password">Broker Password</label>
                 <input type="password" id="broker_password" name="broker_password" value="" placeholder="Enter new password or leave blank to keep existing" />
                 <br><br>
                 <label for="broker_account_number">Broker Account Number</label>
-                <input type="text" id="broker_account_number" name="broker_account_number"  value="{{ config['broker']['BROKER_ACCOUNT_NUMBER'] if config.get('broker') else '' }}" />
+                <input type="text" id="broker_account_number" name="broker_account_number" value="{{ config['broker']['BROKER_ACCOUNT_NUMBER'] if config.get('broker') else '' }}" />
             </fieldset>
         </div><br><br>
         <div class="fieldblock-config">

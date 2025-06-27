@@ -1,6 +1,6 @@
 # tbot_bot/screeners/alpaca_screener.py
 # summary: Screens symbols using Alpaca price, volume, and VWAP data (strategy-specific filters)
-# Updated: Uses cached universe and quote-only fetches per TradeBot specification
+# Updated: Supports BROKER_USERNAME, BROKER_PASSWORD, BROKER_URL, and agnostic variable handling per latest spec
 
 import requests
 import time
@@ -10,10 +10,12 @@ from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
 
-alpaca_creds = decrypt_json("broker")
-ALPACA_API_KEY = alpaca_creds.get("BROKER_API_KEY", "")
-ALPACA_SECRET_KEY = alpaca_creds.get("BROKER_SECRET_KEY", "")
-BASE_URL = "https://data.alpaca.markets"
+broker_creds = decrypt_json("broker")
+ALPACA_API_KEY = broker_creds.get("BROKER_API_KEY", "")
+ALPACA_SECRET_KEY = broker_creds.get("BROKER_SECRET_KEY", "")
+BROKER_USERNAME = broker_creds.get("BROKER_USERNAME", "")
+BROKER_PASSWORD = broker_creds.get("BROKER_PASSWORD", "")
+BROKER_URL = broker_creds.get("BROKER_URL", "https://data.alpaca.markets")
 HEADERS = {
     "APCA-API-KEY-ID": ALPACA_API_KEY,
     "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
@@ -40,9 +42,10 @@ class AlpacaScreener(ScreenerBase):
         """
         quotes = []
         for idx, symbol in enumerate(symbols):
-            url_bars = f"{BASE_URL}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=1"
+            url_bars = f"{BROKER_URL.rstrip('/')}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=1"
+            auth = (BROKER_USERNAME, BROKER_PASSWORD) if BROKER_USERNAME and BROKER_PASSWORD else None
             try:
-                bars_resp = requests.get(url_bars, headers=HEADERS, timeout=API_TIMEOUT)
+                bars_resp = requests.get(url_bars, headers=HEADERS, timeout=API_TIMEOUT, auth=auth)
                 if bars_resp.status_code != 200:
                     log(f"Error fetching bars for {symbol}: status {bars_resp.status_code}")
                     continue
@@ -73,7 +76,6 @@ class AlpacaScreener(ScreenerBase):
         Filters the list of quote dicts using price, gap, and other rules.
         Returns eligible symbol dicts.
         """
-        # Strategy-specific filter params
         strategy = self.env.get("STRATEGY_NAME", "open")
         gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
         max_gap = float(self.env.get(gap_key, 0.1))
@@ -103,10 +105,5 @@ class AlpacaScreener(ScreenerBase):
                 "vwap": vwap,
                 "momentum": momentum
             })
-        # Sort by momentum, descending
         results.sort(key=lambda x: x["momentum"], reverse=True)
         return results
-
-# Usage example:
-# screener = AlpacaScreener()
-# candidates = screener.run_screen()

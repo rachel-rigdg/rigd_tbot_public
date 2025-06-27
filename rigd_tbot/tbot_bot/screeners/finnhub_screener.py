@@ -1,6 +1,6 @@
 # tbot_bot/screeners/finnhub_screener.py
-# summary: Screens symbols using Finnhub price, volume, and VWAP data (strategy-specific filters, TEST_MODE aware)
-# Updated: Uses cached universe and quote-only fetches per TradeBot specification
+# summary: Screens symbols using Finnhub (or generic screener) price, volume, VWAP data (strategy-specific filters, TEST_MODE aware)
+# Updated: Uses generic SCREENER_API_KEY, SCREENER_URL, SCREENER_USERNAME, SCREENER_PASSWORD per TradeBot specification
 
 import requests
 import time
@@ -10,7 +10,11 @@ from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
-FINNHUB_API_KEY = decrypt_json("screener_api").get("FINNHUB_API_KEY", "")
+screener_secrets = decrypt_json("screener_api")
+SCREENER_API_KEY = screener_secrets.get("SCREENER_API_KEY", "")
+SCREENER_URL = screener_secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
+SCREENER_USERNAME = screener_secrets.get("SCREENER_USERNAME", "")
+SCREENER_PASSWORD = screener_secrets.get("SCREENER_PASSWORD", "")
 LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
@@ -28,24 +32,25 @@ def log(msg):
 
 class FinnhubScreener(ScreenerBase):
     """
-    Finnhub screener: loads eligible symbols from universe cache,
-    fetches latest quotes from Finnhub, filters per strategy, test mode aware.
+    Generic screener: loads eligible symbols from universe cache,
+    fetches latest quotes from SCREENER_URL using SCREENER_API_KEY,
+    filters per strategy, test mode aware.
     """
     def fetch_live_quotes(self, symbols):
         """
-        Fetches latest price/open/vwap for each symbol using Finnhub API.
+        Fetches latest price/open/vwap for each symbol using generic screener API.
         Returns list of dicts: [{"symbol":..., "c":..., "o":..., "vwap":...}, ...]
         """
         quotes = []
         for idx, symbol in enumerate(symbols):
-            url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_API_KEY}"
+            url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
+            auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
             try:
-                resp = requests.get(url, timeout=API_TIMEOUT)
+                resp = requests.get(url, timeout=API_TIMEOUT, auth=auth)
                 if resp.status_code != 200:
                     log(f"Error fetching quote for {symbol}: {resp.status_code}")
                     continue
                 data = resp.json()
-                # Finnhub: c = current, o = open, vwap = vwap (or calc)
                 c = float(data.get("c", 0))
                 o = float(data.get("o", 0))
                 vwap = float(data.get("vwap", 0)) if "vwap" in data and data.get("vwap", 0) else (c if c else 0)
@@ -107,8 +112,6 @@ class FinnhubScreener(ScreenerBase):
             if current > MAX_PRICE and not FRACTIONAL:
                 continue
 
-            # Market cap can only be filtered if included in universe, else skip
-
             gap = abs((current - open_) / open_)
             if gap > max_gap:
                 continue
@@ -126,7 +129,3 @@ class FinnhubScreener(ScreenerBase):
             return results[:limit]
         else:
             return results[:limit]
-
-# Usage example:
-# screener = FinnhubScreener()
-# candidates = screener.run_screen()
