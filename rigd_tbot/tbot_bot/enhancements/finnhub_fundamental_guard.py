@@ -1,6 +1,6 @@
 # tbot_bot/enhancements/finnhub_fundamental_guard.py
 # Enhancement: Blocks trades if company fundamentals fail configured thresholds (e.g. P/E, debt/equity)
-# Requires: FINNHUB_API_KEY loaded via secrets, cache path: data/cache/fundamentals_{date}.json
+# Requires: SCREENER_API_KEY loaded via secrets, cache path: data/cache/fundamentals_{date}.json
 
 import os
 import json
@@ -13,7 +13,9 @@ from tbot_bot.support.path_resolver import get_cache_path  # <- Surgical update:
 
 # Load config and API key
 config = get_bot_config()
-FINNHUB_API_KEY = get_decrypted_json("storage/secrets/screener_api.json.enc").get("FINNHUB_API_KEY", "")
+SCREENER_API = get_decrypted_json("storage/secrets/screener_api.json.enc")
+SCREENER_API_KEY = SCREENER_API.get("SCREENER_API_KEY", "") or SCREENER_API.get("FINNHUB_API_KEY", "")
+SCREENER_URL = SCREENER_API.get("SCREENER_URL", "https://finnhub.io/api/v1/")
 FUNDAMENTAL_CACHE = get_cache_path(f"fundamentals_{datetime.date.today()}.json")  # <- Surgical update: path resolver used
 
 # Runtime filter toggles
@@ -37,7 +39,7 @@ def save_cache(cache):
 
 
 def fetch_fundamentals(symbol: str) -> dict:
-    url = f"https://finnhub.io/api/v1/stock/metric?symbol={symbol}&metric=all&token={FINNHUB_API_KEY}"
+    url = f"{SCREENER_URL.rstrip('/')}/stock/metric?symbol={symbol}&metric=all&token={SCREENER_API_KEY}"
     try:
         resp = requests.get(url, timeout=5)
         if resp.status_code == 200:
@@ -52,7 +54,7 @@ def passes_fundamental_guard(symbol: str, context: dict = None) -> bool:
     Validates symbol against PE ratio, D/E ratio, and market cap requirements.
     Rejects if any metric fails. Logs rejections.
     """
-    if not ENABLE_FUNDAMENTAL_GUARD or not FINNHUB_API_KEY:
+    if not ENABLE_FUNDAMENTAL_GUARD or not SCREENER_API_KEY:
         return True
 
     cache = load_cache()
