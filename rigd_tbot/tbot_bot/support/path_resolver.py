@@ -165,6 +165,57 @@ def resolve_status_summary_path(bot_identity: str = None) -> str:
 def resolve_runtime_script_path(script_name: str) -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "runtime" / script_name)
 
+def resolve_runtime_script_path(script_name: str) -> str:
+    return str(PROJECT_ROOT / "tbot_bot" / "runtime" / script_name)
+
+def resolve_support_script_path(script_name: str) -> str:
+    return str(PROJECT_ROOT / "tbot_bot" / "support" / script_name)
+
+def resolve_test_script_path(script_name: str) -> str:
+    return str(PROJECT_ROOT / "tbot_bot" / "test" / script_name)
+
+def resolve_status_bot_path() -> str:
+    return resolve_runtime_script_path("status_bot.py")
+
+def resolve_watchdog_bot_path() -> str:
+    return resolve_runtime_script_path("watchdog_bot.py")
+
+def resolve_strategy_router_path() -> str:
+    return resolve_runtime_script_path("strategy_router.py")
+
+def resolve_strategy_open_path() -> str:
+    return resolve_runtime_script_path("strategy_open.py")
+
+def resolve_strategy_mid_path() -> str:
+    return resolve_runtime_script_path("strategy_mid.py")
+
+def resolve_strategy_close_path() -> str:
+    return resolve_runtime_script_path("strategy_close.py")
+
+def resolve_risk_module_path() -> str:
+    return resolve_runtime_script_path("risk_module.py")
+
+def resolve_kill_switch_path() -> str:
+    return resolve_runtime_script_path("kill_switch.py")
+
+def resolve_log_rotation_path() -> str:
+    return resolve_runtime_script_path("log_rotation.py")
+
+def resolve_trade_logger_path() -> str:
+    return resolve_runtime_script_path("trade_logger.py")
+
+def resolve_status_logger_path() -> str:
+    return resolve_runtime_script_path("status_logger.py")
+
+def resolve_symbol_universe_refresh_path() -> str:
+    return resolve_runtime_script_path("symbol_universe_refresh.py")
+
+def resolve_integration_test_runner_path() -> str:
+    return resolve_test_script_path("integration_test_runner.py")
+
+
+
+
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -188,5 +239,20 @@ __all__ = [
     "resolve_universe_cache_path",
     "resolve_status_log_path",
     "resolve_status_summary_path",
-    "resolve_runtime_script_path"
+    "resolve_runtime_script_path",
+    "resolve_support_script_path",
+    "resolve_test_script_path",
+    "resolve_status_bot_path",
+    "resolve_watchdog_bot_path",
+    "resolve_strategy_router_path",
+    "resolve_strategy_open_path",
+    "resolve_strategy_mid_path",
+    "resolve_strategy_close_path",
+    "resolve_risk_module_path",
+    "resolve_kill_switch_path",
+    "resolve_log_rotation_path",
+    "resolve_trade_logger_path",
+    "resolve_status_logger_path",
+    "resolve_symbol_universe_refresh_path",
+    "resolve_integration_test_runner_path"
 ]
