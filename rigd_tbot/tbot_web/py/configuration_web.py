@@ -21,6 +21,10 @@ SECRETS_TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "tools" / "secrets
 from tbot_bot.support.config_fetch import get_live_config_for_rotation
 from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
 
+# --- SURGICAL PATCH: ADD POSTCONFIG KEY/SECRET ROTATION ---
+from tbot_bot.config.key_manager import generate_all_postconfig_keys
+from tbot_bot.config.config_encryption import encrypt_all_postconfig_secrets
+
 logger = logging.getLogger(__name__)
 
 def load_runtime_config():
@@ -136,6 +140,10 @@ def save_configuration():
 
     try:
         save_runtime_config(config)
+        # --- POSTCONFIG KEY + SECRET ROTATION ---
+        generate_all_postconfig_keys()
+        encrypt_all_postconfig_secrets(config)
+        # --- END PATCH ---
         if not is_first_bootstrap():
             live_config = get_live_config_for_rotation()
             if live_config:
