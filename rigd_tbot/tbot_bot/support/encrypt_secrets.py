@@ -41,6 +41,14 @@ def encrypt_json(name: str, data: dict) -> None:
 
     log_event("encrypt_secrets", f"Encrypted {name}.json.enc at {utc_now().isoformat()}")
 
+def encrypt_all_secrets(secret_data_map: dict):
+    """
+    Rotates all secrets with new keys. Expects {name: dict} mapping.
+    """
+    for name, data in secret_data_map.items():
+        encrypt_json(name, data)
+    log_event("encrypt_secrets", f"All secrets encrypted/rotated at {utc_now().isoformat()}")
+
 # Example direct usage
 if __name__ == "__main__":
     try:

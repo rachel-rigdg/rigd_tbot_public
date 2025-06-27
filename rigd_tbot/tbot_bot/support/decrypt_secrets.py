@@ -43,7 +43,6 @@ def decrypt_json(name: str, _recursing: bool=False) -> Dict:
         return parsed
     except Exception as e:
         print("decrypt_secrets", f"Failed to decrypt {name}.json.enc: {e}", level="error")
-        # No recursive call to decrypt_json inside except branch to prevent max recursion
         raise RuntimeError(f"Decryption failed for {name}.json.enc: {e}")
 
 def load_bot_identity(default: Optional[str] = None) -> Optional[str]:
@@ -85,6 +84,18 @@ def load_broker_credential(field: str, default: Optional[str] = None) -> Optiona
         return default
     except Exception:
         return default
+
+def decrypt_all_secrets(secret_names: list) -> dict:
+    """
+    Returns dict {name: dict} for all decrypted secrets, or empty dict if any fail.
+    """
+    result = {}
+    for name in secret_names:
+        try:
+            result[name] = decrypt_json(name)
+        except Exception:
+            continue
+    return result
 
 if __name__ == "__main__":
     try:

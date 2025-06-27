@@ -25,9 +25,9 @@ POSTCONFIG_KEYS = [
     "alert_channels"
 ]
 
-def generate_key_file(key_name: str):
+def generate_key_file(key_name: str, force_rotate=False):
     key_path = KEY_DIR / f"{key_name}.key"
-    if key_path.exists():
+    if key_path.exists() and not force_rotate:
         log_event("key_manager", f"Key already exists, not overwriting: {key_path}")
         return
     key = Fernet.generate_key()
@@ -37,10 +37,17 @@ def generate_key_file(key_name: str):
     os.chmod(key_path, 0o600)
     log_event("key_manager", f"Generated new Fernet key: {key_path}")
 
+def rotate_all_postconfig_keys():
+    for key_name in POSTCONFIG_KEYS:
+        generate_key_file(key_name, force_rotate=True)
+
 def generate_all_postconfig_keys():
     for key_name in POSTCONFIG_KEYS:
         generate_key_file(key_name)
 
-def main():
-    generate_all_postconfig_keys()
+def main(rotate=False):
+    if rotate:
+        rotate_all_postconfig_keys()
+    else:
+        generate_all_postconfig_keys()
     log_event("key_manager", "All Fernet keys generated and validated.")
