@@ -23,6 +23,31 @@ CATEGORIES = {
     "screeners": "screeners"
 }
 
+RUNTIME_SCRIPT_DIR = PROJECT_ROOT / "tbot_bot" / "processes"
+RUNTIME_SCRIPT_MAP = {
+    "status_bot.py": "status_bot.py",
+    "watchdog_bot.py": "watchdog_bot.py",
+    "strategy_router.py": "strategy_router.py",
+    "strategy_open.py": "strategy_open.py",
+    "strategy_mid.py": "strategy_mid.py",
+    "strategy_close.py": "strategy_close.py",
+    "risk_module.py": "risk_module.py",
+    "kill_switch.py": "kill_switch.py",
+    "log_rotation.py": "log_rotation.py",
+    "trade_logger.py": "trade_logger.py",
+    "status_logger.py": "status_logger.py",
+    "symbol_universe_refresh.py": "symbol_universe_refresh.py",
+    "integration_test_runner.py": "integration_test_runner.py"
+}
+
+def resolve_runtime_script_path(module_name: str) -> str:
+    if module_name not in RUNTIME_SCRIPT_MAP:
+        raise ValueError(f"[path_resolver] Unknown runtime script: {module_name}")
+    script_path = RUNTIME_SCRIPT_DIR / RUNTIME_SCRIPT_MAP[module_name]
+    if not script_path.exists():
+        raise FileNotFoundError(f"[path_resolver] Runtime script not found: {script_path}")
+    return str(script_path)
+
 def get_bot_identity(explicit_identity: str = None) -> str:
     if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (system is in bootstrap mode)")
@@ -173,5 +198,6 @@ __all__ = [
     "resolve_coa_schema_path",
     "resolve_universe_cache_path",
     "resolve_status_log_path",
-    "resolve_status_summary_path"
+    "resolve_status_summary_path",
+    "resolve_runtime_script_path"
 ]

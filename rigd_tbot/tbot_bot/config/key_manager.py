@@ -27,15 +27,15 @@ POSTCONFIG_KEYS = [
 
 def generate_key_file(key_name: str):
     key_path = KEY_DIR / f"{key_name}.key"
-    if not key_path.exists():
-        key = Fernet.generate_key()
-        if len(base64.urlsafe_b64decode(key)) != 32:
-            raise ValueError(f"Invalid Fernet key generated for: {key_name}")
-        key_path.write_text(key.decode("utf-8"))
-        os.chmod(key_path, 0o600)
-        log_event("key_manager", f"Generated new Fernet key: {key_path}")
-    else:
+    if key_path.exists():
         log_event("key_manager", f"Key already exists, not overwriting: {key_path}")
+        return
+    key = Fernet.generate_key()
+    if len(base64.urlsafe_b64decode(key)) != 32:
+        raise ValueError(f"Invalid Fernet key generated for: {key_name}")
+    key_path.write_text(key.decode("utf-8"))
+    os.chmod(key_path, 0o600)
+    log_event("key_manager", f"Generated new Fernet key: {key_path}")
 
 def generate_all_postconfig_keys():
     for key_name in POSTCONFIG_KEYS:

@@ -18,6 +18,7 @@ from tbot_web.support.security_users import (
     write_encrypted_screener_api_secret,
     write_encrypted_acctapi_secret,
 )
+from tbot_bot.config.key_manager import main as key_manager_main
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import json
@@ -56,10 +57,7 @@ def provision_keys_and_secrets(config: dict = None) -> None:
     """
     print("[provisioning_helper] Starting provisioning process...")
     try:
-        # Set initial state to provisioning in bot_state.txt
         set_bot_state("provisioning")
-        
-        # Prefer runtime_config if available, else fall back to TMP_CONFIG_PATH
         if config is None or not config:
             config = load_runtime_config()
         if config is None:
@@ -69,7 +67,6 @@ def provision_keys_and_secrets(config: dict = None) -> None:
             else:
                 raise FileNotFoundError("[provisioning_helper] No config found in runtime_config or TMP_CONFIG_PATH")
 
-        # Ensure BOT_IDENTITY_STRING exists inside bot_identity data
         bot_identity = config.get("bot_identity", {})
         if "BOT_IDENTITY_STRING" not in bot_identity:
             bot_identity["BOT_IDENTITY_STRING"] = (
@@ -79,7 +76,7 @@ def provision_keys_and_secrets(config: dict = None) -> None:
             config["bot_identity"] = bot_identity
         print(f"[provisioning_helper] bot_identity created/set: {config['bot_identity']}")
 
-        # Generate all Fernet keys (idempotent)
+        key_manager_main()
         generate_and_save_bot_identity_key()
         generate_or_load_login_keypair()
         generate_and_save_broker_keys()
@@ -90,10 +87,9 @@ def provision_keys_and_secrets(config: dict = None) -> None:
         generate_and_save_network_config_keys()
         print("[provisioning_helper] All keys written.")
 
-        # Write encrypted secrets files using loaded config
         write_encrypted_bot_identity_secret(config.get("bot_identity", {}))
         write_encrypted_network_config_secret(config.get("network_config", {}))
-        write_encrypted_alert_secret(config.get("smtp", {}))
+        write_encrypted_alert_secret(config.get("alert_channels", {}))
         write_encrypted_broker_secret(config.get("broker", {}))
         write_encrypted_smtp_secret(config.get("smtp", {}))
         write_encrypted_screener_api_secret(config.get("screener_api", {}))
@@ -101,12 +97,9 @@ def provision_keys_and_secrets(config: dict = None) -> None:
         print("[provisioning_helper] All secrets written.")
 
         log_event("provisioning", "Provisioning completed: keys generated and secrets written.")
-        
-        # Set bot state to bootstrapping after successful provisioning
         set_bot_state("bootstrapping")
         print("[provisioning_helper] Provisioning completed successfully.")
     except Exception as e:
-        # Log provisioning failure and set the bot state to error
         log_event("provisioning", f"Provisioning failed: {e}", level="error")
         set_bot_state("error")
         print(f"[provisioning_helper] Provisioning failed: {e}")

@@ -9,6 +9,7 @@ import sys
 import time
 import subprocess
 from pathlib import Path
+from tbot_bot.support import path_resolver
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
@@ -17,19 +18,19 @@ TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 CONTROL_START_FLAG = CONTROL_DIR / "control_start.flag"
 CONTROL_STOP_FLAG = CONTROL_DIR / "control_stop.flag"
 
-STATUS_BOT_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "status_bot.py"
-WATCHDOG_BOT_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "watchdog_bot.py"
-STRATEGY_ROUTER_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "strategy_router.py"
-STRATEGY_OPEN_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "strategy_open.py"
-STRATEGY_MID_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "strategy_mid.py"
-STRATEGY_CLOSE_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "strategy_close.py"
-RISK_MODULE_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "risk_module.py"
-KILL_SWITCH_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "kill_switch.py"
-LOG_ROTATION_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "log_rotation.py"
-TRADE_LOGGER_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "trade_logger.py"
-STATUS_LOGGER_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "status_logger.py"
-SYMBOL_UNIVERSE_REFRESH_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "symbol_universe_refresh.py"
-INTEGRATION_TEST_RUNNER_PATH = ROOT_DIR / "tbot_bot" / "test" / "integration_test_runner.py"
+STATUS_BOT_PATH = path_resolver.resolve_runtime_script_path("status_bot.py")
+WATCHDOG_BOT_PATH = path_resolver.resolve_runtime_script_path("watchdog_bot.py")
+STRATEGY_ROUTER_PATH = path_resolver.resolve_runtime_script_path("strategy_router.py")
+STRATEGY_OPEN_PATH = path_resolver.resolve_runtime_script_path("strategy_open.py")
+STRATEGY_MID_PATH = path_resolver.resolve_runtime_script_path("strategy_mid.py")
+STRATEGY_CLOSE_PATH = path_resolver.resolve_runtime_script_path("strategy_close.py")
+RISK_MODULE_PATH = path_resolver.resolve_runtime_script_path("risk_module.py")
+KILL_SWITCH_PATH = path_resolver.resolve_runtime_script_path("kill_switch.py")
+LOG_ROTATION_PATH = path_resolver.resolve_runtime_script_path("log_rotation.py")
+TRADE_LOGGER_PATH = path_resolver.resolve_runtime_script_path("trade_logger.py")
+STATUS_LOGGER_PATH = path_resolver.resolve_runtime_script_path("status_logger.py")
+SYMBOL_UNIVERSE_REFRESH_PATH = path_resolver.resolve_runtime_script_path("symbol_universe_refresh.py")
+INTEGRATION_TEST_RUNNER_PATH = path_resolver.resolve_runtime_script_path("integration_test_runner.py")
 
 def read_bot_state():
     try:
@@ -70,7 +71,7 @@ def main():
     ]
 
     for name, path in launch_targets:
-        script_name = str(path.name)
+        script_name = os.path.basename(str(path))
         if not ensure_singleton(script_name):
             print(f"[tbot_supervisor] Launching {script_name}...")
             processes[name] = launch_subprocess(path)
