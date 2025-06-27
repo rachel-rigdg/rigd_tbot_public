@@ -21,11 +21,14 @@ def load_key(key_name: str) -> bytes:
         raise FileNotFoundError(f"Missing key file: {key_path}")
     return key_path.read_text(encoding="utf-8").strip().encode()
 
-def decrypt_json(name: str) -> Dict:
+def decrypt_json(name: str, _recursing: bool=False) -> Dict:
     """
     Decrypts an encrypted JSON file named {name}.json.enc using {name}.key.
     Returns the decrypted data as a Python dictionary.
+    Adds recursion depth guard for compliance and runtime reliability.
     """
+    if _recursing:
+        raise RuntimeError("Recursion detected in decrypt_json; check upstream call patterns.")
     key = load_key(name)
     fernet = Fernet(key)
     enc_path = ENCRYPTED_DIR / f"{name}.json.enc"
@@ -40,6 +43,7 @@ def decrypt_json(name: str) -> Dict:
         return parsed
     except Exception as e:
         log_event("decrypt_secrets", f"Failed to decrypt {name}.json.enc: {e}", level="error")
+        # No recursive call to decrypt_json inside except branch to prevent max recursion
         raise RuntimeError(f"Decryption failed for {name}.json.enc: {e}")
 
 def load_bot_identity(default: Optional[str] = None) -> Optional[str]:

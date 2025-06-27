@@ -31,3 +31,4 @@ passlib==1.7.4                    # (Optional) Used by some bcrypt/Flask setups
 
 # === Miscellaneous Utilities ===
 gunicorn==21.2.0                  # (Optional) For production Flask serving, if not using built-in Flask server
+psutil==5.9.8                     # Process utilities for singleton/supervisor enforcement
