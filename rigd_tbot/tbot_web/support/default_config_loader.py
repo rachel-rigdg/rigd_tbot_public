@@ -34,7 +34,7 @@ def get_default_config():
     config = {}
     for path in TEMPLATE_PATHS:
         config.update(parse_env_template(path))
-    # Adapt keys to UI field names
+    # Adapt keys to UI field names, now includes new screener variables
     mapping = {
         "ENTITY_CODE": "entity_code",
         "JURISDICTION_CODE": "jurisdiction_code",
@@ -46,8 +46,13 @@ def get_default_config():
         "BROKER_USERNAME": "broker_username",
         "BROKER_ACCOUNT_NUMBER": "broker_account_number",
         "BROKER_PASSWORD": "broker_password",
-        "FINNHUB_API_KEY": "screener_api_key",
         "SCREENER_NAME": "screener_name",
+        "SCREENER_API_KEY": "screener_api_key",
+        "SCREENER_URL": "screener_url",
+        "SCREENER_USERNAME": "screener_username",
+        "SCREENER_PASSWORD": "screener_password",
+        # legacy/compat: support FINNHUB_API_KEY in template
+        "FINNHUB_API_KEY": "screener_api_key",
         # SMTP / Alerts
         "ALERT_EMAIL": "alert_email",
         "SMTP_USER": "smtp_user",
@@ -60,7 +65,6 @@ def get_default_config():
         "PORT": "port",
     }
     result = {v: config.get(k, "") for k, v in mapping.items()}
-    # Add defaults for new required fields if not present (current bot_state logic)
     if "bot_state" not in result:
         result["bot_state"] = "initialize"
     print(f"[default_config_loader] DEBUG: Loaded default config: {result}", file=sys.stderr)

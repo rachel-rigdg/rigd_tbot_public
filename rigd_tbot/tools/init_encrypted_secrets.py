@@ -39,10 +39,15 @@ template = {
         "BOT_IDENTITY_STRING": f'{flat_data.get("ENTITY_CODE")}_{flat_data.get("JURISDICTION_CODE")}_{flat_data.get("BROKER_CODE")}_{flat_data.get("BOT_ID")}'
     },
     "broker": {
-        k: v for k, v in flat_data.items() if k.startswith("ALPACA_") or k.startswith("IBKR_")
+        k: v for k, v in flat_data.items() if k.startswith("ALPACA_") or k.startswith("IBKR_") or k.startswith("BROKER_")
     },
     "screener_api": {
-        "FINNHUB_API_KEY": flat_data.get("FINNHUB_API_KEY")
+        "SCREENER_NAME": flat_data.get("SCREENER_NAME"),
+        "SCREENER_API_KEY": flat_data.get("SCREENER_API_KEY") or flat_data.get("FINNHUB_API_KEY"),
+        "SCREENER_URL": flat_data.get("SCREENER_URL"),
+        "SCREENER_USERNAME": flat_data.get("SCREENER_USERNAME"),
+        "SCREENER_PASSWORD": flat_data.get("SCREENER_PASSWORD"),
+        "FINNHUB_API_KEY": flat_data.get("FINNHUB_API_KEY")  # legacy compat for old readers
     },
     "smtp": {
         k: v for k, v in flat_data.items() if k.startswith("SMTP_") or k == "ALERT_EMAIL"

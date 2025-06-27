@@ -11,7 +11,10 @@ from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
 screener_secrets = decrypt_json("screener_api")
-SCREENER_API_KEY = screener_secrets.get("SCREENER_API_KEY", "")
+SCREENER_API_KEY = (
+    screener_secrets.get("SCREENER_API_KEY", "")
+    or screener_secrets.get("FINNHUB_API_KEY", "")  # legacy compat
+)
 SCREENER_URL = screener_secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
 SCREENER_USERNAME = screener_secrets.get("SCREENER_USERNAME", "")
 SCREENER_PASSWORD = screener_secrets.get("SCREENER_PASSWORD", "")

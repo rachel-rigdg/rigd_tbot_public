@@ -9,7 +9,8 @@ from tbot_bot.config.env_bot import get_bot_config
 
 # Load config
 config = get_bot_config()
-FINNHUB_API_KEY = config.get("FINNHUB_API_KEY", "")
+SCREENER_API_KEY = config.get("SCREENER_API_KEY", "") or config.get("FINNHUB_API_KEY", "")
+SCREENER_URL = config.get("SCREENER_URL", "https://finnhub.io/api/v1/")
 
 # Cache to avoid excessive requests
 _vix_cache = {"value": None, "timestamp": 0}
@@ -26,13 +27,13 @@ def get_vix_value():
     if _vix_cache["value"] is not None and (current_time - _vix_cache["timestamp"] < CACHE_DURATION):
         return _vix_cache["value"]
 
-    if not FINNHUB_API_KEY:
-        log_error("[vix_gatekeeper] FINNHUB_API_KEY is missing from config.")
+    if not SCREENER_API_KEY:
+        log_error("[vix_gatekeeper] SCREENER_API_KEY is missing from config.")
         return None
 
     try:
         response = requests.get(
-            f"https://finnhub.io/api/v1/quote?symbol=^VIX&token={FINNHUB_API_KEY}"
+            f"{SCREENER_URL.rstrip('/')}/quote?symbol=^VIX&token={SCREENER_API_KEY}"
         )
         response.raise_for_status()
         data = response.json()

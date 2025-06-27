@@ -14,8 +14,13 @@ from tbot_bot.support.path_resolver import get_cache_path  # <- Surgical update:
 # Load config and API key
 config = get_bot_config()
 SCREENER_API = get_decrypted_json("storage/secrets/screener_api.json.enc")
-SCREENER_API_KEY = SCREENER_API.get("SCREENER_API_KEY", "") or SCREENER_API.get("FINNHUB_API_KEY", "")
+SCREENER_API_KEY = (
+    SCREENER_API.get("SCREENER_API_KEY", "")
+    or SCREENER_API.get("FINNHUB_API_KEY", "")  # legacy compat
+)
 SCREENER_URL = SCREENER_API.get("SCREENER_URL", "https://finnhub.io/api/v1/")
+SCREENER_USERNAME = SCREENER_API.get("SCREENER_USERNAME", "")
+SCREENER_PASSWORD = SCREENER_API.get("SCREENER_PASSWORD", "")
 FUNDAMENTAL_CACHE = get_cache_path(f"fundamentals_{datetime.date.today()}.json")  # <- Surgical update: path resolver used
 
 # Runtime filter toggles
@@ -40,8 +45,9 @@ def save_cache(cache):
 
 def fetch_fundamentals(symbol: str) -> dict:
     url = f"{SCREENER_URL.rstrip('/')}/stock/metric?symbol={symbol}&metric=all&token={SCREENER_API_KEY}"
+    auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
     try:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=5, auth=auth)
         if resp.status_code == 200:
             return resp.json().get("metric", {})
     except Exception as e:

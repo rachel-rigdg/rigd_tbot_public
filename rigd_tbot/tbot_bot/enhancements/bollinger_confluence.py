@@ -7,7 +7,8 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_log import log_debug  # UPDATED
 
 config = get_bot_config()
-FINNHUB_API_KEY = config.get("FINNHUB_API_KEY", "")
+SCREENER_API_KEY = config.get("SCREENER_API_KEY", "") or config.get("FINNHUB_API_KEY", "")
+SCREENER_URL = config.get("SCREENER_URL", "https://finnhub.io/api/v1/")
 BBANDS_STD_DEV = 2  # Number of standard deviations for Bollinger Bands
 
 def get_bollinger_bands(symbol: str, resolution: str = "5", length: int = 20) -> Optional[dict]:
@@ -17,10 +18,10 @@ def get_bollinger_bands(symbol: str, resolution: str = "5", length: int = 20) ->
     """
     try:
         url = (
-            f"https://finnhub.io/api/v1/indicator"
+            f"{SCREENER_URL.rstrip('/')}/indicator"
             f"?symbol={symbol}&resolution={resolution}&indicator=bbands"
             f"&timeperiod={length}&nbdevup={BBANDS_STD_DEV}&nbdevdn={BBANDS_STD_DEV}"
-            f"&token={FINNHUB_API_KEY}"
+            f"&token={SCREENER_API_KEY}"
         )
         resp = requests.get(url)
         data = resp.json()

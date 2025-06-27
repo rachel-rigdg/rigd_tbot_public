@@ -75,7 +75,6 @@ def fetch_finnhub_symbols(env):
             quote_url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
             quote = requests.get(quote_url, auth=auth)
             q = quote.json() if quote.status_code == 200 else {}
-            # Compose result
             symbols.append({
                 "symbol": symbol,
                 "exchange": exch.strip(),
