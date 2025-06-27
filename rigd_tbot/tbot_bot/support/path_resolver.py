@@ -10,7 +10,8 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 try:
     from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 except ImportError:
-    is_first_bootstrap = lambda: False  # fallback for non-web contexts
+    def is_first_bootstrap():
+        return False
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 IDENTITY_PATTERN = r"^[A-Z]{2,6}_[A-Z]{2,4}_[A-Z]{2,10}_[A-Z0-9]{2,6}$"
@@ -23,31 +24,6 @@ CATEGORIES = {
     "screeners": "screeners"
 }
 
-RUNTIME_SCRIPT_DIR = PROJECT_ROOT / "tbot_bot" / "processes"
-RUNTIME_SCRIPT_MAP = {
-    "status_bot.py": "status_bot.py",
-    "watchdog_bot.py": "watchdog_bot.py",
-    "strategy_router.py": "strategy_router.py",
-    "strategy_open.py": "strategy_open.py",
-    "strategy_mid.py": "strategy_mid.py",
-    "strategy_close.py": "strategy_close.py",
-    "risk_module.py": "risk_module.py",
-    "kill_switch.py": "kill_switch.py",
-    "log_rotation.py": "log_rotation.py",
-    "trade_logger.py": "trade_logger.py",
-    "status_logger.py": "status_logger.py",
-    "symbol_universe_refresh.py": "symbol_universe_refresh.py",
-    "integration_test_runner.py": "integration_test_runner.py"
-}
-
-def resolve_runtime_script_path(module_name: str) -> str:
-    if module_name not in RUNTIME_SCRIPT_MAP:
-        raise ValueError(f"[path_resolver] Unknown runtime script: {module_name}")
-    script_path = RUNTIME_SCRIPT_DIR / RUNTIME_SCRIPT_MAP[module_name]
-    if not script_path.exists():
-        raise FileNotFoundError(f"[path_resolver] Runtime script not found: {script_path}")
-    return str(script_path)
-
 def get_bot_identity(explicit_identity: str = None) -> str:
     if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (system is in bootstrap mode)")
@@ -56,8 +32,9 @@ def get_bot_identity(explicit_identity: str = None) -> str:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     return identity
 
+
 def validate_bot_identity(bot_identity: str) -> None:
-    if not re.match(IDENTITY_PATTERN, bot_identity):
+    if not bot_identity or not re.match(IDENTITY_PATTERN, bot_identity):
         raise ValueError(f"[path_resolver] Invalid BOT_IDENTITY_STRING: {bot_identity}")
 
 def get_bot_identity_string_regex():
@@ -65,6 +42,8 @@ def get_bot_identity_string_regex():
 
 def get_output_path(bot_identity: str = None, category: str = None, filename: str = None, output_subdir: bool = False) -> str:
     identity = get_bot_identity(bot_identity)
+    if not identity:
+        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
     if category not in CATEGORIES:
@@ -117,16 +96,22 @@ def resolve_coa_audit_log_path() -> str:
 
 def resolve_coa_json_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
+    if not identity:
+        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa.json")
 
 def resolve_coa_metadata_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
+    if not identity:
+        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_metadata.json")
 
 def resolve_coa_audit_log_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
+    if not identity:
+        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_audit_log.json")
 
@@ -170,11 +155,15 @@ def resolve_status_summary_path(bot_identity: str = None) -> str:
     Path: tbot_bot/output/{bot_identity}/summaries/status.json
     """
     identity = get_bot_identity(bot_identity)
+    if not identity:
+        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
     summaries_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity / "summaries"
     summaries_dir.mkdir(parents=True, exist_ok=True)
     return str(summaries_dir / "status.json")
 
+def resolve_runtime_script_path(script_name: str) -> str:
+    return str(PROJECT_ROOT / "tbot_bot" / "runtime" / script_name)
 
 __all__ = [
     "get_bot_identity",
