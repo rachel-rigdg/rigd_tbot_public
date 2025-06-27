@@ -74,11 +74,9 @@ def main_page():
     if not user_exists():
         return redirect(url_for("register_web.register_page"))
     return render_template("main.html", bot_state=state,
-        # BEGIN: Inject new nav button routes for user self-service and admin flows
         account_url=url_for("account_web.account_page"),
         password_reset_url=url_for("password_reset_web.request_reset"),
         users_url=url_for("users_web.users_list")
-        # END
     )
 
 @main_blueprint.route("/main/state", methods=["GET"])

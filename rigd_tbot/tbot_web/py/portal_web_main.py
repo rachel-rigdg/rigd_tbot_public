@@ -52,8 +52,6 @@ def create_unified_app():
     from tbot_web.py.test_web import test_web
     from tbot_web.py.register_web import register_web
     from tbot_web.py.universe_web import universe_bp
-
-    # Import and register post-bootstrap blueprints statically here
     from tbot_web.py.password_reset_web import password_reset_blueprint
     from tbot_web.py.users_web import users_blueprint
     from tbot_web.py.account_web import account_blueprint
@@ -83,8 +81,6 @@ def create_unified_app():
     app.register_blueprint(ledger_web, url_prefix="/ledger")
     app.register_blueprint(test_web, url_prefix="/test")
     app.register_blueprint(universe_bp, url_prefix="/universe")
-
-    # Register post-bootstrap blueprints statically
     app.register_blueprint(password_reset_blueprint, url_prefix="/password_reset")
     app.register_blueprint(users_blueprint, url_prefix="/users")
     app.register_blueprint(account_blueprint, url_prefix="/account")

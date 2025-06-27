@@ -31,9 +31,9 @@ def account_page():
         updated = False
 
         # Update email if changed
-        if new_email and new_email != user.email:
+        if new_email and new_email != user["email"]:
             try:
-                upsert_user(username, None, new_email, role=user.role)
+                upsert_user(username, None, new_email, role=user["role"])
                 updated = True
                 flash("Email updated.", "success")
             except Exception as e:
@@ -45,8 +45,7 @@ def account_page():
                 flash("New passwords do not match.", "error")
             else:
                 try:
-                    # Upsert_user will validate old password if implemented; if not, skip for now
-                    upsert_user(username, new_password, user.email, role=user.role)
+                    upsert_user(username, new_password, user["email"], role=user["role"])
                     updated = True
                     flash("Password updated.", "success")
                 except Exception as e:
