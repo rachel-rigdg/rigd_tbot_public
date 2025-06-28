@@ -13,13 +13,13 @@ body {
   h2 {
     margin-bottom: 20px;
     text-align: center;
-    color: #32425a;
+    color: #999;
   }
   
   table {
     width: 100%;
     border-collapse: collapse;
-    background: #fff;
+    background: #333;
     margin-bottom: 16px;
     border-radius: 6px;
     box-shadow: 0 1px 3px rgba(60,60,80,0.05);
@@ -34,32 +34,32 @@ body {
   th {
     background: #f0f4f9;
     font-weight: 700;
-    color: #2c3c50;
+    color: #999;
     border-bottom: 2px solid #e1e6ec;
   }
   
   tr:nth-child(even) {
-    background: #f7fafd;
+    background: #333;
   }
   
   td {
-    border-bottom: 1px solid #eef1f6;
+    border-bottom: 1px solid #999;
     font-size: 15px;
   }
   
   a {
-    color: #2765b5;
+    color: #999;
     text-decoration: underline;
     margin-right: 7px;
   }
   
   a:hover {
-    color: #163661;
+    color: #AAA;
   }
   
   button[type="submit"] {
-    background: #b82929;
-    color: #fff;
+    background: #333;
+    color: #999;
     font-weight: 600;
     border: none;
     border-radius: 3px;
@@ -70,12 +70,12 @@ body {
   }
   
   button[type="submit"]:hover {
-    background: #931c1c;
+    background: #555;
   }
   
   ul {
     margin: 0 0 12px 0;
     padding-left: 16px;
-    color: #b23c3c;
+    color: #999;
   }
   

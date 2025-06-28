@@ -13,12 +13,12 @@ body {
   h2 {
     margin-bottom: 20px;
     text-align: center;
-    color: #334;
+    color: #999;
   }
   
   form {
     margin-bottom: 20px;
-    background: #fff;
+    background: #333;
     padding: 18px 16px 14px 16px;
     border-radius: 5px;
     box-shadow: 0 1px 4px rgba(80,80,110,0.07);
@@ -28,7 +28,7 @@ body {
     display: block;
     margin-bottom: 7px;
     font-weight: bold;
-    color: #445;
+    color: #999;
   }
   
   input[type="email"],
@@ -37,18 +37,18 @@ body {
     width: 100%;
     padding: 7px 8px;
     margin-bottom: 13px;
-    border: 1px solid #b5bac6;
-    border-radius: 3px;
+    border: 1px solid #999;
+    border-radius: 5px;
     font-size: 15px;
-    background: #fafcff;
+    background: #333;
   }
   
   button[type="submit"] {
     margin-top: 8px;
     width: 100%;
     padding: 8px 0;
-    background: #297bc2;
-    color: #fff;
+    background: #555;
+    color: #999;
     font-weight: 600;
     font-size: 15px;
     border: none;
@@ -58,24 +58,24 @@ body {
   }
   
   button[type="submit"]:hover {
-    background: #195184;
+    background: #555555;
   }
   
   ul {
     margin: 0 0 16px 0;
     padding-left: 16px;
-    color: #b23c3c;
+    color: #999999;
   }
   
   a {
     display: inline-block;
     margin-top: 10px;
     text-decoration: underline;
-    color: #265088;
+    color: #999999;
     font-size: 15px;
   }
   
   a:hover {
-    color: #16355c;
+    color: #999999;
   }
   

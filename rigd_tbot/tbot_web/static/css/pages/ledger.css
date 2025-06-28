@@ -12,22 +12,23 @@
 }
 .ledger-table th {
     background: #333333;
-    color: #ffffff;
+    color: #999;
 }
 .ledger-table tr.ok {
-    background: #222d22;
+    background: #333;
     color: #aaffaa;
 }
 .ledger-table tr.mismatch {
-    background: #2a1818;
+    background: #444;
     color: #ffaaaa;
 }
 .ledger-table tr.pending {
     background: #222244;
-    color: #aaaaff;
+    color: #999;
 }
 .reconcile-container {
     width: 100%;
+    left:0
     max-width: 900px;
     margin: 0 auto;
     padding: 2em 0;
