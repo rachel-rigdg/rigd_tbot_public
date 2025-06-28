@@ -10,7 +10,7 @@ from typing import List, Dict
 
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
-    save_universe_cache, filter_symbols, load_blocklist, UniverseCacheError
+    save_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
 )
 from tbot_bot.support.path_resolver import resolve_universe_cache_path
 
@@ -24,40 +24,29 @@ LOG = logging.getLogger("symbol_universe_refresh")
 
 def fetch_broker_symbol_metadata() -> List[Dict]:
     """
-    Fetches all US symbols/metadata from the configured provider in .env_bot (SCREENER_SOURCE).
+    Fetches all US symbols/metadata from the configured screener as set in screener secrets (SCREENER_NAME).
     Returns a list of dicts: symbol, exchange, lastClose, marketCap, name, sector, industry, volume.
     """
     env = load_env_bot_config()
-    screener_source = env.get("SCREENER_SOURCE", "FINNHUB").strip().upper()
-    if screener_source == "FINNHUB":
-        return fetch_finnhub_symbols(env)
-    elif screener_source == "ALPACA":
-        return fetch_alpaca_symbols(env)
-    elif screener_source == "TRADIER":
-        return fetch_tradier_symbols(env)
-    elif screener_source == "IBKR":
-        return fetch_ibkr_symbols(env)
+    screener_secrets = get_screener_secrets()
+    screener_name = (screener_secrets.get("SCREENER_NAME") or "FINNHUB").strip().upper()
+    if screener_name == "FINNHUB":
+        return fetch_finnhub_symbols(screener_secrets, env)
+    elif screener_name == "TRADIER":
+        return fetch_tradier_symbols(screener_secrets, env)
+    elif screener_name == "IBKR":
+        return fetch_ibkr_symbols(screener_secrets, env)
     else:
-        raise RuntimeError(f"Unsupported SCREENER_SOURCE: {screener_source}")
+        raise RuntimeError(f"Unsupported SCREENER_NAME: {screener_name}")
 
-def fetch_finnhub_symbols(env):
+def fetch_finnhub_symbols(secrets, env):
     import requests
-    screener_block = env.get("SCREENER_API", {}) if "SCREENER_API" in env else env
-    SCREENER_API_KEY = (
-        screener_block.get("SCREENER_API_KEY")
-        or env.get("SCREENER_API_KEY")
-        or env.get("FINNHUB_API_KEY")
-        or env.get("FINNHUB_TOKEN", "")
-    )
-    SCREENER_URL = (
-        screener_block.get("SCREENER_URL")
-        or env.get("SCREENER_URL")
-        or "https://finnhub.io/api/v1/"
-    )
-    SCREENER_USERNAME = screener_block.get("SCREENER_USERNAME", "") or env.get("SCREENER_USERNAME", "")
-    SCREENER_PASSWORD = screener_block.get("SCREENER_PASSWORD", "") or env.get("SCREENER_PASSWORD", "")
+    SCREENER_API_KEY = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
+    SCREENER_URL = secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
+    SCREENER_USERNAME = secrets.get("SCREENER_USERNAME", "")
+    SCREENER_PASSWORD = secrets.get("SCREENER_PASSWORD", "")
     if not SCREENER_API_KEY:
-        raise RuntimeError("SCREENER_API_KEY not set in config")
+        raise RuntimeError("SCREENER_API_KEY not set in screener secrets/config")
     symbols = []
     for exch in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(","):
         url = f"{SCREENER_URL.rstrip('/')}/stock/symbol?exchange={exch.strip()}&token={SCREENER_API_KEY}"
@@ -85,49 +74,12 @@ def fetch_finnhub_symbols(env):
             })
     return symbols
 
-def fetch_alpaca_symbols(env):
+def fetch_tradier_symbols(secrets, env):
     import requests
-    api_key = env.get("BROKER_API_KEY", "") or env.get("ALPACA_API_KEY", "")
-    secret_key = env.get("BROKER_SECRET_KEY", "") or env.get("ALPACA_SECRET_KEY", "")
-    username = env.get("BROKER_USERNAME", "")
-    password = env.get("BROKER_PASSWORD", "")
-    url = env.get("BROKER_URL", "https://paper-api.alpaca.markets") + "/v2/assets?status=active&asset_class=us_equity"
-    headers = {
-        "APCA-API-KEY-ID": api_key,
-        "APCA-API-SECRET-KEY": secret_key,
-    }
-    auth = (username, password) if username and password else None
-    r = requests.get(url, headers=headers, auth=auth)
-    if r.status_code != 200:
-        raise RuntimeError("Failed to fetch symbols from Alpaca")
-    data = r.json()
-    results = []
-    for s in data:
-        symbol = s["symbol"]
-        exch = s.get("exchange", "")
-        results.append({
-            "symbol": symbol,
-            "exchange": exch,
-            "lastClose": s.get("last_close", 0),
-            "marketCap": None,
-            "name": s.get("name") or "",
-            "sector": "",
-            "industry": "",
-            "volume": 0
-        })
-    return results
-
-def fetch_tradier_symbols(env):
-    import requests
-    screener_block = env.get("SCREENER_API", {}) if "SCREENER_API" in env else env
-    api_key = (
-        screener_block.get("SCREENER_API_KEY")
-        or env.get("SCREENER_API_KEY")
-        or env.get("TRADIER_API_KEY", "")
-    )
-    username = screener_block.get("SCREENER_USERNAME", "") or env.get("SCREENER_USERNAME", "")
-    password = screener_block.get("SCREENER_PASSWORD", "") or env.get("SCREENER_PASSWORD", "")
-    url = screener_block.get("SCREENER_URL", "") or env.get("SCREENER_URL", "https://api.tradier.com/v1/markets/symbols")
+    api_key = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
+    username = secrets.get("SCREENER_USERNAME", "")
+    password = secrets.get("SCREENER_PASSWORD", "")
+    url = secrets.get("SCREENER_URL", "https://api.tradier.com/v1/markets/symbols")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
@@ -151,7 +103,7 @@ def fetch_tradier_symbols(env):
         })
     return results
 
-def fetch_ibkr_symbols(env):
+def fetch_ibkr_symbols(secrets, env):
     return []
 
 def main():
@@ -170,12 +122,12 @@ def main():
     try:
         symbols_raw = fetch_broker_symbol_metadata()
         if not symbols_raw or len(symbols_raw) < 10:
-            raise RuntimeError("No symbols fetched from broker/API; check API key, network, or provider limits.")
+            raise RuntimeError("No symbols fetched from screener/API; check API key, network, or provider limits.")
     except Exception as e:
-        LOG.error(f"Failed to fetch broker symbol metadata: {e}")
+        LOG.error(f"Failed to fetch screener symbol metadata: {e}")
         raise
 
-    LOG.info(f"Fetched {len(symbols_raw)} raw symbols from broker feed.")
+    LOG.info(f"Fetched {len(symbols_raw)} raw symbols from screener feed.")
 
     blocklist = load_blocklist(blocklist_path)
 

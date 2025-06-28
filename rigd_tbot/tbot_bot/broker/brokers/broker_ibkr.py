@@ -20,6 +20,7 @@ class IBKRBroker:
         self.account_number = env.get("BROKER_ACCOUNT_NUMBER")
         self.api_key = env.get("BROKER_API_KEY")
         self.secret_key = env.get("BROKER_SECRET_KEY")
+        self.broker_token = env.get("BROKER_TOKEN", "")
         self.url = env.get("BROKER_URL")
 
         self.client = IB()

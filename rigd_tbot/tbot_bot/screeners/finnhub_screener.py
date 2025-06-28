@@ -6,14 +6,14 @@ import requests
 import time
 from pathlib import Path
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.screeners.screener_utils import load_screener_api_config
+from tbot_bot.screeners.screener_utils import get_screener_secrets
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
-screener_secrets = load_screener_api_config()
+screener_secrets = get_screener_secrets()
 SCREENER_API_KEY = (
     screener_secrets.get("SCREENER_API_KEY", "")
-    or screener_secrets.get("FINNHUB_API_KEY", "")  # legacy compat
+    or screener_secrets.get("SCREENER_TOKEN", "")
 )
 SCREENER_URL = screener_secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
 SCREENER_USERNAME = screener_secrets.get("SCREENER_USERNAME", "")

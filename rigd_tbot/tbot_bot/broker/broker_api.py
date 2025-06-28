@@ -23,6 +23,7 @@ def get_active_broker():
         "BROKER_API_KEY": load_broker_credential("BROKER_API_KEY", ""),
         "BROKER_SECRET_KEY": load_broker_credential("BROKER_SECRET_KEY", ""),
         "BROKER_URL": load_broker_credential("BROKER_URL", ""),
+        "BROKER_TOKEN": load_broker_credential("BROKER_TOKEN", ""),
         **config  # merge in runtime config for risk/strategy settings, etc.
     }
 

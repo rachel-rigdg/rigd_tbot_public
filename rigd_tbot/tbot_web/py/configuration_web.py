@@ -86,25 +86,27 @@ def save_configuration():
     bot_identity_data = {
         "ENTITY_CODE":           form.get("entity_code", "").strip(),
         "JURISDICTION_CODE":     form.get("jurisdiction_code", "").strip(),
-        "BROKER_CODE":           form.get("broker_name", "").strip(),
+        "BROKER_CODE":           form.get("broker_code", "").strip(),
         "BOT_ID":                form.get("bot_id", "").strip(),
-        "BOT_IDENTITY_STRING":   f"{form.get('entity_code','').strip()}_{form.get('jurisdiction_code','').strip()}_{form.get('broker_name','').strip()}_{form.get('bot_id','').strip()}"
+        "BOT_IDENTITY_STRING":   f"{form.get('entity_code','').strip()}_{form.get('jurisdiction_code','').strip()}_{form.get('broker_code','').strip()}_{form.get('bot_id','').strip()}"
     }
     broker_data = {
-        "BROKER_CODE":           form.get("broker_name", "").strip(),
+        "BROKER_CODE":           form.get("broker_code", "").strip(),
         "BROKER_URL":            form.get("broker_url", "").strip(),
         "BROKER_API_KEY":        form.get("broker_api_key", "").strip(),
         "BROKER_SECRET_KEY":     form.get("broker_secret_key", "").strip(),
         "BROKER_USERNAME":       form.get("broker_username", "").strip(),
         "BROKER_ACCOUNT_NUMBER": form.get("broker_account_number", "").strip(),
         "BROKER_PASSWORD":       form.get("broker_password", "").strip(),
+        "BROKER_TOKEN":          form.get("broker_token", "").strip(),
     }
     screener_api_data = {
         "SCREENER_NAME":     form.get("screener_name", "").strip(),
         "SCREENER_USERNAME": form.get("screener_username", "").strip(),
         "SCREENER_PASSWORD": form.get("screener_password", "").strip(),
         "SCREENER_URL":      form.get("screener_url", "").strip(),
-        "SCREENER_API_KEY":  form.get("screener_api_key", "").strip()
+        "SCREENER_API_KEY":  form.get("screener_api_key", "").strip(),
+        "SCREENER_TOKEN":    form.get("screener_token", "").strip(),
     }
     smtp_data = {
         "ALERT_EMAIL":    form.get("alert_email", "").strip(),
@@ -114,10 +116,9 @@ def save_configuration():
         "SMTP_PORT":      form.get("smtp_port", "").strip()
     }
     network_config_data = {
-        "NETWORK_NAME": form.get("network_name", "").strip(),
-        "HOSTNAME":     form.get("network_name", "").strip(),
-        "HOST_IP":      form.get("ip", "").strip(),
-        "PORT":         form.get("port", "").strip()
+        "HOSTNAME":   form.get("hostname", "").strip(),
+        "HOST_IP":    form.get("ip", "").strip(),
+        "PORT":       form.get("port", "").strip()
     }
     acct_api_data = {}
 

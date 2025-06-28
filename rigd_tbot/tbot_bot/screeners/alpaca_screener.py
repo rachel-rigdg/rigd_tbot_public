@@ -5,19 +5,21 @@
 import requests
 import time
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.screeners.screener_utils import load_screener_api_config
+from tbot_bot.screeners.screener_utils import get_screener_secrets
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
-broker_creds = load_screener_api_config(category="broker")
+broker_creds = get_screener_secrets(category="broker")
 ALPACA_API_KEY = broker_creds.get("BROKER_API_KEY", "")
 ALPACA_SECRET_KEY = broker_creds.get("BROKER_SECRET_KEY", "")
 BROKER_USERNAME = broker_creds.get("BROKER_USERNAME", "")
 BROKER_PASSWORD = broker_creds.get("BROKER_PASSWORD", "")
 BROKER_URL = broker_creds.get("BROKER_URL", "https://data.alpaca.markets")
+BROKER_TOKEN = broker_creds.get("BROKER_TOKEN", "")
 HEADERS = {
     "APCA-API-KEY-ID": ALPACA_API_KEY,
     "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
+    "Authorization": f"Bearer {BROKER_TOKEN}" if BROKER_TOKEN else ""
 }
 API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
@@ -44,7 +46,7 @@ class AlpacaScreener(ScreenerBase):
             url_bars = f"{BROKER_URL.rstrip('/')}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=1"
             auth = (BROKER_USERNAME, BROKER_PASSWORD) if BROKER_USERNAME and BROKER_PASSWORD else None
             try:
-                bars_resp = requests.get(url_bars, headers=HEADERS, timeout=API_TIMEOUT, auth=auth)
+                bars_resp = requests.get(url_bars, headers={k:v for k,v in HEADERS.items() if v}, timeout=API_TIMEOUT, auth=auth)
                 if bars_resp.status_code != 200:
                     log(f"Error fetching bars for {symbol}: status {bars_resp.status_code}")
                     continue

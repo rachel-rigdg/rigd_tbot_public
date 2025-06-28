@@ -14,11 +14,14 @@ class AlpacaBroker:
         """
         self.api_key = env.get("BROKER_API_KEY")
         self.secret_key = env.get("BROKER_SECRET_KEY")
+        self.broker_token = env.get("BROKER_TOKEN", "")
         self.base_url = env.get("BROKER_URL")
         self.headers = {
             "APCA-API-KEY-ID": self.api_key,
             "APCA-API-SECRET-KEY": self.secret_key
         }
+        if self.broker_token:
+            self.headers["Authorization"] = f"Bearer {self.broker_token}"
 
     def _request(self, method, endpoint, data=None, params=None):
         url = f"{self.base_url}{endpoint}"

@@ -5,12 +5,12 @@
 import requests
 import time
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.screeners.screener_utils import load_screener_api_config
+from tbot_bot.screeners.screener_utils import get_screener_secrets
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
 
-tradier_creds = load_screener_api_config(category="broker")
+tradier_creds = get_screener_secrets(category="broker")
 TRADIER_API_KEY = tradier_creds.get("BROKER_API_KEY", "")
 BASE_URL = "https://api.tradier.com/v1/markets"
 HEADERS = {
