@@ -1,10 +1,12 @@
 # tbot_bot/test/test_env_bot.py
 # Validates .env_bot parsing, defaults, and edge cases
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
-# All process orchestration is via tbot_supervisor.py only.
 
 import pytest
 from tbot_bot.config.env_bot import get_bot_config
+from pathlib import Path
+
+TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_env_bot.flag"
 
 REQUIRED_KEYS = [
     "VERSION_TAG",
@@ -59,6 +61,10 @@ REQUIRED_KEYS = [
     "NOTIFY_ON_EXIT"
 ]
 
+def pytest_sessionstart(session):
+    if not TEST_FLAG_PATH.exists():
+        pytest.skip("Individual test flag not present. Exiting.")
+
 def test_all_required_keys_present():
     config = get_bot_config()
     missing_keys = [key for key in REQUIRED_KEYS if key not in config]
@@ -84,3 +90,14 @@ def test_strategy_toggles():
 def test_logging_format():
     config = get_bot_config()
     assert config.get("LOG_FORMAT") in ["csv", "json"]
+
+def run_test():
+    import unittest
+    try:
+        unittest.main(module=__name__, exit=False)
+    finally:
+        if TEST_FLAG_PATH.exists():
+            TEST_FLAG_PATH.unlink()
+
+if __name__ == "__main__":
+    run_test()

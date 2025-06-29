@@ -1,10 +1,18 @@
 # tbot_bot/test/test_strategy_selfcheck.py
 # Confirms all strategy modules pass .self_check()
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
-# All process orchestration is via tbot_supervisor.py only.
 
+import sys
 import unittest
+from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
+
+TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_strategy_selfcheck.flag"
+
+if __name__ == "__main__":
+    if not TEST_FLAG_PATH.exists():
+        print("[test_strategy_selfcheck.py] Individual test flag not present. Exiting.")
+        sys.exit(0)
 
 class TestStrategySelfCheck(unittest.TestCase):
     def test_strategy_selfchecks(self):
@@ -44,6 +52,8 @@ class TestStrategySelfCheck(unittest.TestCase):
 
 def run_test():
     unittest.main(module=__name__, exit=False)
+    if TEST_FLAG_PATH.exists():
+        TEST_FLAG_PATH.unlink()
 
 if __name__ == "__main__":
     run_test()

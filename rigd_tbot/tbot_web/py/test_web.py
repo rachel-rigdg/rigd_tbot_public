@@ -1,22 +1,36 @@
 # tbot_web/py/test_web.py
-# Dedicated TEST_MODE UI/backend: triggers test_mode.flag, streams real-time logs/status, auto-resets on completion (admin-only)
+# Dedicated TEST_MODE UI/backend: triggers per-test flags, streams real-time logs/status, auto-resets on completion (admin-only)
 
 import os
 import threading
 import time
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, flash
+from flask import Blueprint, render_template, request, jsonify
 from tbot_web.support.utils_web import admin_required
 from pathlib import Path
 import subprocess
 
-TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
 TEST_LOG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "test_mode.log"
 LOCK = threading.Lock()
 
 test_web = Blueprint("test_web", __name__, template_folder="../templates")
 
-def is_test_active():
-    return TEST_FLAG_PATH.exists()
+def get_test_flag_path(test_name: str = None) -> Path:
+    if test_name:
+        return CONTROL_DIR / f"test_mode_{test_name}.flag"
+    return CONTROL_DIR / "test_mode.flag"
+
+def is_test_active(test_name: str = None) -> bool:
+    return get_test_flag_path(test_name).exists()
+
+def any_test_active() -> bool:
+    # Returns True if the global or any individual test flag exists
+    if is_test_active():
+        return True
+    for flag in CONTROL_DIR.glob("test_mode_*.flag"):
+        if flag.is_file():
+            return True
+    return False
 
 def read_test_logs():
     if not TEST_LOG_PATH.exists():
@@ -25,7 +39,8 @@ def read_test_logs():
         return f.read()[-30000:]
 
 def get_test_status():
-    if not is_test_active():
+    # Prioritize global flag for overall status
+    if not any_test_active():
         return "idle"
     if TEST_LOG_PATH.exists():
         with open(TEST_LOG_PATH, "r", encoding="utf-8") as f:
@@ -38,29 +53,31 @@ def get_test_status():
         return "running"
     return "triggered"
 
-def create_test_flag():
-    TEST_FLAG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(TEST_FLAG_PATH, "w") as f:
+def create_test_flag(test_name: str = None):
+    flag_path = get_test_flag_path(test_name)
+    flag_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(flag_path, "w") as f:
         f.write("1\n")
 
-def remove_test_flag():
-    if TEST_FLAG_PATH.exists():
-        TEST_FLAG_PATH.unlink()
+def remove_test_flag(test_name: str = None):
+    flag_path = get_test_flag_path(test_name)
+    if flag_path.exists():
+        flag_path.unlink()
 
 @test_web.route("/test/", methods=["GET"])
 @admin_required
 def test_page():
     status = get_test_status()
     logs = read_test_logs()
-    return render_template("test.html", test_active=is_test_active(), test_status=status, test_logs=logs)
+    return render_template("test.html", test_active=any_test_active(), test_status=status, test_logs=logs)
 
 @test_web.route("/test/trigger", methods=["POST"])
 @admin_required
 def trigger_test_mode():
     with LOCK:
-        if is_test_active():
+        if any_test_active():
             return jsonify({"result": "already_running"})
-        create_test_flag()
+        create_test_flag()  # global flag triggers full run
         subprocess.Popen(["python3", "-m", "tbot_bot.test.integration_test_runner"])
     return jsonify({"result": "started"})
 
@@ -68,9 +85,8 @@ def trigger_test_mode():
 @admin_required
 def run_individual_test(test_name):
     with LOCK:
-        if is_test_active():
+        if any_test_active():
             return jsonify({"result": "already_running"})
-        create_test_flag()
         test_map = {
             "universe_cache": "tbot_bot.test.test_universe_cache",
             "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
@@ -87,8 +103,8 @@ def run_individual_test(test_name):
         }
         module = test_map.get(test_name)
         if not module:
-            remove_test_flag()
             return jsonify({"result": "unknown_test"})
+        create_test_flag(test_name)  # create individual test flag
         subprocess.Popen(["python3", "-m", module])
     return jsonify({"result": "started", "test": test_name})
 
@@ -101,7 +117,11 @@ def get_test_logs():
 
 def auto_reset_test_flag():
     for _ in range(60):
-        if not is_test_active():
+        if not any_test_active():
             return
         time.sleep(2)
-    remove_test_flag()
+    # Remove all test flags (global + individual)
+    if TEST_FLAG_PATH.exists():
+        TEST_FLAG_PATH.unlink()
+    for flag in CONTROL_DIR.glob("test_mode_*.flag"):
+        flag.unlink()

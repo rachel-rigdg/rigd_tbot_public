@@ -17,9 +17,9 @@ from tbot_bot.support.utils_identity import get_bot_identity
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
 BOT_IDENTITY = get_bot_identity()
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
 
 def check_output_artifacts():
-    """Verify output files exist after test session."""
     files = [
         get_output_path("summaries", f"{BOT_IDENTITY}_BOT_daily_summary.json"),
         get_output_path("trades", f"{BOT_IDENTITY}_BOT_trade_history.json"),
@@ -43,7 +43,6 @@ def check_output_artifacts():
                     print(f"   Error parsing JSON: {e}")
 
 def check_ledger_exports():
-    """Check if expected bot ledger exports exist."""
     ledgers = [
         f"{BOT_IDENTITY}_BOT_COA.db",
         f"{BOT_IDENTITY}_BOT_ledger.db",
@@ -57,8 +56,19 @@ def check_ledger_exports():
             size = path.stat().st_size
             print(f"Ledger found: {path} → {size} bytes")
 
+def _clear_flag(flag_path):
+    try:
+        if flag_path.exists():
+            flag_path.unlink()
+    except Exception:
+        pass
+
+def detect_individual_test_flag():
+    for flag in CONTROL_DIR.glob("test_mode_*.flag"):
+        return flag
+    return None
+
 def run_integration_test():
-    """Run full strategy sequence and verify runtime artifacts."""
     log_event("integration_test", "Starting integration test runner...")
 
     config = get_bot_config()
@@ -92,6 +102,13 @@ def run_integration_test():
         log_event("integration_test", f"Fatal error during test: {e}")
         print("Integration test failed with error:\n", tb)
         sys.exit(1)
+    finally:
+        # Remove global test_mode.flag if present
+        _clear_flag(CONTROL_DIR / "test_mode.flag")
+        # Remove individual test flag if present
+        flag = detect_individual_test_flag()
+        if flag:
+            _clear_flag(flag)
 
 if __name__ == "__main__":
     run_integration_test()

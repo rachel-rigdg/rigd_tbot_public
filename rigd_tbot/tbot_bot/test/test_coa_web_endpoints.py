@@ -2,14 +2,18 @@
 # Integration/endpoint test for COA Web UI endpoints (/coa, /coa/api, /coa/export), compliant with RIGD TradeBot specifications.
 # All web endpoint and CI tests must reside in tbot_bot/test/ per current directory structure.
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
-# All process orchestration is via tbot_supervisor.py only.
 
 import unittest
 from flask import Flask
 from tbot_web.py.coa_web import coa_web
+from pathlib import Path
+
+TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_coa_web_endpoints.flag"
 
 class COAWebEndpointTestCase(unittest.TestCase):
     def setUp(self):
+        if not TEST_FLAG_PATH.exists():
+            self.skipTest("Individual test flag not present. Exiting.")
         app = Flask(__name__)
         app.secret_key = "testkey"
         app.register_blueprint(coa_web)
@@ -23,6 +27,8 @@ class COAWebEndpointTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.ctx.pop()
+        if TEST_FLAG_PATH.exists():
+            TEST_FLAG_PATH.unlink()
 
     def test_coa_page_loads(self):
         rv = self.app.get('/coa')
@@ -55,7 +61,8 @@ class COAWebEndpointTestCase(unittest.TestCase):
         data = rv.get_json()
         self.assertTrue(data['user_is_admin'])
 
+def run_test():
+    unittest.main(module=__name__, exit=False)
+
 if __name__ == "__main__":
-    print("[test_coa_web_endpoints.py] Direct execution is not permitted. This test must only be run via the test harness.")
-    import sys
-    sys.exit(1)
+    run_test()

@@ -1,10 +1,20 @@
 # tbot_bot/test/test_logging_format.py
 # Ensures all log entries follow required format and completeness
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
+import sys
 import unittest
 import os
 import re
+from pathlib import Path
 from tbot_bot.support.path_resolver import get_output_path
+
+TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_logging_format.flag"
+
+if __name__ == "__main__":
+    if not TEST_FLAG_PATH.exists():
+        print("[test_logging_format.py] Individual test flag not present. Exiting.")
+        sys.exit(0)
 
 LOG_DIR = get_output_path("logs")
 LOG_FILE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \[[A-Z]+\] .+")
@@ -40,5 +50,10 @@ class TestLoggingFormat(unittest.TestCase):
                             f"Log line {line_number} in {path} does not match format: {line}"
                         )
 
+def run_test():
+    unittest.main(module=__name__, exit=False)
+    if TEST_FLAG_PATH.exists():
+        TEST_FLAG_PATH.unlink()
+
 if __name__ == "__main__":
-    unittest.main()
+    run_test()

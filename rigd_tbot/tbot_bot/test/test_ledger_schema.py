@@ -1,13 +1,20 @@
 # tbot_bot/test/test_ledger_schema.py
 # Tests that new ledgers match COA/schema and double-entry enforcement
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
-# All process orchestration is via tbot_supervisor.py only.
+
 
 import pytest
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_coa import validate_ledger_schema
 from tbot_bot.support.path_resolver import get_output_path
 import json
+from pathlib import Path
+
+TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_ledger_schema.flag"
+
+def pytest_sessionstart(session):
+    if not TEST_FLAG_PATH.exists():
+        pytest.skip("Individual test flag not present. Exiting.")
 
 def test_ledger_schema_validation():
     """
@@ -23,3 +30,14 @@ def test_ledger_schema_validation():
 
     valid, errors = validate_ledger_schema(ledger_data)
     assert valid, f"Ledger schema validation failed with errors:\n{errors}"
+
+def run_test():
+    import unittest
+    try:
+        unittest.main(module=__name__, exit=False)
+    finally:
+        if TEST_FLAG_PATH.exists():
+            TEST_FLAG_PATH.unlink()
+
+if __name__ == "__main__":
+    run_test()

@@ -1,14 +1,16 @@
 # tbot_bot/test/test_broker_trade_stub.py
 # Sends randomized micro-trades to broker to validate order flow, response, and logging
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
-# All process orchestration is via tbot_supervisor.py only.
-# -------------------------------------------------------------------------------------
 
 import sys
+from pathlib import Path
+
+TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_broker_trade_stub.flag"
 
 if __name__ == "__main__":
-    print("[test_broker_trade_stub.py] Direct execution is not permitted. This test must only be run via tbot_supervisor.py or the test harness.")
-    sys.exit(1)
+    if not TEST_FLAG_PATH.exists():
+        print("[test_broker_trade_stub.py] Individual test flag not present. Exiting.")
+        sys.exit(0)
 
 import random
 import time
@@ -19,7 +21,6 @@ from tbot_bot.trading.instruments import resolve_bearish_instrument
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.decrypt_secrets import decrypt_json
 
-# Load config and broker credentials
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
 BROKER_CODE = broker_creds.get("BROKER_CODE", "").upper()
@@ -29,10 +30,8 @@ CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
 TRADE_COUNT = int(config.get("TEST_TRADE_COUNT", 5))
 DELAY_BETWEEN_TRADES = float(config.get("TEST_TRADE_DELAY", 2.0))  # seconds
 
-# Sample tickers (prefer low-volatility liquid symbols)
 TEST_TICKERS = ["AAPL", "MSFT", "TSLA", "AMD", "NVDA", "SPY", "QQQ"]
 
-# Track per-direction executions to avoid wash trades
 executed_sides = defaultdict(set)
 
 def run_trade_stub():
@@ -46,7 +45,6 @@ def run_trade_stub():
         symbol = random.choice(TEST_TICKERS)
         side = random.choice(["buy", "sell"])
 
-        # Prevent wash trade: skip if already traded in opposite direction
         if side in executed_sides[symbol] or ("buy" in executed_sides[symbol] and "sell" in executed_sides[symbol]):
             continue
 
@@ -84,3 +82,11 @@ def run_trade_stub():
         time.sleep(DELAY_BETWEEN_TRADES)
 
     log_event("test_trade_stub", f"Trade stub sequence completed: {successful} trades executed.")
+
+def run_test():
+    run_trade_stub()
+    if TEST_FLAG_PATH.exists():
+        TEST_FLAG_PATH.unlink()
+
+if __name__ == "__main__":
+    run_test()

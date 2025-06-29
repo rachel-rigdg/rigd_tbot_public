@@ -51,6 +51,9 @@ def ensure_singleton(process_name):
             continue
     return False
 
+def find_individual_test_flags():
+    return list(CONTROL_DIR.glob("test_mode_*.flag"))
+
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
     processes = {}
@@ -86,12 +89,28 @@ def main():
                 break
 
             if TEST_MODE_FLAG.exists():
-                print("[tbot_supervisor] TEST_MODE flag detected. Launching integration_test_runner.py...")
+                print("[tbot_supervisor] Global TEST_MODE flag detected. Launching integration_test_runner.py...")
                 if not ensure_singleton("integration_test_runner.py"):
                     processes["test_runner"] = launch_subprocess(INTEGRATION_TEST_RUNNER_PATH)
                 while TEST_MODE_FLAG.exists():
                     time.sleep(1)
-                print("[tbot_supervisor] TEST_MODE complete. Test runner finished.")
+                print("[tbot_supervisor] Global TEST_MODE complete. Test runner finished.")
+
+            # Handle individual test flags (run one at a time)
+            individual_flags = find_individual_test_flags()
+            if individual_flags:
+                for flag_path in individual_flags:
+                    test_name = flag_path.stem.replace("test_mode_", "")
+                    print(f"[tbot_supervisor] Detected individual TEST_MODE flag for '{test_name}'. Launching corresponding test module...")
+                    module_name = f"tbot_bot.test.test_{test_name}"
+                    if not ensure_singleton(module_name.split('.')[-1] + ".py"):
+                        processes[f"test_runner_{test_name}"] = subprocess.Popen(
+                            ["python3", "-m", module_name], stdout=None, stderr=None
+                        )
+                    # Wait for the individual test flag to be cleared by test runner
+                    while flag_path.exists():
+                        time.sleep(1)
+                    print(f"[tbot_supervisor] Individual TEST_MODE '{test_name}' complete.")
 
             if CONTROL_START_FLAG.exists():
                 BOT_STATE_PATH.write_text("started", encoding="utf-8")

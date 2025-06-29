@@ -1,10 +1,23 @@
 # tbot_bot/test/test_screener_integration.py
 # Integration tests for screener modules using universe cache
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
 import unittest
 from tbot_bot.screeners.alpaca_screener import AlpacaScreener
 from tbot_bot.screeners.finnhub_screener import FinnhubScreener
 from tbot_bot.screeners.ibkr_screener import IBKRScreener
+from pathlib import Path
+import sys
+
+# --- INDIVIDUAL TEST FLAG HANDLING ---
+TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_screener_integration.flag"
+if __name__ == "__main__":
+    if not TEST_FLAG_PATH.exists():
+        print("[test_screener_integration.py] Individual test flag not present. Exiting.")
+        sys.exit(1)
+else:
+    if not TEST_FLAG_PATH.exists():
+        raise RuntimeError("[test_screener_integration.py] Individual test flag not present.")
 
 class TestScreenerIntegration(unittest.TestCase):
     def test_alpaca_screener(self):
@@ -26,4 +39,8 @@ def run_test():
     unittest.main(module=__name__, exit=False)
 
 if __name__ == "__main__":
-    run_test()
+    try:
+        run_test()
+    finally:
+        if TEST_FLAG_PATH.exists():
+            TEST_FLAG_PATH.unlink()

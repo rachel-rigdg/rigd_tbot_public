@@ -1,5 +1,6 @@
 # tbot_bot/test/test_universe_cache.py
 # Unit/integration tests for universe cache build, loading, and validation
+# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
 import unittest
 from tbot_bot.screeners.screener_utils import (
@@ -11,6 +12,18 @@ from tbot_bot.screeners.screener_utils import (
 from tbot_bot.screeners.symbol_universe_refresh import main as refresh_main
 from tbot_bot.support.path_resolver import resolve_universe_cache_path
 import os
+from pathlib import Path
+import sys
+
+# --- INDIVIDUAL TEST FLAG HANDLING ---
+TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_universe_cache.flag"
+if __name__ == "__main__":
+    if not TEST_FLAG_PATH.exists():
+        print("[test_universe_cache.py] Individual test flag not present. Exiting.")
+        sys.exit(1)
+else:
+    if not TEST_FLAG_PATH.exists():
+        raise RuntimeError("[test_universe_cache.py] Individual test flag not present.")
 
 class TestUniverseCache(unittest.TestCase):
     def setUp(self):
@@ -64,4 +77,8 @@ def run_test():
     unittest.main(module=__name__, exit=False)
 
 if __name__ == "__main__":
-    run_test()
+    try:
+        run_test()
+    finally:
+        if TEST_FLAG_PATH.exists():
+            TEST_FLAG_PATH.unlink()
