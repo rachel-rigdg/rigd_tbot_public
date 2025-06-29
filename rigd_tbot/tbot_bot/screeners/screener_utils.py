@@ -149,6 +149,7 @@ def filter_symbols(
         s for s in symbols
         if s.get("exchange") in exchanges
         and isinstance(s.get("lastClose"), (int, float))
+        and s["lastClose"] > 0
         and isinstance(s.get("marketCap"), (int, float))
         and min_price <= s["lastClose"] < max_price
         and min_market_cap <= s["marketCap"] <= max_market_cap
