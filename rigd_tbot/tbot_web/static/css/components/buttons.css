@@ -4,7 +4,7 @@ button, .tab-button {
     min-width: 80px;
     padding: 8px 4px;
     background-color: #333333;
-    color: white;
+    color: #999;
     border: solid 1px #999999;
     border-radius: 6px;
     cursor: pointer;
@@ -37,23 +37,23 @@ button, .tab-button {
 .startKillContainer button#kill-bot:hover,
 .startKillContainer button#kill-bot:focus {
     background: #ff3333;
-    color: #fff;
+    color: #999;
     outline: none;
 }
 .startKillContainer button#logout-btn {
     background: #333;
-    color: #fff;
+    color: #999;
 }
 .startKillContainer button#logout-btn:hover,
 .startKillContainer button#logout-btn:focus {
     background: #0a9900;
-    color: #fff;
+    color: #999;
     outline: none;
 }
 .startKillContainer button#logout-btn:hover,
 .startKillContainer button#logout-btn:focus {
-    background: #666;
-    color: #fff;
+    background: #222;
+    color: #999;
     outline: none;
 }
 button:hover, button:focus {

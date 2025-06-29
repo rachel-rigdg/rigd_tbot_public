@@ -1,9 +1,9 @@
 /* base/variables.css - Example CSS variables for color and spacing */
 
 :root {
-    --color-bg: #222222;
+    --color-bg: #333;
     --color-fg: #999999;
-    --color-accent: #4e91ff;
+    --color-accent: #555;
     --color-border: #444444;
     --color-success: #0a9900;
     --color-danger: #a80000;

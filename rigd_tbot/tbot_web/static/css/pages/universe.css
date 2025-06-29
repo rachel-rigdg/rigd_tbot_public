@@ -10,7 +10,7 @@ body {
 
 h2 {
   margin-bottom: 12px;
-  color: #222;
+  color: #999;
 }
 
 .searchbox {
@@ -54,7 +54,7 @@ form[method="post"] button {
 }
 
 form[method="post"] button:hover {
-  background-color: #444;
+  background-color: #222;
 }
 
 a {
@@ -96,7 +96,7 @@ table tr:nth-child(even) {
 
 .pagination a {
   margin: 0 6px;
-  color: #0077cc;
+  color: #999;
   text-decoration: none;
 }
 
@@ -108,7 +108,7 @@ table tr:nth-child(even) {
   font-family: monospace;
   white-space: pre-wrap;
   word-wrap: break-word;
-  background-color: #e9ecef;
+  background-color: #333;
   padding: 10px;
   border-radius: 4px;
   box-sizing: border-box;

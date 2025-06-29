@@ -21,11 +21,6 @@ class UniverseCacheError(Exception):
     pass
 
 def get_screener_secrets() -> dict:
-    """
-    Loads and returns the screener_api secrets dict, decrypted from storage.
-    Used by all screener modules for uniform secret access.
-    Enforced: Must point to a Finnhub API config permitted by endpoint policy.
-    """
     try:
         return decrypt_json("screener_api")
     except Exception as e:
@@ -36,12 +31,6 @@ def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)
 
 def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
-    """
-    Loads and validates the cached universe JSON.
-    Raises UniverseCacheError on missing, invalid, or stale cache.
-    Only accepts cache built from allowed endpoints: /stock/symbol, /stock/profile2, /quote.
-    Returns list of symbol metadata dicts on success.
-    """
     path = resolve_universe_cache_path(bot_identity)
     if not os.path.exists(path):
         LOG.error(f"[screener_utils] Universe cache missing at path: {path}")
@@ -101,10 +90,6 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
     return symbols
 
 def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None) -> None:
-    """
-    Saves the universe cache to disk atomically with schema version and timestamp.
-    Only for symbol universes created using /stock/symbol, /stock/profile2, /quote.
-    """
     path = resolve_universe_cache_path(bot_identity)
     tmp_path = f"{path}.tmp"
 
@@ -138,23 +123,24 @@ def filter_symbols(
     blocklist: Optional[List[str]] = None,
     max_size: Optional[int] = None
 ) -> List[Dict]:
-    """
-    Filters the input symbol list by exchange, price, market cap, and blocklist.
-    Only for symbol metadata pulled from allowed endpoints.
-    Optionally truncates the result to max_size by descending market cap.
-    """
     blockset = set(blocklist) if blocklist else set()
-
-    filtered = [
-        s for s in symbols
-        if s.get("exchange") in exchanges
-        and isinstance(s.get("lastClose"), (int, float))
-        and s["lastClose"] > 0
-        and isinstance(s.get("marketCap"), (int, float))
-        and min_price <= s["lastClose"] < max_price
-        and min_market_cap <= s["marketCap"] <= max_market_cap
-        and s.get("symbol") not in blockset
-    ]
+    filtered = []
+    for s in symbols:
+        lc = s.get("lastClose")
+        mc = s.get("marketCap")
+        # Require lastClose to be real, not None, not zero, not negative, not 0.0, not < 1.0
+        if (
+            s.get("exchange") in exchanges
+            and isinstance(lc, (int, float))
+            and lc is not None
+            and float(lc) >= 1.0
+            and isinstance(mc, (int, float))
+            and mc is not None
+            and min_price <= float(lc) < max_price
+            and min_market_cap <= float(mc) <= max_market_cap
+            and s.get("symbol") not in blockset
+        ):
+            filtered.append(s)
 
     if max_size is not None and len(filtered) > max_size:
         filtered.sort(key=lambda x: x["marketCap"], reverse=True)
@@ -164,10 +150,6 @@ def filter_symbols(
     return filtered
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:
-    """
-    Loads blocklist tickers from a text file, one ticker per line, ignoring blank lines and comments (#).
-    Returns list of uppercase ticker strings.
-    """
     if not path or not os.path.isfile(path):
         LOG.warning(f"[screener_utils] Blocklist file not found or not provided: {path}")
         return []
@@ -187,9 +169,6 @@ def load_blocklist(path: Optional[str] = None) -> List[str]:
     return blocklist
 
 def is_cache_stale(bot_identity: Optional[str] = None) -> bool:
-    """
-    Returns True if the universe cache is missing or older than allowed max age.
-    """
     try:
         _ = load_universe_cache(bot_identity)
         return False
@@ -197,9 +176,6 @@ def is_cache_stale(bot_identity: Optional[str] = None) -> bool:
         return True
 
 def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetime]:
-    """
-    Returns the UTC build timestamp of the universe cache if present and valid; else None.
-    """
     path = resolve_universe_cache_path(bot_identity)
     if not os.path.exists(path):
         return None
@@ -217,9 +193,6 @@ def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetim
         return None
 
 def get_symbol_set(bot_identity: Optional[str] = None) -> set:
-    """
-    Returns a set of all symbol strings in the universe cache.
-    """
     try:
         symbols = load_universe_cache(bot_identity)
         return set(s.get("symbol") for s in symbols if "symbol" in s)

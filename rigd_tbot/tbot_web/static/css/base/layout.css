@@ -12,7 +12,7 @@ html, body {
     font-family: 'London-Tube', Arial, sans-serif;
     font-size: 15px;
     color: #999999;
-    background: #222222;
+    background: #333;
     margin: 0;
     padding: 0;
 }
@@ -120,7 +120,7 @@ html, body {
     min-height: 1em;
     text-align: center;
     background-color: #00000044;
-    color: #ffffff;
+    color: #9999999;
     padding-bottom: 1em;
     z-index: 100;
 }
