@@ -34,8 +34,16 @@ SYMBOL_UNIVERSE_REFRESH_PATH = path_resolver.resolve_runtime_script_path("symbol
 INTEGRATION_TEST_RUNNER_PATH = path_resolver.resolve_runtime_script_path("integration_test_runner.py")
 
 UNIVERSE_TIMESTAMP_PATH = ROOT_DIR / "tbot_bot" / "output" / "screeners" / "symbol_universe.json"
-MARKET_CLOSE_HOUR = 16  # 4 PM local time; adjust if needed
 REBUILD_DELAY_HOURS = 4
+
+def read_env_var(key, default=None):
+    from tbot_bot.config.env_bot import load_env_bot_config
+    env = load_env_bot_config()
+    return env.get(key, default)
+
+def parse_utc_time(timestr):
+    h, m = map(int, timestr.split(":"))
+    return h, m
 
 def read_bot_state():
     try:
@@ -63,7 +71,6 @@ def is_time_for_universe_rebuild():
     # Always triggers if file does not exist
     if not UNIVERSE_TIMESTAMP_PATH.exists():
         return True
-    # Read build time from file
     try:
         import json
         data = json.load(open(UNIVERSE_TIMESTAMP_PATH, "r"))
@@ -78,13 +85,14 @@ def is_time_for_universe_rebuild():
     except Exception:
         build_time = datetime.utcfromtimestamp(UNIVERSE_TIMESTAMP_PATH.stat().st_mtime)
     now = datetime.utcnow()
-    today_close = now.replace(hour=MARKET_CLOSE_HOUR, minute=0, second=0, microsecond=0)
+    market_close_str = read_env_var("MARKET_CLOSE_UTC", "21:00")
+    market_close_hour, market_close_minute = parse_utc_time(market_close_str)
+    today_close = now.replace(hour=market_close_hour, minute=market_close_minute, second=0, microsecond=0)
     if now < today_close:
         last_close = today_close - timedelta(days=1)
     else:
         last_close = today_close
     scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
-    # If it's past scheduled time and last build was before scheduled time, trigger
     return now >= scheduled_time and build_time < scheduled_time
 
 def main():
@@ -141,7 +149,6 @@ def main():
                         processes[f"test_runner_{test_name}"] = subprocess.Popen(
                             ["python3", "-m", module_name], stdout=None, stderr=None
                         )
-                    # Wait for the individual test flag to be cleared by test runner
                     while flag_path.exists():
                         time.sleep(1)
                     print(f"[tbot_supervisor] Individual TEST_MODE '{test_name}' complete.")
