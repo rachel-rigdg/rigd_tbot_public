@@ -1,7 +1,6 @@
 # tbot_bot/strategy/strategy_mid.py
 # summary: Implements VWAP-based mid-day reversal strategy with full bi-directional logic and env-driven parameters; compresses analysis/monitor window to 1min if TEST_MODE
 
-import time
 from datetime import timedelta
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
@@ -31,23 +30,9 @@ SHORT_TYPE_MID = config["SHORT_TYPE_MID"]
 ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
-SLEEP_TIME_STR = config["SLEEP_TIME"]
 
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
-
-def parse_sleep_time(sleep_str):
-    try:
-        if sleep_str.endswith("s"):
-            return float(sleep_str[:-1])
-        elif sleep_str.endswith("ms"):
-            return float(sleep_str[:-2]) / 1000.0
-        else:
-            return float(sleep_str)
-    except Exception:
-        return 1.0
-
-SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
 
 def is_test_mode_active():
     return TEST_MODE_FLAG.exists()
@@ -92,8 +77,6 @@ def analyze_vwap_signals(start_time, screener_class):
                     "side": direction,
                     "deviation": round(deviation, 4)
                 })
-
-        time.sleep(SLEEP_TIME)
 
     log_event("strategy_mid", f"VWAP signals: {signals}")
     return signals
@@ -170,8 +153,6 @@ def execute_mid_trades(signals, start_time):
                         trades.append(result)
         except Exception as e:
             handle_error("strategy_mid", "BrokerError", e)
-
-        time.sleep(SLEEP_TIME)
 
     log_event("strategy_mid", f"Trades executed: {len(trades)}")
     return trades

@@ -40,18 +40,6 @@ START_TIME_OPEN = parse_start_time(config.get("START_TIME_OPEN", "14:30"))
 START_TIME_MID = parse_start_time(config.get("START_TIME_MID", "15:30"))
 START_TIME_CLOSE = parse_start_time(config.get("START_TIME_CLOSE", "19:30"))
 
-# Sleep time configuration parsing
-SLEEP_TIME_STR = config.get("SLEEP_TIME", "1s")
-def parse_sleep_time(sleep_str):
-    if sleep_str.endswith("s"):
-        return float(sleep_str[:-1])
-    elif sleep_str.endswith("ms"):
-        return float(sleep_str[:-2]) / 1000.0
-    else:
-        return float(sleep_str)
-
-SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
-
 # Check for TEST_MODE flag presence
 def is_test_mode_active() -> bool:
     test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
@@ -143,8 +131,6 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         elif s == "close" and STRAT_CLOSE_ENABLED and now >= START_TIME_CLOSE:
             return execute_strategy("close", screener_override=CLOSE_SCREENER)
 
-    # If no strategy is executed, wait for the configured sleep time
-    time.sleep(SLEEP_TIME)
     return StrategyResult(skipped=True)
 
 # Executes the selected strategy and returns the result

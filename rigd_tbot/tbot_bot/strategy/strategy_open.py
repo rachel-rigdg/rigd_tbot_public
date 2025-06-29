@@ -30,31 +30,17 @@ SHORT_TYPE_OPEN = config["SHORT_TYPE_OPEN"]
 ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
 MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
-SLEEP_TIME_STR = config["SLEEP_TIME"]
 
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
-
-def parse_sleep_time(sleep_str):
-    try:
-        if sleep_str.endswith("s"):
-            return float(sleep_str[:-1])
-        elif sleep_str.endswith("ms"):
-            return float(sleep_str[:-2]) / 1000.0
-        else:
-            return float(sleep_str)
-    except Exception:
-        return 1.0
-
-SLEEP_TIME = parse_sleep_time(SLEEP_TIME_STR)
-
-range_data = {}
 
 def is_test_mode_active():
     return TEST_MODE_FLAG.exists()
 
 def self_check():
     return STRAT_OPEN_ENABLED and STRAT_OPEN_BUFFER > 0
+
+range_data = {}
 
 def analyze_opening_range(start_time, screener_class):
     log_event("strategy_open", "Starting opening range analysis...")
@@ -83,8 +69,6 @@ def analyze_opening_range(start_time, screener_class):
             else:
                 range_data[symbol]["high"] = max(range_data[symbol]["high"], price)
                 range_data[symbol]["low"] = min(range_data[symbol]["low"], price)
-
-        time.sleep(SLEEP_TIME)
 
     log_event("strategy_open", f"Range data collected for {len(range_data)} symbols.")
     return range_data
@@ -137,7 +121,6 @@ def detect_breakouts(start_time, screener_class):
                     except Exception as e:
                         handle_error("strategy_open", "BrokerError", e)
                 range_data.pop(symbol, None)
-                time.sleep(SLEEP_TIME)
                 continue
 
             # Short breakout
@@ -189,9 +172,6 @@ def detect_breakouts(start_time, screener_class):
                     except Exception as e:
                         handle_error("strategy_open", "BrokerError", e)
                 range_data.pop(symbol, None)
-                time.sleep(SLEEP_TIME)
-
-        time.sleep(SLEEP_TIME)
 
     return trades
 

@@ -2,7 +2,7 @@
 # Nightly job to build, filter, and atomically write the symbol universe cache for all screeners
 # Fully aligned with RIGD TradeBot screener/cache specification
 # Updated: STRICT Finnhub API endpoint enforcement — only /stock/symbol, /stock/profile2, /quote allowed. All other endpoints forbidden.
-# API rate limiting uses SLEEP_TIME from env config.
+# API rate limiting uses UNIVERSE_SLEEP_TIME from env config.
 # Writes progress/partial and heartbeat to output/screeners/universe_ops.log and symbol_universe.partial.json
 
 import sys
@@ -92,7 +92,7 @@ def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min
     SCREENER_URL = secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
     SCREENER_USERNAME = secrets.get("SCREENER_USERNAME", "")
     SCREENER_PASSWORD = secrets.get("SCREENER_PASSWORD", "")
-    SLEEP_TIME = float(env.get("SLEEP_TIME", 0.3))
+    UNIVERSE_SLEEP_TIME = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
     PARTIAL_WRITE_FREQ = int(env.get("UNIVERSE_PARTIAL_WRITE_FREQ", 100))
     if not SCREENER_API_KEY:
         raise RuntimeError("SCREENER_API_KEY not set in screener secrets/config")
@@ -111,11 +111,11 @@ def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min
             profile_url = f"{SCREENER_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={SCREENER_API_KEY}"
             profile = requests.get(profile_url, auth=auth)
             p = profile.json() if profile.status_code == 200 else {}
-            time.sleep(SLEEP_TIME)
+            time.sleep(UNIVERSE_SLEEP_TIME)
             quote_url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
             quote = requests.get(quote_url, auth=auth)
             q = quote.json() if quote.status_code == 200 else {}
-            time.sleep(SLEEP_TIME)
+            time.sleep(UNIVERSE_SLEEP_TIME)
             def safe_float(val):
                 try:
                     return float(val)
