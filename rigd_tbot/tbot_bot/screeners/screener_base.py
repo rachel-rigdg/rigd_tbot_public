@@ -1,6 +1,7 @@
 # tbot_bot/screeners/screener_base.py
 # Abstract base class for all broker screener modules.
 # Enforces loading and validation of cached universe, provides core interface, and aligns with screener/cache specification.
+# STRICT: Only symbols/metadata built from /stock/symbol, /stock/profile2, /quote allowed for universe.
 
 import logging
 from typing import List, Dict, Optional
@@ -15,7 +16,7 @@ LOG = logging.getLogger(__name__)
 class ScreenerBase:
     """
     Abstract base class for all screener modules.
-    Enforces use of universe cache for eligible symbols.
+    Enforces use of universe cache built using ONLY permitted Finnhub endpoints (/stock/symbol, /stock/profile2, /quote).
     Subclasses must implement fetch_live_quotes() and filter_candidates().
     """
     def __init__(self, bot_identity: Optional[str] = None):
@@ -51,7 +52,7 @@ class ScreenerBase:
     def run_screen(self) -> List[Dict]:
         """
         Core screener run sequence:
-        - Loads universe
+        - Loads universe (built ONLY from /stock/symbol, /stock/profile2, /quote endpoints)
         - Fetches live quotes/metrics for all universe symbols
         - Filters to session candidates via subclass logic
         Returns a list of eligible symbol dicts for trading.

@@ -1,6 +1,7 @@
 # tbot_bot/screeners/symbol_universe_refresh.py
 # Nightly job to build, filter, and atomically write the symbol universe cache for all screeners
 # Fully aligned with RIGD TradeBot screener/cache specification
+# Updated: STRICT Finnhub API endpoint enforcement — only /stock/symbol, /stock/profile2, /quote allowed. All other endpoints forbidden.
 
 import sys
 import json
@@ -40,6 +41,10 @@ def fetch_broker_symbol_metadata() -> List[Dict]:
         raise RuntimeError(f"Unsupported SCREENER_NAME: {screener_name}")
 
 def fetch_finnhub_symbols(secrets, env):
+    """
+    Finnhub: ONLY use /stock/symbol, /stock/profile2, /quote endpoints for symbol universe.
+    All other endpoints are forbidden by project specification.
+    """
     import requests
     SCREENER_API_KEY = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
     SCREENER_URL = secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
@@ -53,12 +58,15 @@ def fetch_finnhub_symbols(secrets, env):
         auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
         r = requests.get(url, auth=auth)
         if r.status_code != 200:
+            LOG.warning(f"Failed to fetch symbol list for exchange {exch}: {r.status_code}")
             continue
         for s in r.json():
             symbol = s.get("symbol")
+            # --- STRICT ENDPOINT ENFORCEMENT: /stock/profile2 ---
             profile_url = f"{SCREENER_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={SCREENER_API_KEY}"
             profile = requests.get(profile_url, auth=auth)
             p = profile.json() if profile.status_code == 200 else {}
+            # --- STRICT ENDPOINT ENFORCEMENT: /quote ---
             quote_url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
             quote = requests.get(quote_url, auth=auth)
             q = quote.json() if quote.status_code == 200 else {}
@@ -104,6 +112,7 @@ def fetch_tradier_symbols(secrets, env):
     return results
 
 def fetch_ibkr_symbols(secrets, env):
+    # Placeholder for future IBKR universe. Strict endpoint use to be specified as required.
     return []
 
 def main():

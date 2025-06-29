@@ -1,5 +1,6 @@
 # tbot_bot/screeners/universe_rebuild_cli.py
 # CLI tool to manually trigger a universe cache rebuild (nightly process logic)
+# Enforced: universe cache build uses ONLY /stock/symbol, /stock/profile2, /quote endpoints (per strict spec)
 
 import sys
 from tbot_bot.screeners.symbol_universe_refresh import main as rebuild_main

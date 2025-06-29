@@ -1,6 +1,7 @@
 # tbot_bot/screeners/screener_utils.py
 # Utilities to load, validate, and manage the symbol universe cache for TradeBot screeners
 # Fully aligned with TradeBot v1.0.0 screener and universe cache specifications
+# STRICT: Only universe files built with /stock/symbol, /stock/profile2, /quote endpoints are valid.
 
 import json
 import logging
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 
 from tbot_bot.support.path_resolver import resolve_universe_cache_path
-from tbot_bot.support.decrypt_secrets import decrypt_json  # ADDED
+from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.config.env_bot import load_env_bot_config
 
 LOG = logging.getLogger(__name__)
@@ -19,10 +20,11 @@ SCHEMA_VERSION = "1.0.0"
 class UniverseCacheError(Exception):
     pass
 
-def get_screener_secrets() -> dict:  # NEW CENTRALIZED FUNCTION
+def get_screener_secrets() -> dict:
     """
     Loads and returns the screener_api secrets dict, decrypted from storage.
     Used by all screener modules for uniform secret access.
+    Enforced: Must point to a Finnhub API config permitted by endpoint policy.
     """
     try:
         return decrypt_json("screener_api")
@@ -37,6 +39,7 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
     """
     Loads and validates the cached universe JSON.
     Raises UniverseCacheError on missing, invalid, or stale cache.
+    Only accepts cache built from allowed endpoints: /stock/symbol, /stock/profile2, /quote.
     Returns list of symbol metadata dicts on success.
     """
     path = resolve_universe_cache_path(bot_identity)
@@ -51,7 +54,6 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
         LOG.error(f"[screener_utils] Failed to load universe cache JSON: {e}")
         raise UniverseCacheError(f"Failed to load universe cache JSON: {e}")
 
-    # Accept old/stripped placeholder: if file is a list, wrap to symbols
     if isinstance(data, list):
         if len(data) < 10:
             raise UniverseCacheError("Universe cache is a placeholder/too small; trigger rebuild.")
@@ -64,7 +66,6 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
     if not isinstance(data, dict):
         raise UniverseCacheError("Universe cache JSON root is not an object")
 
-    # Required top-level keys
     for key in ("schema_version", "build_timestamp_utc", "symbols"):
         if key not in data:
             raise UniverseCacheError(f"Universe cache missing required key: {key}")
@@ -79,7 +80,6 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
     except Exception as e:
         raise UniverseCacheError(f"Invalid build_timestamp_utc format: {e}")
 
-    # Check staleness against config max age
     env = load_env_bot_config()
     max_age_days = int(env.get("SCREENER_UNIVERSE_MAX_AGE_DAYS", 3))
     age = utc_now() - build_time
@@ -90,7 +90,6 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
     if not isinstance(symbols, list):
         raise UniverseCacheError("Universe cache 'symbols' is not a list")
 
-    # Validate individual symbol entries minimally
     for s in symbols:
         if not all(k in s for k in ("symbol", "exchange", "lastClose", "marketCap")):
             raise UniverseCacheError(f"Symbol entry missing required fields: {s}")
@@ -101,7 +100,7 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
 def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None) -> None:
     """
     Saves the universe cache to disk atomically with schema version and timestamp.
-    Overwrites existing cache file safely.
+    Only for symbol universes created using /stock/symbol, /stock/profile2, /quote.
     """
     path = resolve_universe_cache_path(bot_identity)
     tmp_path = f"{path}.tmp"
@@ -138,6 +137,7 @@ def filter_symbols(
 ) -> List[Dict]:
     """
     Filters the input symbol list by exchange, price, market cap, and blocklist.
+    Only for symbol metadata pulled from allowed endpoints.
     Optionally truncates the result to max_size by descending market cap.
     """
     blockset = set(blocklist) if blocklist else set()

@@ -1,17 +1,16 @@
 # tbot_bot/screeners/universe_logger.py
 # Dedicated logger for all universe cache and screener symbol universe operations.
 # Comprehensive, UTC timestamped, file+console output, audit-level per specification.
+# Enforced: Use only for logging events related to /stock/symbol, /stock/profile2, /quote universe ops.
 
 import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Log file location (relative to project root)
 def get_universe_log_path():
     # Writes to output/screeners/universe_ops.log
     from tbot_bot.support.path_resolver import resolve_universe_cache_path
-    # Use the same folder as the universe cache file
     cache_path = resolve_universe_cache_path()
     log_dir = Path(cache_path).parent
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -34,7 +33,7 @@ def get_universe_logger():
     fh.setLevel(logging.INFO)
     fh.setFormatter(UTCFormatter("[%(asctime)s][%(levelname)s] %(message)s"))
     logger.addHandler(fh)
-    # Console Handler (optional for development)
+    # Console Handler (for dev/audit)
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     ch.setFormatter(UTCFormatter("[%(asctime)s][%(levelname)s] %(message)s"))
@@ -45,6 +44,7 @@ def get_universe_logger():
 def log_universe_event(event: str, details: dict = None, level: str = "info"):
     """
     Logs a universe event with structured audit detail.
+    Only events for /stock/symbol, /stock/profile2, /quote universe ops per spec.
     """
     logger = get_universe_logger()
     msg = f"{event}"
@@ -57,8 +57,3 @@ def log_universe_event(event: str, details: dict = None, level: str = "info"):
         logger.warning(msg)
     else:
         logger.info(msg)
-
-# Usage example:
-# log_universe_event("universe_build_started", {"exchanges": ["NYSE", "NASDAQ"]})
-# log_universe_event("universe_build_complete", {"count": 1856, "path": "/output/screeners/symbol_universe.json"})
-# log_universe_event("universe_cache_load_error", {"reason": "stale cache"}, level="error")
