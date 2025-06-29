@@ -452,6 +452,7 @@ In `env_bot.py`:
 - Logs/trade records are never imported back into ledgers.
 
 ---
+---
 ================================================================================
 TEST_MODE
 {CURRENT_VERSION}
@@ -460,20 +461,21 @@ TEST_MODE
 TEST_MODE Specification for RIGD TradeBot
 
 OVERVIEW:
-TEST_MODE is a transient, runtime-only mode triggered by the presence of `tbot_bot/control/test_mode.flag`.
-It enables full end-to-end dry-run validation of TradeBot execution without live trades or persistent data changes.
+TEST_MODE is a transient, runtime-only mode triggered by the presence of `tbot_bot/control/test_mode.flag` or any `tbot_bot/control/test_mode_<test>.flag`.
+It enables full end-to-end dry-run validation of TradeBot execution and/or any individual test script without live trades or persistent data changes.
 
 PURPOSE:
 - Validate scheduling, strategies, screener filtering, order logic, logs, ledgers, and UI display.
 - Prevent real capital usage, real orders, notifications, or permanent ledger changes.
-- Allow automated/manual testing via Web UI or CLI triggers.
+- Allow automated/manual testing via Web UI or CLI triggers, including individual test selection.
 
 TRIGGERING:
-- Presence of `test_mode.flag` enables TEST_MODE.
-- Setting TEST_MODE via Web UI writes this flag.
-- Test completes after sequential execution of `strategy_open`, `strategy_mid`, `strategy_close`.
-- Upon completion, flag is auto-deleted, returning bot to normal mode.
-- UI optionally includes dedicated `test.html` page for triggering and monitoring tests.
+- Presence of `test_mode.flag` enables TEST_MODE for a full end-to-end test run.
+- Presence of `test_mode_<test>.flag` triggers execution of a single corresponding test module.
+- Setting TEST_MODE or running individual tests via Web UI writes the appropriate flag file.
+- Test completes after the specified scope: full (sequential strategies and reporting) or individual (one test script).
+- Upon completion, relevant flag(s) are auto-deleted, returning bot to normal mode.
+- UI includes dedicated `test.html` page for triggering and monitoring all or individual tests.
 
 BEHAVIOR:
 
@@ -483,7 +485,8 @@ BEHAVIOR:
 
 2. Strategies:
  - Analysis/monitoring windows forced to 1 minute.
- - Executes all three strategies sequentially immediately on flag set.
+ - Executes all three strategies sequentially immediately on global flag set.
+ - Individual strategy/test scripts execute only when their flag is present.
  - Bypasses normal schedule (`START_TIME_*`, `TRADING_DAYS`).
  - Stub order submission: no live broker calls.
  - Capital allocation and risk limits ignored or simulated.
@@ -500,16 +503,17 @@ BEHAVIOR:
  - Audit logs capture test start/end and all events.
 
 5. UI & Control:
- - `test_web.py` toggles flag file.
- - Dedicated `test.html` page allows test trigger and log streaming.
- - UI disables live trading actions while test active.
+ - `test_web.py` toggles per-test or global flag files.
+ - Dedicated `test.html` page allows full or individual test triggers and log streaming.
+ - UI disables live trading actions while test(s) active.
  - Displays test progress, results, and completion status.
- - Auto-reset of flag after test ends.
+ - Auto-reset of relevant flag(s) after test ends.
 
 6. Lifecycle:
  - Single run per flag set; non-persistent across restarts.
  - Prevents accidental persistent TEST_MODE.
  - Clear differentiation from live mode in all outputs.
+ - Individual test flags take precedence for corresponding scripts; full flag triggers all.
 
 SECURITY & COMPLIANCE:
 - Immutable audit logging of test mode lifecycle and all simulated actions.
@@ -517,8 +521,9 @@ SECURITY & COMPLIANCE:
 - Flag file access secured to admin users only.
 
 FILES AFFECTED:
-- `tbot_bot/control/test_mode.flag`
-- `tbot_bot/config/env_bot.py` (read test_mode.flag)
+- `tbot_bot/control/test_mode.flag` (global full test)
+- `tbot_bot/control/test_mode_<test>.flag` (individual tests)
+- `tbot_bot/config/env_bot.py` (read test_mode flags)
 - `tbot_bot/screeners/finnhub_screener.py`
 - `tbot_bot/strategy/*.py` (open, mid, close)
 - `tbot_bot/trading/orders_bot.py`
@@ -528,13 +533,15 @@ FILES AFFECTED:
 - `tbot_web/py/settings_web.py`
 - `tbot_web/py/ledger_web.py` (optional logs display)
 - `tbot_web/py/main_web.py` or `strategy_router.py` (immediate execution)
-- `tbot_web/py/test_web.py` and `templates/test.html` (dedicated UI)
+- `tbot_web/py/test_web.py` and `templates/test.html` (dedicated UI and per-test controls)
 - `tbot_web/templates/settings.html` (toggle update)
+- `tbot_bot/test/*` (all test scripts now require relevant flag to execute)
 
 TEST VALIDATION:
-- Full pytest integration in `tbot_bot/test/` with test_mode flag.
-- Logs and ledgers segregated in test runs.
-- UI test page verified for trigger and progress display.
+- Full pytest/unittest integration in `tbot_bot/test/` with per-test and global flag support.
+- Logs and ledgers segregated in all test runs.
+- UI test page verified for trigger, progress display, and individual test control/cleanup.
+
 
 
 ================================================================================
@@ -568,24 +575,37 @@ All critical bot logic, modules, and outputs must be validated via an explicit, 
 - `test_logging_format.py`     # Log structure matches output JSON schema and all required fields
 - `test_broker_trade_stub.py`  # Randomized micro-trades, broker order submission/logging/flow
 - `test_screener_random.py`    # Symbol screener, randomized eligibility/filter logic
-- `test_strategy_tuner.py`     # All strategy modules in isolation: tickers, thresholds, entry/exit logic, config
+- `test_screener_integration.py` # Screener module integration using universe cache and API simulation
+- `test_ledger_schema.py`      # Validates ledgers against COA/schema and double-entry rules
+- `test_coa_web_endpoints.py`  # Endpoint test for /coa, /coa/api, /coa/export and RBAC
+- `test_coa_consistency.py`    # COA template/snapshot vs runtime, schema integrity, metadata fields
 - `integration_test_runner.py` # Full-session simulation, end-to-end (provisioning, config, trading, shutdown)
+- All new test scripts must implement the per-test flag pattern for direct Web UI and CLI launch
 
 *Planned:*
 - `test_broker.py` – **Manual live trade placement/close for broker readiness/validation.**
 
 **Framework:**
-- All tests use pytest, CLI/CI-compatible, modular for batch or single-run
+- All tests use pytest or unittest, CLI/CI-compatible, modular for batch or single-run.
 - Output: `--junitxml` plus CI/CD test reporters (GitHub Actions, GitLab, Jenkins, etc.)
+- Each test can be run by CLI (with the appropriate flag), or launched via Web UI using per-test or global test_mode flags.
 
-**Test Command:**
-pytest tbot_bot/test/
-
+**Test Commands:**
+- Run all tests via:  
+  `pytest tbot_bot/test/`
+- Run individual test (with flag):  
+  `touch tbot_bot/control/test_mode_<testname>.flag && python3 -m tbot_bot.test.test_<testname>`
 
 **Integration Test Flow:**
 - Loads `.env_bot.test`
 - Launches `main_bot.py`, injects mock historical data, runs `start_bot.py` (dry mode)
 - Confirms: strategy execution order (`STRATEGY_SEQUENCE`), log and output file generation, all triggers/errors, trade/log/export correctness, session integrity
+
+**Web UI & Flag Requirements:**
+- `test_web.py` and `test.html` allow triggering and monitoring of ALL or INDIVIDUAL tests.
+- Each test requires presence of its dedicated flag (e.g., `test_mode_strategy_selfcheck.flag`) OR the global flag (`test_mode.flag`) to run.
+- Flags are auto-removed on completion.
+- No individual test will run in CLI or UI unless proper flag is present.
 
 **CI/DevOps:**
 - Compatible with all major CI runners; headless, no GUI or broker API required
@@ -595,8 +615,9 @@ pytest tbot_bot/test/
 - Python 3.11+, pytest, pydantic, all packages from `requirements.txt`
 
 **Test Mode:**
-- `integration_test_runner.py` executes only if `TEST_MODE=true`
-- All test outputs route to logs; test failures to stdout/stderr
+- `integration_test_runner.py` runs ALL tests if `test_mode.flag` exists; runs ONLY the matching module if `test_mode_<test>.flag` exists.
+- All test outputs route to test-only logs; test failures to stdout/stderr.
+- All test scripts implement safe auto-deletion of their own test flag after completion.
 - integration_test_runner.py writes only to test_mode.log and output artifacts; never launches or supervises other workers/watchers.
 
 **Version Enforcement:**
@@ -608,8 +629,8 @@ pytest tbot_bot/test/
 - All reporting and audit files are UTC timestamped, deterministic, and scoped to `{BOT_IDENTITY}`
 
 **Summary:**  
-All code, strategy, config, and provisioning updates are blocked if any test fails. CI/CD must gate on full test pass for any merge/release. Audit logs, trade logs, ledgers, and summaries are validated as part of the integration test suite.
-
+All code, strategy, config, and provisioning updates are blocked if any test fails. CI/CD must gate on full test pass for any merge/release. Audit logs, trade logs, ledgers, and summaries are validated as part of the integration test suite.  
+UI/CLI may launch and monitor all or any individual test, and each test script requires its own control flag.  
 
 
 ================================================================================
@@ -649,6 +670,7 @@ tbot_supervisor.py
     # Central controller for bot phase/state and process supervision.
     # Only one instance allowed; manages all bot state transitions and can start, stop, or monitor critical subprocesses (monitor, runtime, etc).
     # Never directly runs strategy code.
+    # In test mode: checks for per-test flags (test_mode_<test>.flag) and launches only that test, or global test_mode.flag to launch all.
 
 --------------------------------------------------------------------------------
 tbot_bot/reporting/
@@ -663,24 +685,28 @@ report_router.py, session_report.py, status_logger.py, trade_logger.py
 tbot_bot/test/
 --------------------------------------------------------------------------------
 integration_test_runner.py
-    # TEST RUNNER. Launched by main.py (in TEST_MODE), or manually/CI.
+    # TEST RUNNER. Launched by main.py (in TEST_MODE), tbot_supervisor.py, web UI, or manually/CI.
+    # Checks for per-test flags (test_mode_<test>.flag) to run a single test; if only test_mode.flag is present, runs all tests.
     # NEVER launches any watcher/worker; only starts dedicated test helpers if needed.
     # Writes: tbot_bot/output/{bot_id}/logs/test_mode.log, and output artifacts.
+    # Deletes its own flag(s) after completion.
 
 test_*.py
     # DEV/CI TESTS. Run by pytest/unittest or manually.
+    # Each test requires presence of its control flag (test_mode_<test>.flag or test_mode.flag) to run.
+    # After completion, test scripts auto-delete their own control flag.
     # NEVER launched by production bot. NEVER writes production logs or flags.
 
 README.md (in test/)
-    # Clarifies which scripts are web UI-triggered, which are CI/dev/manual.
+    # Clarifies which scripts are web UI-triggered, which are CI/dev/manual, and the flag requirements for test execution.
 
 --------------------------------------------------------------------------------
 tbot_web/py/
 --------------------------------------------------------------------------------
 test_web.py
     # WEB UI TEST FLAG HANDLER. Triggered only by admin action via Web UI.
-    # Writes: tbot_bot/control/test_mode.flag
-    # Does NOT launch any processes directly—main.py watches this flag and launches integration_test_runner.py.
+    # Writes: tbot_bot/control/test_mode.flag (all), or tbot_bot/control/test_mode_<test>.flag (individual).
+    # Does NOT launch any processes directly—main.py or tbot_supervisor.py watches for flag(s) and launches integration_test_runner.py.
     # Also provides log reading endpoint for UI: reads tbot_bot/output/{bot_id}/logs/test_mode.log
 
 logs_web.py
@@ -712,7 +738,8 @@ tbot_bot/output/{bot_id}/logs/unresolved_orders.log # Written only by: main.py, 
 CONTROL FILES & FLAGS
 --------------------------------------------------------------------------------
 tbot_bot/control/bot_state.txt        # Written by: tbot_supervisor.py (if used), main.py (phase update)
-tbot_bot/control/test_mode.flag       # Written by: test_web.py (UI action), removed by: integration_test_runner.py or main.py
+tbot_bot/control/test_mode.flag       # Written by: test_web.py (UI action), removed by: integration_test_runner.py or main.py. Launches full test suite if present.
+tbot_bot/control/test_mode_<test>.flag# Written by: test_web.py (UI action), removed by: integration_test_runner.py or main.py. Launches only specified test if present.
 tbot_bot/control/control_start.flag   # Written by: main_web.py (UI action), read by: main.py
 tbot_bot/control/control_stop.flag    # Written by: main_web.py (UI action), read by: main.py
 
@@ -724,18 +751,19 @@ Script Name                    | Launched By           | Role        | When Laun
 main.py                        | systemd/CLI           | Entry Point | always                   | all control flags
 status_bot.py                  | main.py               | Watcher     | always                   | status.json, system logs
 watchdog_bot.py                | main.py               | Watcher     | always                   | heartbeat logs
-tbot_supervisor.py             | main.py               | Supervisor  | after provisioning/boot  | bot_state.txt, process mgmt
-integration_test_runner.py     | main.py, test UI/CI   | Test runner | test mode only           | test_mode.log, output logs
-test_web.py                    | web UI                | Test flag   | admin/test action        | test_mode.flag, log read
-test_*.py                      | manual/CI/pytest      | Dev/CI test | never prod               | temp logs/console only
+tbot_supervisor.py             | main.py               | Supervisor  | after provisioning/boot  | bot_state.txt, process mgmt, test flags
+integration_test_runner.py     | main.py, test UI/CI   | Test runner | test mode only           | test_mode.log, output logs, cleans up flags
+test_web.py                    | web UI                | Test flag   | admin/test action        | test_mode.flag, test_mode_<test>.flag, log read
+test_*.py                      | manual/CI/pytest      | Dev/CI test | never prod               | temp logs/console only, cleans up flags
 
 --------------------------------------------------------------------------------
 NOTES
 --------------------------------------------------------------------------------
-- No watcher/worker/test runner ever launches another watcher/worker. All process launches are direct from main.py.
+- No watcher/worker/test runner ever launches another watcher/worker. All process launches are direct from main.py or tbot_supervisor.py.
 - Only helpers/utilities are imported; never run as standalone or as subprocesses.
-- Web UI triggers only write flags; main.py does all process launching.
+- Web UI triggers only write flags; main.py or tbot_supervisor.py does all process launching.
 - All log file locations are exclusive: only the named script writes that file.
 - Any changes to this convention MUST be reflected here and in code comments.
+- All tests and integration test runner require the appropriate test_mode.flag or test_mode_<test>.flag to run, and must auto-remove their flag after completion.
 
 ================================================================================
