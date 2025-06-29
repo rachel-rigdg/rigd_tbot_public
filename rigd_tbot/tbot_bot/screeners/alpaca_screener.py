@@ -9,7 +9,7 @@ from tbot_bot.screeners.screener_utils import get_screener_secrets
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
-broker_creds = get_screener_secrets(category="broker")
+broker_creds = get_screener_secrets()
 ALPACA_API_KEY = broker_creds.get("BROKER_API_KEY", "")
 ALPACA_SECRET_KEY = broker_creds.get("BROKER_SECRET_KEY", "")
 BROKER_USERNAME = broker_creds.get("BROKER_USERNAME", "")
