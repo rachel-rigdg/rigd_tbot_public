@@ -1,7 +1,7 @@
 # tbot_web/py/universe_web.py
 # Flask blueprint for universe cache inspection, search, export, and rebuild
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory
 from tbot_bot.screeners.symbol_universe_refresh import main as rebuild_main
 from tbot_bot.screeners.screener_utils import load_universe_cache, UniverseCacheError
 from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
@@ -101,3 +101,15 @@ def universe_export(fmt):
     else:
         flash("Unsupported export format.", "error")
         return redirect(url_for("universe.universe_status"))
+
+@universe_bp.route('/static/output/<path:filename>')
+def output_static(filename):
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tbot_bot', 'output'))
+    return send_from_directory(base_dir, filename)
+
+@universe_bp.route('/universe/status_message')
+def universe_status_message():
+    symbols, use_partial = get_symbols_and_source()
+    symbol_count = len(symbols)
+    status_msg = f"Universe cache loaded: {symbol_count} symbols." if symbols else "Universe cache not loaded or empty."
+    return status_msg, 200, {'Content-Type': 'text/plain; charset=utf-8'}
