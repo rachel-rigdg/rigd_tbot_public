@@ -26,23 +26,36 @@
                 if (data.status === "completed") {
                     statusEl.classList.add('status-completed');
                     clearInterval(logPoller);
+                    enableButtons();
                 } else if (data.status === "idle") {
                     statusEl.classList.remove('status-running', 'status-error', 'status-completed');
                     clearInterval(logPoller);
+                    enableButtons();
                 } else if (data.status === "error") {
                     statusEl.classList.add('status-error');
                     clearInterval(logPoller);
+                    enableButtons();
                 } else {
                     statusEl.classList.add('status-running');
                 }
             });
         }
-        function triggerTestMode() {
-            document.getElementById("trigger-btn").disabled = true;
+        function disableButtons() {
+            document.querySelectorAll('.test-btn').forEach(btn => btn.disabled = true);
+        }
+        function enableButtons() {
+            document.querySelectorAll('.test-btn').forEach(btn => btn.disabled = false);
+        }
+        function triggerTestMode(testName = 'full') {
+            disableButtons();
             const statusEl = document.getElementById('test-status');
             statusEl.textContent = "triggered";
             statusEl.className = 'status-running';
-            fetch("{{ url_for('test_web.trigger_test_mode') }}", {method: "POST"})
+            let url = "{{ url_for('test_web.trigger_test_mode') }}";
+            if (testName !== 'full') {
+                url = "{{ url_for('test_web.trigger_test_mode') }}" + "?test=" + encodeURIComponent(testName);
+            }
+            fetch(url, {method: "POST"})
                 .then(() => startLogPolling());
         }
         window.onload = function() {
@@ -53,9 +66,21 @@
 <body>
     <div class="main-container">
         <div class="test-header">TEST_MODE — End-to-End Bot System Test</div>
-        <div class="center">
-            <button id="trigger-btn" class="trigger-btn" onclick="triggerTestMode()" {% if test_active %}disabled{% endif %}>Start Full Test</button>
-            <span id="test-status" class="status-running">{{ test_status|default("idle") }}</span>
+        <div class="center" style="margin-bottom: 1em;">
+            <button id="trigger-btn" class="trigger-btn test-btn" onclick="triggerTestMode('full')" {% if test_active %}disabled{% endif %}>Run All Tests</button>
+        </div>
+        <div class="center" style="margin-bottom: 1em;">
+            <button class="test-btn" onclick="triggerTestMode('test_universe_cache')" {% if test_active %}disabled{% endif %}>Run Universe Cache Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_strategy_selfcheck')" {% if test_active %}disabled{% endif %}>Run Strategy Self-Check Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_screener_random')" {% if test_active %}disabled{% endif %}>Run Screener Random Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_screener_integration')" {% if test_active %}disabled{% endif %}>Run Screener Integration Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_main_bot')" {% if test_active %}disabled{% endif %}>Run Main Bot Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_ledger_schema')" {% if test_active %}disabled{% endif %}>Run Ledger Schema Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_env_bot')" {% if test_active %}disabled{% endif %}>Run Env Bot Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_coa_web_endpoints')" {% if test_active %}disabled{% endif %}>Run COA Web Endpoints Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_coa_consistency')" {% if test_active %}disabled{% endif %}>Run COA Consistency Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_broker_trade_stub')" {% if test_active %}disabled{% endif %}>Run Broker Trade Stub Test</button>
+            <button class="test-btn" onclick="triggerTestMode('test_backtest_engine')" {% if test_active %}disabled{% endif %}>Run Backtest Engine Test</button>
         </div>
         <div class="test-log-box" id="test-log-output">
             {% if test_logs %}

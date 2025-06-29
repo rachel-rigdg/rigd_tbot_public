@@ -7,6 +7,7 @@ import time
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, flash
 from tbot_web.support.utils_web import admin_required
 from pathlib import Path
+import subprocess
 
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 TEST_LOG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "test_mode.log"
@@ -60,7 +61,36 @@ def trigger_test_mode():
         if is_test_active():
             return jsonify({"result": "already_running"})
         create_test_flag()
+        subprocess.Popen(["python3", "-m", "tbot_bot.test.integration_test_runner"])
     return jsonify({"result": "started"})
+
+@test_web.route("/test/run/<test_name>", methods=["POST"])
+@admin_required
+def run_individual_test(test_name):
+    with LOCK:
+        if is_test_active():
+            return jsonify({"result": "already_running"})
+        create_test_flag()
+        test_map = {
+            "universe_cache": "tbot_bot.test.test_universe_cache",
+            "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
+            "screener_random": "tbot_bot.test.test_screener_random",
+            "screener_integration": "tbot_bot.test.test_screener_integration",
+            "main_bot": "tbot_bot.test.test_main_bot",
+            "ledger_schema": "tbot_bot.test.test_ledger_schema",
+            "env_bot": "tbot_bot.test.test_env_bot",
+            "coa_web_endpoints": "tbot_bot.test.test_coa_web_endpoints",
+            "coa_consistency": "tbot_bot.test.test_coa_consistency",
+            "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
+            "backtest_engine": "tbot_bot.test.test_backtest_engine",
+            "logging_format": "tbot_bot.test.test_logging_format"
+        }
+        module = test_map.get(test_name)
+        if not module:
+            remove_test_flag()
+            return jsonify({"result": "unknown_test"})
+        subprocess.Popen(["python3", "-m", module])
+    return jsonify({"result": "started", "test": test_name})
 
 @test_web.route("/test/logs", methods=["GET"])
 @admin_required
