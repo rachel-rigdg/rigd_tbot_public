@@ -4,25 +4,45 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response
 from tbot_bot.screeners.symbol_universe_refresh import main as rebuild_main
 from tbot_bot.screeners.screener_utils import load_universe_cache, UniverseCacheError
-from tbot_bot.support.path_resolver import resolve_universe_cache_path
+from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
 import csv
 import io
 import json
+import os
 
 universe_bp = Blueprint("universe", __name__, template_folder="../templates")
 
-def get_symbols():
+def get_symbols_and_source():
+    # Prefer partial if it exists and is newer than main cache.
+    main_path = resolve_universe_cache_path()
+    partial_path = resolve_universe_partial_path()
+    use_partial = False
+    main_mtime = os.path.getmtime(main_path) if os.path.exists(main_path) else 0
+    partial_mtime = os.path.getmtime(partial_path) if os.path.exists(partial_path) else 0
     try:
-        return load_universe_cache()
+        if partial_mtime > main_mtime:
+            with open(partial_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            symbols = data.get("symbols", [])
+            use_partial = True
+        else:
+            symbols = load_universe_cache()
+            use_partial = False
     except UniverseCacheError:
-        return []
+        symbols = []
+        use_partial = False
+    except Exception:
+        symbols = []
+        use_partial = False
+    return symbols, use_partial
 
 @universe_bp.route("/universe", methods=["GET", "POST"])
 def universe_status():
-    symbols = get_symbols()
-    cache_path = resolve_universe_cache_path()
+    symbols, use_partial = get_symbols_and_source()
+    cache_path = resolve_universe_partial_path() if use_partial else resolve_universe_cache_path()
     symbol_count = len(symbols)
     status_msg = f"Universe cache loaded: {symbol_count} symbols." if symbols else "Universe cache not loaded or empty."
+    data_source_label = "Partial (in-progress)" if use_partial else "Final (complete)"
     # Search/filter
     search = request.args.get("search", "").upper()
     page = int(request.args.get("page", 1))
@@ -43,6 +63,7 @@ def universe_status():
         page=page,
         per_page=per_page,
         total_pages=total_pages,
+        data_source_label=data_source_label
     )
 
 @universe_bp.route("/universe/rebuild", methods=["POST"])
@@ -56,7 +77,7 @@ def universe_rebuild():
 
 @universe_bp.route("/universe/export/<fmt>", methods=["GET"])
 def universe_export(fmt):
-    symbols = get_symbols()
+    symbols, use_partial = get_symbols_and_source()
     if not symbols:
         flash("Universe cache not loaded.", "error")
         return redirect(url_for("universe.universe_status"))

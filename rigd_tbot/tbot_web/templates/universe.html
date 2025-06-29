@@ -9,12 +9,16 @@
     <link rel="stylesheet" href="/static/css/base/layout.css">
     <link rel="stylesheet" href="/static/css/components/buttons.css">
     <link rel="stylesheet" href="/static/css/pages/universe.css">
+
+    <script src="/static/js/universe.js"></script>
+
 </head>
 <body>
     <h2>Universe Cache Inspection</h2>
-    <p><b>Status:</b> {{ status_msg }}</p>
+    <p><b>Status:</b> <span id="status-msg">{{ status_msg }}</span></p>
     <p><b>Cache File:</b> {{ cache_path }}</p>
     <p><b>Symbol Count (filtered):</b> {{ symbol_count }}</p>
+    <p><b>Data Source:</b> {{ data_source_label }}</p>
     <form method="get" action="{{ url_for('universe.universe_status') }}" class="searchbox">
         <input type="text" name="search" placeholder="Search symbol..." value="{{ search }}">
         <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -26,6 +30,13 @@
     </form>
     <a href="{{ url_for('universe.universe_export', fmt='csv') }}">Export CSV</a> |
     <a href="{{ url_for('universe.universe_export', fmt='json') }}">Export JSON</a>
+
+    <!-- Progress/heartbeat log display -->
+    <div style="margin-top:16px; margin-bottom:16px; padding:8px; border:1px solid #ccc; background:#f8f8f8;">
+        <b>Universe Build Progress:</b>
+        <pre id="build-log" style="max-height:160px; overflow-y:auto; font-size:13px;">Loading build log...</pre>
+    </div>
+
     <table>
         <tr>
             <th>Symbol</th>

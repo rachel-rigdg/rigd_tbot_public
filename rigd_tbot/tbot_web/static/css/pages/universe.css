@@ -1,0 +1,115 @@
+/* static/css/pages/universe.css */
+/* Styles specific to Universe Cache Inspection page */
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 20px 40px;
+  background-color: #333;
+  color: #999;
+}
+
+h2 {
+  margin-bottom: 12px;
+  color: #222;
+}
+
+.searchbox {
+  margin-bottom: 20px;
+}
+
+.searchbox input[type="text"] {
+  padding: 6px 10px;
+  font-size: 14px;
+  width: 220px;
+  border: 1px solid #999;
+  border-radius: 4px;
+}
+
+.searchbox button {
+  padding: 6px 14px;
+  margin-left: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.searchbox a {
+  margin-left: 10px;
+  font-size: 14px;
+  text-decoration: none;
+  color: #999;
+}
+
+.searchbox a:hover {
+  text-decoration: underline;
+}
+
+form[method="post"] button {
+  background-color: #444;
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+form[method="post"] button:hover {
+  background-color: #444;
+}
+
+a {
+  color: #999;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+table th, table td {
+  border: 1px solid #999;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+table th {
+  background-color: #333;
+  font-weight: 600;
+}
+
+table tr:nth-child(even) {
+  background-color: #333;
+}
+
+.pagination {
+  margin-top: 20px;
+  font-size: 14px;
+}
+
+.pagination a {
+  margin: 0 6px;
+  color: #0077cc;
+  text-decoration: none;
+}
+
+.pagination a:hover {
+  text-decoration: underline;
+}
+
+#build-log {
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background-color: #e9ecef;
+  padding: 10px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
