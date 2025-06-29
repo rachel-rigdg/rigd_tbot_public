@@ -34,3 +34,4 @@ psutil==5.9.8                     # Process utilities for singleton/supervisor e
 
 # === Testing ===
 pytest==8.2.2                     # Modern Python testing framework (for CLI and test harness)
+matplotlib==3.8.4		  # Plotting engine for backtesting
