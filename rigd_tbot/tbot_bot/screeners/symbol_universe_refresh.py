@@ -46,6 +46,28 @@ def write_partial(symbols, meta=None):
     with open(partial_path, "w", encoding="utf-8") as pf:
         json.dump(cache_obj, pf, indent=2)
 
+def normalize_symbol_data(symbols: List[Dict]) -> List[Dict]:
+    """
+    Normalizes lastClose and marketCap to float or None. Discards lastClose <= 0 or invalid.
+    """
+    normed = []
+    for s in symbols:
+        try:
+            lc_raw = s.get("lastClose")
+            mc_raw = s.get("marketCap")
+            # Convert to float if possible, else None
+            lc = float(lc_raw) if lc_raw not in (None, '', 'None', 'null') else None
+            mc = float(mc_raw) if mc_raw not in (None, '', 'None', 'null') else None
+        except Exception:
+            lc = None
+            mc = None
+        s["lastClose"] = lc
+        s["marketCap"] = mc
+        # Only include if lastClose is not None and > 0
+        if lc is not None and lc > 0:
+            normed.append(s)
+    return normed
+
 def fetch_broker_symbol_metadata() -> List[Dict]:
     env = load_env_bot_config()
     screener_secrets = get_screener_secrets()
@@ -166,10 +188,13 @@ def main():
 
     log_progress("Fetched raw symbols from screener feed", {"count": len(symbols_raw)})
 
+    # ---- NORMALIZE all prices and market cap, filter out lastClose <= 0 ----
+    symbols_normed = normalize_symbol_data(symbols_raw)
+
     blocklist = load_blocklist(blocklist_path)
 
     symbols_filtered = filter_symbols(
-        symbols=symbols_raw,
+        symbols=symbols_normed,
         exchanges=exchanges,
         min_price=min_price,
         max_price=max_price,
