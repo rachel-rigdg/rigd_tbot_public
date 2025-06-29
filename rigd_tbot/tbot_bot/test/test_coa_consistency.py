@@ -16,11 +16,12 @@ from tbot_bot.accounting.coa_utils_ledger import (
 from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path
 
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_coa_consistency.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 
 class TestCOAConsistency(unittest.TestCase):
 
     def setUp(self):
-        if not TEST_FLAG_PATH.exists():
+        if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
             self.skipTest("Individual test flag not present. Exiting.")
         self.coa_json_path = resolve_coa_json_path()
         self.coa_metadata_path = resolve_coa_metadata_path()

@@ -13,6 +13,7 @@ from tbot_bot.strategy.strategy_router import route_strategy
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.runtime.status_bot import bot_status
 from tbot_bot.support.utils_identity import get_bot_identity
+import subprocess
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
@@ -64,11 +65,45 @@ def _clear_flag(flag_path):
         pass
 
 def detect_individual_test_flag():
-    for flag in CONTROL_DIR.glob("test_mode_*.flag"):
-        return flag
+    all_flags = list(CONTROL_DIR.glob("test_mode_*.flag"))
+    if any(flag.name == "test_mode.flag" for flag in all_flags):
+        return None
+    for flag in all_flags:
+        if flag.name != "test_mode.flag":
+            return flag
     return None
 
+def run_single_test_module(flag):
+    test_name = flag.name.replace("test_mode_", "").replace(".flag", "")
+    test_map = {
+        "universe_cache": "tbot_bot.test.test_universe_cache",
+        "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
+        "screener_random": "tbot_bot.test.test_screener_random",
+        "screener_integration": "tbot_bot.test.test_screener_integration",
+        "main_bot": "tbot_bot.test.test_main_bot",
+        "ledger_schema": "tbot_bot.test.test_ledger_schema",
+        "env_bot": "tbot_bot.test.test_env_bot",
+        "coa_web_endpoints": "tbot_bot.test.test_coa_web_endpoints",
+        "coa_consistency": "tbot_bot.test.test_coa_consistency",
+        "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
+        "backtest_engine": "tbot_bot.test.test_backtest_engine",
+        "logging_format": "tbot_bot.test.test_logging_format"
+    }
+    module = test_map.get(test_name)
+    if module:
+        print(f"[integration_test_runner] Detected individual test flag: {flag}. Running {module}")
+        subprocess.run(["python3", "-m", module])
+    else:
+        print(f"[integration_test_runner] Unknown test flag or test module: {flag}")
+    _clear_flag(flag)
+
 def run_integration_test():
+    # Individual test flag: run only that test, then exit
+    flag = detect_individual_test_flag()
+    if flag and flag.name != "test_mode.flag":
+        run_single_test_module(flag)
+        return
+
     log_event("integration_test", "Starting integration test runner...")
 
     config = get_bot_config()
@@ -103,12 +138,7 @@ def run_integration_test():
         print("Integration test failed with error:\n", tb)
         sys.exit(1)
     finally:
-        # Remove global test_mode.flag if present
         _clear_flag(CONTROL_DIR / "test_mode.flag")
-        # Remove individual test flag if present
-        flag = detect_individual_test_flag()
-        if flag:
-            _clear_flag(flag)
 
 if __name__ == "__main__":
     run_integration_test()

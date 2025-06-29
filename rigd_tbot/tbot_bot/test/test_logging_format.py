@@ -10,11 +10,12 @@ from pathlib import Path
 from tbot_bot.support.path_resolver import get_output_path
 
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_logging_format.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 
 if __name__ == "__main__":
-    if not TEST_FLAG_PATH.exists():
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
         print("[test_logging_format.py] Individual test flag not present. Exiting.")
-        sys.exit(0)
+        sys.exit(1)
 
 LOG_DIR = get_output_path("logs")
 LOG_FILE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \[[A-Z]+\] .+")
@@ -56,4 +57,8 @@ def run_test():
         TEST_FLAG_PATH.unlink()
 
 if __name__ == "__main__":
-    run_test()
+    try:
+        run_test()
+    finally:
+        if TEST_FLAG_PATH.exists():
+            TEST_FLAG_PATH.unlink()

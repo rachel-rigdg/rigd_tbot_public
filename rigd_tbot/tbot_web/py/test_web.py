@@ -24,7 +24,6 @@ def is_test_active(test_name: str = None) -> bool:
     return get_test_flag_path(test_name).exists()
 
 def any_test_active() -> bool:
-    # Returns True if the global or any individual test flag exists
     if is_test_active():
         return True
     for flag in CONTROL_DIR.glob("test_mode_*.flag"):
@@ -39,7 +38,6 @@ def read_test_logs():
         return f.read()[-30000:]
 
 def get_test_status():
-    # Prioritize global flag for overall status
     if not any_test_active():
         return "idle"
     if TEST_LOG_PATH.exists():
@@ -77,7 +75,7 @@ def trigger_test_mode():
     with LOCK:
         if any_test_active():
             return jsonify({"result": "already_running"})
-        create_test_flag()  # global flag triggers full run
+        create_test_flag()
         subprocess.Popen(["python3", "-m", "tbot_bot.test.integration_test_runner"])
     return jsonify({"result": "started"})
 
@@ -104,7 +102,7 @@ def run_individual_test(test_name):
         module = test_map.get(test_name)
         if not module:
             return jsonify({"result": "unknown_test"})
-        create_test_flag(test_name)  # create individual test flag
+        create_test_flag(test_name)
         subprocess.Popen(["python3", "-m", module])
     return jsonify({"result": "started", "test": test_name})
 
@@ -120,8 +118,7 @@ def auto_reset_test_flag():
         if not any_test_active():
             return
         time.sleep(2)
-    # Remove all test flags (global + individual)
-    if TEST_FLAG_PATH.exists():
-        TEST_FLAG_PATH.unlink()
+    if (CONTROL_DIR / "test_mode.flag").exists():
+        (CONTROL_DIR / "test_mode.flag").unlink()
     for flag in CONTROL_DIR.glob("test_mode_*.flag"):
         flag.unlink()

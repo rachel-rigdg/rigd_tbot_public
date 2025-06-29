@@ -8,11 +8,15 @@ from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
 
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_strategy_selfcheck.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 
 if __name__ == "__main__":
-    if not TEST_FLAG_PATH.exists():
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
         print("[test_strategy_selfcheck.py] Individual test flag not present. Exiting.")
         sys.exit(0)
+else:
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+        raise RuntimeError("[test_strategy_selfcheck.py] Individual test flag not present.")
 
 class TestStrategySelfCheck(unittest.TestCase):
     def test_strategy_selfchecks(self):

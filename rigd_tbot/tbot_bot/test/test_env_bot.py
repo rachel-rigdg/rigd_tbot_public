@@ -5,8 +5,10 @@
 import pytest
 from tbot_bot.config.env_bot import get_bot_config
 from pathlib import Path
+import sys
 
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_env_bot.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 
 REQUIRED_KEYS = [
     "VERSION_TAG",
@@ -61,9 +63,10 @@ REQUIRED_KEYS = [
     "NOTIFY_ON_EXIT"
 ]
 
-def pytest_sessionstart(session):
-    if not TEST_FLAG_PATH.exists():
-        pytest.skip("Individual test flag not present. Exiting.")
+if __name__ == "__main__":
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+        print("[test_env_bot.py] Individual test flag not present. Exiting.")
+        sys.exit(1)
 
 def test_all_required_keys_present():
     config = get_bot_config()

@@ -9,14 +9,15 @@ from tbot_bot.screeners.ibkr_screener import IBKRScreener
 from pathlib import Path
 import sys
 
-# --- INDIVIDUAL TEST FLAG HANDLING ---
+# --- INDIVIDUAL & RUN ALL TEST FLAG HANDLING ---
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_screener_integration.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 if __name__ == "__main__":
-    if not TEST_FLAG_PATH.exists():
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
         print("[test_screener_integration.py] Individual test flag not present. Exiting.")
         sys.exit(1)
 else:
-    if not TEST_FLAG_PATH.exists():
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
         raise RuntimeError("[test_screener_integration.py] Individual test flag not present.")
 
 class TestScreenerIntegration(unittest.TestCase):

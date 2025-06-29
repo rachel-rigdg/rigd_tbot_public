@@ -7,12 +7,19 @@ import unittest
 from flask import Flask
 from tbot_web.py.coa_web import coa_web
 from pathlib import Path
+import sys
 
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_coa_web_endpoints.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
+
+if __name__ == "__main__":
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+        print("[test_coa_web_endpoints.py] Individual test flag not present. Exiting.")
+        sys.exit(1)
 
 class COAWebEndpointTestCase(unittest.TestCase):
     def setUp(self):
-        if not TEST_FLAG_PATH.exists():
+        if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
             self.skipTest("Individual test flag not present. Exiting.")
         app = Flask(__name__)
         app.secret_key = "testkey"
@@ -20,7 +27,6 @@ class COAWebEndpointTestCase(unittest.TestCase):
         self.app = app.test_client()
         self.ctx = app.app_context()
         self.ctx.push()
-        # Mock session as admin for edit tests
         with self.app.session_transaction() as sess:
             sess['role'] = 'admin'
             sess['user'] = 'test_admin'

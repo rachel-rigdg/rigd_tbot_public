@@ -6,9 +6,10 @@ import sys
 from pathlib import Path
 
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_backtest_engine.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 
 if __name__ == "__main__":
-    if not TEST_FLAG_PATH.exists():
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
         print("[test_backtest_engine.py] Individual test flag not present. Exiting.")
         sys.exit(0)
 

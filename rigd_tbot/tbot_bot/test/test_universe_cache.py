@@ -17,12 +17,13 @@ import sys
 
 # --- INDIVIDUAL TEST FLAG HANDLING ---
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_universe_cache.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 if __name__ == "__main__":
-    if not TEST_FLAG_PATH.exists():
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
         print("[test_universe_cache.py] Individual test flag not present. Exiting.")
         sys.exit(1)
 else:
-    if not TEST_FLAG_PATH.exists():
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
         raise RuntimeError("[test_universe_cache.py] Individual test flag not present.")
 
 class TestUniverseCache(unittest.TestCase):

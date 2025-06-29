@@ -2,7 +2,6 @@
 # Core lifecycle testing for single-broker unified mode
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
-
 import pytest
 import os
 import json
@@ -11,9 +10,11 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.path_resolver import get_output_path
 from tbot_bot.support.utils_identity import get_bot_identity
 from pathlib import Path
+import sys
 
 BOT_ID = get_bot_identity()
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_main_bot.flag"
+RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 
 LOG_FILES = [
     "open.log",
@@ -26,9 +27,10 @@ LOG_FILES = [
 TRADE_LOG_JSON = f"{BOT_ID}_BOT_trade_history.json"
 TRADE_LOG_CSV = f"{BOT_ID}_BOT_trade_history.csv"
 
-def pytest_sessionstart(session):
-    if not TEST_FLAG_PATH.exists():
-        pytest.skip("Individual test flag not present. Exiting.")
+if __name__ == "__main__":
+    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+        print("[test_main_bot.py] Individual test flag not present. Exiting.")
+        sys.exit(1)
 
 @pytest.mark.order(1)
 def test_main_bot_initialization():
@@ -86,4 +88,8 @@ def run_test():
             TEST_FLAG_PATH.unlink()
 
 if __name__ == "__main__":
-    run_test()
+    try:
+        run_test()
+    finally:
+        if TEST_FLAG_PATH.exists():
+            TEST_FLAG_PATH.unlink()
