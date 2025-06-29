@@ -9,6 +9,7 @@ import sys
 import time
 import subprocess
 from pathlib import Path
+from datetime import datetime, timedelta
 from tbot_bot.support import path_resolver
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -32,6 +33,10 @@ STATUS_LOGGER_PATH = path_resolver.resolve_runtime_script_path("status_logger.py
 SYMBOL_UNIVERSE_REFRESH_PATH = path_resolver.resolve_runtime_script_path("symbol_universe_refresh.py")
 INTEGRATION_TEST_RUNNER_PATH = path_resolver.resolve_runtime_script_path("integration_test_runner.py")
 
+UNIVERSE_TIMESTAMP_PATH = ROOT_DIR / "tbot_bot" / "output" / "screeners" / "symbol_universe.json"
+MARKET_CLOSE_HOUR = 16  # 4 PM local time; adjust if needed
+REBUILD_DELAY_HOURS = 4
+
 def read_bot_state():
     try:
         return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
@@ -54,6 +59,34 @@ def ensure_singleton(process_name):
 def find_individual_test_flags():
     return list(CONTROL_DIR.glob("test_mode_*.flag"))
 
+def is_time_for_universe_rebuild():
+    # Always triggers if file does not exist
+    if not UNIVERSE_TIMESTAMP_PATH.exists():
+        return True
+    # Read build time from file
+    try:
+        import json
+        data = json.load(open(UNIVERSE_TIMESTAMP_PATH, "r"))
+        build_time_str = data.get("build_timestamp_utc")
+        if build_time_str:
+            from datetime import datetime, timezone
+            if build_time_str.endswith("Z"):
+                build_time_str = build_time_str.replace("Z", "+00:00")
+            build_time = datetime.fromisoformat(build_time_str)
+        else:
+            build_time = datetime.utcfromtimestamp(UNIVERSE_TIMESTAMP_PATH.stat().st_mtime)
+    except Exception:
+        build_time = datetime.utcfromtimestamp(UNIVERSE_TIMESTAMP_PATH.stat().st_mtime)
+    now = datetime.utcnow()
+    today_close = now.replace(hour=MARKET_CLOSE_HOUR, minute=0, second=0, microsecond=0)
+    if now < today_close:
+        last_close = today_close - timedelta(days=1)
+    else:
+        last_close = today_close
+    scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
+    # If it's past scheduled time and last build was before scheduled time, trigger
+    return now >= scheduled_time and build_time < scheduled_time
+
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
     processes = {}
@@ -69,9 +102,10 @@ def main():
         ("kill_switch", KILL_SWITCH_PATH),
         ("log_rotation", LOG_ROTATION_PATH),
         ("trade_logger", TRADE_LOGGER_PATH),
-        ("status_logger", STATUS_LOGGER_PATH),
-        ("symbol_universe_refresh", SYMBOL_UNIVERSE_REFRESH_PATH)
+        ("status_logger", STATUS_LOGGER_PATH)
     ]
+
+    last_universe_rebuild = None
 
     for name, path in launch_targets:
         script_name = os.path.basename(str(path))
@@ -121,6 +155,15 @@ def main():
                 BOT_STATE_PATH.write_text("graceful_closing_positions", encoding="utf-8")
                 print("[tbot_supervisor] CONTROL_STOP_FLAG detected. Set bot state to 'graceful_closing_positions'.")
                 CONTROL_STOP_FLAG.unlink(missing_ok=True)
+
+            # Automatic universe rebuild 4 hours after market close
+            if is_time_for_universe_rebuild():
+                if not ensure_singleton("symbol_universe_refresh.py"):
+                    print("[tbot_supervisor] Triggering universe cache rebuild (symbol_universe_refresh.py)...")
+                    processes["symbol_universe_refresh"] = launch_subprocess(SYMBOL_UNIVERSE_REFRESH_PATH)
+                    last_universe_rebuild = time.time()
+                else:
+                    print("[tbot_supervisor] Universe cache rebuild already running.")
 
             time.sleep(2)
 
