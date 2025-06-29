@@ -97,18 +97,13 @@ def create_unified_app():
             ):
                 return redirect(url_for("configuration_web.show_configuration"))
 
-    # Serve output folder static files only when NOT in bootstrap phase
-    @app.before_request
-    def serve_output_static_guard():
-        if request.path.startswith('/static/output'):
-            if is_first_bootstrap():
-                # Block access to /static/output during bootstrap to avoid breaking
-                return "Access denied during bootstrap", 403
-
-    @app.route('/static/output/<path:filename>')
-    def output_static(filename):
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tbot_bot', 'output'))
-        return send_from_directory(base_dir, filename)
+    # Serve /static/output/screeners/* from tbot_bot/output/screeners, with bootstrap gating
+    @app.route('/static/output/screeners/<path:filename>')
+    def output_screeners_static(filename):
+        if is_first_bootstrap():
+            return "Access denied during bootstrap", 403
+        screeners_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'output', 'screeners'))
+        return send_from_directory(screeners_dir, filename)
 
     print("==== ROUTES ====")
     for rule in app.url_map.iter_rules():

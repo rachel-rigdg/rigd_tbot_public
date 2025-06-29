@@ -1,7 +1,8 @@
 # tbot_web/py/universe_web.py
 # Flask blueprint for universe cache inspection, search, export, and rebuild
+# Instrumented for debug logging of static file serving and status_message route
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app
 from tbot_bot.screeners.symbol_universe_refresh import main as rebuild_main
 from tbot_bot.screeners.screener_utils import load_universe_cache, UniverseCacheError
 from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
@@ -102,14 +103,19 @@ def universe_export(fmt):
         flash("Unsupported export format.", "error")
         return redirect(url_for("universe.universe_status"))
 
-@universe_bp.route('/static/output/<path:filename>')
-def output_static(filename):
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tbot_bot', 'output'))
+@universe_bp.route('/static/output/screeners/<path:filename>')
+def universe_output_static(filename):
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'output', 'screeners'))
+    full_path = os.path.join(base_dir, filename)
+    current_app.logger.debug(f"Serving universe static file: URL path='{filename}', full_path='{full_path}'")
+    if not os.path.isfile(full_path):
+        current_app.logger.warning(f"Universe static file not found: {full_path}")
     return send_from_directory(base_dir, filename)
 
-@universe_bp.route('/universe/status_message')
+@universe_bp.route('/status_message')
 def universe_status_message():
     symbols, use_partial = get_symbols_and_source()
     symbol_count = len(symbols)
     status_msg = f"Universe cache loaded: {symbol_count} symbols." if symbols else "Universe cache not loaded or empty."
+    current_app.logger.debug(f"Status message requested, returning: {status_msg}")
     return status_msg, 200, {'Content-Type': 'text/plain; charset=utf-8'}
