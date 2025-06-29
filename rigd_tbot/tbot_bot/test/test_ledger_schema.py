@@ -5,38 +5,21 @@
 
 import pytest
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.utils_coa import validate_ledger_schema
+from tbot_bot.support.path_resolver import get_output_path
+import json
 
-def test_strategy_selfchecks():
+def test_ledger_schema_validation():
     """
-    Confirms that all enabled strategies pass their .self_check() method.
-    This is required before executing any session in production mode.
-    Does not launch, run, or supervise any persistent process.
+    Validates that ledger data conforms to COA/schema rules and double-entry accounting.
+    Does not launch or supervise any persistent process.
     """
-    config = get_bot_config()
-    failures = []
+    ledger_path = get_output_path("ledger", "ledger_latest.json")
+    try:
+        with open(ledger_path, "r", encoding="utf-8") as f:
+            ledger_data = json.load(f)
+    except Exception as e:
+        pytest.fail(f"Failed to load ledger file: {e}")
 
-    if config.get("STRAT_OPEN_ENABLED"):
-        try:
-            from tbot_bot.strategy.strategy_open import self_check as check_open
-            if not check_open():
-                failures.append("strategy_open failed self_check()")
-        except Exception as e:
-            failures.append(f"strategy_open import/self_check error: {e}")
-
-    if config.get("STRAT_MID_ENABLED"):
-        try:
-            from tbot_bot.strategy.strategy_mid import self_check as check_mid
-            if not check_mid():
-                failures.append("strategy_mid failed self_check()")
-        except Exception as e:
-            failures.append(f"strategy_mid import/self_check error: {e}")
-
-    if config.get("STRAT_CLOSE_ENABLED"):
-        try:
-            from tbot_bot.strategy.strategy_close import self_check as check_close
-            if not check_close():
-                failures.append("strategy_close failed self_check()")
-        except Exception as e:
-            failures.append(f"strategy_close import/self_check error: {e}")
-
-    assert not failures, "Self-check errors:\n" + "\n".join(failures)
+    valid, errors = validate_ledger_schema(ledger_data)
+    assert valid, f"Ledger schema validation failed with errors:\n{errors}"

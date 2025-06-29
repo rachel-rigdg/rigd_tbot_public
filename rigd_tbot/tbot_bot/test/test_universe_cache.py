@@ -60,5 +60,8 @@ class TestUniverseCache(unittest.TestCase):
         except SystemExit:
             pass  # Allow clean exit for test run
 
+def run_test():
+    unittest.main(module=__name__, exit=False)
+
 if __name__ == "__main__":
-    unittest.main()
+    run_test()

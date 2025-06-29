@@ -1,7 +1,6 @@
 # tbot_bot/test/test_backtest_engine.py
 # Regression test for backtest engine accuracy (isolated to test context)
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
-# All process orchestration is via tbot_supervisor.py only.
 
 import pytest
 from tbot_bot.backtest.backtest_engine import run_backtest

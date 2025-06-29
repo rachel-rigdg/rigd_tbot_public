@@ -343,7 +343,7 @@ rigd_tbot/
     │
     ├── favicon.ico / favicon.gif               # Site icon for browser tab
     │
-   ├── py/                                      # Flask backend endpoints, blueprints, business logic
+    ├── py/                                      # Flask backend endpoints, blueprints, business logic
     │   ├── __init__.py                         # Registers all Flask blueprints (main entry)
     │   ├── account_web.py                      # User account/profile endpoints (view/update account details)
     │   ├── coa_web.py                          # COA endpoints: view, edit, export; calls utils_coa_web.py, config_encryption.py. Never launches any worker/watcher.

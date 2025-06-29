@@ -22,5 +22,8 @@ class TestScreenerIntegration(unittest.TestCase):
         candidates = screener.run_screen()
         self.assertIsInstance(candidates, list)
 
+def run_test():
+    unittest.main(module=__name__, exit=False)
+
 if __name__ == "__main__":
-    unittest.main()
+    run_test()

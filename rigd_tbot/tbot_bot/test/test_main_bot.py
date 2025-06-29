@@ -92,3 +92,10 @@ def test_main_bot_trade_log_format():
         assert "entry_price" in entry or "price" in entry
         assert "exit_price" in entry
         assert "PnL" in entry
+
+def run_test():
+    import unittest
+    unittest.main(module=__name__, exit=False)
+
+if __name__ == "__main__":
+    run_test()

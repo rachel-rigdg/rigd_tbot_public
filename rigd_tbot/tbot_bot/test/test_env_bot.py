@@ -66,21 +66,21 @@ def test_all_required_keys_present():
 
 def test_value_types():
     config = get_bot_config()
-    assert isinstance(config["ENABLE_LOGGING"], bool)
-    assert isinstance(config["TOTAL_ALLOCATION"], float)
-    assert isinstance(config["MAX_RISK_PER_TRADE"], float)
-    assert isinstance(config["MAX_OPEN_POSITIONS"], int)
-    assert isinstance(config["SLEEP_TIME"], str)
-    assert isinstance(config["DAILY_LOSS_LIMIT"], float)
-    assert isinstance(config["FRACTIONAL"], bool)
-    assert isinstance(config["DISABLE_ALL_TRADES"], bool)
+    assert isinstance(config.get("ENABLE_LOGGING"), bool)
+    assert isinstance(config.get("TOTAL_ALLOCATION"), float)
+    assert isinstance(config.get("MAX_RISK_PER_TRADE"), float)
+    assert isinstance(config.get("MAX_OPEN_POSITIONS"), int)
+    assert isinstance(config.get("SLEEP_TIME"), str)
+    assert isinstance(config.get("DAILY_LOSS_LIMIT"), float)
+    assert isinstance(config.get("FRACTIONAL"), bool)
+    assert isinstance(config.get("DISABLE_ALL_TRADES"), bool)
 
 def test_strategy_toggles():
     config = get_bot_config()
-    assert isinstance(config["STRAT_OPEN_ENABLED"], bool)
-    assert isinstance(config["STRAT_MID_ENABLED"], bool)
-    assert isinstance(config["STRAT_CLOSE_ENABLED"], bool)
+    assert isinstance(config.get("STRAT_OPEN_ENABLED"), bool)
+    assert isinstance(config.get("STRAT_MID_ENABLED"), bool)
+    assert isinstance(config.get("STRAT_CLOSE_ENABLED"), bool)
 
 def test_logging_format():
     config = get_bot_config()
-    assert config["LOG_FORMAT"] in ["csv", "json"]
+    assert config.get("LOG_FORMAT") in ["csv", "json"]
