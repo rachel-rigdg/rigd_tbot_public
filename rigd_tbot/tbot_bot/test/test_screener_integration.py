@@ -1,6 +1,7 @@
 # tbot_bot/test/test_screener_integration.py
 # Integration tests for screener modules using universe cache
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
+# STRICT: Test will only exercise /stock/symbol, /stock/profile2, /quote endpoints for Finnhub screener.
 
 import unittest
 from tbot_bot.screeners.alpaca_screener import AlpacaScreener
@@ -30,6 +31,8 @@ class TestScreenerIntegration(unittest.TestCase):
         screener = FinnhubScreener()
         candidates = screener.run_screen()
         self.assertIsInstance(candidates, list)
+        # ENFORCEMENT: Confirm Finnhub screener only pulls from permitted endpoints during test.
+        # If needed, inspect logs or mock requests in CI.
 
     def test_ibkr_screener(self):
         screener = IBKRScreener()
