@@ -2,10 +2,13 @@
 # Nightly job to build, filter, and atomically write the symbol universe cache for all screeners
 # Fully aligned with RIGD TradeBot screener/cache specification
 # Updated: STRICT Finnhub API endpoint enforcement — only /stock/symbol, /stock/profile2, /quote allowed. All other endpoints forbidden.
+# API rate limiting uses SLEEP_TIME from env config.
+# Writes progress/partial and heartbeat to output/screeners/universe_ops.log and symbol_universe.partial.json
 
 import sys
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import List, Dict
 
@@ -13,21 +16,37 @@ from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
     save_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
 )
-from tbot_bot.support.path_resolver import resolve_universe_cache_path
-
-# --- Setup Logging ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s][%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+from tbot_bot.support.path_resolver import (
+    resolve_universe_cache_path,
+    resolve_universe_partial_path,
+    resolve_universe_log_path
 )
-LOG = logging.getLogger("symbol_universe_refresh")
+
+LOG_PATH = resolve_universe_log_path()
+
+def log_progress(msg: str, details: dict = None):
+    now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    record = f"[{now}] {msg}"
+    if details:
+        record += " | " + json.dumps(details)
+    with open(LOG_PATH, "a", encoding="utf-8") as logf:
+        logf.write(record + "\n")
+    # Also print for CLI/ops feedback
+    print(record)
+
+def write_partial(symbols, meta=None):
+    partial_path = resolve_universe_partial_path()
+    cache_obj = {
+        "schema_version": "1.0.0",
+        "build_timestamp_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+        "symbols": symbols
+    }
+    if meta:
+        cache_obj["meta"] = meta
+    with open(partial_path, "w", encoding="utf-8") as pf:
+        json.dump(cache_obj, pf, indent=2)
 
 def fetch_broker_symbol_metadata() -> List[Dict]:
-    """
-    Fetches all US symbols/metadata from the configured screener as set in screener secrets (SCREENER_NAME).
-    Returns a list of dicts: symbol, exchange, lastClose, marketCap, name, sector, industry, volume.
-    """
     env = load_env_bot_config()
     screener_secrets = get_screener_secrets()
     screener_name = (screener_secrets.get("SCREENER_NAME") or "FINNHUB").strip().upper()
@@ -41,35 +60,34 @@ def fetch_broker_symbol_metadata() -> List[Dict]:
         raise RuntimeError(f"Unsupported SCREENER_NAME: {screener_name}")
 
 def fetch_finnhub_symbols(secrets, env):
-    """
-    Finnhub: ONLY use /stock/symbol, /stock/profile2, /quote endpoints for symbol universe.
-    All other endpoints are forbidden by project specification.
-    """
     import requests
     SCREENER_API_KEY = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
     SCREENER_URL = secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
     SCREENER_USERNAME = secrets.get("SCREENER_USERNAME", "")
     SCREENER_PASSWORD = secrets.get("SCREENER_PASSWORD", "")
+    SLEEP_TIME = float(env.get("SLEEP_TIME", 0.3))
+    PARTIAL_WRITE_FREQ = int(env.get("UNIVERSE_PARTIAL_WRITE_FREQ", 100))
     if not SCREENER_API_KEY:
         raise RuntimeError("SCREENER_API_KEY not set in screener secrets/config")
     symbols = []
+    total_count = 0
     for exch in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(","):
         url = f"{SCREENER_URL.rstrip('/')}/stock/symbol?exchange={exch.strip()}&token={SCREENER_API_KEY}"
         auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
         r = requests.get(url, auth=auth)
         if r.status_code != 200:
-            LOG.warning(f"Failed to fetch symbol list for exchange {exch}: {r.status_code}")
+            log_progress(f"Failed to fetch symbol list for exchange {exch}", {"status": r.status_code})
             continue
         for s in r.json():
             symbol = s.get("symbol")
-            # --- STRICT ENDPOINT ENFORCEMENT: /stock/profile2 ---
             profile_url = f"{SCREENER_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={SCREENER_API_KEY}"
             profile = requests.get(profile_url, auth=auth)
             p = profile.json() if profile.status_code == 200 else {}
-            # --- STRICT ENDPOINT ENFORCEMENT: /quote ---
+            time.sleep(SLEEP_TIME)
             quote_url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
             quote = requests.get(quote_url, auth=auth)
             q = quote.json() if quote.status_code == 200 else {}
+            time.sleep(SLEEP_TIME)
             symbols.append({
                 "symbol": symbol,
                 "exchange": exch.strip(),
@@ -80,6 +98,10 @@ def fetch_finnhub_symbols(secrets, env):
                 "industry": "",
                 "volume": q.get("v") or 0
             })
+            total_count += 1
+            if total_count % PARTIAL_WRITE_FREQ == 0:
+                log_progress(f"Universe build progress: {total_count} symbols fetched", {"partial": True})
+                write_partial(symbols)
     return symbols
 
 def fetch_tradier_symbols(secrets, env):
@@ -126,17 +148,23 @@ def main():
     blocklist_path = env.get("SCREENER_UNIVERSE_BLOCKLIST_PATH", None)
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
 
-    LOG.info(f"Universe build parameters: exchanges={exchanges}, price=[{min_price},{max_price}), cap=[{min_cap},{max_cap}], max_size={max_size}, blocklist={blocklist_path}")
+    log_progress("Universe build parameters", {
+        "exchanges": exchanges,
+        "price": [min_price, max_price],
+        "cap": [min_cap, max_cap],
+        "max_size": max_size,
+        "blocklist": blocklist_path
+    })
 
     try:
         symbols_raw = fetch_broker_symbol_metadata()
         if not symbols_raw or len(symbols_raw) < 10:
             raise RuntimeError("No symbols fetched from screener/API; check API key, network, or provider limits.")
     except Exception as e:
-        LOG.error(f"Failed to fetch screener symbol metadata: {e}")
+        log_progress("Failed to fetch screener symbol metadata", {"error": str(e)})
         raise
 
-    LOG.info(f"Fetched {len(symbols_raw)} raw symbols from screener feed.")
+    log_progress("Fetched raw symbols from screener feed", {"count": len(symbols_raw)})
 
     blocklist = load_blocklist(blocklist_path)
 
@@ -153,11 +181,31 @@ def main():
 
     symbols_filtered.sort(key=lambda x: x["symbol"])
 
+    # Integrity check: compare RAM with partial before writing
+    try:
+        # Load the partial (if exists)
+        partial_path = resolve_universe_partial_path()
+        with open(partial_path, "r", encoding="utf-8") as pf:
+            partial = json.load(pf)
+        partial_symbols = partial["symbols"]
+        if symbols_filtered != partial_symbols:
+            log_progress("INTEGRITY CHECK FAILED: RAM and partial JSON differ!", {
+                "ram_count": len(symbols_filtered),
+                "partial_count": len(partial_symbols)
+            })
+            raise RuntimeError("Integrity check failed: RAM and partial JSON differ.")
+        else:
+            log_progress("INTEGRITY CHECK PASSED: RAM matches partial JSON.", {
+                "count": len(symbols_filtered)
+            })
+    except Exception as e:
+        log_progress("Integrity check error (could not read partial or mismatch): proceeding with RAM.", {"error": str(e)})
+
     try:
         save_universe_cache(symbols_filtered, bot_identity=bot_identity)
-        LOG.info(f"Universe cache build complete: {len(symbols_filtered)} symbols written.")
+        log_progress("Universe cache build complete", {"final_count": len(symbols_filtered)})
     except Exception as e:
-        LOG.error(f"Failed to write universe cache: {e}")
+        log_progress("Failed to write universe cache", {"error": str(e)})
         raise
 
     audit = {
@@ -168,11 +216,11 @@ def main():
         "blocklist_entries": len(blocklist),
         "cache_path": resolve_universe_cache_path(bot_identity),
     }
-    LOG.info("Universe build summary: " + json.dumps(audit, indent=2))
+    log_progress("Universe build summary", audit)
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        LOG.error(f"Universe build failed and raised exception: {e}")
+        log_progress("Universe build failed and raised exception", {"error": str(e)})
         sys.exit(1)

@@ -21,7 +21,7 @@ def ibkr_get_quote(symbol):
     return {"symbol": symbol, "c": c, "o": o, "vwap": vwap}
 
 config = get_bot_config()
-broker_creds = get_screener_secrets(category="broker")
+broker_creds = get_screener_secrets()
 LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))

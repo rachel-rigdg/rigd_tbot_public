@@ -2,6 +2,7 @@
 # Dedicated logger for all universe cache and screener symbol universe operations.
 # Comprehensive, UTC timestamped, file+console output, audit-level per specification.
 # Enforced: Use only for logging events related to /stock/symbol, /stock/profile2, /quote universe ops.
+# All logs written to tbot_bot/output/screeners/universe_ops.log
 
 import logging
 import sys
@@ -9,12 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 def get_universe_log_path():
-    # Writes to output/screeners/universe_ops.log
-    from tbot_bot.support.path_resolver import resolve_universe_cache_path
-    cache_path = resolve_universe_cache_path()
-    log_dir = Path(cache_path).parent
+    # Writes to output/screeners/universe_ops.log using path_resolver.
+    from tbot_bot.support.path_resolver import resolve_universe_log_path
+    log_path = resolve_universe_log_path()
+    log_dir = Path(log_path).parent
     log_dir.mkdir(parents=True, exist_ok=True)
-    return str(log_dir / "universe_ops.log")
+    return str(log_path)
 
 class UTCFormatter(logging.Formatter):
     converter = lambda *args: datetime.now(tz=timezone.utc).timetuple()

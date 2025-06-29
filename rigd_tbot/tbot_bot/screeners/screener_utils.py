@@ -74,7 +74,10 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
         raise UniverseCacheError(f"Universe cache schema version mismatch: expected {SCHEMA_VERSION}, found {data['schema_version']}")
 
     try:
-        build_time = datetime.fromisoformat(data["build_timestamp_utc"])
+        build_time_str = data["build_timestamp_utc"]
+        if build_time_str.endswith("Z"):
+            build_time_str = build_time_str.replace("Z", "+00:00")
+        build_time = datetime.fromisoformat(build_time_str)
         if build_time.tzinfo is None:
             build_time = build_time.replace(tzinfo=timezone.utc)
     except Exception as e:
@@ -202,7 +205,10 @@ def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetim
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        build_time = datetime.fromisoformat(data["build_timestamp_utc"])
+        build_time_str = data["build_timestamp_utc"]
+        if build_time_str.endswith("Z"):
+            build_time_str = build_time_str.replace("Z", "+00:00")
+        build_time = datetime.fromisoformat(build_time_str)
         if build_time.tzinfo is None:
             build_time = build_time.replace(tzinfo=timezone.utc)
         return build_time

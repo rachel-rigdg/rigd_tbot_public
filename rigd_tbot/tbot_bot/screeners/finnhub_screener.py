@@ -23,6 +23,7 @@ API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
 FRACTIONAL = config.get("FRACTIONAL", True)
+SLEEP_TIME = float(config.get("SLEEP_TIME", 0.3))
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
@@ -38,6 +39,7 @@ class FinnhubScreener(ScreenerBase):
     Generic screener: loads eligible symbols from universe cache,
     fetches latest quotes from SCREENER_URL using SCREENER_API_KEY,
     filters per strategy, test mode aware.
+    Uses SLEEP_TIME from env config for API rate limiting.
     """
     def fetch_live_quotes(self, symbols):
         """
@@ -68,7 +70,7 @@ class FinnhubScreener(ScreenerBase):
                 continue
             if idx % 50 == 0:
                 log(f"Fetched {idx} quotes...")
-            time.sleep(0.2)
+            time.sleep(SLEEP_TIME)
         return quotes
 
     def filter_candidates(self, quotes):

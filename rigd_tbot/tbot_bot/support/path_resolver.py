@@ -139,6 +139,36 @@ def resolve_universe_cache_path(bot_identity: str = None) -> str:
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "symbol_universe.json")
 
+def resolve_universe_partial_path() -> str:
+    """
+    Returns full path to the partial universe JSON file.
+    Path: tbot_bot/output/screeners/symbol_universe.partial.json
+    """
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
+    screeners_dir = base_output_dir / "screeners"
+    screeners_dir.mkdir(parents=True, exist_ok=True)
+    return str(screeners_dir / "symbol_universe.partial.json")
+
+def resolve_universe_log_path() -> str:
+    """
+    Returns full path to the universe ops log file.
+    Path: tbot_bot/output/screeners/universe_ops.log
+    """
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
+    screeners_dir = base_output_dir / "screeners"
+    screeners_dir.mkdir(parents=True, exist_ok=True)
+    return str(screeners_dir / "universe_ops.log")
+
+def resolve_screener_blocklist_path() -> str:
+    """
+    Returns full path to the screener blocklist text file.
+    Path: tbot_bot/output/screeners/screener_blocklist.txt
+    """
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
+    screeners_dir = base_output_dir / "screeners"
+    screeners_dir.mkdir(parents=True, exist_ok=True)
+    return str(screeners_dir / "screener_blocklist.txt")
+
 def resolve_status_log_path(bot_identity: str = None) -> str:
     """
     Returns the canonical path for the logs/status.json file.
@@ -161,9 +191,6 @@ def resolve_status_summary_path(bot_identity: str = None) -> str:
     summaries_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity / "summaries"
     summaries_dir.mkdir(parents=True, exist_ok=True)
     return str(summaries_dir / "status.json")
-
-def resolve_runtime_script_path(script_name: str) -> str:
-    return str(PROJECT_ROOT / "tbot_bot" / "runtime" / script_name)
 
 def resolve_runtime_script_path(script_name: str) -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "runtime" / script_name)
@@ -213,9 +240,6 @@ def resolve_symbol_universe_refresh_path() -> str:
 def resolve_integration_test_runner_path() -> str:
     return resolve_test_script_path("integration_test_runner.py")
 
-
-
-
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -237,6 +261,9 @@ __all__ = [
     "resolve_ledger_schema_path",
     "resolve_coa_schema_path",
     "resolve_universe_cache_path",
+    "resolve_universe_partial_path",
+    "resolve_universe_log_path",
+    "resolve_screener_blocklist_path",
     "resolve_status_log_path",
     "resolve_status_summary_path",
     "resolve_runtime_script_path",
