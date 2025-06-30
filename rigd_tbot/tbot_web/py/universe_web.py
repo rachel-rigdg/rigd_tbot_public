@@ -64,24 +64,25 @@ def get_all_counts():
 
 @universe_bp.route("/universe", methods=["GET", "POST"])
 def universe_status():
-    symbols, use_partial = get_symbols_and_source()
-    cache_path = resolve_universe_partial_path() if use_partial else resolve_universe_cache_path()
-    symbol_count = len(symbols)
-    status_msg = f"Universe cache loaded: {symbol_count} symbols." if symbols else "Universe cache not loaded or empty."
-    data_source_label = "Partial (in-progress)" if use_partial else "Final (complete)"
+    unfiltered_symbols = load_json_file(UNFILTERED_PATH)
+    partial_symbols = load_json_file(resolve_universe_partial_path())
+    try:
+        final_symbols = load_universe_cache()
+    except Exception:
+        final_symbols = []
+    cache_path = resolve_universe_cache_path()
+    status_msg = f"Universe cache loaded: {len(final_symbols)} symbols." if final_symbols else "Universe cache not loaded or empty."
+    data_source_label = "Final (complete)"
     search = request.args.get("search", "").upper()
-    # No pagination here, all handled by infinite-scroll API endpoints
     return render_template(
         "universe.html",
-        cache_ok=bool(symbols),
+        unfiltered_symbols=unfiltered_symbols,
+        partial_symbols=partial_symbols,
+        final_symbols=final_symbols,
+        cache_ok=bool(final_symbols),
         status_msg=status_msg,
         cache_path=cache_path,
-        symbol_count=len(symbols),
-        sample_symbols=symbols[:20],
         search=search,
-        page=1,
-        per_page=20,
-        total_pages=1,
         data_source_label=data_source_label
     )
 
@@ -96,15 +97,18 @@ def universe_rebuild():
 
 @universe_bp.route("/universe/export/<fmt>", methods=["GET"])
 def universe_export(fmt):
-    symbols, use_partial = get_symbols_and_source()
-    if not symbols:
+    try:
+        final_symbols = load_universe_cache()
+    except Exception:
+        final_symbols = []
+    if not final_symbols:
         flash("Universe cache not loaded.", "error")
         return redirect(url_for("universe.universe_status"))
     if fmt == "csv":
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=list(symbols[0].keys()))
+        writer = csv.DictWriter(output, fieldnames=list(final_symbols[0].keys()))
         writer.writeheader()
-        writer.writerows(symbols)
+        writer.writerows(final_symbols)
         output.seek(0)
         return Response(
             output.getvalue(),
@@ -113,7 +117,7 @@ def universe_export(fmt):
         )
     elif fmt == "json":
         return Response(
-            json.dumps(symbols, indent=2),
+            json.dumps(final_symbols, indent=2),
             mimetype="application/json",
             headers={"Content-Disposition": "attachment;filename=symbol_universe.json"}
         )
@@ -144,9 +148,7 @@ def universe_status_message():
 @universe_bp.route("/universe_refilter", methods=["POST"])
 def universe_refilter():
     try:
-        # Load unfiltered
         unfiltered = load_json_file(UNFILTERED_PATH)
-        # Load filter params from env
         from tbot_bot.config.env_bot import load_env_bot_config
         env = load_env_bot_config()
         exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
@@ -179,7 +181,6 @@ def universe_refilter():
         flash(f"Refilter failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))
 
-# APIs for infinite scrolling tables for unfiltered, partial, and final filtered universes.
 @universe_bp.route("/universe/table/<table_type>")
 def universe_table_api(table_type):
     search = request.args.get("search", "").upper()
