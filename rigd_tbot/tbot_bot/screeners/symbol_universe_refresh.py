@@ -55,24 +55,37 @@ def load_unfiltered():
         return []
 
 def normalize_symbol_data(symbols: List[Dict]) -> List[Dict]:
+    # Robust normalization: accept all key aliases for lastClose and marketCap, type-cast as float, tolerate missing/null/variant keys.
+    last_close_aliases = ["lastClose", "close", "last_price", "price"]
+    market_cap_aliases = ["marketCap", "market_cap", "mktcap", "market_capitalization"]
     normed = []
     for s in symbols:
-        try:
-            lc_raw = s.get("lastClose")
-            mc_raw = s.get("marketCap")
-            lc = None
-            if lc_raw not in (None, '', 'None', 'null'):
+        lc = None
+        mc = None
+        for k in last_close_aliases:
+            val = s.get(k, None)
+            if val not in (None, '', 'None', 'null'):
                 try:
-                    lc = float(lc_raw)
+                    lc = float(val)
+                    break
                 except Exception:
                     try:
-                        lc = float(Decimal(str(lc_raw)))
+                        lc = float(Decimal(str(val)))
+                        break
                     except Exception:
                         lc = None
-            mc = float(mc_raw) if mc_raw not in (None, '', 'None', 'null') else None
-        except Exception:
-            lc = None
-            mc = None
+        for k in market_cap_aliases:
+            val = s.get(k, None)
+            if val not in (None, '', 'None', 'null'):
+                try:
+                    mc = float(val)
+                    break
+                except Exception:
+                    try:
+                        mc = float(Decimal(str(val)))
+                        break
+                    except Exception:
+                        mc = None
         s["lastClose"] = lc
         s["marketCap"] = mc
         if lc is not None and mc is not None and float(lc) >= 1.0:
@@ -137,6 +150,8 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
             time.sleep(UNIVERSE_SLEEP_TIME)
             def safe_float(val):
                 try:
+                    if val is None or val == "" or (isinstance(val, str) and val.strip().lower() == "none"):
+                        return None
                     return float(val)
                 except Exception:
                     try:
