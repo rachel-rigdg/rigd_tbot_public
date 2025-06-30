@@ -21,7 +21,7 @@
         <b>Final (universe) count:</b> <span id="final-count">{{ final_symbols|length }}</span>
     </p>
     <p><b>Data Source:</b> {{ data_source_label }}</p>
-    <form method="get" action="{{ url_for('universe.universe_status') }}" class="searchbox" style="margin-bottom:10px;">
+    <form method="get" action="{{ url_for('universe.universe_status') }}" class="searchbox">
         <input type="text" id="search-symbol" name="search" placeholder="Search symbol..." value="{{ search }}">
         <button type="submit">Search</button>
         <a href="{{ url_for('universe.universe_status') }}">Clear</a>
@@ -40,93 +40,92 @@
         <b>Universe Build Progress:</b>
         <pre id="build-log">Loading build log...</pre>
     </div>
-    <div style="display:flex;gap:18px;">
-        <div style="flex:1;min-width:200px;max-width:420px;">
-            <div style="font-weight:bold;margin-bottom:2px;">Unfiltered Universe (symbol_universe.unfiltered.json):</div>
-            <div id="unfiltered-table-scroll" class="universe-table-window">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Exchange</th>
-                            <th>Last Close</th>
-                            <th>Market Cap</th>
-                            <th>Company Name</th>
-                            <th>Sector</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in unfiltered_symbols %}
-                        <tr>
-                            <td>{{ s.symbol }}</td>
-                            <td>{{ s.exchange }}</td>
-                            <td>{{ s.lastClose }}</td>
-                            <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
-                            <td>{{ s.companyName if s.companyName else "" }}</td>
-                            <td>{{ s.sector if s.sector else "" }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+
+    <div>
+        <div class="universe-table-label">Unfiltered Universe (symbol_universe.unfiltered.json):</div>
+        <div id="unfiltered-table-scroll" class="universe-table-window">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Exchange</th>
+                        <th>Last Close</th>
+                        <th>Market Cap</th>
+                        <th>Company Name</th>
+                        <th>Sector</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in unfiltered_symbols %}
+                    <tr>
+                        <td>{{ s.symbol }}</td>
+                        <td>{{ s.exchange }}</td>
+                        <td>{{ s.lastClose }}</td>
+                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
+                        <td>{{ s.companyName if s.companyName else "" }}</td>
+                        <td>{{ s.sector if s.sector else "" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        <div style="flex:1;min-width:200px;max-width:420px;">
-            <div style="font-weight:bold;margin-bottom:2px;">Partial (Filtered, symbol_universe.partial.json):</div>
-            <div id="partial-table-scroll" class="universe-table-window partial">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Exchange</th>
-                            <th>Last Close</th>
-                            <th>Market Cap</th>
-                            <th>Company Name</th>
-                            <th>Sector</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in partial_symbols %}
-                        <tr>
-                            <td>{{ s.symbol }}</td>
-                            <td>{{ s.exchange }}</td>
-                            <td>{{ s.lastClose }}</td>
-                            <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
-                            <td>{{ s.companyName if s.companyName else "" }}</td>
-                            <td>{{ s.sector if s.sector else "" }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+    </div>
+    <div>
+        <div class="universe-table-label">Partial (Filtered, symbol_universe.partial.json):</div>
+        <div id="partial-table-scroll" class="universe-table-window partial">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Exchange</th>
+                        <th>Last Close</th>
+                        <th>Market Cap</th>
+                        <th>Company Name</th>
+                        <th>Sector</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in partial_symbols %}
+                    <tr>
+                        <td>{{ s.symbol }}</td>
+                        <td>{{ s.exchange }}</td>
+                        <td>{{ s.lastClose }}</td>
+                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
+                        <td>{{ s.companyName if s.companyName else "" }}</td>
+                        <td>{{ s.sector if s.sector else "" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        <div style="flex:1;min-width:200px;max-width:420px;">
-            <div style="font-weight:bold;margin-bottom:2px;">Final Universe (symbol_universe.json):</div>
-            <div id="final-table-scroll" class="universe-table-window final">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Exchange</th>
-                            <th>Last Close</th>
-                            <th>Market Cap</th>
-                            <th>Company Name</th>
-                            <th>Sector</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in final_symbols %}
-                        <tr>
-                            <td>{{ s.symbol }}</td>
-                            <td>{{ s.exchange }}</td>
-                            <td>{{ s.lastClose }}</td>
-                            <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
-                            <td>{{ s.companyName if s.companyName else "" }}</td>
-                            <td>{{ s.sector if s.sector else "" }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+    </div>
+    <div>
+        <div class="universe-table-label">Final Universe (symbol_universe.json):</div>
+        <div id="final-table-scroll" class="universe-table-window final">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Exchange</th>
+                        <th>Last Close</th>
+                        <th>Market Cap</th>
+                        <th>Company Name</th>
+                        <th>Sector</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in final_symbols %}
+                    <tr>
+                        <td>{{ s.symbol }}</td>
+                        <td>{{ s.exchange }}</td>
+                        <td>{{ s.lastClose }}</td>
+                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
+                        <td>{{ s.companyName if s.companyName else "" }}</td>
+                        <td>{{ s.sector if s.sector else "" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </body>

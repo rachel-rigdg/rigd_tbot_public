@@ -86,7 +86,7 @@ table th {
 }
 
 table tr:nth-child(even) {
-  background-color: #333;
+  background-color: #2d2d2d;
 }
 
 .pagination {
@@ -116,13 +116,15 @@ table tr:nth-child(even) {
 
 /* Symbol universe table windows */
 .universe-table-window {
+  display: block;
+  width: 100%;
   height: 200px;
   overflow-y: scroll;
-  border: 1px solid #aaa;
-  background: #20232a;
-  margin-bottom: 0;
+  border: 1px solid #999;
+  background: #23272e;
+  margin-bottom: 28px;
   margin-top: 4px;
-  border-radius: 0;
+  border-radius: 2px;
   padding: 0;
 }
 
@@ -137,6 +139,7 @@ table tr:nth-child(even) {
 .universe-table-label {
   font-weight: bold;
   margin-bottom: 2px;
+  color: #ccc;
 }
 
 @media (max-width: 1100px) {
