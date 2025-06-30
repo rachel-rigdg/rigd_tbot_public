@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from typing import List, Dict
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
-    save_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
+    save_universe_cache, load_blocklist, UniverseCacheError, get_screener_secrets
+)
+from tbot_bot.screeners.screener_filter import (
+    normalize_symbols, filter_symbols, dedupe_symbols
 )
 from tbot_bot.support.path_resolver import (
     resolve_universe_cache_path,
@@ -53,53 +56,6 @@ def load_unfiltered():
             return data.get("symbols", [])
     except Exception:
         return []
-
-def normalize_symbol_data(symbols: List[Dict]) -> List[Dict]:
-    last_close_aliases = ["lastClose", "close", "last_price", "price"]
-    market_cap_aliases = ["marketCap", "market_cap", "mktcap", "market_capitalization"]
-    normed = []
-    for s in symbols:
-        lc = None
-        mc = None
-        for k in last_close_aliases:
-            val = s.get(k, None)
-            if val not in (None, '', 'None', 'null'):
-                try:
-                    lc = float(val)
-                    break
-                except Exception:
-                    try:
-                        lc = float(Decimal(str(val)))
-                        break
-                    except Exception:
-                        lc = None
-        for k in market_cap_aliases:
-            val = s.get(k, None)
-            if val not in (None, '', 'None', 'null'):
-                try:
-                    mc = float(val)
-                    break
-                except Exception:
-                    try:
-                        mc = float(Decimal(str(val)))
-                        break
-                    except Exception:
-                        mc = None
-        s["lastClose"] = lc
-        s["marketCap"] = mc
-        if lc is not None and mc is not None and float(lc) >= 1.0:
-            normed.append(s)
-    return normed
-
-def dedupe_symbols(symbols: List[Dict]) -> List[Dict]:
-    seen = set()
-    deduped = []
-    for s in symbols:
-        key = s.get("symbol")
-        if key and key not in seen:
-            seen.add(key)
-            deduped.append(s)
-    return deduped
 
 def fetch_broker_symbol_metadata_crash_resilient(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     screener_secrets = get_screener_secrets()
@@ -147,21 +103,11 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
             quote = requests.get(quote_url, auth=auth)
             q = quote.json() if quote.status_code == 200 else {}
             time.sleep(UNIVERSE_SLEEP_TIME)
-            def safe_float(val):
-                try:
-                    if val is None or val == "" or (isinstance(val, str) and val.strip().lower() == "none"):
-                        return None
-                    return float(val)
-                except Exception:
-                    try:
-                        return float(Decimal(str(val)))
-                    except Exception:
-                        return None
             obj = {
                 "symbol": symbol,
                 "exchange": exch.strip(),
-                "lastClose": safe_float(q.get("pc")) or safe_float(q.get("c")),
-                "marketCap": safe_float(p.get("marketCapitalization")),
+                "lastClose": q.get("pc") or q.get("c"),
+                "marketCap": p.get("marketCapitalization"),
                 "name": p.get("name") or s.get("description") or "",
                 "sector": p.get("finnhubIndustry") or "",
                 "industry": "",
@@ -175,7 +121,7 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
                     f"Fetched {len(unfiltered_symbols)} symbols so far",
                     {"unfiltered_count": len(unfiltered_symbols)}
                 )
-            normed = normalize_symbol_data([obj])
+            normed = normalize_symbols([obj])
             filtered = filter_symbols(
                 normed,
                 exchanges=exchanges,
@@ -252,7 +198,7 @@ def _merge_and_dedupe_partials():
 
 def refilter_from_unfiltered(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     unfiltered_symbols = load_unfiltered()
-    normed = normalize_symbol_data(unfiltered_symbols)
+    normed = normalize_symbols(unfiltered_symbols)
     filtered = filter_symbols(
         normed,
         exchanges=exchanges,

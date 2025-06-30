@@ -12,6 +12,9 @@ from typing import List, Dict, Optional
 from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.config.env_bot import load_env_bot_config
+from tbot_bot.screeners.screener_filter import (
+    normalize_symbols, filter_symbols, dedupe_symbols
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -132,6 +135,8 @@ def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None)
         raise
     LOG.info(f"[screener_utils] Universe cache saved with {len(symbols)} symbols at {path}")
 
+# DEPRECATED: Use screener_filter.filter_symbols directly in all calling modules.
+# Left here for backward compatibility until all callers updated.
 def filter_symbols(
     symbols: List[Dict],
     exchanges: List[str],
@@ -142,58 +147,16 @@ def filter_symbols(
     blocklist: Optional[List[str]] = None,
     max_size: Optional[int] = None
 ) -> List[Dict]:
-    # Accept multiple key aliases for all fields
-    EXCHANGE_KEYS = ("exchange", "exch", "exchCode")
-    SYMBOL_KEYS = ("symbol", "ticker")
-    LASTCLOSE_KEYS = ("lastClose", "close", "last_price", "price")
-    MKTCAP_KEYS = ("marketCap", "market_cap", "mktcap", "market_capitalization")
-    BLOCKSET = set(b.upper() for b in blocklist) if blocklist else set()
-    filtered = []
-
-    for s in symbols:
-        # Symbol/Exchange lookup (robust)
-        sym = next((s.get(k) for k in SYMBOL_KEYS if k in s and s.get(k) not in (None, "")), None)
-        exch = next((s.get(k) for k in EXCHANGE_KEYS if k in s and s.get(k) not in (None, "")), None)
-        lc = next((s.get(k) for k in LASTCLOSE_KEYS if k in s and s.get(k) not in (None, "")), None)
-        mc = next((s.get(k) for k in MKTCAP_KEYS if k in s and s.get(k) not in (None, "")), None)
-
-        # Normalize/cast symbol, exchange
-        sym_str = str(sym).upper().strip() if sym else None
-        exch_str = str(exch).upper().strip() if exch else None
-
-        # Accept "US" as NYSE/NASDAQ only if exchanges list includes it
-        exch_match = exch_str in [e.upper() for e in exchanges] if exch_str else False
-
-        # Cast/correct price/cap to float robustly
-        def tofloat(val):
-            try:
-                if val is None or val == "" or (isinstance(val, str) and val.strip().lower() == "none"):
-                    return None
-                return float(val)
-            except Exception:
-                return None
-
-        lc_val = tofloat(lc)
-        mc_val = tofloat(mc)
-
-        # All criteria
-        if (
-            exch_match
-            and sym_str
-            and lc_val is not None and min_price <= lc_val < max_price
-            and mc_val is not None and min_market_cap <= mc_val <= max_market_cap
-            and sym_str not in BLOCKSET
-        ):
-            filtered.append(s)
-
-    if max_size is not None and len(filtered) > max_size:
-        filtered.sort(
-            key=lambda x: next((tofloat(x.get(k)) for k in MKTCAP_KEYS if k in x and x.get(k) not in (None, "")), 0.0),
-            reverse=True,
-        )
-        filtered = filtered[:max_size]
-    LOG.info(f"[screener_utils] Filtered symbols count: {len(filtered)} after robust alias, type, and missing-data handling.")
-    return filtered
+    return filter_symbols(
+        symbols,
+        exchanges,
+        min_price,
+        max_price,
+        min_market_cap,
+        max_market_cap,
+        blocklist,
+        max_size
+    )
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:
     if not path or not os.path.isfile(path):
