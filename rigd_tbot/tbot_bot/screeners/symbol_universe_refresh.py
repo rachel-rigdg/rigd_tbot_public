@@ -55,7 +55,6 @@ def load_unfiltered():
         return []
 
 def normalize_symbol_data(symbols: List[Dict]) -> List[Dict]:
-    # Robust normalization: accept all key aliases for lastClose and marketCap, type-cast as float, tolerate missing/null/variant keys.
     last_close_aliases = ["lastClose", "close", "last_price", "price"]
     market_cap_aliases = ["marketCap", "market_cap", "mktcap", "market_capitalization"]
     normed = []
@@ -171,6 +170,11 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
             unfiltered_symbols.append(obj)
             seen.add(symbol)
             write_unfiltered(dedupe_symbols(unfiltered_symbols))
+            if len(unfiltered_symbols) % 100 == 0:
+                log_progress(
+                    f"Fetched {len(unfiltered_symbols)} symbols so far",
+                    {"unfiltered_count": len(unfiltered_symbols)}
+                )
             normed = normalize_symbol_data([obj])
             filtered = filter_symbols(
                 normed,
@@ -184,13 +188,11 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
             )
             if filtered:
                 filtered_symbols.extend(filtered)
-                # Immediate write to partial and final universe
                 write_partial(dedupe_symbols(filtered_symbols))
                 save_universe_cache(dedupe_symbols(filtered_symbols))
     write_unfiltered(dedupe_symbols(unfiltered_symbols))
     write_partial(dedupe_symbols(filtered_symbols))
     save_universe_cache(dedupe_symbols(filtered_symbols))
-    # Final merge/dedupe (partial/final)
     _merge_and_dedupe_partials()
     return dedupe_symbols(filtered_symbols)
 
@@ -227,7 +229,6 @@ def fetch_ibkr_symbols(secrets, env):
     return []
 
 def _merge_and_dedupe_partials():
-    # After build/refilter, merge/overwrite to dedupe
     try:
         with open(UNFILTERED_PATH, "r", encoding="utf-8") as uf:
             unfiltered = json.load(uf).get("symbols", [])
@@ -245,7 +246,6 @@ def _merge_and_dedupe_partials():
             final = json.load(cf).get("symbols", [])
     except Exception:
         final = []
-    # Merge all three
     merged = dedupe_symbols(partial + final)
     write_partial(merged)
     save_universe_cache(merged)
@@ -267,6 +267,31 @@ def refilter_from_unfiltered(env, blocklist, exchanges, min_price, max_price, mi
     save_universe_cache(dedupe_symbols(filtered))
     _merge_and_dedupe_partials()
     return filtered
+
+def disk_integrity_check_partial_vs_final():
+    try:
+        with open(resolve_universe_partial_path(), "r", encoding="utf-8") as pf:
+            partial = json.load(pf).get("symbols", [])
+    except Exception:
+        partial = []
+    try:
+        with open(resolve_universe_cache_path(), "r", encoding="utf-8") as cf:
+            final = json.load(cf).get("symbols", [])
+    except Exception:
+        final = []
+    set_partial = set(s.get("symbol") for s in partial if s.get("symbol"))
+    set_final = set(s.get("symbol") for s in final if s.get("symbol"))
+    if set_partial != set_final or len(partial) != len(final):
+        log_progress("DISK INTEGRITY CHECK FAILED: partial and final JSON differ!", {
+            "partial_count": len(partial),
+            "final_count": len(final),
+            "partial_not_final": list(set_partial - set_final),
+            "final_not_partial": list(set_final - set_partial),
+        })
+    else:
+        log_progress("DISK INTEGRITY CHECK PASSED: partial matches final.", {
+            "count": len(partial)
+        })
 
 def main():
     env = load_env_bot_config()
@@ -306,21 +331,8 @@ def main():
     try:
         partial_path = resolve_universe_partial_path()
         write_partial(dedupe_symbols(symbols_filtered))
-        with open(partial_path, "r", encoding="utf-8") as pf:
-            partial = json.load(pf)
-        partial_symbols = partial["symbols"]
-        if dedupe_symbols(symbols_filtered) != dedupe_symbols(partial_symbols):
-            log_progress("INTEGRITY CHECK FAILED: RAM and partial JSON differ!", {
-                "ram_count": len(symbols_filtered),
-                "partial_count": len(partial_symbols)
-            })
-            raise RuntimeError("Integrity check failed: RAM and partial JSON differ.")
-        else:
-            log_progress("INTEGRITY CHECK PASSED: RAM matches partial JSON.", {
-                "count": len(symbols_filtered)
-            })
     except Exception as e:
-        log_progress("Integrity check error (could not read partial or mismatch): proceeding with RAM.", {"error": str(e)})
+        log_progress("Write partial failed", {"error": str(e)})
 
     try:
         save_universe_cache(dedupe_symbols(symbols_filtered), bot_identity=bot_identity)
@@ -328,6 +340,8 @@ def main():
     except Exception as e:
         log_progress("Failed to write universe cache", {"error": str(e)})
         raise
+
+    disk_integrity_check_partial_vs_final()
 
     audit = {
         "build_time_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
