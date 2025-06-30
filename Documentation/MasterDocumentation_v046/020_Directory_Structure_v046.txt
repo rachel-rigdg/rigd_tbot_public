@@ -217,7 +217,10 @@ rigd_tbot/
 │   │   ├── ibkr_screener.py                        # Finnhub API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
 │   │   ├── screener_base.py                        # Abstract base for all screener modules. Defines core interface, loads universe, etc.
 │   │   ├── screener_utils.py                       # Shared utility for loading/saving universe, filtering, etc.
-│   │   └── symbol_universe_refresh.py              #  scheduled process to update symbol universe after hours.
+│   │   ├── symbol_universe_refresh.py              #  scheduled process to update symbol universe after hours.
+│   │   ├── tradier_screener.py                     # tradier API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
+│   │   ├── universe_logger.py                      # Dedicated logger for all universe cache and screener symbol universe operations.
+│   │   └── universe_rebuild_cli.py                 #  CLI tool to manually trigger a universe cache rebuild (nightly process logic)
 │   │
 │   ├── storage/				                    # Persistent runtime data: encrypted secrets, keys, backups, and exports
 │   │   ├── backups/                                # Daily encrypted ledger/config backups (UTC timestamped)
@@ -309,6 +312,7 @@ rigd_tbot/
     │   │   ├── configuration.js        # Handles configuration form logic, validation, and AJAX submits on configuration.html
     │   │   ├── main_ui.js         		# Handles live dashboard behavior, state polling, and controls config overlay in main.html
     │   │   ├── wait.js            		# Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
+    │   │   ├── universe.js             # updates and serves status components to Universe.html
     │   │   └── shared_utils.js    		# Provides shared API helpers and utility functions for frontend JavaScript modules        
     │   │
     │   └── css/
@@ -335,7 +339,8 @@ rigd_tbot/
     │       │   ├── settings.css                    # Settings page: settings form blocks and layout
     │       │   ├── status.css                      # Status page: status grid, error color, responsive tweaks
     │       │   ├── test.css                        # Test mode/system test sequence page
-    │       │   └── users.css                       # Users page: user list, RBAC, user management forms
+    │       │   ├── users.css                       # Users page: user list, RBAC, user management forms
+    │       │   └── universe.css                    # Symbol universe UI page - monitor rebuild and re-filter Symbol Universe
     │       │
     │       └── shared
     │           ├── forms.css                       # Form input and UI style rules
@@ -363,7 +368,7 @@ rigd_tbot/
     │   ├── test_web.py				            # Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset. Never launches any worker/watcher; writes test_mode.flag only. Reads test_mode.log for UI.
     │   ├── universe_web.py                     # Endpoints for viewing, rebuilding, and exporting the symbol universe cache.
     │   └── users_web.py                        # User list, create, edit, delete, and RBAC assignment endpoints (admin only).
-   │
+    │
     ├── robots.txt                              # Blocks bots and search engine indexing (security)
     │
     ├── support/                                # Web UI supporting modules: auth, crypto, session, CSRF, helpers. Never launches any worker/watcher; only imported.

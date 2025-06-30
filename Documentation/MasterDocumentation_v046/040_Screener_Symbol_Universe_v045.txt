@@ -1,149 +1,137 @@
 ================================================================================
 Document: 040
 Screener_Symbol_Universe
-Version: v045
-Date: UTC:2025-06-24 00:00:00
+Version: v046
+Date: UTC:2025-06-30 00:00:00
 ================================================================================
 
 Title: Screener Symbol Universe — Universe Caching, Filtering, and Runtime Use
 
 Overview:
 --------------------------------------------------------------------------------
-This specification defines the unified approach for building, caching, filtering, and consuming the symbol universe for all trading screeners in the RIGD TradeBot system. The aim is to guarantee efficiency, scalability, and compliance with API quotas while enforcing a consistent symbol selection logic across brokers (Alpaca, IBKR, Tradier, etc.).
+This specification defines the unified approach for building, caching, filtering, and consuming the symbol universe for all trading screeners in the RIGD TradeBot system. It now incorporates *crash resilience*, real-time auditability, and a robust disk-first design using unfiltered and filtered JSON universes. Manual and automated re-filtering are fully supported.
 
-All screener modules must source their eligible symbol list exclusively from the nightly-generated, pre-filtered symbol universe file (`symbol_universe.json`). No screener is permitted to fetch the global exchange symbol list or screen the full market in real time.
+All screener modules must source their eligible symbol list exclusively from the pre-filtered, pre-built universe file (`symbol_universe.json`). No screener may fetch global lists or build real-time universes.
 
 --------------------------------------------------------------------------------
 Section 1: Core Principles
 --------------------------------------------------------------------------------
 
-1. **One canonical symbol universe file** is generated per trading day and must be the *only* source of symbols for all screeners.
-2. **Universe is created overnight** (after market close, before market open) using only NYSE/NASDAQ, with price and market cap filters applied.
-3. **API quota minimization:** Only minimal, targeted API calls are made at screener runtime (quotes only for pre-approved symbols).
-4. **Universe is consistent** for all strategies, brokers, and filter modules.
-5. **Universe is stored at a standard path**: `tbot_bot/output/screeners/symbol_universe.json`
-6. **No screener can run** unless the universe cache exists and passes validation.
-7. **Universe refresh is scheduled or automatically triggered by the bot runtime on startup and before trading, and always uses after-hours market data.**
-8. **Manual force rebuild is always available via the Web UI.**
-9. **On first boot, a stripped-down placeholder universe is accepted but will be rebuilt before the first trading session.**
+1. **Single canonical symbol universe file** (`symbol_universe.json`) is generated per trading day and must be the *only* source for all screeners.
+2. **Universe is built overnight** (after market close, before market open) using NYSE/NASDAQ, with filters applied.
+3. **API quota minimization:** Only minimal API calls for live pricing of already-approved symbols are permitted during runtime.
+4. **All strategies and brokers share the same universe** per trading day.
+5. **Standardized file paths:**
+   - `tbot_bot/output/screeners/symbol_universe.unfiltered.json` — Raw, unfiltered, deduplicated symbols.
+   - `tbot_bot/output/screeners/symbol_universe.partial.json` — Inline-filtered, partial progress file.
+   - `tbot_bot/output/screeners/symbol_universe.json` — Final, validated, production universe.
+6. **Universe build is disk-first, crash-resilient:** All symbols are written as fetched; build can resume after crash from the unfiltered file.
+7. **Manual 'Force Rebuild' and 'Re-filter' always available in the Web UI.**
+8. **UI displays build status, table counts, and supports live searching/comparison of all universes.**
+9. **No runtime fetching of global symbol lists; universe is fixed for each session and only updated by automated/manual triggers.**
+10. **First boot accepts a placeholder, but full rebuild is required before trading.**
 
 --------------------------------------------------------------------------------
 Section 2: Universe Construction Workflow
 --------------------------------------------------------------------------------
 
-1. **Fetch complete symbol list for NYSE and NASDAQ** from the upstream provider (Alpaca, IBKR, or other).
-   - Must include: ticker, exchange, company name, latest close price, market cap, and optionally sector/industry.
-   - Do NOT include OTC, pink sheets, or non-equities.
+1. **Fetch all NYSE/NASDAQ symbols** (excluding OTC, pink sheets, non-equities).
+   - Gather: symbol, exchange, company name, last close, market cap, sector/industry.
 
-2. **Filter for minimum requirements:**
-   - Exchange: Must be "NYSE" or "NASDAQ"
-   - Price: Last close price >= `$MIN_PRICE` (e.g., $5), <= `$MAX_PRICE` (e.g., $100)
-   - Market Cap: >= `$MIN_MARKET_CAP` (e.g., $2B), <= `$MAX_MARKET_CAP` (e.g., $10B)
-   - Must have valid, nonzero values for all fields
+2. **Write every symbol (as fetched) to `symbol_universe.unfiltered.json`**.
+   - Deduplicate as you go (based on symbol key).
+   - This file is always up-to-date and acts as the crash-recovery checkpoint.
 
-3. **Store all qualifying symbols and metadata in `symbol_universe.json`**.
-   - Each entry is an object with at least:
-     ```
-     {
-         "symbol": "AAPL",
-         "exchange": "NASDAQ",
-         "companyName": "Apple Inc.",
-         "lastClose": 189.30,
-         "marketCap": 3000000000000,
-         "sector": "Technology",
-         "industry": "Consumer Electronics"
-     }
-     ```
-   - The file is a JSON array of such objects or, in latest spec, a JSON object with schema version, build timestamp, and a "symbols" array.
-   - On first boot, a stripped-down placeholder (small array or incomplete file) is acceptable for bootstrap only; the bot will force a complete rebuild before trading.
+3. **Filter every symbol as it is fetched:**
+   - Exchange must be "NYSE" or "NASDAQ"
+   - Price: `MIN_PRICE` ≤ lastClose ≤ `MAX_PRICE`
+   - Market Cap: `MIN_MARKET_CAP` ≤ marketCap ≤ `MAX_MARKET_CAP`
+   - Must have valid, nonzero, non-null fields.
+   - *Do not filter by volume or after-hours-only variables during the build.*
 
-4. **Universe file is overwritten nightly or on bot startup if missing or stale.** No incremental updates.
+4. **If a symbol passes filter, write immediately to both `symbol_universe.partial.json` and `symbol_universe.json`.**
 
-5. **Universe fetch and cache script is idempotent** — rerunning it always results in a fresh, fully-filtered universe file for next-day use.
+5. **At end-of-build:**
+   - Compare/merge `partial.json` and `json` to remove duplicates/missing entries, ensuring integrity.
+   - Write build audit/log entry.
+
+6. **Manual re-filter (Web UI):**
+   - Re-filter all symbols in `symbol_universe.unfiltered.json` with current filters.
+   - Update both `partial.json` and `json` and merge at end.
+   - No new fetches—instant feedback for filter tuning.
+
+7. **Progress, heartbeat, and event logs** are written to `universe_ops.log`.
 
 --------------------------------------------------------------------------------
 Section 3: File/Script Layout & Responsibilities
 --------------------------------------------------------------------------------
 
-- `tbot_bot/screeners/symbol_universe_refresh.py` — Fetches and writes new universe (triggered automatically by bot at startup and before trading; can also be called manually from CLI or Web UI).
-- `tbot_bot/output/screeners/symbol_universe.json` — Output data file, consumed by all screeners.
-- `tbot_bot/screeners/screener_utils.py` — Loader/validator for runtime modules (ensures file exists, schema valid, not stale, and not a placeholder).
-- `tbot_bot/screeners/alpaca_screener.py`, `ibkr_screener.py`, etc. — All must call screener_utils or symbol_universe loader for their symbol list.
-- **No external cron or systemd trigger is required. The bot runtime manages symbol universe freshness automatically.**
+- `symbol_universe.unfiltered.json`: All raw, deduped, fetched symbols.
+- `symbol_universe.partial.json`: Inline-filtered, progress-tracking, filtered symbols.
+- `symbol_universe.json`: Final, validated, production-ready universe.
+- `universe_ops.log`: Progress log for universe build/rebuild.
+
+- `tbot_bot/screeners/symbol_universe_refresh.py`: Orchestrates fetch, filter, and all file writes. Supports crash recovery and manual/automated triggers.
+- `tbot_bot/screeners/screener_utils.py`: Loads/validates all three universes, provides filtering/merge, and utility functions.
+- `tbot_web/py/universe_web.py`: Web UI and API endpoints for display, rebuild, refilter, export, and status.
 
 --------------------------------------------------------------------------------
-Section 4: Runtime Screener Behavior
+Section 4: Web UI and User Actions
 --------------------------------------------------------------------------------
 
-1. **No runtime fetches of global symbol lists.**
-   - Screeners may *only* read from the pre-built symbol universe.
-   - Only quote/pricing endpoints may be called live, and only for pre-filtered symbols.
+1. **Web UI `/universe` displays:**
+   - Counts and status for all three universes.
+   - Three side-by-side, infinitely scrollable tables (unfiltered, partial, final).
+   - Search/filter box applies across all tables.
+   - At-a-glance counts for each file for checksum.
+   - “Force Rebuild” and “Re-filter” buttons.
+   - Progress/heartbeat log in real time.
 
-2. **Screeners may filter further** by additional strategy criteria (VWAP, volume, etc.), but these filters are always applied after the universe load.
+2. **Manual 'Re-filter' triggers re-filtering from unfiltered, writing partial/final and merging.**
 
-3. **If `symbol_universe.json` is missing, invalid, stale, or a placeholder,** the bot runtime will automatically trigger a rebuild before trading. If the rebuild fails, all trading is halted.
-
-4. **Manual force-rebuild is always available from the Web UI `/universe` POST.**
-
-5. **New symbol metadata is not added during market hours.**
-   - Universe is fixed for the trading session and only updated by the automatic or manual rebuild triggers.
+3. **Export (CSV/JSON) is available for current universe.**
 
 --------------------------------------------------------------------------------
 Section 5: Validation & Maintenance
 --------------------------------------------------------------------------------
 
-1. **Validation on universe cache creation:**
-   - All entries must have: symbol, exchange, lastClose, marketCap (at minimum).
-   - Duplicates must be eliminated.
-   - File must be valid UTF-8 JSON.
-   - Any fetch failures, API errors, or truncations must be logged with UTC timestamps.
+1. **Validation for every file:**
+   - Every entry must have symbol, exchange, lastClose, marketCap.
+   - Deduplication required.
+   - All files must be valid UTF-8 JSON.
+   - Log all errors with UTC timestamps.
 
-2. **Test/QA script:**  
-   - A utility script must be included (`test_universe_cache.py`) that validates cache contents and checks schema.
+2. **Test/QA utility script** validates all files and filter logic.
 
-3. **Universe refresh must run after the market closes** (e.g., 6pm ET), never during live hours. If the bot was offline, the first startup after close will rebuild the universe.
+3. **No universe file is deleted or overwritten on failure—atomic save only on successful build.**
 
-4. **Universe file permissions:**  
-   - File must be readable by the trading bot.
-   - Refresh must overwrite with correct permissions and not break atomicity.
+4. **Universe is only updated after market close or on-demand; runtime never changes universe.**
+
 
 --------------------------------------------------------------------------------
 Section 6: API, Quota, and Performance Considerations
 --------------------------------------------------------------------------------
 
-1. **All API keys used must be sourced securely** (decrypted at runtime, never hardcoded).
-2. **Only fetch the minimum required data for universe creation.**
-   - Avoid fields requiring premium entitlements.
-   - For market cap/price, use official close data (no after-hours or premarket).
+1. **API keys sourced securely (never hardcoded).**
+2. **Only fetch minimal, required fields.**
+3. **Universe build must only use the following Finnhub endpoints: `/stock/symbol`, `/stock/profile2`, `/quote`. No other endpoints are permitted.**
+4. **Throttle/batch as needed for API quotas. Enforce provider rate limits (e.g., Finnhub 300 requests/minute) via UNIVERSE_SLEEP_TIME between requests.**
+5. **Resume/continue supported via `unfiltered.json`.**
 
-3. **If provider imposes API quota,** fetch in batches and throttle as needed.
-
-4. **Universe refresh script should be retry-safe and resume on partial failure** (if required by provider limits).
 
 --------------------------------------------------------------------------------
 Section 7: Error Handling, Logging, and Recovery
 --------------------------------------------------------------------------------
 
-1. **All errors and API failures during universe fetch must be logged** to `output/bootstrap/logs/` with UTC timestamp.
-2. **On failure:** old universe file is NOT deleted or replaced. Only overwrite on complete success.
-3. **A failed universe refresh should trigger alerting** (future enhancement: notify admin).
+1. **All failures, API errors, and build anomalies logged to `universe_ops.log` (UTC).**
+2. **Failed/unexpected build never overwrites previous universe.**
+3. **On failure, alerting/notification may be triggered (future enhancement).**
 
 --------------------------------------------------------------------------------
-Section 8: Extension and Future-Proofing
+Section 8: Extensibility and Future-Proofing
 --------------------------------------------------------------------------------
 
-1. **Support multi-broker symbol universes** (if different brokers require different filters/formats, support multiple caches with clearly named files).
-2. **Support for additional metadata:** (e.g., beta, volatility, short interest, etc.) via modular expansion.
-3. **For international expansion,** architecture must allow universe filters to adapt to other exchanges/markets as required.
-
---------------------------------------------------------------------------------
-Section 9: Maintenance, Change Management, and Documentation
---------------------------------------------------------------------------------
-
-1. **Universe cache spec must be documented and versioned.**
-2. **Any change to the cache logic, schema, or runtime contract must trigger a spec/version update.**
-3. **All screener and strategy modules must be validated against new cache logic before deployment.**
-
-================================================================================
+1. **Architecture supports multiple brokers, multiple universes, and future expansion to new metadata fields.**
+2. **All code and spec are versioned.**
 
 ================================================================================
