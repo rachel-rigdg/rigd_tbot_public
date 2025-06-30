@@ -45,7 +45,7 @@ function renderRow(s) {
         `<td>${s.exchange || ""}</td>` +
         `<td>${typeof s.lastClose === "number" ? s.lastClose.toLocaleString() : (s.lastClose || "")}</td>` +
         `<td>${typeof s.marketCap === "number" ? s.marketCap.toLocaleString() : (s.marketCap || "")}</td>` +
-        `<td>${s.name || ""}</td>` +
+        `<td>${s.companyName || s.name || ""}</td>` +
         `<td>${s.sector || ""}</td>` +
     "</tr>";
 }
