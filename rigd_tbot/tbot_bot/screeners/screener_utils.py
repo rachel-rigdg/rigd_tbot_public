@@ -13,7 +13,7 @@ from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_filter import (
-    normalize_symbols, filter_symbols, dedupe_symbols
+    normalize_symbols, filter_symbols as core_filter_symbols, dedupe_symbols
 )
 
 LOG = logging.getLogger(__name__)
@@ -136,7 +136,6 @@ def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None)
     LOG.info(f"[screener_utils] Universe cache saved with {len(symbols)} symbols at {path}")
 
 # DEPRECATED: Use screener_filter.filter_symbols directly in all calling modules.
-# Left here for backward compatibility until all callers updated.
 def filter_symbols(
     symbols: List[Dict],
     exchanges: List[str],
@@ -145,9 +144,10 @@ def filter_symbols(
     min_market_cap: float,
     max_market_cap: float,
     blocklist: Optional[List[str]] = None,
-    max_size: Optional[int] = None
+    max_size: Optional[int] = None,
+    broker_obj=None
 ) -> List[Dict]:
-    return filter_symbols(
+    return core_filter_symbols(
         symbols,
         exchanges,
         min_price,
@@ -155,7 +155,8 @@ def filter_symbols(
         min_market_cap,
         max_market_cap,
         blocklist,
-        max_size
+        max_size,
+        broker_obj=broker_obj
     )
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:

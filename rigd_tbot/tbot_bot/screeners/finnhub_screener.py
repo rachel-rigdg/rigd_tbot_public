@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from tbot_bot.screeners.screener_base import ScreenerBase
 from tbot_bot.screeners.screener_utils import get_screener_secrets
+from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
@@ -89,7 +90,9 @@ class FinnhubScreener(ScreenerBase):
         limit = int(self.env.get("SCREENER_LIMIT", 3))
         test_mode_active = is_test_mode_active()
 
-        results = []
+        symbol_dict = {q["symbol"]: q for q in quotes}
+
+        price_candidates = []
         for q in quotes:
             symbol = q["symbol"]
             current = float(q.get("c", 0))
@@ -99,9 +102,43 @@ class FinnhubScreener(ScreenerBase):
             if current <= 0 or open_ <= 0 or vwap <= 0:
                 continue
 
+            price_candidates.append({
+                "symbol": symbol,
+                "price": current,
+                "vwap": vwap,
+                "open": open_
+            })
+
+        # Centralized filter (uses price as lastClose)
+        filtered = core_filter_symbols(
+            [
+                {
+                    "symbol": d["symbol"],
+                    "lastClose": d["price"],
+                    "marketCap": 1e9,   # Placeholder; real value should come from cache if available
+                    "exchange": "US"
+                }
+                for d in price_candidates
+            ],
+            exchanges=["US"],
+            min_price=MIN_PRICE,
+            max_price=MAX_PRICE,
+            min_market_cap=min_cap,
+            max_market_cap=max_cap,
+            blocklist=None,
+            max_size=limit
+        )
+
+        results = []
+        for q in price_candidates:
+            if not any(f["symbol"] == q["symbol"] for f in filtered):
+                continue
+            symbol = q["symbol"]
+            current = q["price"]
+            open_ = q["open"]
+            vwap = q["vwap"]
+
             if test_mode_active:
-                if current < MIN_PRICE or (current > MAX_PRICE and not FRACTIONAL):
-                    continue
                 results.append({
                     "symbol": symbol,
                     "price": current,
@@ -110,11 +147,6 @@ class FinnhubScreener(ScreenerBase):
                 })
                 if len(results) >= limit:
                     break
-                continue
-
-            if current < MIN_PRICE:
-                continue
-            if current > MAX_PRICE and not FRACTIONAL:
                 continue
 
             gap = abs((current - open_) / open_)

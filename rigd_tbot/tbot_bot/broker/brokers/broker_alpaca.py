@@ -130,3 +130,24 @@ class AlpacaBroker:
             writer.writeheader()
             writer.writerows(rows)
             return output.getvalue()
+
+    def is_symbol_tradable(self, symbol):
+        try:
+            resp = self._request("GET", f"/v2/assets/{symbol}")
+            return resp.get("tradable", False)
+        except Exception:
+            return False
+
+    def is_symbol_fractional(self, symbol):
+        try:
+            resp = self._request("GET", f"/v2/assets/{symbol}")
+            return resp.get("fractionable", False)
+        except Exception:
+            return False
+
+    def get_symbol_min_order_size(self, symbol):
+        try:
+            resp = self._request("GET", f"/v2/assets/{symbol}")
+            return resp.get("min_order_size", None)
+        except Exception:
+            return None

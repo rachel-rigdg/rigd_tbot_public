@@ -73,3 +73,27 @@ def get_positions():
     except Exception as e:
         log_event("broker_api", f"Get positions error: {e}")
         return {"error": str(e)}
+
+def is_symbol_tradable(symbol):
+    try:
+        broker = get_active_broker()
+        return broker.is_symbol_tradable(symbol)
+    except Exception as e:
+        log_event("broker_api", f"is_symbol_tradable error: {e}")
+        return False
+
+def is_symbol_fractional(symbol):
+    try:
+        broker = get_active_broker()
+        return broker.is_symbol_fractional(symbol)
+    except Exception as e:
+        log_event("broker_api", f"is_symbol_fractional error: {e}")
+        return False
+
+def get_symbol_min_order_size(symbol):
+    try:
+        broker = get_active_broker()
+        return broker.get_symbol_min_order_size(symbol)
+    except Exception as e:
+        log_event("broker_api", f"get_symbol_min_order_size error: {e}")
+        return None

@@ -104,6 +104,38 @@ class IBKRBroker:
         # Placeholder: IBKR has no direct market open call
         return True
 
+    def is_symbol_tradable(self, symbol):
+        try:
+            contract = Stock(symbol, "SMART", "USD")
+            details = self.client.reqContractDetails(contract)
+            return bool(details)
+        except Exception:
+            return False
+
+    def is_symbol_fractional(self, symbol):
+        try:
+            contract = Stock(symbol, "SMART", "USD")
+            details = self.client.reqContractDetails(contract)
+            if not details:
+                return False
+            # Heuristic: IBKR US stocks supporting fractional trading
+            for d in details:
+                if hasattr(d, "minTick") and d.minTick < 1.0:
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def get_symbol_min_order_size(self, symbol):
+        try:
+            contract = Stock(symbol, "SMART", "USD")
+            details = self.client.reqContractDetails(contract)
+            if details and hasattr(details[0], "minSize"):
+                return details[0].minSize
+            return None
+        except Exception:
+            return None
+
     def download_trade_ledger_csv(self, start_date=None, end_date=None, output_path=None):
         """
         Downloads executed trades from IBKR and writes a deduplicated CSV to output_path.

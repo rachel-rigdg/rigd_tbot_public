@@ -6,6 +6,7 @@ import requests
 import time
 from tbot_bot.screeners.screener_base import ScreenerBase
 from tbot_bot.screeners.screener_utils import get_screener_secrets
+from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
 
 config = get_bot_config()
@@ -46,7 +47,7 @@ class AlpacaScreener(ScreenerBase):
             url_bars = f"{BROKER_URL.rstrip('/')}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=1"
             auth = (BROKER_USERNAME, BROKER_PASSWORD) if BROKER_USERNAME and BROKER_PASSWORD else None
             try:
-                bars_resp = requests.get(url_bars, headers={k:v for k,v in HEADERS.items() if v}, timeout=API_TIMEOUT, auth=auth)
+                bars_resp = requests.get(url_bars, headers={k: v for k, v in HEADERS.items() if v}, timeout=API_TIMEOUT, auth=auth)
                 if bars_resp.status_code != 200:
                     log(f"Error fetching bars for {symbol}: status {bars_resp.status_code}")
                     continue
@@ -79,26 +80,59 @@ class AlpacaScreener(ScreenerBase):
         """
         strategy = self.env.get("STRATEGY_NAME", "open")
         gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
+        min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
+        max_cap_key = f"MAX_MARKET_CAP_{strategy.upper()}"
         max_gap = float(self.env.get(gap_key, 0.1))
+        min_cap = float(self.env.get(min_cap_key, 2e9))
+        max_cap = float(self.env.get(max_cap_key, 1e10))
+        limit = int(self.env.get("SCREENER_LIMIT", 3))
 
-        results = []
+        price_candidates = []
         for q in quotes:
             symbol = q["symbol"]
             current = float(q.get("c", 0))
             open_ = float(q.get("o", 0))
             vwap = float(q.get("vwap", 0))
-
             if current <= 0 or open_ <= 0 or vwap <= 0:
                 continue
-            if current < MIN_PRICE:
-                continue
-            if current > MAX_PRICE and not FRACTIONAL:
-                continue
+            price_candidates.append({
+                "symbol": symbol,
+                "price": current,
+                "vwap": vwap,
+                "open": open_
+            })
 
+        # Centralized filter (uses price as lastClose)
+        filtered = core_filter_symbols(
+            [
+                {
+                    "symbol": d["symbol"],
+                    "lastClose": d["price"],
+                    "marketCap": 1e9,  # Placeholder, fill from cache if needed
+                    "exchange": "US"
+                }
+                for d in price_candidates
+            ],
+            exchanges=["US"],
+            min_price=MIN_PRICE,
+            max_price=MAX_PRICE,
+            min_market_cap=min_cap,
+            max_market_cap=max_cap,
+            blocklist=None,
+            max_size=limit
+        )
+
+        results = []
+        for q in price_candidates:
+            if not any(f["symbol"] == q["symbol"] for f in filtered):
+                continue
+            symbol = q["symbol"]
+            current = q["price"]
+            open_ = q["open"]
+            vwap = q["vwap"]
             gap = abs((current - open_) / open_)
             if gap > max_gap:
                 continue
-
             momentum = abs(current - open_) / open_
             results.append({
                 "symbol": symbol,

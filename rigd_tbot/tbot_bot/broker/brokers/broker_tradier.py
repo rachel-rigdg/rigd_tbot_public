@@ -87,6 +87,27 @@ class TradierBroker:
         except Exception:
             return False
 
+    def is_symbol_tradable(self, symbol):
+        try:
+            url = f"/markets/lookup"
+            params = {"q": symbol}
+            res = self._request("GET", url, params=params)
+            securities = res.get("securities", {}).get("security", [])
+            for sec in securities:
+                if sec.get("symbol", "").upper() == symbol.upper():
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def is_symbol_fractional(self, symbol):
+        # Tradier does not support fractional trading for equities as of 2024, return False for all
+        return False
+
+    def get_symbol_min_order_size(self, symbol):
+        # Tradier equities: minimum size = 1 share, no fractional
+        return 1
+
     def download_trade_ledger_csv(self, start_date=None, end_date=None, output_path=None):
         """
         Downloads executed trades from Tradier and writes a deduplicated CSV to output_path.

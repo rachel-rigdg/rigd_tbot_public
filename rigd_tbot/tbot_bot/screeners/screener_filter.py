@@ -1,6 +1,7 @@
 # tbot_bot/screeners/screener_filter.py
 # Centralized, screener-agnostic symbol normalization and filtering for TradeBot v1.0.0
 # 100% spec-compliant: robust field alias handling, MIC/exchange mapping, type safety, blocklist, and cap/price gating.
+# Supports broker-level tradability and fractional checks.
 
 import re
 from decimal import Decimal
@@ -47,14 +48,11 @@ def tofloat(val):
             return None
 
 def normalize_symbol(raw: Dict) -> Dict:
-    # Robustly normalize all fields to canonical TradeBot format
     norm = {}
-    # Symbol
     for k in SYMBOL_KEYS:
         if k in raw and raw[k] not in (None, "", "None"):
             norm["symbol"] = str(raw[k]).upper().strip()
             break
-    # Exchange/MIC
     mic_val = None
     for k in EXCHANGE_KEYS:
         v = raw.get(k)
@@ -62,31 +60,26 @@ def normalize_symbol(raw: Dict) -> Dict:
             mic_val = v
             break
     norm["exchange"] = mic_to_exchange(mic_val)
-    # Last Close
     for k in LASTCLOSE_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
             norm["lastClose"] = tofloat(v)
             break
-    # Market Cap
     for k in MKTCAP_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
             norm["marketCap"] = tofloat(v)
             break
-    # Name/Description
     for k in NAME_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
             norm["companyName"] = str(v).strip()
             break
-    # Sector
     for k in SECTOR_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
             norm["sector"] = str(v).strip()
             break
-    # Volume
     for k in VOLUME_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
@@ -95,7 +88,6 @@ def normalize_symbol(raw: Dict) -> Dict:
             except Exception:
                 norm["volume"] = 0
             break
-    # Preserve all other fields for downstream use
     for k in raw:
         if k not in norm:
             norm[k] = raw[k]
@@ -111,14 +103,13 @@ def filter_symbol(
     max_price: float,
     min_market_cap: float,
     max_market_cap: float,
-    blockset: Optional[set] = None
+    blockset: Optional[set] = None,
+    broker_obj=None
 ) -> bool:
-    # All gating is on normalized fields
     exch = s.get("exchange", "")
     sym = s.get("symbol", "")
     lc  = s.get("lastClose", None)
     mc  = s.get("marketCap", None)
-    # Accept "US" as any US major exchange if needed
     if "US" in [e.upper() for e in exchanges]:
         valid_exchange = exch.upper() in ("NASDAQ", "NYSE", "AMEX", "BATS", "OTC")
     else:
@@ -133,6 +124,12 @@ def filter_symbol(
         return False
     if not (min_market_cap <= mc <= max_market_cap):
         return False
+    # Broker-level tradability/fractional support, if supplied
+    if broker_obj:
+        if hasattr(broker_obj, "is_symbol_tradable") and not broker_obj.is_symbol_tradable(sym):
+            return False
+        if lc >= max_price and hasattr(broker_obj, "is_symbol_fractional") and not broker_obj.is_symbol_fractional(sym):
+            return False
     return True
 
 def filter_symbols(
@@ -143,7 +140,8 @@ def filter_symbols(
     min_market_cap: float,
     max_market_cap: float,
     blocklist: Optional[List[str]] = None,
-    max_size: Optional[int] = None
+    max_size: Optional[int] = None,
+    broker_obj=None
 ) -> List[Dict]:
     blockset = set(b.upper() for b in blocklist) if blocklist else set()
     normalized = normalize_symbols(symbols)
@@ -156,10 +154,21 @@ def filter_symbols(
             max_price,
             min_market_cap,
             max_market_cap,
-            blockset
+            blockset,
+            broker_obj
         )
     ]
     if max_size is not None and len(filtered) > max_size:
         filtered.sort(key=lambda x: x.get("marketCap", 0.0) or 0.0, reverse=True)
         filtered = filtered[:max_size]
     return filtered
+
+def dedupe_symbols(symbols: List[Dict]) -> List[Dict]:
+    seen = set()
+    deduped = []
+    for s in symbols:
+        key = s.get("symbol")
+        if key and key not in seen:
+            seen.add(key)
+            deduped.append(s)
+    return deduped

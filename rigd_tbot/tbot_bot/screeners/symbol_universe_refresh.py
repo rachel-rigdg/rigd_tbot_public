@@ -14,6 +14,7 @@ from tbot_bot.screeners.screener_utils import (
 from tbot_bot.screeners.screener_filter import (
     normalize_symbols, filter_symbols, dedupe_symbols
 )
+from tbot_bot.broker.broker_api import get_active_broker
 from tbot_bot.support.path_resolver import (
     resolve_universe_cache_path,
     resolve_universe_partial_path,
@@ -60,9 +61,10 @@ def load_unfiltered():
 def fetch_broker_symbol_metadata_crash_resilient(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     screener_secrets = get_screener_secrets()
     screener_name = (screener_secrets.get("SCREENER_NAME") or "FINNHUB").strip().upper()
+    broker_obj = get_active_broker()
     if screener_name == "FINNHUB":
         return fetch_finnhub_symbols_crash_resilient(
-            screener_secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size
+            screener_secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj
         )
     elif screener_name == "TRADIER":
         return fetch_tradier_symbols(screener_secrets, env)
@@ -71,7 +73,7 @@ def fetch_broker_symbol_metadata_crash_resilient(env, blocklist, exchanges, min_
     else:
         raise RuntimeError(f"Unsupported SCREENER_NAME: {screener_name}")
 
-def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
+def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj=None):
     import requests
     SCREENER_API_KEY = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
     SCREENER_URL = secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
@@ -130,7 +132,8 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
                 min_market_cap=min_cap,
                 max_market_cap=max_cap,
                 blocklist=blocklist,
-                max_size=None
+                max_size=None,
+                broker_obj=broker_obj
             )
             if filtered:
                 filtered_symbols.extend(filtered)
@@ -199,6 +202,7 @@ def _merge_and_dedupe_partials():
 def refilter_from_unfiltered(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     unfiltered_symbols = load_unfiltered()
     normed = normalize_symbols(unfiltered_symbols)
+    broker_obj = get_active_broker()
     filtered = filter_symbols(
         normed,
         exchanges=exchanges,
@@ -207,7 +211,8 @@ def refilter_from_unfiltered(env, blocklist, exchanges, min_price, max_price, mi
         min_market_cap=min_cap,
         max_market_cap=max_cap,
         blocklist=blocklist,
-        max_size=max_size
+        max_size=max_size,
+        broker_obj=broker_obj
     )
     write_partial(dedupe_symbols(filtered))
     save_universe_cache(dedupe_symbols(filtered))
