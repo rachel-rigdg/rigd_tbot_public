@@ -1,10 +1,9 @@
 # tbot_web/py/universe_web.py
-# Flask blueprint for universe cache inspection, search, export, and rebuild
-# Instrumented for debug logging of static file serving and status_message route
+# Flask blueprint for universe cache inspection, search, export, rebuild, re-filter, and table APIs (unfiltered/partial/final).
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app, jsonify
 from tbot_bot.screeners.symbol_universe_refresh import main as rebuild_main
-from tbot_bot.screeners.screener_utils import load_universe_cache, UniverseCacheError
+from tbot_bot.screeners.screener_utils import load_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
 from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
 import csv
 import io
@@ -13,8 +12,21 @@ import os
 
 universe_bp = Blueprint("universe", __name__, template_folder="../templates")
 
+UNFILTERED_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'output', 'screeners', 'symbol_universe.unfiltered.json'))
+
+def load_json_file(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and "symbols" in data:
+            return data["symbols"]
+        elif isinstance(data, list):
+            return data
+        return []
+    except Exception:
+        return []
+
 def get_symbols_and_source():
-    # Prefer partial if it exists and is newer than main cache.
     main_path = resolve_universe_cache_path()
     partial_path = resolve_universe_partial_path()
     use_partial = False
@@ -37,6 +49,19 @@ def get_symbols_and_source():
         use_partial = False
     return symbols, use_partial
 
+def get_all_counts():
+    unfiltered = load_json_file(UNFILTERED_PATH)
+    partial = load_json_file(resolve_universe_partial_path())
+    try:
+        filtered = load_universe_cache()
+    except Exception:
+        filtered = []
+    return {
+        "unfiltered": len(unfiltered),
+        "partial": len(partial),
+        "filtered": len(filtered),
+    }
+
 @universe_bp.route("/universe", methods=["GET", "POST"])
 def universe_status():
     symbols, use_partial = get_symbols_and_source()
@@ -44,26 +69,19 @@ def universe_status():
     symbol_count = len(symbols)
     status_msg = f"Universe cache loaded: {symbol_count} symbols." if symbols else "Universe cache not loaded or empty."
     data_source_label = "Partial (in-progress)" if use_partial else "Final (complete)"
-    # Search/filter
     search = request.args.get("search", "").upper()
-    page = int(request.args.get("page", 1))
-    per_page = int(request.args.get("per_page", 50))
-    filtered = [s for s in symbols if not search or search in s["symbol"].upper()]
-    total_pages = max(1, (len(filtered) + per_page - 1) // per_page)
-    page = max(1, min(page, total_pages))
-    start, end = (page-1)*per_page, page*per_page
-    page_symbols = filtered[start:end]
+    # No pagination here, all handled by infinite-scroll API endpoints
     return render_template(
         "universe.html",
         cache_ok=bool(symbols),
         status_msg=status_msg,
         cache_path=cache_path,
-        symbol_count=len(filtered),
-        sample_symbols=page_symbols,
+        symbol_count=len(symbols),
+        sample_symbols=symbols[:20],
         search=search,
-        page=page,
-        per_page=per_page,
-        total_pages=total_pages,
+        page=1,
+        per_page=20,
+        total_pages=1,
         data_source_label=data_source_label
     )
 
@@ -114,8 +132,74 @@ def universe_output_static(filename):
 
 @universe_bp.route('/status_message')
 def universe_status_message():
-    symbols, use_partial = get_symbols_and_source()
-    symbol_count = len(symbols)
-    status_msg = f"Universe cache loaded: {symbol_count} symbols." if symbols else "Universe cache not loaded or empty."
+    counts = get_all_counts()
+    status_msg = (
+        f"Unfiltered: {counts['unfiltered']} | Partial: {counts['partial']} | Filtered: {counts['filtered']}"
+        if sum(counts.values()) > 0 else
+        "Universe files not loaded or empty."
+    )
     current_app.logger.debug(f"Status message requested, returning: {status_msg}")
     return status_msg, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+@universe_bp.route("/universe_refilter", methods=["POST"])
+def universe_refilter():
+    try:
+        # Load unfiltered
+        unfiltered = load_json_file(UNFILTERED_PATH)
+        # Load filter params from env
+        from tbot_bot.config.env_bot import load_env_bot_config
+        env = load_env_bot_config()
+        exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
+        min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
+        max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 100))
+        min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
+        max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
+        max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
+        blocklist_path = env.get("SCREENER_UNIVERSE_BLOCKLIST_PATH", None)
+        blocklist = load_blocklist(blocklist_path)
+        filtered = filter_symbols(
+            symbols=unfiltered,
+            exchanges=exchanges,
+            min_price=min_price,
+            max_price=max_price,
+            min_market_cap=min_cap,
+            max_market_cap=max_cap,
+            blocklist=blocklist,
+            max_size=max_size
+        )
+        partial_path = resolve_universe_partial_path()
+        with open(partial_path, "w", encoding="utf-8") as pf:
+            json.dump({
+                "schema_version": "1.0.0",
+                "build_timestamp_utc": "",
+                "symbols": filtered
+            }, pf, indent=2)
+        flash(f"Re-filtered universe. New partial count: {len(filtered)}", "success")
+    except Exception as e:
+        flash(f"Refilter failed: {e}", "error")
+    return redirect(url_for("universe.universe_status"))
+
+# APIs for infinite scrolling tables for unfiltered, partial, and final filtered universes.
+@universe_bp.route("/universe/table/<table_type>")
+def universe_table_api(table_type):
+    search = request.args.get("search", "").upper()
+    offset = int(request.args.get("offset", 0))
+    limit = int(request.args.get("limit", 100))
+    if table_type == "unfiltered":
+        data = load_json_file(UNFILTERED_PATH)
+    elif table_type == "partial":
+        data = load_json_file(resolve_universe_partial_path())
+    elif table_type == "final":
+        try:
+            data = load_universe_cache()
+        except Exception:
+            data = []
+    else:
+        return jsonify({"error": "Invalid table type"}), 400
+    if search:
+        data = [s for s in data if search in s.get("symbol", "").upper()]
+    return jsonify(data[offset:offset+limit])
+
+@universe_bp.route("/universe/counts")
+def universe_counts():
+    return jsonify(get_all_counts())

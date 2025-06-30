@@ -17,7 +17,7 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_log_path
 )
 
-UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"  # Absolute or resolved as needed
+UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
 
 LOG_PATH = resolve_universe_log_path()
 

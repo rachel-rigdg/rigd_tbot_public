@@ -29,29 +29,54 @@ function fetchStatusMessage() {
         });
 }
 
-function filterTables() {
-    const search = document.querySelector('input[name="search"]').value.toUpperCase();
-    ['unfiltered', 'partial', 'final'].forEach(tableType => {
-        document.querySelectorAll(`.${tableType}-row`).forEach(row => {
-            const symbolCell = row.querySelector('.symbol-cell');
-            if (symbolCell && symbolCell.textContent.toUpperCase().indexOf(search) !== -1) {
-                row.style.display = '';
-            } else {
-                row.style.display = search ? 'none' : '';
-            }
+// Infinite scroll and async table reload for universe tables
+function fetchAndRenderTable(type, bodyId, countId, limit=100) {
+    const search = document.getElementById("search-symbol").value || "";
+    fetch(`/universe/table/${type}?search=${encodeURIComponent(search)}&offset=0&limit=${limit}`)
+        .then(r => r.json()).then(rows => {
+            document.getElementById(bodyId).innerHTML = rows.map(renderRow).join("");
+            if (countId) document.getElementById(countId).textContent = rows.length;
         });
+}
+
+function renderRow(s) {
+    return "<tr>" +
+        `<td>${s.symbol || ""}</td>` +
+        `<td>${s.exchange || ""}</td>` +
+        `<td>${typeof s.lastClose === "number" ? s.lastClose.toLocaleString() : (s.lastClose || "")}</td>` +
+        `<td>${typeof s.marketCap === "number" ? s.marketCap.toLocaleString() : (s.marketCap || "")}</td>` +
+        `<td>${s.name || ""}</td>` +
+        `<td>${s.sector || ""}</td>` +
+    "</tr>";
+}
+
+function refreshTables() {
+    fetchAndRenderTable("unfiltered", "unfiltered-table-body", "unfiltered-count");
+    fetchAndRenderTable("partial", "partial-table-body", "partial-count");
+    fetchAndRenderTable("final", "final-table-body", "final-count", 400);
+}
+
+function fetchCounts() {
+    fetch("/universe/counts").then(r => r.json()).then(obj => {
+        document.getElementById("unfiltered-count").textContent = obj.unfiltered;
+        document.getElementById("partial-count").textContent = obj.partial;
+        document.getElementById("final-count").textContent = obj.filtered;
     });
 }
 
 document.addEventListener("DOMContentLoaded", function() {
     fetchBuildLog();
     fetchStatusMessage();
+    refreshTables();
+    fetchCounts();
 
     setInterval(fetchBuildLog, 15000);
     setInterval(fetchStatusMessage, 15000);
 
-    const searchBox = document.querySelector('input[name="search"]');
+    const searchBox = document.getElementById("search-symbol");
     if (searchBox) {
-        searchBox.addEventListener('input', filterTables);
+        searchBox.addEventListener('keyup', function(e) {
+            if (e.key === "Enter") refreshTables();
+        });
     }
 });

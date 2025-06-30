@@ -9,13 +9,14 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 
-from tbot_bot.support.path_resolver import resolve_universe_cache_path
+from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.config.env_bot import load_env_bot_config
 
 LOG = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "1.0.0"
+UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
 
 class UniverseCacheError(Exception):
     pass
@@ -89,6 +90,27 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
     LOG.info(f"[screener_utils] Loaded universe cache with {len(symbols)} symbols, built at {build_time.isoformat()}")
     return symbols
 
+def load_partial_cache() -> List[Dict]:
+    path = resolve_universe_partial_path()
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("symbols", [])
+    except Exception:
+        return []
+
+def load_unfiltered_cache() -> List[Dict]:
+    if not os.path.exists(UNFILTERED_PATH):
+        return []
+    try:
+        with open(UNFILTERED_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("symbols", [])
+    except Exception:
+        return []
+
 def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None) -> None:
     path = resolve_universe_cache_path(bot_identity)
     tmp_path = f"{path}.tmp"
@@ -125,7 +147,6 @@ def filter_symbols(
     for s in symbols:
         lc = s.get("lastClose")
         mc = s.get("marketCap")
-        # Require lastClose to be real, not None, not zero, not negative, not 0.0, not < 1.0
         if (
             s.get("exchange") in exchanges
             and isinstance(lc, (int, float))
