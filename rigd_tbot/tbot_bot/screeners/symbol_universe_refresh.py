@@ -79,11 +79,21 @@ def normalize_symbol_data(symbols: List[Dict]) -> List[Dict]:
             normed.append(s)
     return normed
 
-def fetch_broker_symbol_metadata_with_partial_writes(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
+def dedupe_symbols(symbols: List[Dict]) -> List[Dict]:
+    seen = set()
+    deduped = []
+    for s in symbols:
+        key = s.get("symbol")
+        if key and key not in seen:
+            seen.add(key)
+            deduped.append(s)
+    return deduped
+
+def fetch_broker_symbol_metadata_crash_resilient(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     screener_secrets = get_screener_secrets()
     screener_name = (screener_secrets.get("SCREENER_NAME") or "FINNHUB").strip().upper()
     if screener_name == "FINNHUB":
-        return fetch_finnhub_symbols_with_filtering(
+        return fetch_finnhub_symbols_crash_resilient(
             screener_secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size
         )
     elif screener_name == "TRADIER":
@@ -93,20 +103,18 @@ def fetch_broker_symbol_metadata_with_partial_writes(env, blocklist, exchanges, 
     else:
         raise RuntimeError(f"Unsupported SCREENER_NAME: {screener_name}")
 
-def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
+def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     import requests
     SCREENER_API_KEY = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
     SCREENER_URL = secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
     SCREENER_USERNAME = secrets.get("SCREENER_USERNAME", "")
     SCREENER_PASSWORD = secrets.get("SCREENER_PASSWORD", "")
     UNIVERSE_SLEEP_TIME = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
-    PARTIAL_WRITE_FREQ = int(env.get("UNIVERSE_PARTIAL_WRITE_FREQ", 100))
     if not SCREENER_API_KEY:
         raise RuntimeError("SCREENER_API_KEY not set in screener secrets/config")
-    symbols = []
     unfiltered_symbols = load_unfiltered()
+    filtered_symbols = []
     seen = set(s.get("symbol") for s in unfiltered_symbols)
-    total_count = len(unfiltered_symbols)
     blockset = set(blocklist) if blocklist else set()
     for exch in exchanges:
         url = f"{SCREENER_URL.rstrip('/')}/stock/symbol?exchange={exch.strip()}&token={SCREENER_API_KEY}"
@@ -147,11 +155,7 @@ def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min
             }
             unfiltered_symbols.append(obj)
             seen.add(symbol)
-            total_count += 1
-            if total_count % PARTIAL_WRITE_FREQ == 0:
-                write_unfiltered(unfiltered_symbols)
-                log_progress(f"Universe unfiltered progress: {total_count} symbols fetched", {"partial": True, "unfiltered_count": len(unfiltered_symbols)})
-            # Inline filtering
+            write_unfiltered(dedupe_symbols(unfiltered_symbols))
             normed = normalize_symbol_data([obj])
             filtered = filter_symbols(
                 normed,
@@ -164,12 +168,16 @@ def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min
                 max_size=None
             )
             if filtered:
-                symbols.extend(filtered)
-            if len(symbols) % PARTIAL_WRITE_FREQ == 0:
-                write_partial(symbols)
-                log_progress(f"Universe build progress: {len(symbols)} symbols filtered", {"partial": True, "filtered_count": len(symbols)})
-    write_unfiltered(unfiltered_symbols)
-    return symbols
+                filtered_symbols.extend(filtered)
+                # Immediate write to partial and final universe
+                write_partial(dedupe_symbols(filtered_symbols))
+                save_universe_cache(dedupe_symbols(filtered_symbols))
+    write_unfiltered(dedupe_symbols(unfiltered_symbols))
+    write_partial(dedupe_symbols(filtered_symbols))
+    save_universe_cache(dedupe_symbols(filtered_symbols))
+    # Final merge/dedupe (partial/final)
+    _merge_and_dedupe_partials()
+    return dedupe_symbols(filtered_symbols)
 
 def fetch_tradier_symbols(secrets, env):
     import requests
@@ -203,6 +211,48 @@ def fetch_tradier_symbols(secrets, env):
 def fetch_ibkr_symbols(secrets, env):
     return []
 
+def _merge_and_dedupe_partials():
+    # After build/refilter, merge/overwrite to dedupe
+    try:
+        with open(UNFILTERED_PATH, "r", encoding="utf-8") as uf:
+            unfiltered = json.load(uf).get("symbols", [])
+    except Exception:
+        unfiltered = []
+    partial_path = resolve_universe_partial_path()
+    cache_path = resolve_universe_cache_path()
+    try:
+        with open(partial_path, "r", encoding="utf-8") as pf:
+            partial = json.load(pf).get("symbols", [])
+    except Exception:
+        partial = []
+    try:
+        with open(cache_path, "r", encoding="utf-8") as cf:
+            final = json.load(cf).get("symbols", [])
+    except Exception:
+        final = []
+    # Merge all three
+    merged = dedupe_symbols(partial + final)
+    write_partial(merged)
+    save_universe_cache(merged)
+
+def refilter_from_unfiltered(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
+    unfiltered_symbols = load_unfiltered()
+    normed = normalize_symbol_data(unfiltered_symbols)
+    filtered = filter_symbols(
+        normed,
+        exchanges=exchanges,
+        min_price=min_price,
+        max_price=max_price,
+        min_market_cap=min_cap,
+        max_market_cap=max_cap,
+        blocklist=blocklist,
+        max_size=max_size
+    )
+    write_partial(dedupe_symbols(filtered))
+    save_universe_cache(dedupe_symbols(filtered))
+    _merge_and_dedupe_partials()
+    return filtered
+
 def main():
     env = load_env_bot_config()
     exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
@@ -225,7 +275,7 @@ def main():
     blocklist = load_blocklist(blocklist_path)
 
     try:
-        symbols_filtered = fetch_broker_symbol_metadata_with_partial_writes(
+        symbols_filtered = fetch_broker_symbol_metadata_crash_resilient(
             env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size
         )
         if not symbols_filtered or len(symbols_filtered) < 10:
@@ -240,11 +290,11 @@ def main():
 
     try:
         partial_path = resolve_universe_partial_path()
-        write_partial(symbols_filtered)
+        write_partial(dedupe_symbols(symbols_filtered))
         with open(partial_path, "r", encoding="utf-8") as pf:
             partial = json.load(pf)
         partial_symbols = partial["symbols"]
-        if symbols_filtered != partial_symbols:
+        if dedupe_symbols(symbols_filtered) != dedupe_symbols(partial_symbols):
             log_progress("INTEGRITY CHECK FAILED: RAM and partial JSON differ!", {
                 "ram_count": len(symbols_filtered),
                 "partial_count": len(partial_symbols)
@@ -258,7 +308,7 @@ def main():
         log_progress("Integrity check error (could not read partial or mismatch): proceeding with RAM.", {"error": str(e)})
 
     try:
-        save_universe_cache(symbols_filtered, bot_identity=bot_identity)
+        save_universe_cache(dedupe_symbols(symbols_filtered), bot_identity=bot_identity)
         log_progress("Universe cache build complete", {"final_count": len(symbols_filtered)})
     except Exception as e:
         log_progress("Failed to write universe cache", {"error": str(e)})
