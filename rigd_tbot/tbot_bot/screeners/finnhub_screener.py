@@ -9,6 +9,7 @@ from tbot_bot.screeners.screener_base import ScreenerBase
 from tbot_bot.screeners.screener_utils import get_screener_secrets
 from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.screeners.screener_utils import load_universe_cache
 
 config = get_bot_config()
 screener_secrets = get_screener_secrets()
@@ -90,7 +91,11 @@ class FinnhubScreener(ScreenerBase):
         limit = int(self.env.get("SCREENER_LIMIT", 3))
         test_mode_active = is_test_mode_active()
 
-        symbol_dict = {q["symbol"]: q for q in quotes}
+        # Use marketCap from universe cache if available
+        try:
+            universe_cache = {s["symbol"]: s for s in load_universe_cache()}
+        except Exception:
+            universe_cache = {}
 
         price_candidates = []
         for q in quotes:
@@ -102,24 +107,23 @@ class FinnhubScreener(ScreenerBase):
             if current <= 0 or open_ <= 0 or vwap <= 0:
                 continue
 
+            mc = universe_cache.get(symbol, {}).get("marketCap", 0)
+            exch = universe_cache.get(symbol, {}).get("exchange", "US")
+            is_fractional = universe_cache.get(symbol, {}).get("isFractional", None)
             price_candidates.append({
                 "symbol": symbol,
+                "lastClose": current,
+                "marketCap": mc,
+                "exchange": exch,
+                "isFractional": is_fractional,
                 "price": current,
                 "vwap": vwap,
                 "open": open_
             })
 
-        # Centralized filter (uses price as lastClose)
+        # Centralized filter (no placeholders)
         filtered = core_filter_symbols(
-            [
-                {
-                    "symbol": d["symbol"],
-                    "lastClose": d["price"],
-                    "marketCap": 1e9,   # Placeholder; real value should come from cache if available
-                    "exchange": "US"
-                }
-                for d in price_candidates
-            ],
+            price_candidates,
             exchanges=["US"],
             min_price=MIN_PRICE,
             max_price=MAX_PRICE,

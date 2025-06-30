@@ -1,17 +1,16 @@
 # tbot_bot/screeners/screener_filter.py
 # Centralized, screener-agnostic symbol normalization and filtering for TradeBot v1.0.0
 # 100% spec-compliant: robust field alias handling, MIC/exchange mapping, type safety, blocklist, and cap/price gating.
-# Supports broker-level tradability and fractional checks.
+# Supports broker-level tradability and fractional checks. Finnhub endpoints: /stock/symbol, /company_profile2, /quote.
 
 import re
 from decimal import Decimal
 from typing import List, Dict, Optional
 
-# Map MIC codes to canonical exchange names (expand as needed)
 MIC_TO_EXCHANGE = {
     "XNAS": "NASDAQ",
     "XNYS": "NYSE",
-    "ARCX": "NYSE",    # NYSE ARCA
+    "ARCX": "NYSE",
     "XASE": "AMEX",
     "OOTC": "OTC",
     "XNGS": "NASDAQ",
@@ -20,17 +19,16 @@ MIC_TO_EXCHANGE = {
     "EDGA": "BATS",
     "EDGX": "BATS",
     "XPHL": "NASDAQ",
-    # add more as needed
 }
 
-# Canonical filter field aliases
 SYMBOL_KEYS      = ("symbol", "ticker", "displaySymbol")
 EXCHANGE_KEYS    = ("exchange", "exch", "mic", "exchCode")
-LASTCLOSE_KEYS   = ("lastClose", "close", "last_price", "price")
-MKTCAP_KEYS      = ("marketCap", "market_cap", "mktcap", "market_capitalization")
+LASTCLOSE_KEYS   = ("lastClose", "close", "last_price", "price", "c", "pc")
+MKTCAP_KEYS      = ("marketCap", "market_cap", "mktcap", "market_capitalization", "marketCapitalization")
 NAME_KEYS        = ("name", "description", "companyName")
 SECTOR_KEYS      = ("sector", "industry", "finnhubIndustry")
-VOLUME_KEYS      = ("volume", "vol")
+VOLUME_KEYS      = ("volume", "vol", "v")
+IS_FRACTIONAL_KEYS = ("isFractional", "fractional", "fractional_enabled")
 
 def mic_to_exchange(mic: Optional[str]) -> Optional[str]:
     mic = str(mic).upper().strip() if mic else ""
@@ -88,6 +86,11 @@ def normalize_symbol(raw: Dict) -> Dict:
             except Exception:
                 norm["volume"] = 0
             break
+    for k in IS_FRACTIONAL_KEYS:
+        v = raw.get(k)
+        if v not in (None, "", "None"):
+            norm["isFractional"] = bool(v) if isinstance(v, bool) else str(v).lower() == "true"
+            break
     for k in raw:
         if k not in norm:
             norm[k] = raw[k]
@@ -120,15 +123,18 @@ def filter_symbol(
         return False
     if lc is None or mc is None:
         return False
-    if not (min_price <= lc < max_price):
+    if lc >= max_price:
+        if broker_obj and hasattr(broker_obj, "is_symbol_fractional"):
+            if not broker_obj.is_symbol_fractional(sym):
+                return False
+        elif not s.get("isFractional", True):
+            return False
+    elif not (min_price <= lc < max_price):
         return False
     if not (min_market_cap <= mc <= max_market_cap):
         return False
-    # Broker-level tradability/fractional support, if supplied
-    if broker_obj:
-        if hasattr(broker_obj, "is_symbol_tradable") and not broker_obj.is_symbol_tradable(sym):
-            return False
-        if lc >= max_price and hasattr(broker_obj, "is_symbol_fractional") and not broker_obj.is_symbol_fractional(sym):
+    if broker_obj and hasattr(broker_obj, "is_symbol_tradable"):
+        if not broker_obj.is_symbol_tradable(sym):
             return False
     return True
 

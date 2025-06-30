@@ -13,7 +13,6 @@ def get_active_broker():
     """
     broker_code = load_broker_credential("BROKER_CODE", "").lower()
     config = get_bot_config()
-    # Provide broker credentials from decrypted secrets
     broker_credentials = {
         "BROKER_CODE": broker_code,
         "BROKER_HOST": load_broker_credential("BROKER_HOST", ""),
@@ -24,9 +23,8 @@ def get_active_broker():
         "BROKER_SECRET_KEY": load_broker_credential("BROKER_SECRET_KEY", ""),
         "BROKER_URL": load_broker_credential("BROKER_URL", ""),
         "BROKER_TOKEN": load_broker_credential("BROKER_TOKEN", ""),
-        **config  # merge in runtime config for risk/strategy settings, etc.
+        **config
     }
-
     if broker_code == "alpaca":
         return AlpacaBroker(broker_credentials)
     elif broker_code == "ibkr":

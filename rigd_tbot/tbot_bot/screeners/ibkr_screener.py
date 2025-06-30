@@ -4,7 +4,7 @@
 
 import time
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.screeners.screener_utils import get_screener_secrets
+from tbot_bot.screeners.screener_utils import get_screener_secrets, load_universe_cache
 from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
 
@@ -70,6 +70,12 @@ class IBKRScreener(ScreenerBase):
         max_cap = float(self.env.get(max_cap_key, 1e10))
         limit = int(self.env.get("SCREENER_LIMIT", 3))
 
+        # Use marketCap, exchange, isFractional from universe cache if available
+        try:
+            universe_cache = {s["symbol"]: s for s in load_universe_cache()}
+        except Exception:
+            universe_cache = {}
+
         price_candidates = []
         for q in quotes:
             symbol = q["symbol"]
@@ -78,23 +84,22 @@ class IBKRScreener(ScreenerBase):
             vwap = float(q.get("vwap", 0))
             if current <= 0 or open_ <= 0 or vwap <= 0:
                 continue
+            mc = universe_cache.get(symbol, {}).get("marketCap", 0)
+            exch = universe_cache.get(symbol, {}).get("exchange", "US")
+            is_fractional = universe_cache.get(symbol, {}).get("isFractional", None)
             price_candidates.append({
                 "symbol": symbol,
+                "lastClose": current,
+                "marketCap": mc,
+                "exchange": exch,
+                "isFractional": is_fractional,
                 "price": current,
                 "vwap": vwap,
                 "open": open_
             })
 
         filtered = core_filter_symbols(
-            [
-                {
-                    "symbol": d["symbol"],
-                    "lastClose": d["price"],
-                    "marketCap": 1e9,  # Placeholder, fill from cache if needed
-                    "exchange": "US"
-                }
-                for d in price_candidates
-            ],
+            price_candidates,
             exchanges=["US"],
             min_price=MIN_PRICE,
             max_price=MAX_PRICE,

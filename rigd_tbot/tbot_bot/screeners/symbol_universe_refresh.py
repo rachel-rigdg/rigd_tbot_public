@@ -22,7 +22,6 @@ from tbot_bot.support.path_resolver import (
 )
 
 UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
-
 LOG_PATH = resolve_universe_log_path()
 
 def log_progress(msg: str, details: dict = None):
@@ -105,6 +104,7 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
             quote = requests.get(quote_url, auth=auth)
             q = quote.json() if quote.status_code == 200 else {}
             time.sleep(UNIVERSE_SLEEP_TIME)
+            # Fill everything available from Finnhub, but do NOT guess fractional
             obj = {
                 "symbol": symbol,
                 "exchange": exch.strip(),
@@ -113,7 +113,8 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
                 "name": p.get("name") or s.get("description") or "",
                 "sector": p.get("finnhubIndustry") or "",
                 "industry": "",
-                "volume": q.get("v") or 0
+                "volume": q.get("v") or 0,
+                "isFractional": broker_obj.is_symbol_fractional(symbol) if broker_obj else None
             }
             unfiltered_symbols.append(obj)
             seen.add(symbol)
@@ -248,7 +249,7 @@ def main():
     env = load_env_bot_config()
     exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
-    max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 100))
+    max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
     max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
     max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
