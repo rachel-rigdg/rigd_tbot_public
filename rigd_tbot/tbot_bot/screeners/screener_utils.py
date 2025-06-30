@@ -92,13 +92,11 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
 def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None) -> None:
     path = resolve_universe_cache_path(bot_identity)
     tmp_path = f"{path}.tmp"
-
     cache_obj = {
         "schema_version": SCHEMA_VERSION,
         "build_timestamp_utc": utc_now().isoformat(),
         "symbols": symbols
     }
-
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(cache_obj, f, indent=2)
@@ -110,7 +108,6 @@ def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None)
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
         raise
-
     LOG.info(f"[screener_utils] Universe cache saved with {len(symbols)} symbols at {path}")
 
 def filter_symbols(
@@ -141,11 +138,9 @@ def filter_symbols(
             and s.get("symbol") not in blockset
         ):
             filtered.append(s)
-
     if max_size is not None and len(filtered) > max_size:
         filtered.sort(key=lambda x: x["marketCap"], reverse=True)
         filtered = filtered[:max_size]
-
     LOG.info(f"[screener_utils] Filtered symbols count: {len(filtered)} after applying exchange, price, market cap, blocklist, and max size filters.")
     return filtered
 
@@ -153,7 +148,6 @@ def load_blocklist(path: Optional[str] = None) -> List[str]:
     if not path or not os.path.isfile(path):
         LOG.warning(f"[screener_utils] Blocklist file not found or not provided: {path}")
         return []
-
     blocklist = []
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -164,7 +158,6 @@ def load_blocklist(path: Optional[str] = None) -> List[str]:
     except Exception as e:
         LOG.error(f"[screener_utils] Failed to load blocklist file '{path}': {e}")
         return []
-
     LOG.info(f"[screener_utils] Loaded blocklist with {len(blocklist)} tickers from {path}")
     return blocklist
 

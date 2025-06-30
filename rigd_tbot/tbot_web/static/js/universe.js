@@ -1,6 +1,4 @@
 // /static/js/universe.js
-// Periodically refreshes the Universe Build Progress log and status message in the universe cache inspection page.
-
 function fetchBuildLog() {
     fetch("/static/output/screeners/universe_ops.log")
         .then(response => {
@@ -18,7 +16,7 @@ function fetchBuildLog() {
 }
 
 function fetchStatusMessage() {
-    fetch("/universe/status_message")  // This endpoint must be implemented in Flask backend
+    fetch("/universe/status_message")
         .then(response => {
             if (!response.ok) { throw new Error("Status message not found"); }
             return response.text();
@@ -31,10 +29,29 @@ function fetchStatusMessage() {
         });
 }
 
-// Initial load
-fetchBuildLog();
-fetchStatusMessage();
+function filterTables() {
+    const search = document.querySelector('input[name="search"]').value.toUpperCase();
+    ['unfiltered', 'partial', 'final'].forEach(tableType => {
+        document.querySelectorAll(`.${tableType}-row`).forEach(row => {
+            const symbolCell = row.querySelector('.symbol-cell');
+            if (symbolCell && symbolCell.textContent.toUpperCase().indexOf(search) !== -1) {
+                row.style.display = '';
+            } else {
+                row.style.display = search ? 'none' : '';
+            }
+        });
+    });
+}
 
-// Refresh every 15 seconds
-setInterval(fetchBuildLog, 15000);
-setInterval(fetchStatusMessage, 15000);
+document.addEventListener("DOMContentLoaded", function() {
+    fetchBuildLog();
+    fetchStatusMessage();
+
+    setInterval(fetchBuildLog, 15000);
+    setInterval(fetchStatusMessage, 15000);
+
+    const searchBox = document.querySelector('input[name="search"]');
+    if (searchBox) {
+        searchBox.addEventListener('input', filterTables);
+    }
+});

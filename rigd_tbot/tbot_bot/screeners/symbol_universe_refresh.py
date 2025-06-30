@@ -1,9 +1,4 @@
 # tbot_bot/screeners/symbol_universe_refresh.py
-# Nightly job to build, filter, and atomically write the symbol universe cache for all screeners
-# Fully aligned with RIGD TradeBot screener/cache specification
-# Updated: STRICT Finnhub API endpoint enforcement — only /stock/symbol, /stock/profile2, /quote allowed. All other endpoints forbidden.
-# API rate limiting uses UNIVERSE_SLEEP_TIME from env config.
-# Writes progress/partial and heartbeat to output/screeners/universe_ops.log and symbol_universe.partial.json
 
 import sys
 import json
@@ -12,7 +7,6 @@ import time
 from decimal import Decimal
 from datetime import datetime, timezone
 from typing import List, Dict
-
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
     save_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
@@ -22,6 +16,8 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path,
     resolve_universe_log_path
 )
+
+UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"  # Absolute or resolved as needed
 
 LOG_PATH = resolve_universe_log_path()
 
@@ -46,6 +42,18 @@ def write_partial(symbols, meta=None):
     with open(partial_path, "w", encoding="utf-8") as pf:
         json.dump(cache_obj, pf, indent=2)
 
+def write_unfiltered(unfiltered_symbols):
+    with open(UNFILTERED_PATH, "w", encoding="utf-8") as uf:
+        json.dump({"symbols": unfiltered_symbols}, uf, indent=2)
+
+def load_unfiltered():
+    try:
+        with open(UNFILTERED_PATH, "r", encoding="utf-8") as uf:
+            data = json.load(uf)
+            return data.get("symbols", [])
+    except Exception:
+        return []
+
 def normalize_symbol_data(symbols: List[Dict]) -> List[Dict]:
     normed = []
     for s in symbols:
@@ -67,7 +75,6 @@ def normalize_symbol_data(symbols: List[Dict]) -> List[Dict]:
             mc = None
         s["lastClose"] = lc
         s["marketCap"] = mc
-        # Strict: require lastClose >= 1.0 (not just > 0)
         if lc is not None and mc is not None and float(lc) >= 1.0:
             normed.append(s)
     return normed
@@ -97,7 +104,9 @@ def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min
     if not SCREENER_API_KEY:
         raise RuntimeError("SCREENER_API_KEY not set in screener secrets/config")
     symbols = []
-    total_count = 0
+    unfiltered_symbols = load_unfiltered()
+    seen = set(s.get("symbol") for s in unfiltered_symbols)
+    total_count = len(unfiltered_symbols)
     blockset = set(blocklist) if blocklist else set()
     for exch in exchanges:
         url = f"{SCREENER_URL.rstrip('/')}/stock/symbol?exchange={exch.strip()}&token={SCREENER_API_KEY}"
@@ -108,6 +117,8 @@ def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min
             continue
         for s in r.json():
             symbol = s.get("symbol")
+            if symbol in seen:
+                continue
             profile_url = f"{SCREENER_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={SCREENER_API_KEY}"
             profile = requests.get(profile_url, auth=auth)
             p = profile.json() if profile.status_code == 200 else {}
@@ -134,7 +145,13 @@ def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min
                 "industry": "",
                 "volume": q.get("v") or 0
             }
-            # --- INLINE FILTERING: only append and partial-write filtered+normalized ---
+            unfiltered_symbols.append(obj)
+            seen.add(symbol)
+            total_count += 1
+            if total_count % PARTIAL_WRITE_FREQ == 0:
+                write_unfiltered(unfiltered_symbols)
+                log_progress(f"Universe unfiltered progress: {total_count} symbols fetched", {"partial": True, "unfiltered_count": len(unfiltered_symbols)})
+            # Inline filtering
             normed = normalize_symbol_data([obj])
             filtered = filter_symbols(
                 normed,
@@ -144,14 +161,14 @@ def fetch_finnhub_symbols_with_filtering(secrets, env, blocklist, exchanges, min
                 min_market_cap=min_cap,
                 max_market_cap=max_cap,
                 blocklist=blocklist,
-                max_size=None  # No size cutoff in loop, only at end
+                max_size=None
             )
             if filtered:
                 symbols.extend(filtered)
-            total_count += 1
-            if total_count % PARTIAL_WRITE_FREQ == 0:
+            if len(symbols) % PARTIAL_WRITE_FREQ == 0:
                 write_partial(symbols)
-                log_progress(f"Universe build progress: {total_count} symbols fetched and filtered", {"partial": True, "filtered_count": len(symbols)})
+                log_progress(f"Universe build progress: {len(symbols)} symbols filtered", {"partial": True, "filtered_count": len(symbols)})
+    write_unfiltered(unfiltered_symbols)
     return symbols
 
 def fetch_tradier_symbols(secrets, env):
