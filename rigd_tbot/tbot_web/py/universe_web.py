@@ -62,7 +62,7 @@ def get_all_counts():
         "filtered": len(filtered),
     }
 
-@universe_bp.route("/universe", methods=["GET", "POST"])
+@universe_bp.route("/", methods=["GET", "POST"])
 def universe_status():
     unfiltered_symbols = load_json_file(UNFILTERED_PATH)
     partial_symbols = load_json_file(resolve_universe_partial_path())
@@ -86,7 +86,7 @@ def universe_status():
         data_source_label=data_source_label
     )
 
-@universe_bp.route("/universe/rebuild", methods=["POST"])
+@universe_bp.route("/rebuild", methods=["POST"])
 def universe_rebuild():
     try:
         rebuild_main()
@@ -95,7 +95,7 @@ def universe_rebuild():
         flash(f"Universe cache rebuild failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))
 
-@universe_bp.route("/universe/export/<fmt>", methods=["GET"])
+@universe_bp.route("/export/<fmt>", methods=["GET"])
 def universe_export(fmt):
     try:
         final_symbols = load_universe_cache()
@@ -145,7 +145,7 @@ def universe_status_message():
     current_app.logger.debug(f"Status message requested, returning: {status_msg}")
     return status_msg, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
-@universe_bp.route("/universe_refilter", methods=["POST"])
+@universe_bp.route("/refilter", methods=["POST"])
 def universe_refilter():
     try:
         unfiltered = load_json_file(UNFILTERED_PATH)
@@ -181,7 +181,7 @@ def universe_refilter():
         flash(f"Refilter failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))
 
-@universe_bp.route("/universe/table/<table_type>")
+@universe_bp.route("/table/<table_type>")
 def universe_table_api(table_type):
     search = request.args.get("search", "").upper()
     offset = int(request.args.get("offset", 0))
@@ -201,6 +201,6 @@ def universe_table_api(table_type):
         data = [s for s in data if search in s.get("symbol", "").upper()]
     return jsonify(data[offset:offset+limit])
 
-@universe_bp.route("/universe/counts")
+@universe_bp.route("/counts")
 def universe_counts():
     return jsonify(get_all_counts())
