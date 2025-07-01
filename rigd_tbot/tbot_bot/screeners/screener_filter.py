@@ -89,7 +89,13 @@ def normalize_symbol(raw: Dict) -> Dict:
     for k in IS_FRACTIONAL_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
-            norm["isFractional"] = bool(v) if isinstance(v, bool) else str(v).lower() == "true"
+            # Finnhub does not provide this, only set if broker filled
+            if isinstance(v, bool):
+                norm["isFractional"] = v
+            elif isinstance(v, str):
+                norm["isFractional"] = v.lower() == "true"
+            else:
+                norm["isFractional"] = bool(v)
             break
     for k in raw:
         if k not in norm:
@@ -127,7 +133,7 @@ def filter_symbol(
         if broker_obj and hasattr(broker_obj, "is_symbol_fractional"):
             if not broker_obj.is_symbol_fractional(sym):
                 return False
-        elif not s.get("isFractional", True):
+        elif "isFractional" in s and s["isFractional"] is not None and not s["isFractional"]:
             return False
     elif not (min_price <= lc < max_price):
         return False

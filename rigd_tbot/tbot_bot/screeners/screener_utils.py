@@ -135,7 +135,6 @@ def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None)
         raise
     LOG.info(f"[screener_utils] Universe cache saved with {len(symbols)} symbols at {path}")
 
-# DEPRECATED: Use screener_filter.filter_symbols directly in all calling modules.
 def filter_symbols(
     symbols: List[Dict],
     exchanges: List[str],

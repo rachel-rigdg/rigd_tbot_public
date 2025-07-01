@@ -57,28 +57,22 @@ def load_unfiltered():
     except Exception:
         return []
 
-def fetch_broker_symbol_metadata_crash_resilient(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
-    screener_secrets = get_screener_secrets()
-    screener_name = (screener_secrets.get("SCREENER_NAME") or "FINNHUB").strip().upper()
-    broker_obj = get_active_broker()
-    if screener_name == "FINNHUB":
-        return fetch_finnhub_symbols_crash_resilient(
-            screener_secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj
-        )
-    elif screener_name == "TRADIER":
-        return fetch_tradier_symbols(screener_secrets, env)
-    elif screener_name == "IBKR":
-        return fetch_ibkr_symbols(screener_secrets, env)
-    else:
-        raise RuntimeError(f"Unsupported SCREENER_NAME: {screener_name}")
+def append_to_blocklist(symbol, blocklist_path):
+    try:
+        with open(blocklist_path, "a", encoding="utf-8") as f:
+            f.write(symbol.upper() + "\n")
+    except Exception:
+        pass
 
-def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj=None):
+def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj=None):
     import requests
-    SCREENER_API_KEY = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
-    SCREENER_URL = secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
-    SCREENER_USERNAME = secrets.get("SCREENER_USERNAME", "")
-    SCREENER_PASSWORD = secrets.get("SCREENER_PASSWORD", "")
+    screener_secrets = get_screener_secrets()
+    SCREENER_API_KEY = screener_secrets.get("SCREENER_API_KEY") or screener_secrets.get("SCREENER_TOKEN")
+    SCREENER_URL = screener_secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
+    SCREENER_USERNAME = screener_secrets.get("SCREENER_USERNAME", "")
+    SCREENER_PASSWORD = screener_secrets.get("SCREENER_PASSWORD", "")
     UNIVERSE_SLEEP_TIME = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
+    blocklist_path = env.get("SCREENER_UNIVERSE_BLOCKLIST_PATH", "output/screeners/screener_blocklist.txt")
     if not SCREENER_API_KEY:
         raise RuntimeError("SCREENER_API_KEY not set in screener secrets/config")
     unfiltered_symbols = load_unfiltered()
@@ -94,21 +88,32 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
             continue
         for s in r.json():
             symbol = s.get("symbol")
-            if symbol in seen:
+            if symbol in seen or symbol.upper() in blockset:
                 continue
+            # Stage 1: Blocklist check
+            if symbol.upper() in blockset:
+                continue
+            # Stage 2: Price/Quote check
+            quote_url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
+            quote = requests.get(quote_url, auth=auth)
+            q = quote.json() if quote.status_code == 200 else {}
+            last_close = q.get("pc") or q.get("c")
+            try:
+                last_close = float(last_close)
+            except Exception:
+                last_close = None
+            if last_close is None or last_close < min_price:
+                append_to_blocklist(symbol, blocklist_path)
+                continue
+            # Stage 3: Profile2 pull
             profile_url = f"{SCREENER_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={SCREENER_API_KEY}"
             profile = requests.get(profile_url, auth=auth)
             p = profile.json() if profile.status_code == 200 else {}
             time.sleep(UNIVERSE_SLEEP_TIME)
-            quote_url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
-            quote = requests.get(quote_url, auth=auth)
-            q = quote.json() if quote.status_code == 200 else {}
-            time.sleep(UNIVERSE_SLEEP_TIME)
-            # Fill everything available from Finnhub, but do NOT guess fractional
             obj = {
                 "symbol": symbol,
                 "exchange": exch.strip(),
-                "lastClose": q.get("pc") or q.get("c"),
+                "lastClose": last_close,
                 "marketCap": p.get("marketCapitalization"),
                 "name": p.get("name") or s.get("description") or "",
                 "sector": p.get("finnhubIndustry") or "",
@@ -140,11 +145,27 @@ def fetch_finnhub_symbols_crash_resilient(secrets, env, blocklist, exchanges, mi
                 filtered_symbols.extend(filtered)
                 write_partial(dedupe_symbols(filtered_symbols))
                 save_universe_cache(dedupe_symbols(filtered_symbols))
+            time.sleep(UNIVERSE_SLEEP_TIME)
     write_unfiltered(dedupe_symbols(unfiltered_symbols))
     write_partial(dedupe_symbols(filtered_symbols))
     save_universe_cache(dedupe_symbols(filtered_symbols))
     _merge_and_dedupe_partials()
     return dedupe_symbols(filtered_symbols)
+
+def fetch_broker_symbol_metadata_crash_resilient(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
+    screener_secrets = get_screener_secrets()
+    screener_name = (screener_secrets.get("SCREENER_NAME") or "FINNHUB").strip().upper()
+    broker_obj = get_active_broker()
+    if screener_name == "FINNHUB":
+        return fetch_finnhub_symbols_staged(
+            env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj
+        )
+    elif screener_name == "TRADIER":
+        return fetch_tradier_symbols(screener_secrets, env)
+    elif screener_name == "IBKR":
+        return fetch_ibkr_symbols(screener_secrets, env)
+    else:
+        raise RuntimeError(f"Unsupported SCREENER_NAME: {screener_name}")
 
 def fetch_tradier_symbols(secrets, env):
     import requests

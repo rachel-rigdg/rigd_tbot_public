@@ -4,6 +4,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app, jsonify
 from tbot_bot.screeners.symbol_universe_refresh import main as rebuild_main
 from tbot_bot.screeners.screener_utils import load_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
+from tbot_bot.screeners.blocklist_manager import add_to_blocklist, remove_from_blocklist, load_blocklist as blocklist_manager_load
 from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
 import csv
 import io
@@ -169,6 +170,11 @@ def universe_refilter():
             blocklist=blocklist,
             max_size=max_size
         )
+        # Blocklist management: add symbols failing price filter
+        from tbot_bot.screeners.blocklist_manager import add_to_blocklist
+        low_price_symbols = [s["symbol"] for s in unfiltered if "lastClose" in s and s["lastClose"] is not None and s["lastClose"] < min_price]
+        if low_price_symbols:
+            add_to_blocklist(low_price_symbols, reason=f"Refiltered: price < {min_price}")
         partial_path = resolve_universe_partial_path()
         with open(partial_path, "w", encoding="utf-8") as pf:
             json.dump({
