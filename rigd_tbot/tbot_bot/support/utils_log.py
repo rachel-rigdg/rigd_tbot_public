@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_config import get_bot_config
-from tbot_bot.support.path_resolver import get_output_path
+# Do NOT import get_output_path globally to avoid circular import
 
 def get_log_dir():
     """
@@ -55,7 +55,8 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
         log_entry["extra"] = extra
 
     try:
-        # Always use /output/logs/ for log file path (never per-identity)
+        # Import here to avoid circular import at module level
+        from tbot_bot.support.path_resolver import get_output_path
         log_path = get_output_path(category="logs", filename=f"{module}.log")
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
 
