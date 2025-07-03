@@ -33,6 +33,9 @@ def trigger_start():
         KILL_FLAG.unlink()
     with open(START_FLAG, "w", encoding="utf-8") as f:
         f.write("start")
+    # Immediately set bot_state.txt to "running" to reflect the actual state
+    BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
+    BOT_STATE_PATH.write_text("running", encoding="utf-8")
     return redirect(url_for("main.main_page"))
 
 @start_stop_blueprint.route("/stop", methods=["POST"])
@@ -49,6 +52,9 @@ def trigger_stop():
         KILL_FLAG.unlink()
     with open(STOP_FLAG, "w", encoding="utf-8") as f:
         f.write("stop")
+    # Immediately set bot_state.txt to "idle" to reflect requested idle state
+    BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
+    BOT_STATE_PATH.write_text("idle", encoding="utf-8")
     return redirect(url_for("main.main_page"))
 
 @start_stop_blueprint.route("/kill", methods=["POST"])
@@ -66,4 +72,7 @@ def trigger_kill():
         STOP_FLAG.unlink()
     with open(KILL_FLAG, "w", encoding="utf-8") as f:
         f.write("kill")
+    # Immediately set bot_state.txt to "idle" for hard kill (all positions closed, bot ready but not running)
+    BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
+    BOT_STATE_PATH.write_text("idle", encoding="utf-8")
     return redirect(url_for("main.main_page"))

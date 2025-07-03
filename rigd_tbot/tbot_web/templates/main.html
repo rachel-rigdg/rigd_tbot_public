@@ -17,12 +17,9 @@
     <script src="{{ url_for('static', filename='js/main_ui.js') }}"></script>
 </head>
 <body class="dashboard-page dropShadow">
-   
         <div class="content">
             <iframe src="{{ url_for('status_web.status_page') }}" width="100%" height="100%" frameborder="0" name="viewFrame" id="viewFrame"></iframe>
         </div>
-   
-
     <!-- Hamburger Menu Toggle -->
     <input type="checkbox" id="hamburger-toggle" class="hamburger-toggle" />
     <label for="hamburger-toggle" class="hamburger-icon" aria-label="Open menu">
@@ -32,11 +29,12 @@
     </label>
     <nav class="hamburger-menu">
         <div class="center">
-        <strong>Current State:</strong>
-                <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
-                <br>
+            <strong>Current State:</strong>
+            <span id="bot-state" style="font-weight: bold;">{{ bot_state|default('unknown') }}</span>
+            <br>
+            <span id="status-banner" class="banner-unknown"></span>
+            <br>
         </div>
-        
         <form action="{{ url_for('status_web.status_page') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button">Status</button>
         </form>
@@ -88,6 +86,5 @@
     </nav>
     <br>
     <br>
-
 </body>
 </html>

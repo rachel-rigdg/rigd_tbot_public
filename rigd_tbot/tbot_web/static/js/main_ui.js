@@ -41,6 +41,10 @@ function updateStatusBanner(state) {
     const statusBanner = document.getElementById("status-banner");
     if (!statusBanner) return;
     switch (state) {
+        case "running":
+            statusBanner.textContent = "Bot Running";
+            statusBanner.className = "banner-ok";
+            break;
         case "monitoring":
         case "idle":
             statusBanner.textContent = "System Ready";

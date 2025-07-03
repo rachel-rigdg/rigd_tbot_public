@@ -33,6 +33,14 @@ def status_page():
     except Exception as e:
         status_data = {"error": str(e)}
 
+    # Show RUNNING state on dashboard if bot_state.txt == "running"
+    bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+    try:
+        bot_state = bot_state_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        bot_state = "unknown"
+    status_data["bot_state"] = bot_state
+
     return render_template("status.html", status=status_data)
 
 @status_blueprint.route("/api/bot_state")

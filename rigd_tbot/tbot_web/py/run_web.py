@@ -34,8 +34,8 @@ elif phase == "registration":
     from tbot_web.py.portal_web_registration import create_registration_app
     app = create_registration_app()
 else:
-    from tbot_web.py.portal_web_main import create_main_app
-    app = create_main_app()
+    from tbot_web.py.portal_web_main import create_unified_app
+    app = create_unified_app()
 
 HOST = get_host_ip()
 PORT = get_port()

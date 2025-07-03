@@ -83,6 +83,9 @@ def main_page():
 def main_state():
     try:
         state = get_current_bot_state()
+        # Map 'started' to 'running' for UI clarity, otherwise pass through state
+        if state == "started":
+            state = "running"
         return jsonify({"bot_state": state})
     except Exception:
         return jsonify({"bot_state": "error"}), 500

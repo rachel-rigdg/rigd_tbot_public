@@ -10,10 +10,7 @@
         <link rel="stylesheet" href="/static/css/shared/forms.css">
         <link rel="stylesheet" href="/static/css/components/buttons.css">
         <link rel="stylesheet" href="/static/css/pages/status.css">
-        <style>
-
-        </style>
-</head>
+    </head>
 <body>
     <div class="main-container">
         <div style="width:70%; margin-left:auto; margin-right:auto;">
@@ -33,8 +30,16 @@
                     <div><strong>PnL:</strong> {{ status.pnl }}</div>
                     <div><strong>Error Count:</strong> {{ status.error_count }}</div>
                     <div><strong>Version:</strong> {{ status.version }}</div>
+                    <div><strong>Running State:</strong> 
+                        {% if status.state == "running" %}
+                            <span style="color:green;font-weight:bold;">RUNNING</span>
+                        {% elif status.state == "idle" %}
+                            <span style="color:orange;font-weight:bold;">IDLE</span>
+                        {% else %}
+                            <span style="color:gray;">{{ status.state }}</span>
+                        {% endif %}
+                    </div>
                 </div>
-
                 <hr>
                 <h2>Strategy Toggles</h2>
                 <div class="status-grid">
@@ -42,7 +47,6 @@
                     <div><strong>Mid:</strong> {{ status.enabled_strategies.mid }}</div>
                     <div><strong>Close:</strong> {{ status.enabled_strategies.close }}</div>
                 </div>
-
                 <hr>
                 <h2>Risk Controls</h2>
                 <div class="status-grid">
@@ -51,7 +55,6 @@
                 </div>
             {% endif %}
         </div>
-       
     </div>
 </body>
 </html>

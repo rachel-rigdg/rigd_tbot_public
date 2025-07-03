@@ -115,6 +115,13 @@ def main():
 
     last_universe_rebuild = None
 
+    # State persistence: read last non-transitional state (idle/running/etc)
+    persistent_state = None
+    if BOT_STATE_PATH.exists():
+        persistent_state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        if persistent_state not in ("idle", "running", "started", "trading", "monitoring", "analyzing", "updating", "stopped"):
+            persistent_state = "idle"
+
     for name, path in launch_targets:
         script_name = os.path.basename(str(path))
         if not ensure_singleton(script_name):
@@ -154,13 +161,13 @@ def main():
                     print(f"[tbot_supervisor] Individual TEST_MODE '{test_name}' complete.")
 
             if CONTROL_START_FLAG.exists():
-                BOT_STATE_PATH.write_text("started", encoding="utf-8")
-                print("[tbot_supervisor] CONTROL_START_FLAG detected. Set bot state to 'started'.")
+                BOT_STATE_PATH.write_text("running", encoding="utf-8")
+                print("[tbot_supervisor] CONTROL_START_FLAG detected. Set bot state to 'running'.")
                 CONTROL_START_FLAG.unlink(missing_ok=True)
 
             if CONTROL_STOP_FLAG.exists():
-                BOT_STATE_PATH.write_text("graceful_closing_positions", encoding="utf-8")
-                print("[tbot_supervisor] CONTROL_STOP_FLAG detected. Set bot state to 'graceful_closing_positions'.")
+                BOT_STATE_PATH.write_text("idle", encoding="utf-8")
+                print("[tbot_supervisor] CONTROL_STOP_FLAG detected. Set bot state to 'idle'.")
                 CONTROL_STOP_FLAG.unlink(missing_ok=True)
 
             # Automatic universe rebuild 4 hours after market close
@@ -171,6 +178,11 @@ def main():
                     last_universe_rebuild = time.time()
                 else:
                     print("[tbot_supervisor] Universe cache rebuild already running.")
+
+            # On restart, if last persistent_state is 'running', restore 'running'
+            if persistent_state == "running" and state != "running" and state == "idle":
+                BOT_STATE_PATH.write_text("running", encoding="utf-8")
+                print("[tbot_supervisor] Restored bot state to 'running' after restart.")
 
             time.sleep(2)
 

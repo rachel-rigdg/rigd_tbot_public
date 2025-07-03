@@ -7,6 +7,8 @@ async function apiGet(url) {
         const data = await resp.json();
         // Normalize bot_state key for all responses
         if (data.bot_state === undefined && data.state !== undefined) data.bot_state = data.state;
+        // Normalize running/started for legacy endpoints
+        if (data.bot_state === "started") data.bot_state = "running";
         return data;
     } catch (err) {
         console.error("API GET failed:", url, err);
@@ -25,6 +27,7 @@ async function apiPost(url, body = {}) {
         if (!resp.ok) throw new Error("API error " + resp.status);
         const data = await resp.json();
         if (data.bot_state === undefined && data.state !== undefined) data.bot_state = data.state;
+        if (data.bot_state === "started") data.bot_state = "running";
         return data;
     } catch (err) {
         console.error("API POST failed:", url, err);

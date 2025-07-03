@@ -78,7 +78,7 @@ def main():
 
     # Wait for bot_state.txt to reach post-bootstrap operational phase before launching supervisor
     operational_phases = {
-        "started", "idle", "analyzing", "monitoring", "trading", "updating", "stopped",
+        "running", "idle", "analyzing", "monitoring", "trading", "updating", "stopped",
         "graceful_closing_positions", "emergency_closing_positions"
     }
     write_system_log("Waiting for bot_state.txt to reach operational phase...")
