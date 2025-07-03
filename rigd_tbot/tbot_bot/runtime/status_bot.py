@@ -118,9 +118,19 @@ class BotStatus:
 
     def to_dict(self):
         with self.lock:
+            # Patch: Always sync to actual state in bot_state.txt if available
+            try:
+                bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+                if bot_state_path.exists():
+                    state_val = bot_state_path.read_text(encoding="utf-8").strip()
+                    state = state_val if state_val else self.state
+                else:
+                    state = self.state
+            except Exception:
+                state = self.state
             return {
                 "timestamp": self.timestamp,
-                "state": self.state,
+                "state": state,
                 "active_strategy": self.active_strategy,
                 "trade_count": self.trade_count,
                 "win_trades": self.win_trades,
