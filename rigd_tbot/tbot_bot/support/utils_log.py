@@ -5,25 +5,15 @@ import json
 from pathlib import Path
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_config import get_bot_config
+from tbot_bot.support.path_resolver import get_output_path
 
 def get_log_dir():
     """
-    Dynamically resolve the log directory using the current bot identity.
-    Fallback to 'bootstrap' log dir if identity is missing or get_bot_identity import fails.
+    Returns the global/system logs directory.
+    Always resolves to /output/logs/ for system logs (never per-identity).
     """
-    try:
-        BASE_DIR = Path(__file__).resolve().parents[2]
-    except Exception:
-        from os import getcwd
-        BASE_DIR = Path(getcwd())
-    try:
-        from tbot_bot.support.utils_identity import get_bot_identity
-        BOT_IDENTITY = get_bot_identity()
-        if not BOT_IDENTITY or BOT_IDENTITY.upper() == "UNKNOWN_BOT":
-            BOT_IDENTITY = "bootstrap"
-    except Exception:
-        BOT_IDENTITY = "bootstrap"
-    return BASE_DIR / "tbot_bot" / "output" / BOT_IDENTITY / "logs"
+    base_dir = Path(__file__).resolve().parents[2]
+    return base_dir / "tbot_bot" / "output" / "logs"
 
 def get_log_settings():
     """
@@ -38,6 +28,7 @@ def get_log_settings():
 def log_event(module: str, message: str, level: str = "info", extra: dict = None):
     """
     Logs runtime events to disk and prints to stdout.
+    Always writes to /output/logs/{module}.log regardless of bot identity.
     Bootstrap safe: Will always print to stdout even if config/log dir missing.
     """
     DEBUG_LOG_LEVEL, ENABLE_LOGGING, LOG_FORMAT = get_log_settings()
@@ -64,9 +55,9 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
         log_entry["extra"] = extra
 
     try:
-        LOG_DIR = get_log_dir()
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        filepath = LOG_DIR / f"{module}.log"
+        # Always use /output/logs/ for log file path (never per-identity)
+        log_path = get_output_path(category="logs", filename=f"{module}.log")
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
 
         if LOG_FORMAT == "json":
             line = json.dumps(log_entry)
@@ -79,7 +70,7 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
         if not (DEBUG_LOG_LEVEL == "quiet" and level not in ("error", "critical")):
             print(line)
 
-        with open(filepath, "a") as f:
+        with open(log_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
 
     except Exception as e:

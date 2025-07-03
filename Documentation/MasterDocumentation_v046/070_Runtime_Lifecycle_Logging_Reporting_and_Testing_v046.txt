@@ -273,25 +273,57 @@ Each bot instance writes structured outputs to isolated, per-bot subdirectories 
 
 ---
 
-**Primary Output Directories**
+**Primary Output Directories and Log Files**
 
-| Directory                                 | Contents                                               |
-|--------------------------------------------|--------------------------------------------------------|
-| `output/{BOT_IDENTITY}/logs/`              | Strategy execution logs, error traces, broker issues   |
-| `output/{BOT_IDENTITY}/trades/`            | Per-session trade history logs (`csv` or `json`)       |
-| `output/{BOT_IDENTITY}/summaries/`         | Session summaries: PnL, stats, win-rate                |
-| `backups/`                                 | Auto-archived logs, ledgers, config backups (rotated)  |
+| Directory                                 | Contents / Log Files                                               | Shown in logs.html?     |
+|--------------------------------------------|--------------------------------------------------------------------|-------------------------|
+| `output/logs/`                             | System/global logs:                                                |                         |
+|                                            | - `main_bot.log` / `system_logs.log` (system lifecycle)            | Yes                     |
+|                                            | - `heartbeat.log` (API/connection status)                          | Yes                     |
+|                                            | - `router.log` (strategy routing, optional)                        | Yes, if present         |
+|                                            | - `screener.log` (screener events, optional)                       | Yes, if present         |
+|                                            | - `kill_switch.log` (shutdown triggers, optional)                  | Yes, if present         |
+|                                            | - `provisioning.log` (provisioning run log)                        | Yes                     |
+|                                            | - `provisioning_status.json` (provisioning status)                 | Yes                     |
+|                                            | - `auth_web.log` (web auth activity)                               | Yes                     |
+|                                            | - `security_users.log` (user/role management)                      | Yes                     |
+|                                            | - `system_users.log` (user CRUD/audit log)                         | Yes                     |
+|                                            | - `user_activity_monitoring.log` (user login/session/RBAC)         | Yes                     |
+|                                            | - `start_log` (bot/session start events)                           | Yes                     |
+|                                            | - `stop_log` (bot/session stop events)                             | Yes                     |
+|                                            | - `password_reset_tokens.log` (runtime password reset events)      | Optional                |
+|                                            | - `init_system_logs.log` (bootstrap-only, not shown in logs.html)  | No                      |
+|                                            | - `init_system_users.log` (bootstrap-only, not shown in logs.html) | No                      |
+|                                            | - `init_user_activity_monitoring.log` (bootstrap-only, not shown)  | No                      |
+|                                            | - `init_password_reset_tokens.log` (bootstrap-only, not shown)     | No                      |
+| `output/{BOT_IDENTITY}/logs/`              | Per-bot/session logs:                                              |                         |
+|                                            | - `open.log` (open strategy events)                                | Yes                     |
+|                                            | - `mid.log` (mid strategy events)                                  | Yes                     |
+|                                            | - `close.log` (close strategy events)                              | Yes                     |
+|                                            | - `unresolved_orders.log` (failed/stale orders)                    | Yes                     |
+|                                            | - `error_tracebacks.log` (exceptions/errors)                       | Yes                     |
+|                                            | - `daily_summary.json` (end-of-session summary)          	| yes               |
+|                                            | - `status.json` (session state, not a log, not shown in logs.html) | No                      |
+| `output/{BOT_IDENTITY}/trades/`            | Per-session trade history logs (`csv` or `json`)                   | No                      |
+| `output/{BOT_IDENTITY}/summaries/`         | Session summaries: PnL, stats, win-rate                            | No                      |
+| `backups/`                                 | Auto-archived logs, ledgers, config backups (rotated)              | No                      |
 
 ---
 
 **Filename Structure**
 
-| Type               | Example Filename                   | Notes                                        |
-|--------------------|------------------------------------|----------------------------------------------|
-| Strategy Logs      | `open.log`, `mid.log`, `close.log` | One per strategy, per bot/session            |
-| Trade History      | `trade_history.csv`, `.json`       | All executed trades, full session            |
-| Unresolved Orders  | `unresolved_orders.log`            | Rejects, partials, stale orders              |
-| Daily Summary      | `daily_summary.json`               | End-of-session PnL/stats/metrics             |
+| Type               | Example Filename                   | Notes                                                     |
+|--------------------|------------------------------------|-----------------------------------------------------------|
+| System Logs        | `main_bot.log`, `system_logs.log`  | System/global events, lifecycle, errors                   |
+| Strategy Logs      | `open.log`, `mid.log`, `close.log` | One per strategy, per bot/session (shown in logs.html)    |
+| Unresolved Orders  | `unresolved_orders.log`            | Rejects, partials, stale orders (shown in logs.html)      |
+| Error Traces       | `error_tracebacks.log`             | Exceptions/errors (shown in logs.html)                    |
+| Start/Stop Events  | `start_log`, `stop_log`            | Session/bot start/stop events (shown in logs.html)        |
+| Activity/Audit     | `user_activity_monitoring.log`, `system_users.log`, `security_users.log`, `auth_web.log` | Audit/compliance, user and role events (shown in logs.html) |
+| Provisioning       | `provisioning.log`, `provisioning_status.json` | Setup/provisioning (shown in logs.html)                   |
+| Trade History      | `trade_history.csv`, `.json`       | All executed trades, full session                         |
+| Daily Summary      | `daily_summary.json`               | End-of-session PnL/stats/metrics (optional in logs.html)  |
+| Password Reset     | `password_reset_tokens.log`         | Password reset event log (optional in logs.html)          |
 
 *All output filenames are always resolved per bot identity and session by the path resolver.*
 
@@ -360,11 +392,12 @@ Ledger path format:
 
 - Daily/periodic PnL reports
 - Compliance/audit verification
-- Dashboard ingestion
+- Dashboard ingestion (logs.html shows all marked "Yes" above)
 - Historical/strategy analytics
 - Tax/regulatory export (OFX, CSV, JSON)
 
 ---
+
 
 ==========================================================
 Modular Strategy Reporting & Audit Output Specification
@@ -421,7 +454,7 @@ Expose core metrics/logs in the dashboard:
 
 - Win rate, PnL, trade count (open/mid/close)
 - Load/display JSON stats on `status.html`
-- Optionally: overlay PnL/trade charts by session/strategy
+- overlay PnL/trade charts by session/strategy
 
 ---
 
@@ -654,16 +687,17 @@ main.py
     # No watcher/worker/runner is ever launched except by main.py.
     # In TEST_MODE, launches test runners directly.
     # Writes: all control flags in tbot_bot/control/
+    # Writes: main_bot.log, start_log, stop_log (system logs, shown in logs.html)
 
 status_bot.py
     # WATCHER. Launched by main.py only.
     # Tracks health/state, writes status.json, session logs.
-    # Writes: tbot_bot/output/{bot_id}/logs/status.json, and system logs.
+    # Writes: tbot_bot/output/{bot_id}/logs/status.json, and system logs (system_logs.log, shown in logs.html)
 
 watchdog_bot.py
     # WATCHER. Launched by main.py only.
     # Monitors broker connection/heartbeat.
-    # Writes: tbot_bot/output/{bot_id}/logs/heartbeat.log
+    # Writes: tbot_bot/output/logs/heartbeat.log (shown in logs.html)
 
 tbot_supervisor.py
     # PHASE SUPERVISOR. Launched by main.py (if present) after successful provisioning and bootstrapping.
@@ -680,6 +714,7 @@ report_router.py, session_report.py, status_logger.py, trade_logger.py
     # WORKERS. Only launched by main.py or imported.
     # Each worker writes to its documented output file ONLY.
     # For example, status_logger.py writes tbot_bot/output/{bot_id}/logs/status.json
+    # Other reporting modules may write: provisioning.log, provisioning_status.json, daily_summary.json, unresolved_orders.log, error_tracebacks.log, etc.
 
 --------------------------------------------------------------------------------
 tbot_bot/test/
@@ -710,7 +745,7 @@ test_web.py
     # Also provides log reading endpoint for UI: reads tbot_bot/output/{bot_id}/logs/test_mode.log
 
 logs_web.py
-    # LOG READER/WEB ENDPOINT. Reads from tbot_bot/output/{bot_id}/logs/*.log, never writes.
+    # LOG READER/WEB ENDPOINT. Reads from tbot_bot/output/logs/*.log and tbot_bot/output/{bot_id}/logs/*.log (all shown-in-logs.html files listed in directory spec), never writes.
 
 ALL OTHER BLUEPRINTS (configuration_web.py, ledger_web.py, etc.):
     # NEVER launch workers/watchers; may write control flags for main.py to pick up.
@@ -725,14 +760,32 @@ All modules (utils_*, path_resolver.py, etc.)
 --------------------------------------------------------------------------------
 LOG FILE LOCATIONS & RESPONSIBILITY
 --------------------------------------------------------------------------------
-tbot_bot/output/{bot_id}/logs/open.log              # Written only by: main.py (open strategy run)
-tbot_bot/output/{bot_id}/logs/mid.log               # Written only by: main.py (mid strategy run)
-tbot_bot/output/{bot_id}/logs/close.log             # Written only by: main.py (close strategy run)
-tbot_bot/output/{bot_id}/logs/error_tracebacks.log  # Written only by: main.py, status_bot.py (on uncaught error)
-tbot_bot/output/{bot_id}/logs/status.json           # Written only by: status_bot.py, status_logger.py
-tbot_bot/output/{bot_id}/logs/heartbeat.log         # Written only by: watchdog_bot.py
-tbot_bot/output/{bot_id}/logs/test_mode.log         # Written only by: integration_test_runner.py (never by test_web.py)
-tbot_bot/output/{bot_id}/logs/unresolved_orders.log # Written only by: main.py, orders_bot.py
+tbot_bot/output/logs/main_bot.log / system_logs.log           # Written only by: main.py, status_bot.py (shown in logs.html)
+tbot_bot/output/logs/heartbeat.log                            # Written only by: watchdog_bot.py (shown in logs.html)
+tbot_bot/output/logs/router.log                               # Written only by: strategy_router.py (optional, shown in logs.html if present)
+tbot_bot/output/logs/screener.log                             # Written only by: screener modules (optional, shown in logs.html if present)
+tbot_bot/output/logs/kill_switch.log                          # Written only by: kill_switch.py (optional, shown in logs.html if present)
+tbot_bot/output/logs/start_log                                # Written only by: main.py (shown in logs.html)
+tbot_bot/output/logs/stop_log                                 # Written only by: main.py (shown in logs.html)
+tbot_bot/output/logs/provisioning.log                         # Written only by: provisioning_runner.py (shown in logs.html)
+tbot_bot/output/logs/provisioning_status.json                 # Written only by: provisioning_runner.py (shown in logs.html)
+tbot_bot/output/logs/auth_web.log                             # Written only by: web auth modules (shown in logs.html)
+tbot_bot/output/logs/security_users.log                       # Written only by: user management modules (shown in logs.html)
+tbot_bot/output/logs/system_users.log                         # Written only by: user management modules (shown in logs.html)
+tbot_bot/output/logs/user_activity_monitoring.log             # Written only by: session manager/modules (shown in logs.html)
+tbot_bot/output/logs/password_reset_tokens.log                # Written only by: password reset handler (optional, shown in logs.html if present)
+tbot_bot/output/logs/init_system_logs.log                     # Bootstrap-only, not shown in logs.html
+tbot_bot/output/logs/init_system_users.log                    # Bootstrap-only, not shown in logs.html
+tbot_bot/output/logs/init_user_activity_monitoring.log        # Bootstrap-only, not shown in logs.html
+tbot_bot/output/logs/init_password_reset_tokens.log           # Bootstrap-only, not shown in logs.html
+
+tbot_bot/output/{bot_id}/logs/open.log                        # Written only by: main.py (open strategy run, shown in logs.html)
+tbot_bot/output/{bot_id}/logs/mid.log                         # Written only by: main.py (mid strategy run, shown in logs.html)
+tbot_bot/output/{bot_id}/logs/close.log                       # Written only by: main.py (close strategy run, shown in logs.html)
+tbot_bot/output/{bot_id}/logs/error_tracebacks.log            # Written only by: main.py, status_bot.py (on uncaught error, shown in logs.html)
+tbot_bot/output/{bot_id}/logs/unresolved_orders.log           # Written only by: main.py, orders_bot.py (shown in logs.html)
+tbot_bot/output/{bot_id}/logs/daily_summary.json              # Written only by: daily_summary.py (optional, may be shown in logs.html)
+tbot_bot/output/{bot_id}/logs/status.json                     # Written only by: status_bot.py, status_logger.py (not shown in logs.html; status.html only)
 
 --------------------------------------------------------------------------------
 CONTROL FILES & FLAGS
@@ -748,8 +801,8 @@ SUMMARY TABLE (Add to Doc End)
 --------------------------------------------------------------------------------
 Script Name                    | Launched By           | Role        | When Launched            | Writes/Reads
 -------------------------------|-----------------------|-------------|--------------------------|------------------------
-main.py                        | systemd/CLI           | Entry Point | always                   | all control flags
-status_bot.py                  | main.py               | Watcher     | always                   | status.json, system logs
+main.py                        | systemd/CLI           | Entry Point | always                   | all control flags, system logs, start_log, stop_log
+status_bot.py                  | main.py               | Watcher     | always                   | status.json, system_logs.log
 watchdog_bot.py                | main.py               | Watcher     | always                   | heartbeat logs
 tbot_supervisor.py             | main.py               | Supervisor  | after provisioning/boot  | bot_state.txt, process mgmt, test flags
 integration_test_runner.py     | main.py, test UI/CI   | Test runner | test mode only           | test_mode.log, output logs, cleans up flags
@@ -767,3 +820,4 @@ NOTES
 - All tests and integration test runner require the appropriate test_mode.flag or test_mode_<test>.flag to run, and must auto-remove their flag after completion.
 
 ================================================================================
+

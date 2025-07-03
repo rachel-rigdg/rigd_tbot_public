@@ -1,6 +1,6 @@
 # tbot_bot/support/path_resolver.py
 # Resolves dynamic paths for TradeBot modules based on identity and file category.
-# v041: Contains only runtime path logic for web UI or bot—never triggers any provisioning, bootstrapping, or privileged init.
+# v046: Contains only runtime path logic for web UI or bot—never triggers any provisioning, bootstrapping, or privileged init.
 
 import os
 import re
@@ -24,6 +24,31 @@ CATEGORIES = {
     "screeners": "screeners"
 }
 
+SYSTEM_LOG_FILES = [
+    "main_bot.log",
+    "system_logs.log",
+    "heartbeat.log",
+    "router.log",
+    "screener.log",
+    "kill_switch.log",
+    "provisioning.log",
+    "provisioning_status.json",
+    "auth_web.log",
+    "security_users.log",
+    "system_users.log",
+    "user_activity_monitoring.log",
+    "start_log",
+    "stop_log",
+    "password_reset_tokens.log"
+]
+
+BOOTSTRAP_ONLY_LOGS = [
+    "init_system_logs.log",
+    "init_system_users.log",
+    "init_user_activity_monitoring.log",
+    "init_password_reset_tokens.log"
+]
+
 def get_bot_identity(explicit_identity: str = None) -> str:
     if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (system is in bootstrap mode)")
@@ -31,7 +56,6 @@ def get_bot_identity(explicit_identity: str = None) -> str:
     if not identity or not get_bot_identity_string_regex().match(identity):
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     return identity
-
 
 def validate_bot_identity(bot_identity: str) -> None:
     if not bot_identity or not re.match(IDENTITY_PATTERN, bot_identity):
@@ -41,6 +65,11 @@ def get_bot_identity_string_regex():
     return re.compile(IDENTITY_PATTERN)
 
 def get_output_path(bot_identity: str = None, category: str = None, filename: str = None, output_subdir: bool = False) -> str:
+    if category == "logs" and filename in SYSTEM_LOG_FILES + BOOTSTRAP_ONLY_LOGS:
+        # System/global or bootstrap logs: tbot_bot/output/logs/
+        logs_dir = PROJECT_ROOT / "tbot_bot" / "output" / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return str(logs_dir / filename) if filename else str(logs_dir)
     identity = get_bot_identity(bot_identity)
     if not identity:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
@@ -130,60 +159,36 @@ def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str
     return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_COA_v1.0.0.db")
 
 def resolve_universe_cache_path(bot_identity: str = None) -> str:
-    """
-    Returns full path to the symbol universe cache JSON file.
-    Path: tbot_bot/output/screeners/symbol_universe.json
-    """
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "symbol_universe.json")
 
 def resolve_universe_partial_path() -> str:
-    """
-    Returns full path to the partial universe JSON file.
-    Path: tbot_bot/output/screeners/symbol_universe.partial.json
-    """
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "symbol_universe.partial.json")
 
 def resolve_universe_log_path() -> str:
-    """
-    Returns full path to the universe ops log file.
-    Path: tbot_bot/output/screeners/universe_ops.log
-    """
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "universe_ops.log")
 
 def resolve_screener_blocklist_path() -> str:
-    """
-    Returns full path to the screener blocklist text file.
-    Path: tbot_bot/output/screeners/screener_blocklist.txt
-    """
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "screener_blocklist.txt")
 
 def resolve_status_log_path(bot_identity: str = None) -> str:
-    """
-    Returns the canonical path for the logs/status.json file.
-    Path: tbot_bot/output/logs/status.json
-    """
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     logs_dir = base_output_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     return str(logs_dir / "status.json")
 
 def resolve_status_summary_path(bot_identity: str = None) -> str:
-    """
-    Returns the canonical path for the summaries/status.json file.
-    Path: tbot_bot/output/{bot_identity}/summaries/status.json
-    """
     identity = get_bot_identity(bot_identity)
     if not identity:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")

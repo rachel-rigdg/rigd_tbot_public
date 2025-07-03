@@ -5,7 +5,7 @@
 status_bot.py – Tracks and exposes the current state of the bot for UI or external monitoring.
 Used by status_web.py and internal logging for diagnostics and dashboard reporting.
 Implements exhaustive status tracking and win_rate calculation per RIGD_TradingBot spec.
-Writes live status only to tbot_bot/output/logs/status.json (no identity subdir).
+Writes live status only to tbot_bot/output/logs/status.json (no identity subdir, never writes to /output/{BOT_IDENTITY}/logs/).
 MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
 """
 

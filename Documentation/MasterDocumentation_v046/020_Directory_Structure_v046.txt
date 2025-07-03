@@ -1,3 +1,4 @@
+Zi56
 ================================================================================
 Document: 020
 Directory_Structure
@@ -165,7 +166,28 @@ rigd_tbot/
 │   │   ├── tuning_tracker.py		                # Tracks session and strategy performance for self-tuning and audit; provides live stats to Web UI
 │   │   └── vix_gatekeeper.py                     	# Risk enforcement: blocks or disables trading when VIX exceeds threshold (checked before any entry)
 │   │
-│   ├── output/				                          					    # Output Artifacts
+│   ├── output/
+│   │   ├── logs/                                             # System/global logs (not per-bot; shown in logs.html where specified)
+│   │   │   ├── main_bot.log (or system_logs.log)                    # Main system-level log, bot lifecycle, errors (shown in logs.html)
+│   │   │   ├── heartbeat.log                                        # API/connection heartbeat events (shown in logs.html)
+│   │   │   ├── router.log                                           # Strategy router-level events (optional; may be shown in logs.html if present)
+│   │   │   ├── screener.log                                         # Screener/universe events (optional; may be shown in logs.html if present)
+│   │   │   ├── kill_switch.log                                      # Kill switch and shutdown triggers (optional; may be shown in logs.html if present)
+│   │   │   ├── provisioning.log                                     # Provisioning run log (shown in logs.html)
+│   │   │   ├── provisioning_status.json                             # Provisioning status (shown in logs.html)
+│   │   │   ├── auth_web.log                                         # Web login/auth activity (shown in logs.html)
+│   │   │   ├── security_users.log                                   # User/role management activity log (shown in logs.html)
+│   │   │   ├── system_logs.log                                      # System-level events (alias for main_bot.log; shown in logs.html)
+│   │   │   ├── system_users.log                                     # User create/delete/audit log (shown in logs.html)
+│   │   │   ├── user_activity_monitoring.log                         # User login/session/RBAC activity (shown in logs.html)
+│   │   │   ├── start_log                                            # Bot/session start events (shown in logs.html)
+│   │   │   ├── stop_log                                             # Bot/session stop events (shown in logs.html)
+│   │   │   ├── init_system_logs.log                                 # Bootstrap-only: initial system log DB setup (not shown in logs.html)
+│   │   │   ├── init_system_users.log                                # Bootstrap-only: initial user DB setup (not shown in logs.html)
+│   │   │   ├── init_user_activity_monitoring.log                    # Bootstrap-only: initial user activity DB setup (not shown in logs.html)
+│   │   │   ├── init_password_reset_tokens.log                       # Bootstrap-only: initial password reset DB setup (not shown in logs.html)
+│   │   │   └── password_reset_tokens.log                            # Runtime password reset events (optional; may be shown in logs.html if present)
+│   │   │
 │   │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/       # ← Scoped per bot ID - Entire directory mirrored to Accounting system
 │   │       ├── logs/                                					    # Unified strategy logs (one per phase or failure mode)
 │   │       │   ├── open.log			                					# Log of all trades and decisions during open strategy window

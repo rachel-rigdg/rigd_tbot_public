@@ -7,12 +7,46 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+import datetime
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 WEB_MAIN_PATH = ROOT_DIR / "tbot_web" / "py" / "portal_web_main.py"
 TBOT_SUPERVISOR_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "tbot_supervisor.py"
+
+def write_system_log(message):
+    from tbot_bot.support.path_resolver import get_output_path
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    log_entry = f"{timestamp} [main.py] {message}\n"
+    try:
+        log_path = get_output_path(category="logs", filename="main_bot.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception as e:
+        print(f"[main.py][ERROR][write_system_log] {e}")
+
+def write_start_log():
+    from tbot_bot.support.path_resolver import get_output_path
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    log_entry = f"{timestamp} [main.py] BOT_START\n"
+    try:
+        log_path = get_output_path(category="logs", filename="start_log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception as e:
+        print(f"[main.py][ERROR][write_start_log] {e}")
+
+def write_stop_log():
+    from tbot_bot.support.path_resolver import get_output_path
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    log_entry = f"{timestamp} [main.py] BOT_STOP\n"
+    try:
+        log_path = get_output_path(category="logs", filename="stop_log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception as e:
+        print(f"[main.py][ERROR][write_stop_log] {e}")
 
 def main():
     try:
@@ -22,69 +56,71 @@ def main():
         is_first_bootstrap = lambda: False
 
     if is_first_bootstrap():
-        print("[main.py] First bootstrap detected. Launching portal_web_main.py only for configuration.")
+        write_system_log("First bootstrap detected. Launching portal_web_main.py only for configuration.")
         flask_proc = subprocess.Popen(
             ["python3", str(WEB_MAIN_PATH)],
             stdout=None,
             stderr=None
         )
-        print(f"[main.py] portal_web_main.py started with PID {flask_proc.pid} (bootstrap mode)")
+        write_system_log(f"portal_web_main.py started with PID {flask_proc.pid} (bootstrap mode)")
         flask_proc.wait()
-        print("[main.py] Exiting after initial configuration/bootstrap phase.")
+        write_system_log("Exiting after initial configuration/bootstrap phase.")
         sys.exit(0)
 
-    print("[main.py] Launching unified Flask app (portal_web_main.py)...")
+    write_system_log("Launching unified Flask app (portal_web_main.py)...")
+    write_start_log()
     flask_proc = subprocess.Popen(
         ["python3", str(WEB_MAIN_PATH)],
         stdout=None,
         stderr=None
     )
-    print(f"[main.py] portal_web_main.py started with PID {flask_proc.pid}")
+    write_system_log(f"portal_web_main.py started with PID {flask_proc.pid}")
 
     # Wait for bot_state.txt to reach post-bootstrap operational phase before launching supervisor
     operational_phases = {
         "started", "idle", "analyzing", "monitoring", "trading", "updating", "stopped",
         "graceful_closing_positions", "emergency_closing_positions"
     }
-    print("[main.py] Waiting for bot_state.txt to reach operational phase...")
+    write_system_log("Waiting for bot_state.txt to reach operational phase...")
     while True:
         try:
             phase = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-            print(f"[main.py][wait_for_operational_phase] Current phase: {phase}")
+            write_system_log(f"[wait_for_operational_phase] Current phase: {phase}")
             if phase in operational_phases:
-                print(f"[main.py][wait_for_operational_phase] Entered operational phase: {phase}")
+                write_system_log(f"[wait_for_operational_phase] Entered operational phase: {phase}")
                 break
         except Exception as e:
-            print(f"[main.py][wait_for_operational_phase] Exception: {e}")
+            write_system_log(f"[wait_for_operational_phase] Exception: {e}")
         import time
         time.sleep(1)
 
     # Launch tbot_supervisor.py (single persistent process manager)
-    print("[main.py] Launching tbot_supervisor.py (phase/process supervisor)...")
+    write_system_log("Launching tbot_supervisor.py (phase/process supervisor)...")
     supervisor_proc = subprocess.Popen(
         ["python3", str(TBOT_SUPERVISOR_PATH)],
         stdout=None,
         stderr=None
     )
-    print(f"[main.py] tbot_supervisor.py started with PID {supervisor_proc.pid}")
+    write_system_log(f"tbot_supervisor.py started with PID {supervisor_proc.pid}")
 
     try:
         flask_proc.wait()
     except KeyboardInterrupt:
-        print("[main.py] KeyboardInterrupt received, terminating Flask and supervisor processes...")
+        write_system_log("KeyboardInterrupt received, terminating Flask and supervisor processes...")
     finally:
         try:
             if 'flask_proc' in locals() and flask_proc:
-                print("[main.py] Terminating Flask process...")
+                write_system_log("Terminating Flask process...")
                 flask_proc.terminate()
         except Exception as ex3:
-            print(f"[main.py] Exception terminating Flask process: {ex3}")
+            write_system_log(f"Exception terminating Flask process: {ex3}")
         try:
             if 'supervisor_proc' in locals() and supervisor_proc:
-                print("[main.py] Terminating supervisor process...")
+                write_system_log("Terminating supervisor process...")
                 supervisor_proc.terminate()
         except Exception as ex4:
-            print(f"[main.py] Exception terminating supervisor process: {ex4}")
+            write_system_log(f"Exception terminating supervisor process: {ex4}")
+        write_stop_log()
 
 if __name__ == "__main__":
     main()

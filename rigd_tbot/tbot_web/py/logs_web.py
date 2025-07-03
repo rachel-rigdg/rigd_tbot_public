@@ -2,7 +2,6 @@
 # Displays latest bot log output to the web UI with multi-directory fallback and hour filtering
 
 from flask import Blueprint, render_template, request
-# from tbot_web.py.login_web import login_required
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -13,22 +12,28 @@ logs_blueprint = Blueprint("logs_web", __name__)
 
 LOG_FILES_TO_INCLUDE = [
     "main_bot.log",
-    "strategy_open.log",
-    "strategy_mid.log",
-    "strategy_close.log",
+    "system_logs.log",
     "heartbeat.log",
-    "watchdog_bot.log",
     "router.log",
     "screener.log",
     "kill_switch.log",
     "provisioning.log",
-    "error_tracebacks.log",
+    "provisioning_status.json",
     "auth_web.log",
     "security_users.log",
-    "init_system_logs.log",
-    "init_system_users.log",
-    "init_user_activity_monitoring.log",
-    "init_password_reset_tokens.log"
+    "system_users.log",
+    "user_activity_monitoring.log",
+    "start_log",
+    "stop_log",
+    "password_reset_tokens.log",
+    # Per-bot logs (add if you want to display these from identity folder)
+    "open.log",
+    "mid.log",
+    "close.log",
+    "unresolved_orders.log",
+    "error_tracebacks.log",
+    "daily_summary.json"
+    # Bootstrap-only logs NOT included: "init_system_logs.log", "init_system_users.log", "init_user_activity_monitoring.log", "init_password_reset_tokens.log"
 ]
 
 TIME_FORMATS = [
@@ -76,13 +81,9 @@ def find_log_file(selected_log, warn_list=None):
     # Always try fallback locations
     paths.append(Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / selected_log)
     paths.append(Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs" / selected_log)
-    for p in paths:
-        if p.is_file():
-            return p
-    return None
+    return next((p for p in paths if p.is_file()), None)
 
 @logs_blueprint.route("/")
-# @login_required
 def logs_page():
     selected_log = request.args.get("file", LOG_FILES_TO_INCLUDE[0])
     if selected_log not in LOG_FILES_TO_INCLUDE:
