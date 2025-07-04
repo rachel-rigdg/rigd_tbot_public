@@ -72,13 +72,13 @@
             <button type="submit" id="logout-btn" class="tab-button">Log Out</button>
         </form>
         <form action="{{ url_for('start_stop_web.trigger_start') }}" method="post" target="viewFrame">
-            <button type="submit" id="start-bot">Start Bot</button>
+            <button type="submit" id="start-bot" class="tab-button">Start Bot</button>
         </form>
         <form action="{{ url_for('start_stop_web.trigger_stop') }}" method="post" target="viewFrame">
-            <button type="submit" id="stop-bot">Stop Bot</button>
+            <button type="submit" id="stop-bot" class="tab-button">Stop Bot</button>
         </form>
         <form action="{{ url_for('start_stop_web.trigger_kill') }}" method="post" target="viewFrame">
-            <button type="submit" id="kill-bot">Kill Now</button>
+            <button type="submit" id="kill-bot" class="tab-button">Kill Now</button>
         </form>
         <p><strong>RIGD Tbot</strong> <br>  &copy; 2025 RIGD Holdings <br> Monitoring Interface</p>
     </nav>

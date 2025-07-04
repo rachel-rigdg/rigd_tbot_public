@@ -2,7 +2,7 @@
 
 button, .tab-button {
     min-width: 80px;
-    padding: 8px 4px;
+    padding: 0;
     background-color: #333333;
     color: #999;
     border: solid 1px #999999;
@@ -14,9 +14,16 @@ button, .tab-button {
     transition: background 0.2s;
     margin-right: 0;
     width: 100%;
-    max-width: 180px;
+    max-width: 80%;
     box-sizing: border-box;
 }
+
+button:hover, button:focus, .tab-button:hover, .tab-button:focus {
+    background-color: #0a9900;
+    color: #dddddd;
+    outline: none;
+}
+
 .startKillContainer {
     display: flex;
     justify-content: space-evenly;
@@ -30,6 +37,8 @@ button, .tab-button {
     display: flex;
     justify-content: center;
 }
+
+/* Exception: kill-bot button only */
 .startKillContainer button#kill-bot {
     background: #a80000;
     color: #fff;
@@ -40,27 +49,22 @@ button, .tab-button {
     color: #999;
     outline: none;
 }
-.startKillContainer button#logout-btn {
-    background: #333;
-    color: #999;
+
+button,
+[type="button"],
+[type="reset"],
+[type="submit"] {
+    -webkit-appearance: button;
 }
-.startKillContainer button#logout-btn:hover,
-.startKillContainer button#logout-btn:focus {
-    background: #0a9900;
-    color: #999;
-    outline: none;
+button::-moz-focus-inner {
+    border-style: none;
+    padding: 0;
+    background-color:#333;
 }
-.startKillContainer button#logout-btn:hover,
-.startKillContainer button#logout-btn:focus {
-    background: #222;
-    color: #999;
-    outline: none;
+button:-moz-focusring {
+    outline: 1px dotted ButtonText;
 }
-button:hover, button:focus {
-    background-color: #0a9900;
-    color: #dddddd;
-    outline: none;
-}
+
 a {
     color: #dddddd;
     text-decoration: none;
