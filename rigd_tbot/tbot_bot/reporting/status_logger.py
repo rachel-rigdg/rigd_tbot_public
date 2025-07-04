@@ -23,7 +23,7 @@ def write_status():
     """Serializes the current bot_status into JSON for archival/accounting summary only."""
     status_data = bot_status.to_dict()
     status_data["written_at"] = datetime.utcnow().isoformat()
-    # Patch: Write bot_state to status_data
+    # Force state to match bot_state.txt on disk (always freshest)
     try:
         from pathlib import Path
         bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
@@ -35,7 +35,7 @@ def write_status():
         status_data["state"] = "unknown"
     os.makedirs(os.path.dirname(SUMMARY_STATUS_FILE), exist_ok=True)
     try:
-        with open(SUMMARY_STATUS_FILE, "w") as f:
+        with open(SUMMARY_STATUS_FILE, "w", encoding="utf-8") as f:
             json.dump(status_data, f, indent=2)
         log_event("status_logger", f"Status written to {SUMMARY_STATUS_FILE}")
     except Exception as e:
