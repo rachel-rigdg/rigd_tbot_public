@@ -33,22 +33,54 @@ def status_page():
     except Exception as e:
         status_data = {"error": str(e)}
 
-    # Show RUNNING state on dashboard if bot_state.txt == "running"
+    # Patch: forcibly mirror bot_state.txt as "state" for live dashboard and JS updater
     bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
     try:
-        bot_state = bot_state_path.read_text(encoding="utf-8").strip()
+        bot_state_val = bot_state_path.read_text(encoding="utf-8").strip()
     except Exception:
-        bot_state = "unknown"
-    status_data["bot_state"] = bot_state
+        bot_state_val = "unknown"
+
+    # Overwrite all keys named "state" and "bot_state" in status_data with live bot_state
+    status_data["state"] = bot_state_val
+    status_data["bot_state"] = bot_state_val
 
     return render_template("status.html", status=status_data)
 
 @status_blueprint.route("/api/bot_state")
 @login_required
 def bot_state_api():
+    status_file_path = Path(resolve_status_log_path())
+    status_data = {}
+    try:
+        with open(status_file_path, "r", encoding="utf-8") as f:
+            status_data = json.load(f)
+    except Exception as e:
+        status_data = {"error": str(e)}
+    # Patch: always include 'bot_state' key as alias for .state for UI compatibility
     bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
     try:
-        state = bot_state_path.read_text(encoding="utf-8").strip()
+        bot_state_val = bot_state_path.read_text(encoding="utf-8").strip()
     except Exception:
-        state = "unknown"
-    return jsonify({"bot_state": state})
+        bot_state_val = "unknown"
+    status_data["state"] = bot_state_val
+    status_data["bot_state"] = bot_state_val
+    return jsonify(status_data)
+
+@status_blueprint.route("/api/full_status")
+@login_required
+def full_status_api():
+    status_file_path = Path(resolve_status_log_path())
+    status_data = {}
+    try:
+        with open(status_file_path, "r", encoding="utf-8") as f:
+            status_data = json.load(f)
+    except Exception as e:
+        status_data = {"error": str(e)}
+    bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+    try:
+        bot_state_val = bot_state_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        bot_state_val = "unknown"
+    status_data["state"] = bot_state_val
+    status_data["bot_state"] = bot_state_val
+    return jsonify(status_data)

@@ -6,15 +6,10 @@ status_bot.py – Tracks and exposes the current state of the bot for UI or exte
 Used by status_web.py and internal logging for diagnostics and dashboard reporting.
 Implements exhaustive status tracking and win_rate calculation per RIGD_TradingBot spec.
 Writes live status only to tbot_bot/output/logs/status.json (no identity subdir, never writes to /output/{BOT_IDENTITY}/logs/).
-MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
+Can be run directly for diagnostics (CLI/testing). Normally launched as a subprocess by tbot_supervisor.py.
 """
 
 import sys
-
-if __name__ == "__main__":
-    print("[status_bot.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
-    sys.exit(1)
-
 import time
 import json
 from datetime import datetime
@@ -30,7 +25,6 @@ STATUS_FILE_PATH = Path(resolve_status_log_path())
 def ensure_status_dir():
     STATUS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Thread-safe singleton class to hold live bot status
 class BotStatus:
     def __init__(self):
         self.lock = Lock()
@@ -116,7 +110,6 @@ class BotStatus:
 
     def to_dict(self):
         with self.lock:
-            # Patch: Always sync to actual state in bot_state.txt if available
             try:
                 bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
                 if bot_state_path.exists():
@@ -154,10 +147,27 @@ class BotStatus:
         except Exception as e:
             print(f"[status_bot] ERROR: Failed to write status.json: {e}")
 
-# Global instance
 bot_status = BotStatus()
 
-# Always ensure status.json exists on import
+def update_live_status_loop(interval=2):
+    print("[status_bot] Live status update loop started (CTRL+C to quit).")
+    while True:
+        bot_status.save_status()
+        print(f"[status_bot] Updated {STATUS_FILE_PATH} at {utc_now().isoformat()}")
+        time.sleep(interval)
+
+def run_status_bot():
+    try:
+        config = get_bot_config()
+        bot_status.update_config(config)
+    except Exception:
+        pass
+    update_live_status_loop()
+
+if __name__ == "__main__":
+    run_status_bot()
+
+# Defensive: always save a status on import, even if not running as live service
 try:
     config = get_bot_config()
     bot_status.update_config(config)
