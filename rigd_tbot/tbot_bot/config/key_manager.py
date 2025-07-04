@@ -4,10 +4,13 @@
 from pathlib import Path
 from cryptography.fernet import Fernet
 from tbot_bot.support.utils_log import log_event
+from tbot_bot.config.config_encryption import encrypt_and_write
 import os
 import base64
+import json
 
 KEY_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys"
+SECRETS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets"
 KEY_DIR.mkdir(parents=True, exist_ok=True)
 
 POSTCONFIG_KEYS = [
@@ -15,7 +18,6 @@ POSTCONFIG_KEYS = [
     "network_config",
     "alert",
     "broker",
-    "login",
     "smtp",
     "screener_api",
     "acct_api",
@@ -25,7 +27,17 @@ POSTCONFIG_KEYS = [
     "alert_channels"
 ]
 
-def generate_key_file(key_name: str, force_rotate=False):
+def load_secret_json(category):
+    path = SECRETS_DIR / f"{category}.json"
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def generate_key_file(key_name: str, force_rotate=False, reencrypt_secret=True):
     key_path = KEY_DIR / f"{key_name}.key"
     if key_path.exists() and not force_rotate:
         log_event("key_manager", f"Key already exists, not overwriting: {key_path}")
@@ -36,6 +48,10 @@ def generate_key_file(key_name: str, force_rotate=False):
     key_path.write_text(key.decode("utf-8"))
     os.chmod(key_path, 0o600)
     log_event("key_manager", f"Generated new Fernet key: {key_path}")
+    if reencrypt_secret and key_name in ["bot_identity", "network_config"]:
+        data = load_secret_json(key_name)
+        if data:
+            encrypt_and_write(key_name, data)
 
 def rotate_all_postconfig_keys():
     for key_name in POSTCONFIG_KEYS:

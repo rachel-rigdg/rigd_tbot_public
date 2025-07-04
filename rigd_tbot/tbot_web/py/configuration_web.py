@@ -18,11 +18,7 @@ PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 SECRETS_TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "tools" / "secrets_template.json"
 
-from tbot_bot.support.config_fetch import get_live_config_for_rotation
-from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
-
-# --- SURGICAL PATCH: ADD POSTCONFIG KEY/SECRET ROTATION ---
-from tbot_bot.config.key_manager import generate_all_postconfig_keys
+from tbot_bot.config import config_encryption
 
 logger = logging.getLogger(__name__)
 
@@ -140,12 +136,19 @@ def save_configuration():
 
     try:
         save_runtime_config(config)
-        # --- POSTCONFIG KEY + SECRET ROTATION ---
         if not is_first_bootstrap():
-            generate_all_postconfig_keys()
-            live_config = get_live_config_for_rotation()
-            if live_config:
-                rotate_all_keys_and_secrets(live_config)
+            try:
+                config_encryption.encrypt_and_write("bot_identity", bot_identity_data)
+                config_encryption.encrypt_and_write("broker", broker_data)
+                config_encryption.encrypt_and_write("screener_api", screener_api_data)
+                config_encryption.encrypt_and_write("smtp", smtp_data)
+                config_encryption.encrypt_and_write("network_config", network_config_data)
+                config_encryption.encrypt_and_write("acct_api", acct_api_data)
+                config_encryption.encrypt_and_write("alert_channels", {"alert_channels": alert_channels})
+            except Exception as e:
+                logger.error(f"[configuration_web] ERROR updating encrypted secrets: {e}")
+                flash("Failed to update secrets. See logs.", "error")
+                return redirect(url_for("configuration_web.show_configuration"))
     except Exception:
         flash("Failed to save configuration. See logs.", "error")
         return redirect(url_for("configuration_web.show_configuration"))

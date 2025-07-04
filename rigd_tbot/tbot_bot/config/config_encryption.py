@@ -14,6 +14,8 @@ SECRETS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "se
 BACKUP_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
+EXCLUDE_KEYS = {"login"}  # Explicitly exclude login.key
+
 def load_key(category: str) -> bytes:
     print(f"[load_key] Loading key for: {category}")
     key_path = KEY_DIR / f"{category}.key"
@@ -88,12 +90,16 @@ def rotate_all_keys_and_secrets(config: dict) -> None:
     from tbot_bot.config.key_manager import POSTCONFIG_KEYS, generate_key_file
     print("[rotate_all_keys_and_secrets] Rotating all Fernet keys and re-encrypting all secrets.")
     for category in POSTCONFIG_KEYS:
+        if category in EXCLUDE_KEYS:
+            continue
         key_path = KEY_DIR / f"{category}.key"
         if key_path.exists():
             backup_file(key_path)
             key_path.unlink()
-        generate_key_file(category)
+        generate_key_file(category, force_rotate=True, reencrypt_secret=True)
     for category in POSTCONFIG_KEYS:
+        if category in EXCLUDE_KEYS:
+            continue
         data = config.get(category, {})
         if data:
             encrypt_and_write(category, data)
