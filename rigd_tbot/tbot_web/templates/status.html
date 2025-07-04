@@ -10,7 +10,7 @@
         <link rel="stylesheet" href="/static/css/shared/forms.css">
         <link rel="stylesheet" href="/static/css/components/buttons.css">
         <link rel="stylesheet" href="/static/css/pages/status.css">
-        <script src="/static/js/status_live.js"></script>
+        <script src="/static/js/status_live.js" defer></script>
     </head>
 <body>
     <div class="main-container">
@@ -21,8 +21,8 @@
                 <p class="error">{{ status.error }}</p>
             {% else %}
                 <div class="status-grid">
-                    <div><strong>Timestamp:</strong> {{ status.timestamp }}</div>
-                    <div><strong>Bot State:</strong> {{ status.state }}</div>
+                    <div><strong>Timestamp:</strong> <span id="status-timestamp">{{ status.timestamp }}</span></div>
+                    <div><strong>Bot State:</strong> <span id="status-bot-state">{{ status.state }}</span></div>
                     <div><strong>Active Strategy:</strong> {{ status.active_strategy }}</div>
                     <div><strong>Trade Count:</strong> {{ status.trade_count }}</div>
                     <div><strong>Win Trades:</strong> {{ status.win_trades }}</div>
@@ -32,6 +32,7 @@
                     <div><strong>Error Count:</strong> {{ status.error_count }}</div>
                     <div><strong>Version:</strong> {{ status.version }}</div>
                     <div><strong>Running State:</strong> 
+                        <span id="status-running-state">
                         {% if status.state == "running" %}
                             <span style="color:green;font-weight:bold;">RUNNING</span>
                         {% elif status.state == "idle" %}
@@ -39,6 +40,7 @@
                         {% else %}
                             <span style="color:gray;">{{ status.state }}</span>
                         {% endif %}
+                        </span>
                     </div>
                 </div>
                 <hr>
