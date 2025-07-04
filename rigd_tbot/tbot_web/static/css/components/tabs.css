@@ -16,23 +16,3 @@
     display: flex;
     justify-content: center;
 }
-.tab-button {
-    width: 100%;
-    padding: 12px 0;
-    background-color: #333333;
-    color: #fff;
-    border: solid 1px #999999;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 1.12em;
-    margin: 0 6px;
-    transition: background 0.2s, color 0.2s;
-    text-decoration: none;
-    text-align: center;
-    box-sizing: border-box;
-}
-.tab-button:hover, .tab-button:focus {
-    background-color: #00bfff;
-    color: #111;
-    outline: none;
-}

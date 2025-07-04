@@ -16,7 +16,7 @@
     <script src="{{ url_for('static', filename='js/shared_utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main_ui.js') }}"></script>
 </head>
-<body class="dashboard-page dropShadow">
+<body class="dashboard-page dropShadow" style="overflow:hidden;">
         <div class="content">
             <iframe src="{{ url_for('status_web.status_page') }}" width="100%" height="100%" frameborder="0" name="viewFrame" id="viewFrame"></iframe>
         </div>
@@ -34,56 +34,72 @@
             <br>
         </div>
         <form action="{{ url_for('status_web.status_page') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Status</button>
+            <button type="submit" class="tab-button" style="width:100%;">Status</button>
         </form>
-        <form action="{{ url_for('settings_web.settings_page') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Settings</button>
-        </form>
-        <form action="{{ url_for('universe.universe_status') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Universe</button>
-        </form>
-        <form action="{{ url_for('logs_web.logs_page') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Logs</button>
-        </form>
-        <form action="{{ url_for('ledger_web.ledger_reconcile') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Ledger</button>
-        </form>
-        <form action="{{ url_for('coa_web.coa_management') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">COA</button>
-        </form>
-        <form action="{{ url_for('configuration_web.show_configuration') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Configuration</button>
-        </form>
-        <form action="{{ url_for('test_web.test_page') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button" >TEST</button>
-        </form>
-        <!-- BEGIN: New buttons for user/account/admin flows -->
-        <form action="{{ account_url or url_for('account_web.account_page') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Account</button>
-        </form>
-        <form action="{{ password_reset_url or url_for('password_reset_web.request_reset') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">Reset Password</button>
-        </form>
-        <form action="{{ users_url or url_for('users_web.users_list') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button">User Admin</button>
-        </form>
-        <!-- END: New buttons -->
-        <form action="{{ url_for('logout_web.logout') }}" method="get">
-            <button type="submit" id="logout-btn" class="tab-button">Log Out</button>
-        </form>
+
+        <!-- START/STOP -->
         <form action="{{ url_for('start_stop_web.trigger_start') }}" method="post" target="viewFrame">
-            <button type="submit" id="start-bot" class="tab-button">Start Bot</button>
+            <button type="submit" id="start-bot" class="tab-button" style="width:100%;">Start Bot</button>
         </form>
+
         <form action="{{ url_for('start_stop_web.trigger_stop') }}" method="post" target="viewFrame">
-            <button type="submit" id="stop-bot" class="tab-button">Stop Bot</button>
+            <button type="submit" id="stop-bot" class="tab-button" style="width:100%;">Stop Bot</button>
         </form>
+
         <form action="{{ url_for('start_stop_web.trigger_kill') }}" method="post" target="viewFrame">
-            <button type="submit" id="kill-bot" class="tab-button">Kill Now</button>
+            <button type="submit" id="kill-bot" class="tab-button" style="width:100%;">Kill Now</button>
         </form>
-        <p><strong>RIGD Tbot</strong> <br>  &copy; 2025 RIGD Holdings <br> Monitoring Interface</p>
+
+        <!-- ACCOUNTING -->
+        <form action="{{ url_for('universe.universe_status') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">Universe</button>
+        </form>
+
+        <form action="{{ url_for('ledger_web.ledger_reconcile') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">Ledger</button>
+        </form>
+
+        <form action="{{ url_for('coa_web.coa_management') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">COA</button>
+        </form>
+
+        <!-- CONFIGURATION -->
+        <form action="{{ url_for('settings_web.settings_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">Settings</button>
+        </form>
+
+        <form action="{{ url_for('configuration_web.show_configuration') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">Configuration</button>
+        </form>
+
+          <!-- TEST/LOGS -->
+        <form action="{{ url_for('logs_web.logs_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">Logs</button>
+        </form>
+
+        <form action="{{ url_for('test_web.test_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button"  style="width:100%;">TEST</button>
+        </form>
+
+        <!-- USER ACCOUNTS -->
+        <form action="{{ account_url or url_for('account_web.account_page') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">Account</button>
+        </form>
+
+        <form action="{{ password_reset_url or url_for('password_reset_web.request_reset') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">Reset Password</button>
+        </form>
+
+        <form action="{{ users_url or url_for('users_web.users_list') }}" method="get" target="viewFrame">
+            <button type="submit" class="tab-button" style="width:100%;">User Admin</button>
+        </form>
+       
+        <form action="{{ url_for('logout_web.logout') }}" method="get">
+            <button type="submit" id="logout-btn" class="tab-button" style="width:100%;">Log Out</button>
+        </form>
+
+        <p><strong>RIGD Tbot</strong> <br>  &copy; 2025 RIGD Holdings</p>
     </nav>
-    <br>
-    <br>
     <script src="/static/js/status_live.js"></script>
 </body>
 </html>

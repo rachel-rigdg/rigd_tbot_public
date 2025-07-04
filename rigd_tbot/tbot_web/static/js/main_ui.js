@@ -27,7 +27,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             } else {
                 if (configOverlay) configOverlay.style.display = "none";
             }
-            updateStatusBanner(state);
+            setStatusBanner(state);
         } catch (e) {
             // Silent fail, will retry on next interval
         }
@@ -36,37 +36,55 @@ document.addEventListener("DOMContentLoaded", async () => {
     setInterval(checkBotStateAndRender, 3000);
     checkBotStateAndRender();
 });
-
-function updateStatusBanner(state) {
-    const statusBanner = document.getElementById("status-banner");
-    if (!statusBanner) return;
-    switch (state) {
-        case "running":
-            statusBanner.textContent = "Bot Running";
-            statusBanner.className = "banner-ok";
-            break;
-        case "monitoring":
-        case "idle":
-            statusBanner.textContent = "System Ready";
-            statusBanner.className = "banner-ok";
-            break;
-        case "provisioning":
-        case "bootstrapping":
-        case "initialize":
-            statusBanner.textContent = "Initializing…";
-            statusBanner.className = "banner-wait";
-            break;
-        case "registration":
-            statusBanner.textContent = "Registration Required";
-            statusBanner.className = "banner-wait";
-            break;
-        case "error":
-        case "shutdown":
-            statusBanner.textContent = "Error / Shutdown";
-            statusBanner.className = "banner-error";
-            break;
-        default:
-            statusBanner.textContent = "Unknown state";
-            statusBanner.className = "banner-unknown";
+function setStatusBanner(state) {
+    const banner = document.getElementById('status-banner');
+    if (!banner) return;
+    banner.className = '';
+    if (state === "running") {
+        banner.classList.add("banner-running");
+        banner.textContent = "RUNNING";
+    } else if (state === "idle") {
+        banner.classList.add("banner-idle");
+        banner.textContent = "IDLE";
+    } else if (
+        state === "provisioning" ||
+        state === "bootstrapping" ||
+        state === "initialize"
+    ) {
+        banner.classList.add("banner-wait");
+        banner.textContent = "Initializing…";
+    } else if (state === "registration") {
+        banner.classList.add("banner-wait");
+        banner.textContent = "Registration Required";
+    } else if (state === "analyzing") {
+        banner.classList.add("banner-idle");
+        banner.textContent = "ANALYZING";
+    } else if (state === "trading") {
+        banner.classList.add("banner-running");
+        banner.textContent = "TRADING";
+    } else if (state === "monitoring") {
+        banner.classList.add("banner-idle");
+        banner.textContent = "MONITORING";
+    } else if (state === "updating") {
+        banner.classList.add("banner-idle");
+        banner.textContent = "UPDATING";
+    } else if (state === "graceful_closing_positions") {
+        banner.classList.add("banner-idle");
+        banner.textContent = "GRACEFUL CLOSING";
+    } else if (state === "emergency_closing_positions") {
+        banner.classList.add("banner-error");
+        banner.textContent = "EMERGENCY CLOSING";
+    } else if (state === "stopped") {
+        banner.classList.add("banner-other");
+        banner.textContent = "STOPPED";
+    } else if (state === "shutdown" || state === "shutdown_triggered") {
+        banner.classList.add("banner-error");
+        banner.textContent = "SHUTDOWN";
+    } else if (state === "error") {
+        banner.classList.add("banner-error");
+        banner.textContent = "ERROR";
+    } else {
+        banner.classList.add("banner-other");
+        banner.textContent = (state ? state.toUpperCase() : "UNKNOWN");
     }
 }

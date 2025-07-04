@@ -21,3 +21,16 @@ body {
 h1, h2, h3 {
     color: #999999;
 }
+
+#status-banner.banner-running {
+    color: green;
+    font-weight: bold;
+}
+#status-banner.banner-idle {
+    color: orange;
+    font-weight: bold;
+}
+#status-banner.banner-other {
+    color: gray;
+    font-weight: normal;
+}
