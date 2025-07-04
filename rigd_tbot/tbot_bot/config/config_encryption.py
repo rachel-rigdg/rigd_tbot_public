@@ -41,13 +41,15 @@ def encrypt_and_write(category: str, data: dict) -> None:
     key = load_key(category)
     fernet = Fernet(key)
     raw_json = json.dumps(data, indent=2).encode("utf-8")
-    enc_file = Path(get_secret_path(category))
+    # --- PATCH: ENFORCE CORRECT SECRET FILENAME ---
+    enc_file = SECRETS_DIR / f"{category}.json.enc"
     backup_file(enc_file)
     encrypted = fernet.encrypt(raw_json)
     with open(enc_file, "wb") as f:
         f.write(encrypted)
     log_event("config_encryption", f"Encrypted config for category '{category}' to {enc_file}")
     print(f"[encrypt_and_write] Completed for: {category}")
+
 
 def encrypt_env_bot_from_bytes(raw_bytes: bytes) -> None:
     print("[encrypt_env_bot_from_bytes] Encrypting .env_bot")
