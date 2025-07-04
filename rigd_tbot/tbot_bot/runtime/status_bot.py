@@ -64,11 +64,9 @@ class BotStatus:
             self.enabled_strategies["open"] = config.get("STRAT_OPEN_ENABLED", False)
             self.enabled_strategies["mid"] = config.get("STRAT_MID_ENABLED", False)
             self.enabled_strategies["close"] = config.get("STRAT_CLOSE_ENABLED", False)
-
             self.broker_code = config.get("BROKER_NAME", "undefined").lower()
             self.broker_mode = "single"
             self.is_live_mode = True
-
             self.version = config.get("VERSION_TAG", "v1.0.0")
             self.daily_loss_limit = config.get("DAILY_LOSS_LIMIT", 0.05)
             self.max_risk_per_trade = config.get("MAX_RISK_PER_TRADE", 0.025)
@@ -129,7 +127,7 @@ class BotStatus:
             except Exception:
                 state = self.state
             return {
-                "timestamp": self.timestamp,
+                "timestamp": utc_now().isoformat(),
                 "state": state,
                 "active_strategy": self.active_strategy,
                 "trade_count": self.trade_count,

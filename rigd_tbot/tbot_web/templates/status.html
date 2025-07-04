@@ -23,14 +23,14 @@
                 <div class="status-grid">
                     <div><strong>Timestamp:</strong> <span id="status-timestamp">{{ status.timestamp }}</span></div>
                     <div><strong>Bot State:</strong> <span id="status-bot-state">{{ status.state }}</span></div>
-                    <div><strong>Active Strategy:</strong> {{ status.active_strategy }}</div>
-                    <div><strong>Trade Count:</strong> {{ status.trade_count }}</div>
-                    <div><strong>Win Trades:</strong> {{ status.win_trades }}</div>
-                    <div><strong>Loss Trades:</strong> {{ status.loss_trades }}</div>
-                    <div><strong>Win Rate:</strong> {{ status.win_rate }}%</div>
-                    <div><strong>PnL:</strong> {{ status.pnl }}</div>
-                    <div><strong>Error Count:</strong> {{ status.error_count }}</div>
-                    <div><strong>Version:</strong> {{ status.version }}</div>
+                    <div><strong>Active Strategy:</strong> <span id="status-active-strategy">{{ status.active_strategy }}</span></div>
+                    <div><strong>Trade Count:</strong> <span id="status-trade-count">{{ status.trade_count }}</span></div>
+                    <div><strong>Win Trades:</strong> <span id="status-win-trades">{{ status.win_trades }}</span></div>
+                    <div><strong>Loss Trades:</strong> <span id="status-loss-trades">{{ status.loss_trades }}</span></div>
+                    <div><strong>Win Rate:</strong> <span id="status-win-rate">{{ status.win_rate }}</span>%</div>
+                    <div><strong>PnL:</strong> <span id="status-pnl">{{ status.pnl }}</span></div>
+                    <div><strong>Error Count:</strong> <span id="status-error-count">{{ status.error_count }}</span></div>
+                    <div><strong>Version:</strong> <span id="status-version">{{ status.version }}</span></div>
                     <div><strong>Running State:</strong> 
                         <span id="status-running-state">
                         {% if status.state == "running" %}
@@ -46,15 +46,15 @@
                 <hr>
                 <h2>Strategy Toggles</h2>
                 <div class="status-grid">
-                    <div><strong>Open:</strong> {{ status.enabled_strategies.open }}</div>
-                    <div><strong>Mid:</strong> {{ status.enabled_strategies.mid }}</div>
-                    <div><strong>Close:</strong> {{ status.enabled_strategies.close }}</div>
+                    <div><strong>Open:</strong> <span id="status-strat-open">{{ status.enabled_strategies.open }}</span></div>
+                    <div><strong>Mid:</strong> <span id="status-strat-mid">{{ status.enabled_strategies.mid }}</span></div>
+                    <div><strong>Close:</strong> <span id="status-strat-close">{{ status.enabled_strategies.close }}</span></div>
                 </div>
                 <hr>
                 <h2>Risk Controls</h2>
                 <div class="status-grid">
-                    <div><strong>Max Risk per Trade:</strong> {{ status.max_risk_per_trade }}</div>
-                    <div><strong>Daily Loss Limit:</strong> {{ status.daily_loss_limit }}</div>
+                    <div><strong>Max Risk per Trade:</strong> <span id="status-max-risk">{{ status.max_risk_per_trade }}</span></div>
+                    <div><strong>Daily Loss Limit:</strong> <span id="status-daily-loss">{{ status.daily_loss_limit }}</span></div>
                 </div>
             {% endif %}
         </div>

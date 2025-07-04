@@ -95,6 +95,19 @@ def is_time_for_universe_rebuild():
     scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
     return now >= scheduled_time and build_time < scheduled_time
 
+def update_status_json(state_override=None):
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("status_bot", str(STATUS_BOT_PATH))
+        status_bot = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(status_bot)
+        if state_override:
+            status_bot.update_bot_state(state=state_override)
+        else:
+            status_bot.update_bot_state()
+    except Exception as e:
+        print(f"[tbot_supervisor] ERROR: Could not update status.json: {e}")
+
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
     processes = {}
@@ -115,12 +128,16 @@ def main():
 
     last_universe_rebuild = None
 
-    # State persistence: read last non-transitional state (idle/running/etc)
     persistent_state = None
+    is_first_bootstrap = False
     if BOT_STATE_PATH.exists():
         persistent_state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        if persistent_state not in ("idle", "running", "started", "trading", "monitoring", "analyzing", "updating", "stopped"):
+        if persistent_state not in (
+            "idle", "running", "started", "trading", "monitoring", "analyzing", "updating", "stopped"
+        ):
             persistent_state = "idle"
+    else:
+        is_first_bootstrap = True
 
     for name, path in launch_targets:
         script_name = os.path.basename(str(path))
@@ -135,6 +152,7 @@ def main():
             state = read_bot_state()
             if state in ("shutdown", "shutdown_triggered", "error"):
                 print(f"[tbot_supervisor] Detected shutdown/error state: {state}. Terminating subprocesses and exiting.")
+                update_status_json(state_override=state)
                 break
 
             if TEST_MODE_FLAG.exists():
@@ -144,8 +162,8 @@ def main():
                 while TEST_MODE_FLAG.exists():
                     time.sleep(1)
                 print("[tbot_supervisor] Global TEST_MODE complete. Test runner finished.")
+                update_status_json()
 
-            # Handle individual test flags (run one at a time)
             individual_flags = find_individual_test_flags()
             if individual_flags:
                 for flag_path in individual_flags:
@@ -159,18 +177,20 @@ def main():
                     while flag_path.exists():
                         time.sleep(1)
                     print(f"[tbot_supervisor] Individual TEST_MODE '{test_name}' complete.")
+                    update_status_json()
 
             if CONTROL_START_FLAG.exists():
                 BOT_STATE_PATH.write_text("running", encoding="utf-8")
                 print("[tbot_supervisor] CONTROL_START_FLAG detected. Set bot state to 'running'.")
                 CONTROL_START_FLAG.unlink(missing_ok=True)
+                update_status_json(state_override="running")
 
             if CONTROL_STOP_FLAG.exists():
                 BOT_STATE_PATH.write_text("idle", encoding="utf-8")
                 print("[tbot_supervisor] CONTROL_STOP_FLAG detected. Set bot state to 'idle'.")
                 CONTROL_STOP_FLAG.unlink(missing_ok=True)
+                update_status_json(state_override="idle")
 
-            # Automatic universe rebuild 4 hours after market close
             if is_time_for_universe_rebuild():
                 if not ensure_singleton("symbol_universe_refresh.py"):
                     print("[tbot_supervisor] Triggering universe cache rebuild (symbol_universe_refresh.py)...")
@@ -179,11 +199,12 @@ def main():
                 else:
                     print("[tbot_supervisor] Universe cache rebuild already running.")
 
-            # On restart, if last persistent_state is 'running', restore 'running'
             if persistent_state == "running" and state != "running" and state == "idle":
                 BOT_STATE_PATH.write_text("running", encoding="utf-8")
                 print("[tbot_supervisor] Restored bot state to 'running' after restart.")
+                update_status_json(state_override="running")
 
+            update_status_json()
             time.sleep(2)
 
     except KeyboardInterrupt:
