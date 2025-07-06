@@ -10,6 +10,13 @@
         <link rel="stylesheet" href="/static/css/shared/forms.css">
         <link rel="stylesheet" href="/static/css/components/buttons.css">
         <link rel="stylesheet" href="/static/css/pages/ledger.css">
+        <style>
+        /* Minimal extra style for folding table in half */
+        .ledger-table td, .ledger-table th { padding: 4px 6px; }
+        .ledger-table .row-top { background: #f8f8fa; }
+        .ledger-table .row-bottom { background: #f3f3f5; }
+        .ledger-table .action-cell { white-space: nowrap; }
+        </style>
     </head>
 <body>
     <div class="header">
@@ -43,6 +50,9 @@
                         <th>Quantity</th>
                         <th>Price</th>
                         <th>Total Value</th>
+                        <th>Status</th>
+                    </tr>
+                    <tr>
                         <th>Fees</th>
                         <th>Broker</th>
                         <th>Strategy</th>
@@ -50,64 +60,30 @@
                         <th>Trade ID</th>
                         <th>Tags</th>
                         <th>Notes</th>
-                        <th>Status</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                 {% for entry in entries %}
-                    <tr class="{{ entry.status }}">
+                    <!-- Row 1 -->
+                    <tr class="row-top {{ entry.status }}">
                         <form method="post" action="{{ url_for('ledger_web.edit_ledger_entry_route', entry_id=entry.id) }}">
+                        <td><input type="text" name="datetime_utc" value="{{ entry.datetime_utc }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td><input type="text" name="symbol" value="{{ entry.symbol }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
                         <td>
-                            <input type="text" name="datetime_utc" value="{{ entry.datetime_utc }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
+                            <select name="action" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %} required>
+                                <option value="long" {% if entry.action == "long" %}selected{% endif %}>long</option>
+                                <option value="short" {% if entry.action == "short" %}selected{% endif %}>short</option>
+                                <option value="put" {% if entry.action == "put" %}selected{% endif %}>put</option>
+                                <option value="inverse" {% if entry.action == "inverse" %}selected{% endif %}>inverse</option>
+                            </select>
                         </td>
-                        <td>
-                            <input type="text" name="symbol" value="{{ entry.symbol }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
-                        </td>
-                        <td>
-                            <input type="text" name="action" value="{{ entry.action }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
-                        </td>
-                        <td>
-                            <input type="text" name="quantity" value="{{ entry.quantity }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
-                        </td>
-                        <td>
-                            <input type="text" name="price" value="{{ entry.price }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
-                        </td>
-                        <td>
-                            <input type="text" name="total_value" value="{{ entry.total_value }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
-                        </td>
-                        <td>
-                            <input type="text" name="fees" value="{{ entry.fees }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
-                        </td>
-                        <td>
-                            <input type="text" name="broker" value="{{ entry.broker }}" readonly>
-                        </td>
-                        <td>
-                            <input type="text" name="strategy" value="{{ entry.strategy }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
-                        </td>
-                        <td>
-                            <input type="text" name="account" value="{{ entry.account }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
-                        </td>
-                        <td>
-                            <input type="text" name="trade_id" value="{{ entry.trade_id }}" readonly>
-                        </td>
-                        <td>
-                            <input type="text" name="tags" value="{{ entry.tags }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
-                        </td>
-                        <td>
-                            <input type="text" name="notes" value="{{ entry.notes }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}>
-                        </td>
-                        <td>
+                        <td><input type="text" name="quantity" value="{{ entry.quantity }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td><input type="text" name="price" value="{{ entry.price }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td><input type="text" name="total_value" value="{{ entry.total_value }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td class="action-cell" rowspan="2" style="vertical-align: middle; text-align:center;">
                             {% if entry.status == "mismatch" %}
-                                <span class="status-mismatch">Mismatch</span>
-                            {% elif entry.status == "resolved" %}
-                                <span class="status-resolved">Resolved</span>
-                            {% else %}
-                                <span class="status-ok">OK</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if entry.status == "mismatch" %}
+                                <span class="status-mismatch">Mismatch</span><br>
                                 <button type="submit" class="edit-btn">Edit</button>
                         </form>
                                 <form method="post" action="{{ url_for('ledger_web.resolve_ledger_entry', entry_id=entry.id) }}" style="display:inline;">
@@ -124,29 +100,65 @@
                                 </form>
                             {% else %}
                         </form>
-                                <span>—</span>
+                                <span class="status-ok">OK</span>
                             {% endif %}
                         </td>
                     </tr>
+                    <!-- Row 2 -->
+                    <tr class="row-bottom {{ entry.status }}">
+                        <td><input type="text" name="fees" value="{{ entry.fees }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="broker" value="{{ entry.broker }}" readonly></td>
+                        <td>
+                            <select name="strategy" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %}>
+                                <option value="open" {% if entry.strategy == "open" %}selected{% endif %}>open</option>
+                                <option value="mid" {% if entry.strategy == "mid" %}selected{% endif %}>mid</option>
+                                <option value="close" {% if entry.strategy == "close" %}selected{% endif %}>close</option>
+                                <option value="other" {% if entry.strategy == "other" %}selected{% endif %}>other</option>
+                            </select>
+                        </td>
+                        <td><input type="text" name="account" value="{{ entry.account }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="trade_id" value="{{ entry.trade_id }}" readonly></td>
+                        <td><input type="text" name="tags" value="{{ entry.tags }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="notes" value="{{ entry.notes }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                    </tr>
                 {% endfor %}
-                <tr>
+                <!-- Add-entry row (split in two lines) -->
+                <tr class="row-top">
                     <form method="post" action="{{ url_for('ledger_web.add_ledger_entry_route') }}">
                     <td><input type="text" name="datetime_utc" placeholder="YYYY-MM-DDTHH:MM:SSZ" required></td>
                     <td><input type="text" name="symbol" placeholder="Symbol" required></td>
-                    <td><input type="text" name="action" placeholder="Action" required></td>
+                    <td>
+                        <select name="action" required>
+                            <option value="">Select</option>
+                            <option value="long">long</option>
+                            <option value="short">short</option>
+                            <option value="put">put</option>
+                            <option value="inverse">inverse</option>
+                        </select>
+                    </td>
                     <td><input type="text" name="quantity" placeholder="Qty" required></td>
                     <td><input type="text" name="price" placeholder="Price" required></td>
                     <td><input type="text" name="total_value" placeholder="Total Value" required></td>
+                    <td class="action-cell" rowspan="2" style="vertical-align: middle; text-align:center;" colspan="1">
+                        <button type="submit" class="add-btn">Add Entry</button>
+                    </td>
+                </tr>
+                <tr class="row-bottom">
                     <td><input type="text" name="fees" placeholder="Fees"></td>
                     <td><input type="text" name="broker" placeholder="Broker" readonly></td>
-                    <td><input type="text" name="strategy" placeholder="Strategy"></td>
+                    <td>
+                        <select name="strategy">
+                            <option value="">Select</option>
+                            <option value="open">open</option>
+                            <option value="mid">mid</option>
+                            <option value="close">close</option>
+                            <option value="other">other</option>
+                        </select>
+                    </td>
                     <td><input type="text" name="account" placeholder="Account"></td>
                     <td><input type="text" name="trade_id" placeholder="Trade ID" readonly></td>
                     <td><input type="text" name="tags" placeholder="Tags"></td>
                     <td><input type="text" name="notes" placeholder="Notes"></td>
-                    <td colspan="2">
-                        <button type="submit" class="add-btn">Add Entry</button>
-                    </td>
                     </form>
                 </tr>
                 </tbody>
