@@ -35,7 +35,7 @@ body {
     background: #f0f4f9;
     font-weight: 700;
     color: #999;
-    border-bottom: 2px solid #e1e6ec;
+    border-bottom: 1px solid #e1e6ec;
   }
   
   tr:nth-child(even) {
