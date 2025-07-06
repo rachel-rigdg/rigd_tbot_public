@@ -42,9 +42,9 @@ def identity_guard():
 
 def reconcile_ledgers(internal, broker):
     result = []
-    broker_lookup = {(row['date'], row['symbol'], row['type'], row['amount']) for row in broker}
+    broker_lookup = {(row.get('datetime_utc'), row.get('symbol'), row.get('action'), row.get('total_value')) for row in broker}
     for entry in internal:
-        key = (entry['date'], entry['symbol'], entry['type'], entry['amount'])
+        key = (entry.get('datetime_utc'), entry.get('symbol'), entry.get('action'), entry.get('total_value'))
         if entry.get('resolved'):
             status = "resolved"
         elif key in broker_lookup:
@@ -98,21 +98,25 @@ def add_ledger_entry_route():
     current_user = get_current_user()
     config = get_bot_config()
     entry_data = {
-        "date": form.get("date"),
+        "datetime_utc": form.get("datetime_utc"),
         "symbol": form.get("symbol"),
-        "type": form.get("type"),
-        "amount": form.get("amount"),
+        "action": form.get("action"),
+        "quantity": form.get("quantity"),
+        "price": form.get("price"),
+        "total_value": form.get("total_value"),
+        "fees": form.get("fees", 0.0),
+        "broker": broker,
+        "strategy": form.get("strategy"),
         "account": form.get("account"),
         "trade_id": form.get("trade_id"),
         "tags": form.get("tags"),
         "notes": form.get("notes"),
-        "broker": broker,
-        "entity_code": entity_code,
         "jurisdiction": jurisdiction,
-        "created_by": current_user.username if current_user else "system",
-        "updated_by": current_user.username if current_user else "system",
-        "approved_by": current_user.username if current_user else "system",
+        "entity_code": entity_code,
         "language": config.get("LANGUAGE_CODE", "en"),
+        "created_by": current_user.username if hasattr(current_user, "username") else current_user if current_user else "system",
+        "updated_by": current_user.username if hasattr(current_user, "username") else current_user if current_user else "system",
+        "approved_by": current_user.username if hasattr(current_user, "username") else current_user if current_user else "system",
         "approval_status": "pending",
         "gdpr_compliant": True,
         "ccpa_compliant": True,
@@ -136,19 +140,23 @@ def edit_ledger_entry_route(entry_id):
     current_user = get_current_user()
     config = get_bot_config()
     updated_data = {
-        "date": form.get("date"),
+        "datetime_utc": form.get("datetime_utc"),
         "symbol": form.get("symbol"),
-        "type": form.get("type"),
-        "amount": form.get("amount"),
+        "action": form.get("action"),
+        "quantity": form.get("quantity"),
+        "price": form.get("price"),
+        "total_value": form.get("total_value"),
+        "fees": form.get("fees", 0.0),
+        "broker": broker,
+        "strategy": form.get("strategy"),
         "account": form.get("account"),
         "trade_id": form.get("trade_id"),
         "tags": form.get("tags"),
         "notes": form.get("notes"),
-        "broker": broker,
-        "entity_code": entity_code,
         "jurisdiction": jurisdiction,
-        "updated_by": current_user.username if current_user else "system",
+        "entity_code": entity_code,
         "language": config.get("LANGUAGE_CODE", "en"),
+        "updated_by": current_user.username if hasattr(current_user, "username") else current_user if current_user else "system",
         "approval_status": form.get("approval_status", "pending"),
         "gdpr_compliant": True,
         "ccpa_compliant": True,

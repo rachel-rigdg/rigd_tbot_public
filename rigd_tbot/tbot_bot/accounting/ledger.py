@@ -14,7 +14,10 @@ def load_internal_ledger():
     db_path = resolve_ledger_db_path(*bot_identity)
     conn = sqlite3.connect(db_path)
     cursor = conn.execute(
-        "SELECT id, date, symbol, type, amount, account, trade_id, tags, notes, "
+        "SELECT id, datetime_utc, symbol, action, quantity, price, total_value, fees, broker, "
+        "strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
+        "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
+        "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
         "CASE WHEN approval_status = 'approved' THEN 'ok' ELSE 'mismatch' END AS status "
         "FROM trades"
     )
@@ -22,15 +25,35 @@ def load_internal_ledger():
     for row in cursor.fetchall():
         results.append({
             "id": row[0],
-            "date": row[1],
+            "datetime_utc": row[1],
             "symbol": row[2],
-            "type": row[3],
-            "amount": row[4],
-            "account": row[5],
-            "trade_id": row[6],
-            "tags": row[7],
-            "notes": row[8],
-            "status": row[9],
+            "action": row[3],
+            "quantity": row[4],
+            "price": row[5],
+            "total_value": row[6],
+            "fees": row[7],
+            "broker": row[8],
+            "strategy": row[9],
+            "account": row[10],
+            "trade_id": row[11],
+            "tags": row[12],
+            "notes": row[13],
+            "jurisdiction": row[14],
+            "entity_code": row[15],
+            "language": row[16],
+            "created_by": row[17],
+            "updated_by": row[18],
+            "approved_by": row[19],
+            "approval_status": row[20],
+            "gdpr_compliant": row[21],
+            "ccpa_compliant": row[22],
+            "pipeda_compliant": row[23],
+            "hipaa_sensitive": row[24],
+            "iso27001_tag": row[25],
+            "soc2_type": row[26],
+            "created_at": row[27],
+            "updated_at": row[28],
+            "status": row[29],
         })
     conn.close()
     return results
@@ -39,7 +62,10 @@ def mark_entry_resolved(entry_id):
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
     current_user = get_current_user()
-    updater = current_user.username if current_user else "system"
+    updater = (
+        current_user.username if hasattr(current_user, "username")
+        else current_user if current_user else "system"
+    )
     conn = sqlite3.connect(db_path)
     conn.execute(
         "UPDATE trades SET approval_status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -53,10 +79,10 @@ def add_ledger_entry(entry_data):
     db_path = resolve_ledger_db_path(*bot_identity)
     conn = sqlite3.connect(db_path)
     columns = [
-        "date", "symbol", "type", "amount", "account", "trade_id", "tags", "notes", "broker",
-        "entity_code", "jurisdiction", "created_by", "updated_by", "approved_by", "language",
-        "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant", "hipaa_sensitive",
-        "iso27001_tag", "soc2_type"
+        "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
+        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
+        "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
+        "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type"
     ]
     values = [entry_data.get(col) for col in columns]
     placeholders = ", ".join("?" for _ in columns)
@@ -72,10 +98,10 @@ def edit_ledger_entry(entry_id, updated_data):
     db_path = resolve_ledger_db_path(*bot_identity)
     conn = sqlite3.connect(db_path)
     columns = [
-        "date", "symbol", "type", "amount", "account", "trade_id", "tags", "notes", "broker",
-        "entity_code", "jurisdiction", "updated_by", "language", "approval_status",
-        "gdpr_compliant", "ccpa_compliant", "pipeda_compliant", "hipaa_sensitive",
-        "iso27001_tag", "soc2_type"
+        "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
+        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
+        "updated_by", "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant",
+        "hipaa_sensitive", "iso27001_tag", "soc2_type"
     ]
     set_clause = ", ".join([f"{col}=?" for col in columns])
     values = [updated_data.get(col) for col in columns]

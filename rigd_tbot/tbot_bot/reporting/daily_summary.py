@@ -48,7 +48,7 @@ def finalize_summary(extra_stats: Dict = None):
     if extra_stats:
         _summary_data.update(extra_stats)
     try:
-        full_path = get_output_path(bot_identity=BOT_IDENTITY, category="summaries", filename=SUMMARY_FILE)
+        full_path = get_output_path(category="summaries", filename=SUMMARY_FILE, bot_identity=BOT_IDENTITY)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         with open(full_path, "w", encoding="utf-8") as f:
             json.dump(_summary_data, f, indent=2)

@@ -110,7 +110,7 @@ def log_audit_event(action, entry_id, user, before=None, after=None):
     now = datetime.utcnow().isoformat()
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO audit_trail (timestamp, action, entry_id, user, before, after) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO audit_trail (timestamp, action, related_id, actor, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?)",
             (now, action, entry_id, user, json.dumps(before) if before else None, json.dumps(after) if after else None)
         )
         conn.commit()
@@ -139,7 +139,7 @@ def get_all_ledger_entries():
 
 def calculate_account_balances():
     """
-    Dynamically calculate the sum of amounts grouped by account from the trades table.
+    Dynamically calculate the sum of total_value grouped by account from the trades table.
     Returns a dict of {account: balance}.
     """
     if TEST_MODE_FLAG.exists():
@@ -157,7 +157,7 @@ def calculate_account_balances():
 
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute(
-            "SELECT account, SUM(amount) as balance FROM trades GROUP BY account"
+            "SELECT account, SUM(total_value) as balance FROM trades GROUP BY account"
         )
         balances = {row[0]: row[1] for row in cursor.fetchall()}
     return balances

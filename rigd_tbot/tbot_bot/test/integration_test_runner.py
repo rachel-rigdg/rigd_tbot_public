@@ -45,8 +45,8 @@ def check_output_artifacts():
 
 def check_ledger_exports():
     ledgers = [
-        f"{BOT_IDENTITY}_BOT_COA.db",
         f"{BOT_IDENTITY}_BOT_ledger.db",
+        f"{BOT_IDENTITY}_BOT_COA.db",
         f"{BOT_IDENTITY}_BOT_FLOAT_ledger.db",
     ]
     for name in ledgers:

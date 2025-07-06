@@ -32,7 +32,7 @@ def finalize_trade(trade: dict, strategy: str, mode: str):
         strategy (str): Strategy label ("open", "mid", "close").
         mode (str): "live" or "paper"
     """
-    trade["timestamp"] = utc_now().isoformat()
+    trade["datetime_utc"] = utc_now().isoformat()
     trade["strategy"] = strategy
     trade["mode"] = mode
 
