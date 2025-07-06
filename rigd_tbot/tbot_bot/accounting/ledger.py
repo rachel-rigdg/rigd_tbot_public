@@ -47,3 +47,53 @@ def mark_entry_resolved(entry_id):
     )
     conn.commit()
     conn.close()
+
+def add_ledger_entry(entry_data):
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    conn = sqlite3.connect(db_path)
+    columns = [
+        "date", "symbol", "type", "amount", "account", "trade_id", "tags", "notes", "broker",
+        "entity_code", "jurisdiction", "created_by", "updated_by", "approved_by", "language",
+        "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant", "hipaa_sensitive",
+        "iso27001_tag", "soc2_type"
+    ]
+    values = [entry_data.get(col) for col in columns]
+    placeholders = ", ".join("?" for _ in columns)
+    conn.execute(
+        f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
+        values
+    )
+    conn.commit()
+    conn.close()
+
+def edit_ledger_entry(entry_id, updated_data):
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    conn = sqlite3.connect(db_path)
+    columns = [
+        "date", "symbol", "type", "amount", "account", "trade_id", "tags", "notes", "broker",
+        "entity_code", "jurisdiction", "updated_by", "language", "approval_status",
+        "gdpr_compliant", "ccpa_compliant", "pipeda_compliant", "hipaa_sensitive",
+        "iso27001_tag", "soc2_type"
+    ]
+    set_clause = ", ".join([f"{col}=?" for col in columns])
+    values = [updated_data.get(col) for col in columns]
+    values.append(entry_id)
+    conn.execute(
+        f"UPDATE trades SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        values
+    )
+    conn.commit()
+    conn.close()
+
+def delete_ledger_entry(entry_id):
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "DELETE FROM trades WHERE id = ?",
+        (entry_id,)
+    )
+    conn.commit()
+    conn.close()
