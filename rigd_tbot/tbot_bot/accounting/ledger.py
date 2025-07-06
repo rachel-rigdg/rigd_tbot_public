@@ -4,6 +4,7 @@ import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user  # to get current user for updated_by etc.
+from tbot_bot.accounting.ledger_utils import load_broker_code, load_account_number
 
 def get_identity_tuple():
     identity = load_bot_identity()
@@ -77,7 +78,17 @@ def mark_entry_resolved(entry_id):
 def add_ledger_entry(entry_data):
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
-    conn = sqlite3.connect(db_path)
+    # Inject backend-only account and broker
+    entry_data["broker"] = load_broker_code()
+    entry_data["account"] = load_account_number()
+    # Robust backend total_value calculation
+    try:
+        qty = float(entry_data.get("quantity") or 0)
+        price = float(entry_data.get("price") or 0)
+        fees = float(entry_data.get("fees") or 0)
+        entry_data["total_value"] = round((qty * price) - fees, 2)
+    except Exception:
+        entry_data["total_value"] = entry_data.get("total_value") or 0
     columns = [
         "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
@@ -86,6 +97,7 @@ def add_ledger_entry(entry_data):
     ]
     values = [entry_data.get(col) for col in columns]
     placeholders = ", ".join("?" for _ in columns)
+    conn = sqlite3.connect(db_path)
     conn.execute(
         f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
         values
@@ -96,7 +108,17 @@ def add_ledger_entry(entry_data):
 def edit_ledger_entry(entry_id, updated_data):
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
-    conn = sqlite3.connect(db_path)
+    # Always override backend-only account and broker
+    updated_data["broker"] = load_broker_code()
+    updated_data["account"] = load_account_number()
+    # Backend-side robust total_value calculation
+    try:
+        qty = float(updated_data.get("quantity") or 0)
+        price = float(updated_data.get("price") or 0)
+        fees = float(updated_data.get("fees") or 0)
+        updated_data["total_value"] = round((qty * price) - fees, 2)
+    except Exception:
+        updated_data["total_value"] = updated_data.get("total_value") or 0
     columns = [
         "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
@@ -106,6 +128,7 @@ def edit_ledger_entry(entry_id, updated_data):
     set_clause = ", ".join([f"{col}=?" for col in columns])
     values = [updated_data.get(col) for col in columns]
     values.append(entry_id)
+    conn = sqlite3.connect(db_path)
     conn.execute(
         f"UPDATE trades SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         values

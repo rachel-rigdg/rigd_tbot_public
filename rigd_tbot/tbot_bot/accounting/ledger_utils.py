@@ -39,6 +39,34 @@ def get_account_path(key):
     """
     return ACCOUNT_MAP.get(key, "")
 
+def load_broker_code():
+    """
+    Loads broker code from encrypted bot_identity.json.enc
+    """
+    key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
+    enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
+    key = key_path.read_bytes()
+    cipher = Fernet(key)
+    plaintext = cipher.decrypt(enc_path.read_bytes())
+    bot_identity_data = json.loads(plaintext.decode("utf-8"))
+    identity = bot_identity_data.get("BOT_IDENTITY_STRING")
+    return identity.split("_")[2]
+
+def load_account_number():
+    """
+    Loads account number or code from encrypted acct_api.json.enc if present, else returns empty string.
+    """
+    try:
+        key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "acct_api.key"
+        enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "acct_api.json.enc"
+        key = key_path.read_bytes()
+        cipher = Fernet(key)
+        plaintext = cipher.decrypt(enc_path.read_bytes())
+        acct_api_data = json.loads(plaintext.decode("utf-8"))
+        return acct_api_data.get("ACCOUNT_NUMBER", "") or acct_api_data.get("ACCOUNT_ID", "")
+    except Exception:
+        return ""
+
 def validate_ledger_schema():
     """
     Checks that the ledger DB matches the required schema.
@@ -161,3 +189,21 @@ def calculate_account_balances():
         )
         balances = {row[0]: row[1] for row in cursor.fetchall()}
     return balances
+
+def calculate_running_balances():
+    """
+    Returns list of dicts: each ledger entry with added field 'running_balance'.
+    """
+    if TEST_MODE_FLAG.exists():
+        return []
+    entries = get_all_ledger_entries()
+    # Sort by datetime_utc ascending, id as tiebreaker
+    entries.sort(key=lambda e: (e.get("datetime_utc", ""), e.get("id", 0)))
+    running = 0.0
+    out = []
+    for entry in entries:
+        val = float(entry.get("total_value") or 0)
+        running += val
+        entry["running_balance"] = round(running, 2)
+        out.append(entry)
+    return out

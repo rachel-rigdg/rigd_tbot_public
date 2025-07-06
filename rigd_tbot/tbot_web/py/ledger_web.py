@@ -8,6 +8,8 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.accounting.ledger_utils import calculate_running_balances
+import sqlite3
 
 ledger_web = Blueprint("ledger_web", __name__)
 
@@ -62,9 +64,8 @@ def ledger_reconcile():
     if provisioning_guard() or identity_guard():
         return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).", balances=balances)
     try:
-        from tbot_bot.accounting.ledger import load_internal_ledger
         from tbot_bot.accounting.ledger_utils import calculate_account_balances
-        internal_ledger = load_internal_ledger()
+        internal_ledger = calculate_running_balances()
         broker_entries = []
         entries = reconcile_ledgers(internal_ledger, broker_entries)
         balances = calculate_account_balances()
@@ -105,9 +106,9 @@ def add_ledger_entry_route():
         "price": form.get("price"),
         "total_value": form.get("total_value"),
         "fees": form.get("fees", 0.0),
-        "broker": broker,
+        # "broker": broker,
         "strategy": form.get("strategy"),
-        "account": form.get("account"),
+        # "account": form.get("account"),
         "trade_id": form.get("trade_id"),
         "tags": form.get("tags"),
         "notes": form.get("notes"),
@@ -125,8 +126,16 @@ def add_ledger_entry_route():
         "iso27001_tag": "",
         "soc2_type": "",
     }
-    add_ledger_entry(entry_data)
-    flash('Ledger entry added.')
+    try:
+        add_ledger_entry(entry_data)
+        flash('Ledger entry added.')
+    except sqlite3.IntegrityError as e:
+        if "UNIQUE constraint failed: trades.trade_id" in str(e):
+            flash("Trade ID already exists. Please use a unique Trade ID.", "error")
+        else:
+            flash(f"Ledger DB error: {e}", "error")
+    except Exception as e:
+        flash(f"Ledger error: {e}", "error")
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 @ledger_web.route('/ledger/edit/<int:entry_id>', methods=['POST'])
@@ -147,9 +156,9 @@ def edit_ledger_entry_route(entry_id):
         "price": form.get("price"),
         "total_value": form.get("total_value"),
         "fees": form.get("fees", 0.0),
-        "broker": broker,
+        # "broker": broker,
         "strategy": form.get("strategy"),
-        "account": form.get("account"),
+        # "account": form.get("account"),
         "trade_id": form.get("trade_id"),
         "tags": form.get("tags"),
         "notes": form.get("notes"),
@@ -165,8 +174,16 @@ def edit_ledger_entry_route(entry_id):
         "iso27001_tag": "",
         "soc2_type": "",
     }
-    edit_ledger_entry(entry_id, updated_data)
-    flash('Ledger entry updated.')
+    try:
+        edit_ledger_entry(entry_id, updated_data)
+        flash('Ledger entry updated.')
+    except sqlite3.IntegrityError as e:
+        if "UNIQUE constraint failed: trades.trade_id" in str(e):
+            flash("Trade ID already exists. Please use a unique Trade ID.", "error")
+        else:
+            flash(f"Ledger DB error: {e}", "error")
+    except Exception as e:
+        flash(f"Ledger error: {e}", "error")
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 @ledger_web.route('/ledger/delete/<int:entry_id>', methods=['POST'])
