@@ -42,7 +42,6 @@
                     <tr><td>Currency Code</td><td id="currency_code"></td></tr>
                     <tr><td>Entity Code</td><td id="entity_code"></td></tr>
                     <tr><td>Jurisdiction Code</td><td id="jurisdiction_code"></td></tr>
-                    <tr><td>COA Version</td><td id="coa_version"></td></tr>
                     <tr><td>Created (UTC)</td><td id="created_at_utc"></td></tr>
                     <tr><td>Last Updated (UTC)</td><td id="last_updated_utc"></td></tr>
                 </tbody>
@@ -127,7 +126,6 @@
                     document.getElementById("currency_code").textContent = data.metadata.currency_code;
                     document.getElementById("entity_code").textContent = data.metadata.entity_code;
                     document.getElementById("jurisdiction_code").textContent = data.metadata.jurisdiction_code;
-                    document.getElementById("coa_version").textContent = data.metadata.coa_version;
                     document.getElementById("created_at_utc").textContent = data.metadata.created_at_utc;
                     document.getElementById("last_updated_utc").textContent = data.metadata.last_updated_utc;
                     // Hierarchy (read-only)

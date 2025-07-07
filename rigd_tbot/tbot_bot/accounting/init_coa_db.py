@@ -24,7 +24,7 @@ def export_json_and_metadata_from_db(coa_db_path):
         cursor = conn.execute("SELECT account_json FROM coa_accounts")
         coa_accounts = [json.loads(row[0]) for row in cursor.fetchall()]
         # Fetch metadata
-        cursor = conn.execute("SELECT currency_code, entity_code, jurisdiction_code, broker_code, bot_id, coa_version, created_at_utc, last_updated_utc FROM coa_metadata")
+        cursor = conn.execute("SELECT currency_code, entity_code, jurisdiction_code, broker_code, bot_id, created_at_utc, last_updated_utc FROM coa_metadata")
         row = cursor.fetchone()
         if row:
             metadata = {
@@ -33,9 +33,8 @@ def export_json_and_metadata_from_db(coa_db_path):
                 "jurisdiction_code": row[2],
                 "broker_code": row[3],
                 "bot_id": row[4],
-                "coa_version": row[5],
-                "created_at_utc": row[6],
-                "last_updated_utc": row[7]
+                "created_at_utc": row[5],
+                "last_updated_utc": row[6]
             }
         else:
             metadata = {}
@@ -57,7 +56,7 @@ def export_json_and_metadata_from_db(coa_db_path):
     except Exception as e:
         print(f"[init_coa_db] export_json_and_metadata_from_db ERROR: {e}")
 
-def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None, coa_version="v1.0.0", currency_code="USD"):
+def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None, currency_code="USD"):
     print(f"[init_coa_db] Starting COA DB initialization...")
     if not all([entity_code, jurisdiction_code, broker_code, bot_id]):
         key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
@@ -81,15 +80,15 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
             print(f"[init_coa_db] Number of COA accounts in template: {len(coa_accounts)}")
             conn = sqlite3.connect(coa_db_path)
             conn.execute(
-                "CREATE TABLE coa_metadata (currency_code TEXT NOT NULL, entity_code TEXT NOT NULL, jurisdiction_code TEXT NOT NULL, broker_code TEXT NOT NULL, bot_id TEXT NOT NULL, coa_version TEXT NOT NULL, created_at_utc TEXT NOT NULL, last_updated_utc TEXT NOT NULL)"
+                "CREATE TABLE coa_metadata (currency_code TEXT NOT NULL, entity_code TEXT NOT NULL, jurisdiction_code TEXT NOT NULL, broker_code TEXT NOT NULL, bot_id TEXT NOT NULL, TEXT NOT NULL, created_at_utc TEXT NOT NULL, last_updated_utc TEXT NOT NULL)"
             )
             conn.execute(
                 "CREATE TABLE coa_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, account_json TEXT NOT NULL)"
             )
             now = utc_now()
             conn.execute(
-                "INSERT INTO coa_metadata (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, coa_version, created_at_utc, last_updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, coa_version, now, now),
+                "INSERT INTO coa_metadata (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, created_at_utc, last_updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, now, now),
             )
             for acc in coa_accounts:
                 conn.execute("INSERT INTO coa_accounts (account_json) VALUES (?)", (json.dumps(acc),))
