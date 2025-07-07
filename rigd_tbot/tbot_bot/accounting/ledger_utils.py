@@ -207,3 +207,25 @@ def calculate_running_balances():
         entry["running_balance"] = round(running, 2)
         out.append(entry)
     return out
+
+def get_coa_accounts():
+    """
+    Returns a list of (code, name) tuples for all COA accounts, sorted by name.
+    """
+    if TEST_MODE_FLAG.exists():
+        return []
+    # Get identity for current ledger DB
+    key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
+    enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
+    key = key_path.read_bytes()
+    cipher = Fernet(key)
+    plaintext = cipher.decrypt(enc_path.read_bytes())
+    bot_identity_data = json.loads(plaintext.decode("utf-8"))
+    identity = bot_identity_data.get("BOT_IDENTITY_STRING")
+    entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    with sqlite3.connect(db_path) as conn:
+        # Look for account_code and account_name in coa_accounts table
+        cursor = conn.execute("SELECT json_extract(account_json, '$.code'), json_extract(account_json, '$.name') FROM coa_accounts")
+        accounts = sorted([(row[0], row[1]) for row in cursor.fetchall() if row[0] and row[1]], key=lambda x: x[1])
+    return accounts

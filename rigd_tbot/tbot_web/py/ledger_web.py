@@ -8,7 +8,7 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.accounting.ledger_utils import calculate_running_balances
+from tbot_bot.accounting.ledger_utils import calculate_running_balances, get_coa_accounts
 import sqlite3
 
 ledger_web = Blueprint("ledger_web", __name__)
@@ -61,23 +61,27 @@ def ledger_reconcile():
     error = None
     entries = []
     balances = {}
+    coa_accounts = []
     if provisioning_guard() or identity_guard():
-        return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).", balances=balances)
+        return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).", balances=balances, coa_accounts=coa_accounts)
     try:
         from tbot_bot.accounting.ledger_utils import calculate_account_balances
         internal_ledger = calculate_running_balances()
         broker_entries = []
         entries = reconcile_ledgers(internal_ledger, broker_entries)
         balances = calculate_account_balances()
+        coa_accounts = get_coa_accounts()
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
         balances = {}
+        coa_accounts = []
     except Exception as e:
         error = f"Ledger error: {e}"
         entries = []
         balances = {}
-    return render_template('ledger.html', entries=entries, error=error, balances=balances)
+        coa_accounts = []
+    return render_template('ledger.html', entries=entries, error=error, balances=balances, coa_accounts=coa_accounts)
 
 @ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
@@ -106,9 +110,9 @@ def add_ledger_entry_route():
         "price": form.get("price"),
         "total_value": form.get("total_value"),
         "fees": form.get("fees", 0.0),
-        # "broker": broker,
+        # Pulldown COA account
+        "account": form.get("account"),
         "strategy": form.get("strategy"),
-        # "account": form.get("account"),
         "trade_id": form.get("trade_id"),
         "tags": form.get("tags"),
         "notes": form.get("notes"),
@@ -156,9 +160,9 @@ def edit_ledger_entry_route(entry_id):
         "price": form.get("price"),
         "total_value": form.get("total_value"),
         "fees": form.get("fees", 0.0),
-        # "broker": broker,
+        # Pulldown COA account
+        "account": form.get("account"),
         "strategy": form.get("strategy"),
-        # "account": form.get("account"),
         "trade_id": form.get("trade_id"),
         "tags": form.get("tags"),
         "notes": form.get("notes"),

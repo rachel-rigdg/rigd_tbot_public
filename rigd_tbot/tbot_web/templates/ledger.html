@@ -102,8 +102,8 @@
                         </td>
                         <td><input type="text" name="quantity" value="{{ entry.quantity }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
                         <td><input type="text" name="price" value="{{ entry.price }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
-                        <td><input type="text" name="total_value" value="{{ entry.total_value }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
                         <td><input type="text" name="fees" value="{{ entry.fees }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="total_value" value="{{ entry.total_value }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
                         <td>
                             {% if entry.status == "mismatch" %}
                                 <span class="status-mismatch">Mismatch</span>
@@ -120,7 +120,13 @@
                     <!-- Row 2 -->
                     <tr class="row-bottom {{ entry.status }}">
                         <td><input type="text" name="trade_id" value="{{ entry.trade_id }}"></td>
-                        <td><input type="text" name="account" value="{{ entry.account }}" readonly></td>
+                        <td>
+                            <select name="account" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %} required>
+                                {% for code, name in coa_accounts %}
+                                    <option value="{{ code }}" {% if entry.account == code %}selected{% endif %}>{{ name }} ({{ code }})</option>
+                                {% endfor %}
+                            </select>
+                        </td>
                         <td>
                             <select name="strategy" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %}>
                                 <option value="open" {% if entry.strategy == "open" %}selected{% endif %}>open</option>
@@ -174,13 +180,19 @@
                     <td><input type="text" name="price" placeholder="Price" required></td>
                     <td><input type="text" name="fees" placeholder="Fees"></td>
                     <td><input type="text" name="total_value" placeholder="Total Value"></td>
-
                     <td></td>
                     <td></td>
                 </tr>
                 <tr class="row-bottom">
                     <td><input type="text" name="trade_id" placeholder="Trade ID"></td>
-                    <td><input type="text" name="account" placeholder="Account" readonly></td>
+                    <td>
+                        <select name="account" required>
+                            <option value="">Select Account</option>
+                            {% for code, name in coa_accounts %}
+                                <option value="{{ code }}">{{ name }} ({{ code }})</option>
+                            {% endfor %}
+                        </select>
+                    </td>
                     <td>
                         <select name="strategy">
                             <option value="">Select</option>
