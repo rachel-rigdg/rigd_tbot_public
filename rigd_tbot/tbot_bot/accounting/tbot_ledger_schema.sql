@@ -234,4 +234,3 @@ CREATE INDEX IF NOT EXISTS idx_audit_trail_timestamp ON audit_trail (timestamp);
 
 -- Cross-table Relationships (for future expansion)
 -- (e.g., FOREIGN KEY (entity_code) REFERENCES entities(code) ON DELETE SET NULL, ...)
-

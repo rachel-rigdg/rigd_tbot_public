@@ -50,14 +50,16 @@ def import_coa_from_db(entity_code=None, jurisdiction_code=None, broker_code=Non
         raise FileNotFoundError("COA DB not found.")
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    cur.execute("SELECT currency_code, entity_code, jurisdiction_code, created_at_utc, last_updated_utc FROM coa_metadata LIMIT 1")
+    cur.execute("SELECT currency_code, entity_code, jurisdiction_code, broker_code, bot_id, created_at_utc, last_updated_utc FROM coa_metadata LIMIT 1")
     meta_row = cur.fetchone()
     metadata = {
         "currency_code": meta_row[0],
         "entity_code": meta_row[1],
         "jurisdiction_code": meta_row[2],
-        "created_at_utc": meta_row[3],
-        "last_updated_utc": meta_row[4],
+        "broker_code": meta_row[3],
+        "bot_id": meta_row[4],
+        "created_at_utc": meta_row[5],
+        "last_updated_utc": meta_row[6],
     }
     cur.execute("SELECT account_json FROM coa_accounts ORDER BY id ASC")
     accounts = [json.loads(row[0]) for row in cur.fetchall()]
@@ -107,7 +109,7 @@ def validate_coa_db_schema(entity_code=None, jurisdiction_code=None, broker_code
     cur.execute("PRAGMA table_info(coa_metadata)")
     columns = {row[1] for row in cur.fetchall()}
     required_fields = {
-        "currency_code", "entity_code", "jurisdiction_code",
+        "currency_code", "entity_code", "jurisdiction_code", "broker_code", "bot_id",
         "created_at_utc", "last_updated_utc"
     }
     if not required_fields.issubset(columns):

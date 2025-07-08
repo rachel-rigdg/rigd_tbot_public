@@ -80,14 +80,14 @@ def init_coa_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_
             print(f"[init_coa_db] Number of COA accounts in template: {len(coa_accounts)}")
             conn = sqlite3.connect(coa_db_path)
             conn.execute(
-                "CREATE TABLE coa_metadata (currency_code TEXT NOT NULL, entity_code TEXT NOT NULL, jurisdiction_code TEXT NOT NULL, broker_code TEXT NOT NULL, bot_id TEXT NOT NULL, TEXT NOT NULL, created_at_utc TEXT NOT NULL, last_updated_utc TEXT NOT NULL)"
+                "CREATE TABLE coa_metadata (currency_code TEXT NOT NULL, entity_code TEXT NOT NULL, jurisdiction_code TEXT NOT NULL, broker_code TEXT NOT NULL, bot_id TEXT NOT NULL, created_at_utc TEXT NOT NULL, last_updated_utc TEXT NOT NULL)"
             )
             conn.execute(
                 "CREATE TABLE coa_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, account_json TEXT NOT NULL)"
             )
             now = utc_now()
             conn.execute(
-                "INSERT INTO coa_metadata (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, created_at_utc, last_updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO coa_metadata (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, created_at_utc, last_updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (currency_code, entity_code, jurisdiction_code, broker_code, bot_id, now, now),
             )
             for acc in coa_accounts:

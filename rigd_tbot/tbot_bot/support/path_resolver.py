@@ -156,7 +156,7 @@ def resolve_ledger_db_path(entity: str, jurisdiction: str, broker: str, bot_id: 
 def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
-    return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_COA_v1.0.0.db")
+    return str(PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers" / f"{bot_identity}_BOT_COA.db")
 
 def resolve_universe_cache_path(bot_identity: str = None) -> str:
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
