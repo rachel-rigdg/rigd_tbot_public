@@ -1,209 +1,187 @@
-================================================================================  
-Document: 040  
-Screener_Symbol_Universe  
-Version: v046
-Date: UTC:2025-06-30 00:00:00  
+================================================================================
+Document: 040
+Screener_Symbol_Universe
+Version: v048
+Date: UTC:2025-06-30 00:00:00
 ================================================================================
 
-Title: Screener Symbol Universe — Comprehensive Universe Caching, Filtering, Staged Blocklist, and Runtime Use (Merged/Exhaustive Spec)
+Title: Screener Symbol Universe — Universe Caching, Filtering, Staged Blocklist, and Runtime Use (Merged with "041 - Universe Build — Free, Long-Term Stable Architecture for TradeBot")
 
+Overview:
 --------------------------------------------------------------------------------
-Overview
---------------------------------------------------------------------------------
-This specification governs the **entire symbol universe management lifecycle** for the RIGD TradeBot system. It merges all requirements from both Symbol Universe (040) and Long-Term Free Universe Build (041) specifications, supporting robust, staged, crash-resilient, multi-source, and zero-maintenance universe and blocklist management.
+This document defines the unified, staged, and *fully free/low-cost data source* approach for building, caching, filtering, and consuming the symbol universe for all trading screeners in the RIGD TradeBot system. Incorporates:  
+- Crash resilience  
+- Real-time auditability  
+- Robust disk-first design using unfiltered and filtered JSON universes  
+- Staged API and blocklist workflow  
+- "Free-first" data polling  
+- Blocklist recovery/maintenance  
+- Long-term stability, and fully modular data source integration.
 
-**Key goals:**
-- Minimize API usage and costs.
-- Ensure reliability, recoverability, and auditability for years with zero intervention.
-- Support “set-and-forget” operation, multi-broker, and multi-source symbol integrity.
-- Provide full transparency, disk-first recovery, and blocklist healing.
-- Guarantee filter consistency, versioning, and audit logging.
+All screener modules must source their eligible symbol list exclusively from the pre-filtered, pre-built universe file (`symbol_universe.json`). No screener may fetch global lists or build real-time universes.
 
 --------------------------------------------------------------------------------
 Section 1: Core Principles
 --------------------------------------------------------------------------------
-1. **Single canonical universe:** Only `symbol_universe.json` is used for all runtime screening.
-2. **Universe built overnight:** Pulls only after market close, before market open, using official exchange lists and/or multiple public sources.
-3. **Staged, quota-minimizing API calls:**
-   - **First pass:** Use only free/cheap APIs (or official exchange symbol lists) for symbol and price eligibility.
-   - **Second pass:** Only eligible (non-blocklisted, price≥$1) symbols get full paid-API metadata calls.
-4. **Blocklist first:**
-   - All excluded/ineligible/low-priced tickers go to the blocklist with reason and timestamp.
-   - Blocklist is automatically maintained, scheduled for weekly “healing” checks.
-5. **Multi-source, multi-exchange:**
-   - Fallback across nasdaqlisted.txt, otherexchanges.txt, IEX, Yahoo, Tradier, etc.
-   - Symbol universe/diff is validated by comparing at least two sources each build.
-6. **Redundant archiving:**
-   - All universe and blocklist files are versioned and archived for a minimum retention window (default: 90 days).
-7. **Audit-first and disk-first:**
-   - Every step is logged, all failures and API events are written to `universe_ops.log`.
-   - Crash recovery is supported via disk checkpoints at every stage.
-8. **No runtime fetching:**
-   - Only the nightly (or on-demand) process updates universe/blocklist. All screeners use the on-disk file.
-9. **Zero-maintenance, set-and-forget:**
-   - Architecture is self-healing, supports source fallbacks, can survive API/service deprecations, and auto-archives for years.
-10. **Fully versioned:**
-    - All schema and file versions are tracked and validated at each load.
+
+1. **Single canonical symbol universe file** (`symbol_universe.json`) is generated per trading day and must be the *only* source for all screeners.
+2. **Universe is built overnight** (after market close, before market open) using NYSE/NASDAQ/NYSE Arca (excluding OTC/pink sheets), with filters applied.
+3. **API quota minimization and staged calls:** 
+   - *Only* minimal API calls, using free/cheap sources for initial symbol/pricing checks and expensive APIs only for eligible symbols.
+   - *Blocklist is managed first* to avoid repeat queries to ineligible symbols.
+4. **Staged blocklist and eligibility workflow**:
+   - Blocklist is auto-built/updated using price-only queries from free/delayed APIs (e.g. Yahoo, Polygon, Tradier, IEX).
+   - Any symbol below `MIN_PRICE` (typically $1.00) is blocklisted and written to disk immediately (with UTC timestamp and source).
+   - Blocklist is re-polled on weekends/periodically; any symbol recovering above threshold is removed from the blocklist.
+5. **All strategies and brokers share the same universe per trading day.**
+6. **Standardized file paths:**
+   - `tbot_bot/output/screeners/symbol_universe.unfiltered.json` — Raw, unfiltered, deduplicated symbols (with all available metadata).
+   - `tbot_bot/output/screeners/symbol_universe.partial.json` — Inline-filtered, partial progress file.
+   - `tbot_bot/output/screeners/symbol_universe.json` — Final, validated, production universe.
+   - `tbot_bot/output/screeners/screener_blocklist.txt` — Master blocklist (auto-managed, UTC-stamped, with source and reason).
+7. **Universe build is disk-first, crash-resilient:** All symbols and blocklist writes are atomic and resumable. Universe build can resume from either file after crash or quota hit.
+8. **Manual 'Force Rebuild', 'Re-filter', and 'Update Blocklist' always available in the Web UI.**
+9. **UI displays build status, blocklist status, all table counts, and supports live search/comparison of universes and blocklist.**
+10. **No runtime fetching of global symbol lists; universe is fixed for each session and only updated by automated/manual triggers.**
+11. **First boot may accept a placeholder, but a full rebuild is required before trading.**
+12. **Long-term data stability:** Architecture must run for years with only minimal maintenance, never relying on any one API or data provider for critical filtering (see Section 2).
 
 --------------------------------------------------------------------------------
-Section 2: Universe Construction & Blocklist Workflow
+Section 2: Universe Construction & Blocklist Workflow (Staged, Free-First)
 --------------------------------------------------------------------------------
 
-**Nightly Multi-Stage Build Process:**
+**Nightly Build (Multi-Pass Staged Process):**
 
-1. **Download full symbol lists from all supported sources:**
-   - e.g. nasdaqlisted.txt, otherexchanges.txt, NYSE/AMEX/ARCA, IEX, Yahoo, Tradier, Polygon, etc.
-   - Archive source files nightly with timestamp.
-   - Compare row counts and symbol sets between at least two sources. Log and halt on major drift/mismatch.
+1. **Source all possible equity symbols from public/free sources:**  
+   - e.g., `nasdaqlisted.txt`, `otherlisted.txt` (NASDAQ FTP), Tradier, Yahoo Finance, IEX (free tier), or any delayed/CSV list.  
+   - Write all candidates (symbol, exchange, name) to a temp candidate list.
 
-2. **For each candidate symbol:**
-   - **If symbol on blocklist:** Skip full processing, unless blocklist update mode is running.
-   - **If not blocklisted:** Query *only* price using free/cheap API (priority: Yahoo, Polygon, Tradier, etc.).
-   - **If price < $1:**
-     - Add symbol to blocklist with UTC timestamp, price, and source.
-     - Write immediately to `screener_blocklist.txt`.
-   - **If price ≥ $1:**
-     - Mark eligible for further processing.
+2. **For each candidate symbol (Pass 1):**  
+   a. **If on blocklist:** skip.  
+   b. **If not blocklisted:** Query *price only* from a free/delayed API (Yahoo, Polygon, Tradier, IEX, or any custom parser).  
+   c. **If price < MIN_PRICE:** Add symbol to blocklist with UTC timestamp, data source, and "below price floor" reason.  
+   d. **If price >= MIN_PRICE:** mark as eligible for metadata pass.
 
-3. **Eligible, price-qualified symbols:**
-   - Fetch all required metadata (paid API, e.g. Finnhub/IBKR):
-     - lastClose, marketCap, sector, exchange, fractional eligibility, etc.
-   - Immediately append to `symbol_universe.unfiltered.json`.
-   - Deduplicate in-memory and/or on disk by symbol.
+3. **Write blocklist after every batch** to ensure durability.
 
-4. **Inline filtering:**
-   - Apply all core filters (exchange, price, marketCap, non-null).
-   - For price > max, enforce broker fractional eligibility (`isFractional` from broker API or symbol metadata).
-   - Symbols passing all filters go to both `symbol_universe.partial.json` and `symbol_universe.json` as soon as available.
+4. **For eligible, non-blocklisted, price >= MIN_PRICE symbols (Pass 2):**  
+   a. Query *full metadata* using the highest-quality API available (Finnhub, IBKR, or Polygon for paid, free source otherwise).  
+   b. Collect lastClose, marketCap, sector/industry, exchange, fractional eligibility (if available).  
+   c. Write each symbol with metadata to `symbol_universe.unfiltered.json` (dedupe as you go).
 
-5. **Atomic, crash-resilient writes:**
-   - All files are written atomically; no partial/corrupt files on crash.
-   - Recovery continues from unfiltered file and blocklist.
+5. **Apply core filters to each symbol as fetched (Pass 3):**  
+   - Exchange must be "NYSE", "NASDAQ", or "ARCA".
+   - Price: `MIN_PRICE` ≤ lastClose ≤ `MAX_PRICE`, with broker fractional eligibility enforced for high-priced symbols.
+   - Market Cap: `MIN_MARKET_CAP` ≤ marketCap ≤ `MAX_MARKET_CAP`.
+   - Must have valid, nonzero, non-null fields (no placeholders).
+   - All pass/fail events and filter rejects must be logged (with reasons).
 
-6. **Audit and diff:**
-   - Log symbol additions, deletions, and universe drifts between builds.
-   - Archive daily universes and diffs for backtesting and audit.
+6. **If a symbol passes filter, write immediately to both `symbol_universe.partial.json` and `symbol_universe.json`.**
 
-7. **End-of-build merge and validation:**
-   - Compare/merge partial and final filtered universes, check for duplicates/missing.
-   - Write completion audit/log entry.
+7. **At end-of-build:**  
+   - Compare/merge `partial.json` and `json` to remove duplicates/missing entries, ensuring integrity.
+   - Write build audit/log entry (all steps, batch sizes, errors, durations).
 
-**Blocklist Maintenance & Healing:**
-- Blocklist is rebuilt/refreshed nightly; delisted/ineligible/low-price symbols are added automatically.
-- **Weekend/periodic full recheck:**
-   - Re-query all blocklisted symbols with current free/cheap price source.
-   - Remove from blocklist and re-queue if price recovers above minimum threshold.
-   - Write blocklist change events to log.
-- All blocklist actions are logged, with source, reason, and timestamp.
-- Blocklist is archived nightly (with timestamped filename).
+**Blocklist Maintenance (Recovery Passes):**  
+- Blocklist is automatically rebuilt/refreshed nightly as part of the universe build.
+- On weekends or as scheduled, **re-poll blocklisted tickers** (using free price source) to see if any have recovered above the min price threshold.
+  - If so, *un-blocklist* immediately and queue for metadata polling in the next build.
+- Blocklist may be manually updated by user in UI, but all manual changes are audit-logged and flagged in the file.
 
 --------------------------------------------------------------------------------
 Section 3: File/Script Layout & Responsibilities
 --------------------------------------------------------------------------------
 
-- **symbol_universe.unfiltered.json:** Raw, deduped, fully fetched symbols with all metadata fields.
-- **symbol_universe.partial.json:** Inline-filtered, progress-tracking file of filter-eligible symbols.
-- **symbol_universe.json:** Final, production-ready, fully validated symbol universe.
-- **screener_blocklist.txt:**
-  - One ticker per line, with UTC timestamp, reason (e.g. “price < $1”, “delisted”), and optionally price/source.
-  - Example: `XYZ,2025-07-01T01:23:45Z,price<1,Yahoo`
-- **universe_ops.log:** Structured, UTC-timestamped event log for every build, error, or manual action.
-- **archived/source-symbol-lists:** All nightly raw exchange symbol lists with timestamp.
-- **tbot_bot/screeners/symbol_universe_refresh.py:**
-   - Orchestrates staged downloads, blocklist build, filtering, and all file writes.
-   - Implements crash-resilience, audit, and restart/recovery logic.
-- **tbot_bot/screeners/blocklist_manager.py:**
-   - Blocklist loading, writing, healing, deduplication, and event/audit logic.
-- **tbot_bot/screeners/screener_utils.py:**
-   - Loads and validates universes, blocklist, source files.
-   - Handles deduplication, merging, and schema/version validation.
-- **tbot_bot/screeners/screener_filter.py:**
-   - Field normalization, exchange/cap/price filtering, broker tradability/fractional checks.
-- **tbot_web/py/universe_web.py:**
-   - Web UI endpoints for status, export, rebuild, blocklist maintenance, and search.
+- `symbol_universe.unfiltered.json`: All raw, deduped, fetched symbols with full metadata (no placeholders).
+- `symbol_universe.partial.json`: Inline-filtered, progress-tracking, filtered symbols.
+- `symbol_universe.json`: Final, validated, production-ready universe (only fully eligible symbols).
+- `screener_blocklist.txt`: Blocklisted tickers with timestamp, data source, and reason (auto-managed and audit logged).
+- `universe_ops.log`: Progress log for all universe/blocklist build/rebuild events.
+- `tbot_bot/screeners/symbol_universe_refresh.py`: Orchestrates staged fetch, blocklist management, filtering, and all file writes. Implements multi-pass, multi-source staged workflow and recovery.
+- `tbot_bot/screeners/screener_utils.py`: Loads/validates universes and blocklist, provides filtering/merge, and all utility functions.
+- `tbot_bot/screeners/blocklist_manager.py`: Encapsulates all blocklist load/save, update, audit-log, and recovery polling logic.
+- `tbot_web/py/universe_web.py`: Web UI endpoints for display, rebuild, blocklist management, export, status, and manual un/blocklisting.
+- `tbot_bot/screeners/universe_logger.py`: Dedicated logging utility for all staged universe/build/blocklist events.
 
 --------------------------------------------------------------------------------
 Section 4: Web UI and User Actions
 --------------------------------------------------------------------------------
 
-1. **Web UI `/universe` main page:**
-   - Real-time counts/status for all universe files and blocklist.
+1. **Web UI `/universe` displays:**
+   - Counts and status for all universes and blocklist.
    - Four side-by-side, infinitely scrollable tables (unfiltered, partial, final, blocklist).
-   - “Force Rebuild”, “Re-filter”, “Update Blocklist”, “Archive Export” buttons.
-   - Progress/heartbeat log stream.
-   - Search/filter box (regex, multi-column).
-   - All table file download/export (CSV/JSON) options.
+   - Search/filter box applies across all tables.
+   - At-a-glance counts for each file for checksum.
+   - “Force Rebuild”, “Re-filter”, and “Update Blocklist” buttons.
+   - Progress/heartbeat log in real time.
+   - Table export (CSV/JSON) for all files.
 
-2. **Manual/automated triggers:**
-   - Re-filter from unfiltered (no new fetch).
-   - Blocklist maintenance and recheck (with before/after diff shown).
-   - Audit trail and universe/blocklist diff visualizer.
-
-3. **Archive/recovery access:**
-   - Download or restore any previous universe/blocklist file from retention.
+2. **Manual 'Re-filter' triggers re-filtering from unfiltered, writing partial/final and merging.**
+3. **Manual 'Update Blocklist' triggers blocklist recovery pass (re-poll and unblock eligible symbols).**
+4. **Manual un/blocklisting in UI writes audit log entry (with user, timestamp, and reason).**
+5. **Export (CSV/JSON) available for all universes and blocklist.**
 
 --------------------------------------------------------------------------------
-Section 5: Validation, Drift Detection, Maintenance
+Section 5: Validation & Maintenance
 --------------------------------------------------------------------------------
 
 1. **Validation for every file:**
-   - All entries: `symbol`, `exchange`, `lastClose`, `marketCap`, `sector`, `isFractional` as available.
-   - Deduplication required in all outputs.
-   - JSON UTF-8 integrity check, atomic write only.
-   - Blocklist consistency and auto-update logic enforced.
-   - All errors, drift, and mismatches logged.
+   - Every entry must have symbol, exchange, lastClose, marketCap.
+   - Deduplication required.
+   - All files must be valid UTF-8 JSON (no placeholder/null).
+   - Blocklist must be consistent and audit-logged.
+   - Log all errors and events with UTC timestamps and detailed context.
 
-2. **Symbol set drift detection:**
-   - Each build compares symbol sets vs. previous day, logs additions/removals/diffs.
-   - Alerts if symbol count drops/increases dramatically (>2% threshold).
-
-3. **Audit/QA tools:**
-   - Validation script for all outputs (field checks, cross-file consistency).
-   - Blocklist audit tools for recheck, drift, and healing.
-
-4. **No file is deleted or overwritten on error—atomic saves only.**
-   - All previous universes/blocklists are preserved/archived.
-
-5. **Long-term archival and retention:**
-   - Nightly snapshot of every universe and blocklist for minimum 90 days.
-   - Retention policy can be extended for regulatory/audit requirements.
+2. **Test/QA utility script** validates all files and filter logic; reports missing/invalid data, or out-of-spec universe/blocklist.
+3. **No universe file or blocklist is deleted or overwritten on failure—atomic save only on successful build.**
+4. **Universe and blocklist are only updated after market close or on-demand; runtime never changes them.**
 
 --------------------------------------------------------------------------------
-Section 6: API, Quota, and Performance
+Section 6: API, Quota, and Performance Considerations
 --------------------------------------------------------------------------------
 
-1. **API keys always loaded from encrypted secrets.**
-2. **Free/cheap APIs for price screening (e.g., Yahoo, Tradier, Polygon).**
-3. **Paid APIs (e.g., Finnhub, IBKR) used only for symbols passing all free-stage filters.**
-4. **Only the following Finnhub endpoints are allowed: `/stock/symbol`, `/stock/profile2`, `/quote`.**
-5. **Strict API quota and rate-limiting:**
-   - UNIVERSE_SLEEP_TIME enforced per call.
-   - If daily quota is exceeded, builder halts and logs error.
-6. **Blocklist maintenance uses only free/low-cost APIs for polling/recovery.**
-7. **Crash recovery at every disk checkpoint; never refetches more than necessary.**
-8. **Redundant download and verification:**
-   - All symbol source lists downloaded from two or more sources, compared nightly.
-   - Halt and alert on mismatch/drift.
+1. **API keys sourced securely (never hardcoded).**
+2. **All blocklist and initial screening is done using only free, delayed, or anonymous APIs whenever possible.**
+3. **Paid/limited API (e.g., Finnhub, IBKR, Polygon) is used only for eligible, non-blocklisted, price-passing symbols.**
+4. **All API usage is staged: free-first, batch, throttle all calls (`UNIVERSE_SLEEP_TIME`, per-provider).**
+5. **Resume/continue supported via atomic writes to `unfiltered.json` and `blocklist.txt` at every batch.**
+6. **Blocklist polling/maintenance must not consume quota from paid sources.**
+7. **All errors, quota events, and recoveries are logged with batch/ticker context.**
+8. **Data source order/priority is fully modular and updatable (user config or UI-driven).**
+9. **If all free sources fail, fallback to last good build or pause build.**
 
 --------------------------------------------------------------------------------
 Section 7: Error Handling, Logging, and Recovery
 --------------------------------------------------------------------------------
 
-1. **Every build step, API call, error, and blocklist event is logged to `universe_ops.log` with UTC timestamp.**
-2. **Atomic, write-safe file ops.**
-3. **On critical failure, system halts, sends alert (future), and preserves last good universe/blocklist.**
-4. **Audit log supports full stepwise recovery and post-mortem for every event.**
-5. **All blocklist changes (add, remove, heal) are event-logged with source, price, timestamp, reason.**
+1. **All failures, API errors, and build anomalies logged to `universe_ops.log` (UTC, JSONL or structured text).**
+2. **Failed/unexpected build never overwrites previous universe or blocklist.**
+3. **Manual review or audit of all log files supported in Web UI.**
+4. **On failure, alerting/notification may be triggered (future enhancement).**
+5. **All critical actions (build, blocklist update, manual un/blocklist) are audit logged.**
+6. **All Web UI operations that write to blocklist or universes must be atomic and log user/action context.**
 
 --------------------------------------------------------------------------------
 Section 8: Extensibility and Future-Proofing
 --------------------------------------------------------------------------------
 
-1. **Supports any number of symbol sources and fallback APIs.**
-2. **Plug-and-play: New sources/exchanges added with config only, not code changes.**
-3. **Future support for international universes, broker-level custom filtering, extended metadata fields.**
-4. **Flexible retention and audit requirements.**
-5. **Fully versioned and schema-validated.**
-6. **All logic tested for multi-year, zero-maintenance, “set and forget” operation.**
+1. **Architecture supports:**
+   - Multiple brokers, universes, and blocklists.
+   - User-supplied symbol lists and alternate sources.
+   - Plug-and-play symbol feed adapters (free, paid, delayed, CSV, broker-native, etc.).
+   - Dynamic integration with broker APIs for tradability/fractional eligibility.
+   - Full audit history and log export.
+   - Additional exchanges/regions (modular code and config).
+   - Versioned, upgrade-safe universe and blocklist schema (with migration tools).
+   - Fully modular and updatable data source configuration (user config or UI-driven).
+   - Seamless future integration with AI, advanced filters, or alternate asset classes.
+
+2. **Deployment:**
+   - Universe and blocklist files may be pre-built, snapshotted, or exported for new entity onboarding or fast deploy.
+   - On entity or jurisdiction change, a single build suffices to bring new bot into full operation with no loss of data integrity.
+   - All files are human- and machine-readable for easy audit/recovery/CI.
+
+3. **Long-Term Stability:**
+   - Staged, free-first architecture is intended to run for years without vendor lock, pricing changes, or API failures impacting core eligibility and filtering.
 
 ================================================================================
