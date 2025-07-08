@@ -2,9 +2,7 @@
 
 import sys
 import json
-import logging
 import time
-from decimal import Decimal
 from datetime import datetime, timezone
 from typing import List, Dict
 from tbot_bot.config.env_bot import load_env_bot_config
@@ -18,11 +16,13 @@ from tbot_bot.broker.broker_api import get_active_broker
 from tbot_bot.support.path_resolver import (
     resolve_universe_cache_path,
     resolve_universe_partial_path,
-    resolve_universe_log_path
+    resolve_universe_log_path,
+    resolve_screener_blocklist_path
 )
 
 UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
 LOG_PATH = resolve_universe_log_path()
+BLOCKLIST_PATH = resolve_screener_blocklist_path()
 
 def log_progress(msg: str, details: dict = None):
     now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
@@ -57,10 +57,11 @@ def load_unfiltered():
     except Exception:
         return []
 
-def append_to_blocklist(symbol, blocklist_path):
+def append_to_blocklist(symbol, blocklist_path, reason="PRICE_BELOW_MIN"):
     try:
+        now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
         with open(blocklist_path, "a", encoding="utf-8") as f:
-            f.write(symbol.upper() + "\n")
+            f.write(f"{symbol.upper()},{reason},{now}\n")
     except Exception:
         pass
 
@@ -72,13 +73,13 @@ def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price
     SCREENER_USERNAME = screener_secrets.get("SCREENER_USERNAME", "")
     SCREENER_PASSWORD = screener_secrets.get("SCREENER_PASSWORD", "")
     UNIVERSE_SLEEP_TIME = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
-    blocklist_path = env.get("SCREENER_UNIVERSE_BLOCKLIST_PATH", "output/screeners/screener_blocklist.txt")
+    blocklist_path = BLOCKLIST_PATH
     if not SCREENER_API_KEY:
         raise RuntimeError("SCREENER_API_KEY not set in screener secrets/config")
     unfiltered_symbols = load_unfiltered()
     filtered_symbols = []
     seen = set(s.get("symbol") for s in unfiltered_symbols)
-    blockset = set(blocklist) if blocklist else set()
+    blockset = set(line.strip().split(',')[0] for line in blocklist) if blocklist else set()
     for exch in exchanges:
         url = f"{SCREENER_URL.rstrip('/')}/stock/symbol?exchange={exch.strip()}&token={SCREENER_API_KEY}"
         auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
@@ -103,7 +104,7 @@ def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price
             except Exception:
                 last_close = None
             if last_close is None or last_close < min_price:
-                append_to_blocklist(symbol, blocklist_path)
+                append_to_blocklist(symbol, blocklist_path, reason="PRICE_BELOW_MIN")
                 continue
             # Stage 3: Profile2 pull
             profile_url = f"{SCREENER_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={SCREENER_API_KEY}"
@@ -274,7 +275,7 @@ def main():
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
     max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
     max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
-    blocklist_path = env.get("SCREENER_UNIVERSE_BLOCKLIST_PATH", None)
+    blocklist_path = BLOCKLIST_PATH
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
 
     log_progress("Universe build parameters", {
@@ -285,7 +286,11 @@ def main():
         "blocklist": blocklist_path
     })
 
-    blocklist = load_blocklist(blocklist_path)
+    try:
+        with open(blocklist_path, "r", encoding="utf-8") as bf:
+            blocklist = bf.readlines()
+    except Exception:
+        blocklist = []
 
     try:
         symbols_filtered = fetch_broker_symbol_metadata_crash_resilient(

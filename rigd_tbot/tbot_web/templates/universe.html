@@ -12,13 +12,14 @@
     <script src="/static/js/universe.js"></script>
 </head>
 <body>
-    <h2>Universe Cache Inspection</h2>
+    <h2>Universe Cache & Blocklist Inspection</h2>
     <p><b>Status:</b> <span id="status-msg">{{ status_msg }}</span></p>
     <p><b>Cache File:</b> {{ cache_path }}</p>
     <p>
         <b>Unfiltered count:</b> <span id="unfiltered-count">{{ unfiltered_symbols|length }}</span> |
         <b>Partial (filtered) count:</b> <span id="partial-count">{{ partial_symbols|length }}</span> |
-        <b>Final (universe) count:</b> <span id="final-count">{{ final_symbols|length }}</span>
+        <b>Final (universe) count:</b> <span id="final-count">{{ final_symbols|length }}</span> |
+        <b>Blocklist count:</b> <span id="blocklist-count">{{ blocklist_entries|length if blocklist_entries else 0 }}</span>
     </p>
     <p><b>Data Source:</b> {{ data_source_label }}</p>
     <form method="get" action="{{ url_for('universe.universe_status') }}" class="searchbox">
@@ -32,9 +33,13 @@
     <form action="{{ url_for('universe.universe_refilter') }}" method="post" style="display:inline; margin-left: 10px;">
         <button type="submit">Re-filter</button>
     </form>
+    <form action="{{ url_for('universe.universe_blocklist') }}" method="get" style="display:inline; margin-left: 10px;">
+        <button type="submit">Blocklist Manager</button>
+    </form>
     <span style="margin-left:20px;">
         <a href="{{ url_for('universe.universe_export', fmt='csv') }}">Export CSV</a> |
-        <a href="{{ url_for('universe.universe_export', fmt='json') }}">Export JSON</a>
+        <a href="{{ url_for('universe.universe_export', fmt='json') }}">Export JSON</a> |
+        <a href="{{ url_for('universe.universe_export', fmt='blocklist') }}">Export Blocklist</a>
     </span>
     <div style="margin-top:16px; margin-bottom:16px; padding:8px; border:1px solid #999; background:#333;">
         <b>Universe Build Progress:</b>
@@ -122,6 +127,25 @@
                         <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
                         <td>{{ s.companyName if s.companyName else "" }}</td>
                         <td>{{ s.sector if s.sector else "" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div>
+        <div class="universe-table-label">Blocklist (screener_blocklist.txt):</div>
+        <div id="blocklist-table-scroll" class="universe-table-window blocklist">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in blocklist_entries %}
+                    <tr>
+                        <td>{{ s }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

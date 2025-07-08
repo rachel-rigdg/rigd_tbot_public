@@ -1,11 +1,20 @@
 # tbot_web/py/universe_web.py
-# Flask blueprint for universe cache inspection, search, export, rebuild, re-filter, and table APIs (unfiltered/partial/final).
+# Flask blueprint for universe cache and blocklist management per staged symbol universe spec.
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app, jsonify
 from tbot_bot.screeners.symbol_universe_refresh import main as rebuild_main
 from tbot_bot.screeners.screener_utils import load_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
-from tbot_bot.screeners.blocklist_manager import add_to_blocklist, remove_from_blocklist, load_blocklist as blocklist_manager_load
-from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
+from tbot_bot.screeners.blocklist_manager import (
+    add_to_blocklist,
+    remove_from_blocklist,
+    load_blocklist as blocklist_manager_load,
+    get_blocklist_count,
+)
+from tbot_bot.support.path_resolver import (
+    resolve_universe_cache_path,
+    resolve_universe_partial_path,
+    resolve_screener_blocklist_path,
+)
 import csv
 import io
 import json
@@ -14,6 +23,7 @@ import os
 universe_bp = Blueprint("universe", __name__, template_folder="../templates")
 
 UNFILTERED_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'output', 'screeners', 'symbol_universe.unfiltered.json'))
+BLOCKLIST_PATH = resolve_screener_blocklist_path()
 
 def load_json_file(path):
     try:
@@ -57,10 +67,15 @@ def get_all_counts():
         filtered = load_universe_cache()
     except Exception:
         filtered = []
+    try:
+        block_count = get_blocklist_count()
+    except Exception:
+        block_count = 0
     return {
         "unfiltered": len(unfiltered),
         "partial": len(partial),
         "filtered": len(filtered),
+        "blocklist": block_count,
     }
 
 @universe_bp.route("/", methods=["GET", "POST"])
@@ -71,6 +86,11 @@ def universe_status():
         final_symbols = load_universe_cache()
     except Exception:
         final_symbols = []
+    try:
+        with open(BLOCKLIST_PATH, "r", encoding="utf-8") as bf:
+            blocklist_entries = [line.strip() for line in bf if line.strip() and not line.startswith("#")]
+    except Exception:
+        blocklist_entries = []
     cache_path = resolve_universe_cache_path()
     status_msg = f"Universe cache loaded: {len(final_symbols)} symbols." if final_symbols else "Universe cache not loaded or empty."
     data_source_label = "Final (complete)"
@@ -80,6 +100,7 @@ def universe_status():
         unfiltered_symbols=unfiltered_symbols,
         partial_symbols=partial_symbols,
         final_symbols=final_symbols,
+        blocklist_entries=blocklist_entries,
         cache_ok=bool(final_symbols),
         status_msg=status_msg,
         cache_path=cache_path,
@@ -122,6 +143,18 @@ def universe_export(fmt):
             mimetype="application/json",
             headers={"Content-Disposition": "attachment;filename=symbol_universe.json"}
         )
+    elif fmt == "blocklist":
+        try:
+            with open(BLOCKLIST_PATH, "r", encoding="utf-8") as bf:
+                data = bf.read()
+            return Response(
+                data,
+                mimetype="text/plain",
+                headers={"Content-Disposition": "attachment;filename=screener_blocklist.txt"}
+            )
+        except Exception:
+            flash("Blocklist file not found.", "error")
+            return redirect(url_for("universe.universe_status"))
     else:
         flash("Unsupported export format.", "error")
         return redirect(url_for("universe.universe_status"))
@@ -139,7 +172,7 @@ def universe_output_static(filename):
 def universe_status_message():
     counts = get_all_counts()
     status_msg = (
-        f"Unfiltered: {counts['unfiltered']} | Partial: {counts['partial']} | Filtered: {counts['filtered']}"
+        f"Unfiltered: {counts['unfiltered']} | Partial: {counts['partial']} | Filtered: {counts['filtered']} | Blocklist: {counts['blocklist']}"
         if sum(counts.values()) > 0 else
         "Universe files not loaded or empty."
     )
@@ -171,7 +204,6 @@ def universe_refilter():
             max_size=max_size
         )
         # Blocklist management: add symbols failing price filter
-        from tbot_bot.screeners.blocklist_manager import add_to_blocklist
         low_price_symbols = [s["symbol"] for s in unfiltered if "lastClose" in s and s["lastClose"] is not None and s["lastClose"] < min_price]
         if low_price_symbols:
             add_to_blocklist(low_price_symbols, reason=f"Refiltered: price < {min_price}")
@@ -187,6 +219,30 @@ def universe_refilter():
         flash(f"Refilter failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))
 
+@universe_bp.route("/blocklist", methods=["GET", "POST"])
+def universe_blocklist():
+    if request.method == "POST":
+        symbol = request.form.get("symbol", "").strip().upper()
+        action = request.form.get("action", "add")
+        reason = request.form.get("reason", "")
+        if symbol:
+            if action == "add":
+                add_to_blocklist([symbol], reason=reason or "Manual add from UI")
+                flash(f"Added {symbol} to blocklist.", "success")
+            elif action == "remove":
+                remove_from_blocklist([symbol], reason=reason or "Manual remove from UI")
+                flash(f"Removed {symbol} from blocklist.", "success")
+    blocklist = []
+    try:
+        with open(BLOCKLIST_PATH, "r", encoding="utf-8") as bf:
+            blocklist = [line.strip() for line in bf if line.strip() and not line.startswith("#")]
+    except Exception:
+        blocklist = []
+    return render_template(
+        "blocklist.html",
+        blocklist_entries=blocklist,
+    )
+
 @universe_bp.route("/table/<table_type>")
 def universe_table_api(table_type):
     search = request.args.get("search", "").upper()
@@ -201,10 +257,16 @@ def universe_table_api(table_type):
             data = load_universe_cache()
         except Exception:
             data = []
+    elif table_type == "blocklist":
+        try:
+            with open(BLOCKLIST_PATH, "r", encoding="utf-8") as bf:
+                data = [line.strip() for line in bf if line.strip() and not line.startswith("#")]
+        except Exception:
+            data = []
     else:
         return jsonify({"error": "Invalid table type"}), 400
     if search:
-        data = [s for s in data if search in s.get("symbol", "").upper()]
+        data = [s for s in data if search in (s if isinstance(s, str) else s.get("symbol", "")).upper()]
     return jsonify(data[offset:offset+limit])
 
 @universe_bp.route("/counts")

@@ -1,6 +1,6 @@
 # tbot_bot/screeners/screener_utils.py
 # Utilities to load, validate, and manage the symbol universe cache for TradeBot screeners
-# Fully aligned with TradeBot v1.0.0 screener and universe cache specifications
+# Fully aligned with TradeBot v1.0.0+ staged/stable universe build specification.
 # STRICT: Only universe files built with /stock/symbol, /stock/profile2, /quote endpoints are valid.
 
 import json
@@ -9,17 +9,23 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 
-from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path
+from tbot_bot.support.path_resolver import (
+    resolve_universe_cache_path,
+    resolve_universe_partial_path,
+    resolve_screener_blocklist_path
+)
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_filter import (
     normalize_symbols, filter_symbols as core_filter_symbols, dedupe_symbols
 )
+from tbot_bot.screeners.blocklist_manager import load_blocklist as load_blocklist_full
 
 LOG = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "1.0.0"
 UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
+BLOCKLIST_PATH = resolve_screener_blocklist_path()
 
 class UniverseCacheError(Exception):
     pass
@@ -159,7 +165,11 @@ def filter_symbols(
     )
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:
-    if not path or not os.path.isfile(path):
+    # Use blocklist_manager; fallback to old loader if path forced
+    if not path:
+        bl_dict = load_blocklist_full()
+        return list(bl_dict.keys())
+    if not os.path.isfile(path):
         LOG.warning(f"[screener_utils] Blocklist file not found or not provided: {path}")
         return []
     blocklist = []
@@ -167,8 +177,10 @@ def load_blocklist(path: Optional[str] = None) -> List[str]:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith("#"):
-                    blocklist.append(line.upper())
+                if not line or line.startswith("#"):
+                    continue
+                sym = line.split(",", 1)[0].upper()
+                blocklist.append(sym)
     except Exception as e:
         LOG.error(f"[screener_utils] Failed to load blocklist file '{path}': {e}")
         return []

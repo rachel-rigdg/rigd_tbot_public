@@ -1,7 +1,7 @@
 # tbot_bot/screeners/screener_filter.py
-# Centralized, screener-agnostic symbol normalization and filtering for TradeBot v1.0.0
-# 100% spec-compliant: robust field alias handling, MIC/exchange mapping, type safety, blocklist, and cap/price gating.
-# Supports broker-level tradability and fractional checks. Finnhub endpoints: /stock/symbol, /company_profile2, /quote.
+# Centralized, screener-agnostic symbol normalization and filtering for TradeBot v1.0.0+
+# 100% spec-compliant: robust field alias handling, MIC/exchange mapping, type safety, blocklist-first, and staged cap/price gating.
+# Supports broker-level tradability and fractional checks. Staged blocklist and all runtime/fetch compliance per spec.
 
 import re
 from decimal import Decimal
@@ -89,7 +89,7 @@ def normalize_symbol(raw: Dict) -> Dict:
     for k in IS_FRACTIONAL_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
-            # Finnhub does not provide this, only set if broker filled
+            # Only set if broker provided; Finnhub does not return this
             if isinstance(v, bool):
                 norm["isFractional"] = v
             elif isinstance(v, str):
@@ -119,16 +119,19 @@ def filter_symbol(
     sym = s.get("symbol", "")
     lc  = s.get("lastClose", None)
     mc  = s.get("marketCap", None)
+    # Blocklist-first check
+    if blockset and sym.upper() in blockset:
+        return False
+    # Exchange compliance
     if "US" in [e.upper() for e in exchanges]:
         valid_exchange = exch.upper() in ("NASDAQ", "NYSE", "AMEX", "BATS", "OTC")
     else:
         valid_exchange = exch and exch.upper() in [e.upper() for e in exchanges]
     if not (valid_exchange and sym):
         return False
-    if blockset and sym.upper() in blockset:
-        return False
     if lc is None or mc is None:
         return False
+    # Fractional eligibility for high-priced stocks
     if lc >= max_price:
         if broker_obj and hasattr(broker_obj, "is_symbol_fractional"):
             if not broker_obj.is_symbol_fractional(sym):

@@ -6,9 +6,11 @@
 import os
 import json
 from datetime import datetime, timezone
-from typing import List, Set
+from typing import List, Set, Dict
 
-BLOCKLIST_PATH = "tbot_bot/output/screeners/screener_blocklist.txt"
+from tbot_bot.support.path_resolver import resolve_screener_blocklist_path
+
+BLOCKLIST_PATH = resolve_screener_blocklist_path()
 BLOCKLIST_LOG_PATH = "tbot_bot/output/screeners/blocklist_ops.log"
 
 def utc_now():
@@ -22,37 +24,50 @@ def log_blocklist_event(event: str, details: dict = None):
     with open(BLOCKLIST_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(msg + "\n")
 
-def load_blocklist(path: str = BLOCKLIST_PATH) -> Set[str]:
+def load_blocklist(path: str = BLOCKLIST_PATH) -> Dict[str, dict]:
+    """Returns blocklist as dict {symbol: {"reason":..., "timestamp":...}}"""
+    blocklist = {}
     if not os.path.isfile(path):
-        return set()
-    symbols = set()
+        return blocklist
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
-            line = line.strip().upper()
-            if line and not line.startswith("#"):
-                symbols.add(line)
-    return symbols
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(",", 2)
+            symbol = parts[0].upper()
+            reason = parts[1] if len(parts) > 1 else ""
+            timestamp = parts[2] if len(parts) > 2 else ""
+            blocklist[symbol] = {"reason": reason, "timestamp": timestamp}
+    return blocklist
 
-def save_blocklist(symbols: Set[str], path: str = BLOCKLIST_PATH):
+def save_blocklist(blocklist: Dict[str, dict], path: str = BLOCKLIST_PATH):
+    """Save blocklist dict to file."""
     with open(path, "w", encoding="utf-8") as f:
-        for s in sorted(symbols):
-            f.write(s + "\n")
-    log_blocklist_event("Blocklist updated", {"count": len(symbols)})
+        for sym, meta in sorted(blocklist.items()):
+            reason = meta.get("reason", "")
+            timestamp = meta.get("timestamp", "")
+            f.write(f"{sym},{reason},{timestamp}\n")
+    log_blocklist_event("Blocklist updated", {"count": len(blocklist)})
 
 def add_to_blocklist(symbols: List[str], reason: str = ""):
-    symbols = [s.upper() for s in symbols]
-    blocklist = load_blocklist()
-    before_count = len(blocklist)
-    blocklist.update(symbols)
-    save_blocklist(blocklist)
-    log_blocklist_event("Added to blocklist", {"symbols": symbols, "reason": reason, "before": before_count, "after": len(blocklist)})
-
-def remove_from_blocklist(symbols: List[str], reason: str = ""):
+    now = utc_now().isoformat()
     symbols = [s.upper() for s in symbols]
     blocklist = load_blocklist()
     before_count = len(blocklist)
     for s in symbols:
-        blocklist.discard(s)
+        blocklist[s] = {"reason": reason, "timestamp": now}
+    save_blocklist(blocklist)
+    log_blocklist_event("Added to blocklist", {"symbols": symbols, "reason": reason, "before": before_count, "after": len(blocklist)})
+
+def remove_from_blocklist(symbols: List[str], reason: str = ""):
+    now = utc_now().isoformat()
+    symbols = [s.upper() for s in symbols]
+    blocklist = load_blocklist()
+    before_count = len(blocklist)
+    for s in symbols:
+        if s in blocklist:
+            del blocklist[s]
     save_blocklist(blocklist)
     log_blocklist_event("Removed from blocklist", {"symbols": symbols, "reason": reason, "before": before_count, "after": len(blocklist)})
 
@@ -72,11 +87,11 @@ def blocklist_for_universe_build(symbols: List[dict], min_price: float) -> Set[s
     Any symbol with price < min_price or delisted/exchange mismatch is added.
     """
     block_syms = set()
+    now = utc_now().isoformat()
     for entry in symbols:
         symbol = entry.get("symbol", "").upper()
         last_close = entry.get("lastClose", None)
         exch = entry.get("exchange", "")
-        # Any hard fail: price, exchange, or delisting status (if available)
         if last_close is None or last_close < min_price or exch not in ("NASDAQ", "NYSE"):
             block_syms.add(symbol)
     if block_syms:

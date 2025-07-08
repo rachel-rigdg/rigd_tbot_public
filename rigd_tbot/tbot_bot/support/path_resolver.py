@@ -1,6 +1,6 @@
 # tbot_bot/support/path_resolver.py
 # Resolves dynamic paths for TradeBot modules based on identity and file category.
-# v046: Contains only runtime path logic for web UI or bot—never triggers any provisioning, bootstrapping, or privileged init.
+# Fully supports staged universe/blocklist build, archival, and validation/diff ops per specification.
 
 import os
 import re
@@ -182,6 +182,30 @@ def resolve_screener_blocklist_path() -> str:
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "screener_blocklist.txt")
 
+def resolve_blocklist_archive_path(archive_date: str = None) -> str:
+    """
+    Returns path to blocklist archive, for a given date string (YYYYMMDD), or today's date.
+    Example: tbot_bot/output/screeners/blocklist_archive_20250630.txt
+    """
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
+    screeners_dir = base_output_dir / "screeners"
+    screeners_dir.mkdir(parents=True, exist_ok=True)
+    if not archive_date:
+        archive_date = datetime.utcnow().strftime("%Y%m%d")
+    return str(screeners_dir / f"blocklist_archive_{archive_date}.txt")
+
+def resolve_universe_archive_path(archive_date: str = None) -> str:
+    """
+    Returns path to symbol universe archive for a given date string (YYYYMMDD), or today's date.
+    Example: tbot_bot/output/screeners/symbol_universe_20250630.json
+    """
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
+    screeners_dir = base_output_dir / "screeners"
+    screeners_dir.mkdir(parents=True, exist_ok=True)
+    if not archive_date:
+        archive_date = datetime.utcnow().strftime("%Y%m%d")
+    return str(screeners_dir / f"symbol_universe_{archive_date}.json")
+
 def resolve_status_log_path(bot_identity: str = None) -> str:
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     logs_dir = base_output_dir / "logs"
@@ -269,6 +293,8 @@ __all__ = [
     "resolve_universe_partial_path",
     "resolve_universe_log_path",
     "resolve_screener_blocklist_path",
+    "resolve_blocklist_archive_path",
+    "resolve_universe_archive_path",
     "resolve_status_log_path",
     "resolve_status_summary_path",
     "resolve_runtime_script_path",

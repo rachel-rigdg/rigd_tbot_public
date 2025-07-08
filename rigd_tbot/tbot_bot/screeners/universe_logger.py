@@ -1,7 +1,7 @@
 # tbot_bot/screeners/universe_logger.py
-# Dedicated logger for all universe cache and screener symbol universe operations.
-# Comprehensive, UTC timestamped, file+console output, audit-level per specification.
-# Enforced: Use only for logging events related to /stock/symbol, /stock/profile2, /quote universe ops.
+# Dedicated logger for all universe cache, blocklist, and screener symbol universe operations.
+# Comprehensive, UTC timestamped, file+console output, audit-level per v048 specification.
+# Used for /stock/symbol, /stock/profile2, /quote, blocklist events, staged builds, archiving, rechecks.
 # All logs written to tbot_bot/output/screeners/universe_ops.log
 
 import logging
@@ -29,12 +29,10 @@ def get_universe_logger():
     if getattr(logger, "_initialized", False):
         return logger
     logger.setLevel(logging.INFO)
-    # File Handler
     fh = logging.FileHandler(log_path)
     fh.setLevel(logging.INFO)
     fh.setFormatter(UTCFormatter("[%(asctime)s][%(levelname)s] %(message)s"))
     logger.addHandler(fh)
-    # Console Handler (for dev/audit)
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     ch.setFormatter(UTCFormatter("[%(asctime)s][%(levelname)s] %(message)s"))
@@ -44,8 +42,8 @@ def get_universe_logger():
 
 def log_universe_event(event: str, details: dict = None, level: str = "info"):
     """
-    Logs a universe event with structured audit detail.
-    Only events for /stock/symbol, /stock/profile2, /quote universe ops per spec.
+    Logs a universe/blocklist/staged build event with structured audit detail.
+    Used for all universe, blocklist, staged, recovery, and archiving ops.
     """
     logger = get_universe_logger()
     msg = f"{event}"
