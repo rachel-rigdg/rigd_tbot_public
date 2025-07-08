@@ -231,18 +231,23 @@ rigd_tbot/
 │   │   ├── stop_bot.py                             # CLI helper only. Writes control_stop.flag; does NOT watch for flags or launch processes.
 │   │   ├── tbot_supervisor.py                      # CENTRAL SUPERVISOR. Manages all bot phase/state transitions, persistent monitoring, and all subprocess lifecycle. Only one instance allowed; always launched by main.py if present. Handles/waits for and may restart monitor, runtime, or other persistent bot subprocesses. Never runs strategy code directly.
 │   │   └── watchdog_bot.py                         # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
-
 │   │
-│   ├── screeners/			            	        # Screener & Symbol Selection
-│   │   ├── alpaca_screener.py                      # alpaca API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
-│   │   ├── finnhub_screener.py          	        # Finnhub API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
-│   │   ├── ibkr_screener.py                        # Finnhub API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
-│   │   ├── screener_base.py                        # Abstract base for all screener modules. Defines core interface, loads universe, etc.
-│   │   ├── screener_utils.py                       # Shared utility for loading/saving universe, filtering, etc.
-│   │   ├── symbol_universe_refresh.py              #  scheduled process to update symbol universe after hours.
-│   │   ├── tradier_screener.py                     # tradier API - For each screener run, fetch quotes/data only for symbols in universe -Enforce price, market cap, and exchange constraints in symbol universe, not at screener runtime.
-│   │   ├── universe_logger.py                      # Dedicated logger for all universe cache and screener symbol universe operations.
-│   │   └── universe_rebuild_cli.py                 #  CLI tool to manually trigger a universe cache rebuild (nightly process logic)
+│   ├── screeners/			            	                # Screener & Symbol Selection, staged universe/blocklist build, API quota minimization
+│   │   ├── alpaca_screener.py                             # Alpaca screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
+│   │   ├── blocklist_manager.py                           # Blocklist management: add/remove/update, timestamps, archival, blocklist polling/refresh logic
+│   │   ├── finnhub_screener.py          	                # Finnhub screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
+│   │   ├── ibkr_screener.py                               # IBKR screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
+│   │   ├── screener_base.py                               # Abstract screener base: core interface, loads universe, wiring for all screener modules
+│   │   ├── screener_filter.py                             # Symbol normalization/filtering: blocklist-first, broker-aware, spec-compliant, dedupe
+│   │   ├── screener_utils.py                              # Load/save universe and blocklist, atomic file ops, helpers, validation, dedupe, audit
+│   │   ├── symbol_source_loader.py                        # Loads symbol lists from free/paid sources (nasdaqlisted.txt, Tradier, Polygon, etc.), normalizes
+│   │   ├── symbol_universe_refresh.py                     # Orchestrates staged universe/blocklist build, crash-resume, all file outputs, triggers
+│   │   ├── tradier_screener.py                            # Tradier screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
+│   │   ├── universe_archiver.py                           # Automated archival/rotation/restore for all universes/blocklists, retention policy
+│   │   ├── universe_diff.py                               # Diff/compare any two universe/blocklist files for drift/audit/rollback
+│   │   ├── universe_logger.py                             # Dedicated, UTC, audit-level logger for all universe/blocklist events and file ops
+│   │   ├── universe_rebuild_cli.py                        # CLI to trigger universe/blocklist rebuilds, validation, archiving, and recovery
+│   │   └── universe_validation.py                         # Full validation, QA, drift/field checks for all universes/blocklists, dedupe, spec compliance
 │   │
 │   ├── storage/				                    # Persistent runtime data: encrypted secrets, keys, backups, and exports
 │   │   ├── backups/                                # Daily encrypted ledger/config backups (UTC timestamped)
