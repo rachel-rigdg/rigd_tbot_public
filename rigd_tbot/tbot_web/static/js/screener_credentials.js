@@ -20,35 +20,30 @@ function showEditForm(provider) {
     hideAllForms();
     document.getElementById("credential-form-section").style.display = "block";
     document.getElementById("form-title").innerText = provider ? "Edit Provider Credentials" : "Add Provider Credentials";
-    document.getElementById("provider-input").value = provider;
+    document.getElementById("provider-input").value = provider || "";
     clearCredentialFields();
-}
-
-function addCredentialField() {
-    const extraKeys = document.getElementById("extra-keys");
-    const fieldCount = extraKeys.children.length / 2 + 2;
-    const keyInput = document.createElement("input");
-    keyInput.type = "text";
-    keyInput.name = `key${fieldCount}`;
-    keyInput.id = `key${fieldCount}`;
-    keyInput.placeholder = `Key ${fieldCount}`;
-    keyInput.required = true;
-    keyInput.className = "credential-key-input";
-    const valueInput = document.createElement("input");
-    valueInput.type = "password";
-    valueInput.name = `value${fieldCount}`;
-    valueInput.id = `value${fieldCount}`;
-    valueInput.placeholder = `Value ${fieldCount}`;
-    valueInput.required = true;
-    valueInput.className = "credential-value-input";
-    extraKeys.appendChild(keyInput);
-    extraKeys.appendChild(valueInput);
+    if (provider) {
+        populateCredentialFields(provider);
+    }
 }
 
 function clearCredentialFields() {
-    document.getElementById("key1").value = "";
-    document.getElementById("value1").value = "";
-    document.getElementById("extra-keys").innerHTML = "";
+    let screenerKeys = window.screenerKeys || [];
+    for (let i = 0; i < screenerKeys.length; i++) {
+        const key = screenerKeys[i];
+        let el = document.getElementById(key);
+        if (el) el.value = "";
+    }
+}
+
+function populateCredentialFields(provider) {
+    if (!window.allCreds) return;
+    let data = window.allCreds[provider];
+    if (!data) return;
+    for (const key in data) {
+        let el = document.getElementById(key);
+        if (el) el.value = data[key];
+    }
 }
 
 function cancelEdit() {
