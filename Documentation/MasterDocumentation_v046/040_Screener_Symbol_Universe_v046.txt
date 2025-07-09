@@ -5,7 +5,7 @@ Version: v048
 Date: UTC:2025-06-30 00:00:00
 ================================================================================
 
-Title: Screener Symbol Universe — Universe Caching, Filtering, Staged Blocklist, and Runtime Use (Merged with "041 - Universe Build — Free, Long-Term Stable Architecture for TradeBot")
+Title: Screener Symbol Universe — Universe Caching, Filtering, Staged Blocklist, Free-First Architecture, and Modular Source Credential Management
 
 Overview:
 --------------------------------------------------------------------------------
@@ -183,5 +183,92 @@ Section 8: Extensibility and Future-Proofing
 
 3. **Long-Term Stability:**
    - Staged, free-first architecture is intended to run for years without vendor lock, pricing changes, or API failures impacting core eligibility and filtering.
+
+--------------------------------------------------------------------------------
+Section 9: Dedicated Screener Source Credential Management
+--------------------------------------------------------------------------------
+
+**Purpose:**  
+Centralize all API keys, tokens, usernames, and passwords for universe/screener symbol sources (Finnhub, IBKR, Polygon, Yahoo, etc.) in a *dedicated, auditable, secure UI and secrets file.*
+
+**Requirements:**
+
+1. **All screener/universe modules must load credentials from a single, dedicated secrets file:**  
+   - Path: `tbot_bot/storage/secrets/screener_api.json.enc`
+   - All API keys/tokens for each supported source, with provider labels.
+
+2. **Dedicated credential config web UI:**  
+   - New page: `/screener_credentials`
+   - Add, edit, rotate, and remove all screener/universe source credentials in a unified view.
+   - Field validation (min length, format, label required).
+   - All changes logged (user, timestamp, action, field changed).
+   - No sensitive info ever logged in plaintext—only audit events.
+
+3. **Backend API routes:**  
+   - `GET /api/screener_credentials`: return decrypted credentials (only for authorized admin users)
+   - `POST /api/screener_credentials`: create/update credential for a given provider
+   - `DELETE /api/screener_credentials/<provider>`: remove a provider’s credentials
+   - All endpoints require authentication/authorization.
+
+4. **Atomic, encrypted file writes:**  
+   - Changes are atomically written to `screener_api.json.enc` using strong encryption.
+   - Old credentials rotated to backup file with UTC timestamp.
+   - File never stored or transmitted unencrypted.
+
+5. **UI/UX:**  
+   - Sidebar or nav integration for "Screener Credentials" (admin only)
+   - Modal for adding/editing credentials, including provider, API key, secret, user/pass, etc.
+   - Display masked values (show/hide toggle)
+   - Warn on missing/expired credentials
+
+6. **Frontend files:**  
+   - `tbot_web/templates/screener_credentials.html`: credential management UI
+   - `tbot_web/static/js/screener_credentials.js`: UI logic (add, edit, remove, save, rotate, mask/unmask)
+   - CSS file: `/static/css/pages/screener_credentials.css`
+
+7. **Backend files/routes:**  
+   - `tbot_web/py/screener_credentials_web.py`: Flask blueprint for the UI and API
+   - Integration with encryption/decryption (existing secrets framework)
+   - Access control: only admin users can view or edit
+
+8. **Credential usage in universe build:**  
+   - All loaders/source adapters (finnhub, ibkr, polygon, etc.) must use only the central credential loader and never fetch from main bot config.
+   - All credential errors must fail fast and log a sanitized event.
+   - Test/QA utility for credential completeness (flags missing/expired/incomplete config).
+
+9. **Audit and logging:**  
+   - Every change (add/edit/delete/rotate) is audit-logged with timestamp, user, provider, action (never the secret itself).
+   - Log path: `tbot_bot/output/logs/screener_credentials_audit.log`
+
+10. **Deployment/migration:**  
+    - Entity onboarding and live deploy must always include this encrypted secrets file; never store in source control.
+    - Example: `/storage/secrets/screener_api.json.enc.example` included for schema.
+
+--------------------------------------------------------------------------------
+Section 10: New/Updated File List for Screener Credential Management
+--------------------------------------------------------------------------------
+
+**Backend:**
+- `tbot_web/py/screener_credentials_web.py`       # Flask blueprint: UI/API for screener source credentials (GET/POST/DELETE, UI routes)
+- `tbot_bot/support/secrets_manager.py`           # Extend if needed: credential encryption/decryption utilities
+- `tbot_bot/storage/secrets/screener_api.json.enc`   # The encrypted credential file (production)
+- `tbot_bot/storage/secrets/screener_api.json.enc.example`  # Example/schema only (never real keys)
+
+**Frontend/UI:**
+- `tbot_web/templates/screener_credentials.html`  # UI: Credential config page
+- `tbot_web/static/js/screener_credentials.js`    # JS: Credential form logic, API calls, masking
+- `tbot_web/static/css/pages/screener_credentials.css`  # CSS: Style for the credential page
+
+**Audit/Logging:**
+- `tbot_bot/output/logs/screener_credentials_audit.log`   # All admin/user changes to credentials (never secrets, only metadata)
+
+**Integration/Usage:**
+- All screener modules, symbol_source_loader, and universe build process must ONLY call a central credential loader:  
+  - Example: `from tbot_bot.support.secrets_manager import get_screener_credentials`
+  - Never fetch secrets from the main bot config or .env.
+
+**Migration/QA:**
+- On migration or backup/restore, credentials must be re-encrypted and not left in plaintext.
+- Universe validation utility must check for missing/broken credentials before any build.
 
 ================================================================================

@@ -1,4 +1,3 @@
-Zi56
 ================================================================================
 Document: 020
 Directory_Structure
@@ -232,28 +231,28 @@ rigd_tbot/
 │   │   ├── tbot_supervisor.py                      # CENTRAL SUPERVISOR. Manages all bot phase/state transitions, persistent monitoring, and all subprocess lifecycle. Only one instance allowed; always launched by main.py if present. Handles/waits for and may restart monitor, runtime, or other persistent bot subprocesses. Never runs strategy code directly.
 │   │   └── watchdog_bot.py                         # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
 │   │
-│   ├── screeners/			            	                # Screener & Symbol Selection, staged universe/blocklist build, API quota minimization
-│   │   ├── symbol_sources/  
-│   │   │   ├── IBKR_source.py				# loader for IBKR Source
-│   │   │   ├── nasdaq_txt_source.py			# loader for nasdaqlisted.txt
-│   │   │   ├── polygon_source.py			# loader for Polygon API
-│   │   │   └── yahoo_source.py				# loader for Yahoo Finance, etc.
+│   ├── screeners/			            	                    # Screener & Symbol Selection, staged universe/blocklist build, API quota minimization, modular sources
+│   │   ├── symbol_sources/                                   # Modular symbol source adapters (free, paid, delayed, broker-native, etc.)
+│   │   │   ├── IBKR_source.py			                        # Loader for IBKR paid/pro feed (batch equity symbols, price/metadata, API auth via central credentials)
+│   │   │   ├── nasdaq_txt_source.py		                    # Loader for nasdaqlisted.txt/otherlisted.txt (NASDAQ FTP, delayed, no price, symbols only)
+│   │   │   ├── polygon_source.py		                        # Loader for Polygon API (free/paid tier, symbol/price/metadata, API key via central credentials)
+│   │   │   └── yahoo_source.py			                    # Loader for Yahoo Finance (free/delayed, price/symbol/metadata via web/CSV scrape)
 │   │   │
-│   │   ├── alpaca_screener.py                             # Alpaca screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
-│   │   ├── blocklist_manager.py                           # Blocklist management: add/remove/update, timestamps, archival, blocklist polling/refresh logic
-│   │   ├── finnhub_screener.py          	                # Finnhub screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
-│   │   ├── ibkr_screener.py                               # IBKR screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
-│   │   ├── screener_base.py                               # Abstract screener base: core interface, loads universe, wiring for all screener modules
-│   │   ├── screener_filter.py                             # Symbol normalization/filtering: blocklist-first, broker-aware, spec-compliant, dedupe
-│   │   ├── screener_utils.py                              # Load/save universe and blocklist, atomic file ops, helpers, validation, dedupe, audit
-│   │   ├── symbol_source_loader.py                        # Loads symbol lists from free/paid sources (nasdaqlisted.txt, Tradier, Polygon, etc.), normalizes
-│   │   ├── symbol_universe_refresh.py                     # Orchestrates staged universe/blocklist build, crash-resume, all file outputs, triggers
-│   │   ├── tradier_screener.py                            # Tradier screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
-│   │   ├── universe_archiver.py                           # Automated archival/rotation/restore for all universes/blocklists, retention policy
-│   │   ├── universe_diff.py                               # Diff/compare any two universe/blocklist files for drift/audit/rollback
-│   │   ├── universe_logger.py                             # Dedicated, UTC, audit-level logger for all universe/blocklist events and file ops
-│   │   ├── universe_rebuild_cli.py                        # CLI to trigger universe/blocklist rebuilds, validation, archiving, and recovery
-│   │   └── universe_validation.py                         # Full validation, QA, drift/field checks for all universes/blocklists, dedupe, spec compliance
+│   │   ├── alpaca_screener.py                                 # Alpaca screener: fetches quotes for pre-built universe only; runtime = quotes/eligibility only
+│   │   ├── blocklist_manager.py                               # Blocklist manager: add/remove/update, timestamps, archival, periodic polling/recovery logic, UI integration
+│   │   ├── finnhub_screener.py          	                    # Finnhub screener: fetches quotes for pre-built universe only; runtime = quotes/eligibility only
+│   │   ├── ibkr_screener.py                                   # IBKR screener: fetches quotes for pre-built universe only; runtime = quotes/eligibility only
+│   │   ├── screener_base.py                                   # Abstract screener base: core interface, loads universe, wires all screener modules, credential loader
+│   │   ├── screener_filter.py                                 # Symbol normalization/filtering: blocklist-first, broker/fractional-aware, spec-compliant, dedupe logic
+│   │   ├── screener_utils.py                                  # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
+│   │   ├── symbol_source_loader.py                            # Orchestrates all symbol sources: calls modular adapters, normalizes symbols, supports batch/fallback, error handling
+│   │   ├── symbol_universe_refresh.py                         # Orchestrates staged, free-first universe/blocklist build, crash-resume, multi-pass output, all file ops/triggers
+│   │   ├── tradier_screener.py                                # Tradier screener: fetches quotes for pre-built universe only; runtime = quotes/eligibility only
+│   │   ├── universe_archiver.py                               # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
+│   │   ├── universe_diff.py                                   # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
+│   │   ├── universe_logger.py                                 # Dedicated, UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions
+│   │   ├── universe_rebuild_cli.py                            # CLI to trigger universe/blocklist rebuild, validation, archival, manual recovery/force rebuild
+│   │   └── universe_validation.py                             # Full validation/QA/drift/field/spec checks for universes/blocklists, dedupe, schema, credential/field presence
 │   │
 │   ├── storage/				                    # Persistent runtime data: encrypted secrets, keys, backups, and exports
 │   │   ├── backups/                                # Daily encrypted ledger/config backups (UTC timestamped)
@@ -281,7 +280,7 @@ rigd_tbot/
 │   │   │   ├── network_config.json.enc   		    # Encrypted network config (hostname, IP, port)
 │   │   │   ├── runtime_config.json.enc		        # Encrypted persistent runtime bot configuration settings
 │   │   │   ├── smtp_credentials.json.enc           # Encrypted SMTP credentials for notifications
-│   │   │   └── screener_api.json.enc               # Encrypted screener/Finnhub API credentials
+│   │   │   └── screener_api.json.enc               # Encrypted screener API credentials
 │   │   │
 │   │   └── migration_archives/                     # Historical config/ledger/backup artifacts (for manual recovery/migration)
 │   │
@@ -305,7 +304,6 @@ rigd_tbot/
 │   │   ├── utils_identity.py                   # Computes/parses BOT_IDENTITY_STRING; manages all identity metadata for file/output routing
 │   │   ├── utils_log.py                        # Provides structured logging for system/trade/web/app events
 │   │   └── utils_time.py                       # Time and scheduling utilities (UTC conversion, timestamps, session windows)
-
 │   │
 │   ├── test/				                        # Complete automated and manual test suite for all bot modules. All test scripts only read from secrets/keys created by Web UI; never modify config or secrets.
 │   │   ├── integration_test_runner.py              # TEST RUNNER. Launched by main.py in TEST_MODE, or manually/CI. Simulates full bot bootstrap, strategy, and shutdown. Writes only to test logs/artifacts. Never launches or supervises any watcher/worker.
@@ -322,7 +320,6 @@ rigd_tbot/
 │   │   ├── test_strategy_selfcheck.py              # DEV/CI TEST. Runs .self_check() on all strategy modules, validates config/signal paths. Never launched in production.
 │   │   ├── test_strategy_tuner.py                  # DEV/CI TEST. Tests strategy modules with sample tickers; validates entry/exit, thresholds. Never launched in production.
 │   │   └── test_universe_cache.py                  # DEV/CI TEST. Verifies universe cache schema, age, and content. Never launched in production.
-
 │   │
 │   └── trading/			                    # Trade Execution
 │       ├── instruments.py
@@ -342,11 +339,12 @@ rigd_tbot/
     │   ├── fnt/                                # Embedded fonts used in the interface
     │   │
     │   ├── js/
-    │   │   ├── configuration.js        # Handles configuration form logic, validation, and AJAX submits on configuration.html
-    │   │   ├── main_ui.js         		# Handles live dashboard behavior, state polling, and controls config overlay in main.html
-    │   │   ├── wait.js            		# Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
-    │   │   ├── universe.js             # updates and serves status components to Universe.html
-    │   │   └── shared_utils.js    		# Provides shared API helpers and utility functions for frontend JavaScript modules        
+    │   │   ├── configuration.js            # Handles configuration form logic, validation, and AJAX submits on configuration.html
+    │   │   ├── main_ui.js         		    # Handles live dashboard behavior, state polling, and controls config overlay in main.html
+    │   │   ├── wait.js            		    # Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
+    │   │   ├── universe.js                 # updates and serves status components to Universe.html
+    │   │   ├── screener_credentials.js     # JS: Screener credential management UI logic, API calls, masking, field validation
+    │   │   └── shared_utils.js    		    # Provides shared API helpers and utility functions for frontend JavaScript modules        
     │   │
     │   └── css/
     │       ├── base
@@ -369,6 +367,7 @@ rigd_tbot/
     │       │   ├── main.css                        # Main container, alignment, and page structure styles
     │       │   ├── password_reset.css              # Password reset forms: input and feedback styling
     │       │   ├── register.css                    # Register page: admin account creation form
+    │       │   ├── screener_credentials.css        # CSS: Stylesheet for screener credential config page (layout, masking, validation)
     │       │   ├── settings.css                    # Settings page: settings form blocks and layout
     │       │   ├── status.css                      # Status page: status grid, error color, responsive tweaks
     │       │   ├── test.css                        # Test mode/system test sequence page
@@ -395,6 +394,7 @@ rigd_tbot/
     │   ├── portal_web_main.py                  # Flask app for provisioning bootstrapping, and all static files and all operational blueprints (phases in this order: configuration → provisioning → bootstrapping → registration → login → main_web.py that shows: status, Settings, logs, ledger, COA, test, configuration, account). Never launches any worker/watcher.
     │   ├── register_web.py			            # Handles user registration logic and SYSTEM_USERS.db creation/updating. Never launches any worker/watcher.
     │   ├── run_web.py                          # Main entry point into web UI (CLI). Never launches any worker/watcher.
+    │   ├── screener_credentials_web.py         # Flask blueprint: routes and API endpoints for screener credential config and audit
     │   ├── settings_web.py                     # Bot strategy/runtime settings routes; calls utils_config.py (never handles credentials). Never launches any worker/watcher.
     │   ├── start_stop_web.py                   # API/UI for bot control lifecycle (start/stop); writes control files (flags) for main.py. Never launches any worker/watcher.
     │   ├── status_web.py                       # Serves live bot/system status; reports active session/metrics from status sources. Never launches any worker/watcher.
@@ -410,6 +410,7 @@ rigd_tbot/
     │   ├── configuration_saver.py		        # Saves/encrypts config from UI (never creates keys). Only imported.
     │   ├── csrf_protection.py                  # CSRF protection for web forms and blueprints. Only imported.
     │   ├── default_config_loader.py            # Loads config defaults/templates for UI (never touches secrets/keys). Only imported.
+    │   ├── secrets_manager.py                  # Backend utilities: encryption/decryption, atomic writes, credential loader
     │   ├── security_users.py                   # RBAC/user CRUD; Fernet key helpers for user/auth secrets. Only imported.
     │   ├── session_manager.py                  # Web session management, token handling, timeouts. Only imported.
     │   ├── utils_coa_web.py			        # Loads, validates, and manages the bot’s Chart of Accounts (COA); interfaces with tbot_ledger_coa_template.json and provides COA to other modules. Only imported.
@@ -427,6 +428,7 @@ rigd_tbot/
         ├── password_reset_form.html            # Password reset entry form (token/entry point)
         ├── password_reset_request.html         # Password reset request form (initiate reset via email)
         ├── register.html			            # Flask template for user registration form
+        ├── screener_credentials.html           # Jinja2: Screener credentials config page UI (add/edit/rotate/remove, masked fields)
         ├── settings.html                       # Web form for updating bot trading strategy and runtime config variables
         ├── status.html                         # Displays live bot health, strategies, PnL, session state, and key metrics (live data from status.json)
         ├── test.html				            # Web UI page providing controls to trigger TEST_MODE and view live test logs and results.
