@@ -3,18 +3,21 @@
 // 100% compliant with v046 screener credentials management spec.
 
 document.addEventListener("DOMContentLoaded", function () {
-    // window.allCreds and window.screenerKeys are set by inline <script> in HTML template, no parsing here
+    if (typeof window.allCreds === 'undefined') window.allCreds = {};
+    if (typeof window.screenerKeys === 'undefined') window.screenerKeys = [];
 
     hideAllForms();
-    // Show form if adding for first time (no credentials yet)
-    if (typeof window.showAddCredential !== 'undefined' && window.showAddCredential === true) {
+
+    if (window.showAddCredential === true || window.showAddCredential === 'true') {
         showEditForm('');
     }
+
+    // Set form action dynamically on load
+    updateCredentialFormAction('');
 });
 
 function hideAllForms() {
     document.getElementById("credential-form-section").style.display = "none";
-    document.getElementById("rotate-form-section").style.display = "none";
     document.getElementById("delete-confirm-section").style.display = "none";
 }
 
@@ -24,43 +27,41 @@ function showEditForm(provider) {
     document.getElementById("form-title").innerText = provider ? "Edit Provider Credentials" : "Add Provider Credentials";
     document.getElementById("provider-input").value = provider || "";
     clearCredentialFields();
-    if (provider && window.allCreds && window.allCreds.hasOwnProperty(provider)) {
+    if (provider && window.allCreds.hasOwnProperty(provider)) {
         populateCredentialFields(provider);
     }
+    updateCredentialFormAction(provider);
 }
 
 function clearCredentialFields() {
-    let screenerKeys = window.screenerKeys || [];
-    for (let i = 0; i < screenerKeys.length; i++) {
-        const key = screenerKeys[i];
-        let el = document.getElementById(key);
+    for (const key of window.screenerKeys) {
+        const el = document.getElementById(key);
         if (el) el.value = "";
     }
 }
 
 function populateCredentialFields(provider) {
-    if (!window.allCreds) return;
-    let data = window.allCreds[provider];
+    const data = window.allCreds[provider];
     if (!data) return;
     for (const key in data) {
         if (data.hasOwnProperty(key)) {
-            let el = document.getElementById(key);
+            const el = document.getElementById(key);
             if (el) el.value = data[key];
         }
     }
 }
 
+function updateCredentialFormAction(provider) {
+    const form = document.getElementById("credential-form");
+    if (!form) return;
+    if (provider && window.allCreds.hasOwnProperty(provider)) {
+        form.action = "/screener_credentials/update";
+    } else {
+        form.action = "/screener_credentials/add";
+    }
+}
+
 function cancelEdit() {
-    hideAllForms();
-}
-
-function showRotateForm(provider) {
-    hideAllForms();
-    document.getElementById("rotate-form-section").style.display = "block";
-    document.getElementById("rotate-provider-input").value = provider;
-}
-
-function cancelRotate() {
     hideAllForms();
 }
 

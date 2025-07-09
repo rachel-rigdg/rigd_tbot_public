@@ -1,11 +1,11 @@
 ================================================================================
 Document: 040
 Screener_Symbol_Universe
-Version: v048
-Date: UTC:2025-06-30 00:00:00
+Version: v049
+Date: UTC:2025-07-09 00:00:00
 ================================================================================
 
-Title: Screener Symbol Universe — Universe Caching, Filtering, Staged Blocklist, Free-First Architecture, and Modular Source Credential Management
+Title: Screener Symbol Universe — Universe Caching, Filtering, Staged Blocklist, Free-First Architecture, and Modular Indexed Source Credential Management
 
 Overview:
 --------------------------------------------------------------------------------
@@ -16,7 +16,7 @@ This document defines the unified, staged, and *fully free/low-cost data source*
 - Staged API and blocklist workflow  
 - "Free-first" data polling  
 - Blocklist recovery/maintenance  
-- Long-term stability, and fully modular data source integration.
+- Long-term stability, and fully modular data source integration with generic indexed credential storage.
 
 All screener modules must source their eligible symbol list exclusively from the pre-filtered, pre-built universe file (`symbol_universe.json`). No screener may fetch global lists or build real-time universes.
 

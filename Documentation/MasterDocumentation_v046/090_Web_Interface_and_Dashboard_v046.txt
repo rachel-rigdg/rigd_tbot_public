@@ -2,7 +2,7 @@
 Document: 090
 Web_Interface_and_Dashboard
 Version: v046
-Date: UTC:2025-06-27 00:00:00
+Date: UTC:2025-07-09 00:00:00
 ================================================================================
 
 
@@ -17,10 +17,11 @@ Contents:
 - Real-Time Monitoring Dashboard (COA Integration, v1.1)
 - TEST_MODE Runtime Control and UI Integration
 - **Phase-Specific Flask App/Blueprint Modularization** (2025-06 update)
-- Expanded web pages, new user/account/password-reset endpoints and templates (v046 update)
+- Expanded web pages, new user/account/password-reset endpoints and templates 
+- Screener Credential Management UI and Integration (NEW)
 
 **Policy Enforcement:**  
-All provisioning, credential creation, Fernet key generation (including all *.key files), configuration management, and COA operations are *triggered exclusively* via the tbot_web Web UI. No CLI or external system may create or modify credentials, secrets, keys, or COA after bootstrap.  
+All provisioning, credential creation, Fernet key generation (including all *.key files), configuration management, COA operations, and screener credential management are *triggered exclusively* via the tbot_web Web UI. No CLI or external system may create or modify credentials, secrets, keys, COA, or screener credentials after bootstrap.  
 **All privileged actions (key generation, secret creation, DB initialization) are performed by backend scripts in `tbot_bot/config/`, never directly by Flask or tbot_web.**  
 Flask only writes the configuration and provisioning trigger; backend runner performs provisioning and bot launch.
 
@@ -44,10 +45,11 @@ The following user-facing pages/templates and endpoints are required and must be
 - `password_reset_request.html`   # Password reset request/initiate  
 - `password_reset_form.html`      # Password reset token entry  
 - `universe.html`           # Symbol universe viewer/tools  
+- `screener_credentials.html`  # New: Screener Credential Management UI
 - `wait.html`               # Shown while provisioning/bootstrapping is in progress  
 
 All new endpoints must enforce RBAC at both the view and action level. All audit and authentication actions are fully logged.  
-Template names and route structure must remain compliant with 020_Directory_Structure_v046.txt.
+Template names and route structure must remain compliant with 020_Directory_Structure_{CURRENT_VERSION}.txt.
 
 
 
@@ -55,17 +57,18 @@ Template names and route structure must remain compliant with 020_Directory_Stru
 Real-Time Monitoring Dashboard 
 =============================================================================================================================================
 
-`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, user/account management, password reset, and Chart of Accounts (COA) management. UI and backend components strictly follow `020_Directory_Structure_v046.txt`.
+`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, user/account management, password reset, Chart of Accounts (COA) management, and Screener Credential Management. UI and backend components strictly follow `020_Directory_Structure_{CURRENT_VERSION}.txt`.
 
 **Frontend UI Components:**
 - `templates/index.html`: Login portal; RBAC, rate-limited authentication, audit-logged.
-- `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA, test, users, settings, etc.) using iframes.
+- `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA, test, users, settings, screener credentials, etc.) using iframes.
 - `templates/status.html`: Displays live bot health, session lifecycle, active strategy state, float metrics, win-rate, cumulative PnL, and risk/defense/kill switch state; data sourced from `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/status.json`.
 - `templates/ledger.html`: Web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies.
 - `templates/logs.html`: Streams all bot logs in real time (open.log, mid.log, close.log, unresolved_orders.log, error_tracebacks.log).
 - `templates/configuration.html`: Secure interface for credentials, email, API/broker config; encrypted at rest. Submits configuration and sets provisioning trigger/flag.
 - `templates/settings.html`: Edit and validate runtime trading parameters (timings, thresholds, risk controls); excludes credentials and COA.
 - `templates/coa.html`: COA management and export UI; displays account hierarchy, metadata, version. Supports Markdown/CSV export, audit diffs, and admin-only edit workflow—all actions logged to `logs/web/coa_edit.log`. **All Web UI logic for COA management and editing must utilize `tbot_web/support/utils_coa_web.py`.**
+- `templates/screener_credentials.html`: Credential management UI for all screener/universe source credentials. Provides add, edit, rotate, and delete functionalities with field validation and audit logging.
 - `templates/wait.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
 - `templates/test.html`: Dedicated UI page for TEST_MODE trigger and progress monitoring. Allows admin users to start the test sequence and view real-time logs and final test results.
 - `templates/register.html`: User registration form for initial admin/user creation and password reset.
@@ -85,16 +88,17 @@ Real-Time Monitoring Dashboard
 - `py/ledger_web.py`: Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
 - `py/start_stop_web.py`: Manages lifecycle controls via `control_start.flag` / `control_stop.flag`, transition verification, and logging.
-- `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, test.html, and all iframe endpoints. Does not execute provisioning or bootstrapping; only checks tbot_bot/control/bot_state.txt for UI routing. Supports immediate TEST_MODE execution trigger detection.
+- `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, test.html, screener credentials UI, and all iframe endpoints. Does not execute provisioning or bootstrapping; only checks tbot_bot/control/bot_state.txt for UI routing. Supports immediate TEST_MODE execution trigger detection.
 - `py/test_web.py`: Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset.
 - `py/run_web.py`: **Phase-aware Flask entrypoint**. Detects phase (bootstrap, registration, main) using `bot_state.txt`, and dynamically loads only the relevant Flask app and blueprints for that phase.
 - `py/register_web.py`: Handles user registration logic and SYSTEM_USERS.db creation/updating.
 - `py/account_web.py`: User profile/account endpoints (change password, email, view account).
 - `py/users_web.py`: Admin user management, RBAC/role assignment, list/create/delete users.
 - `py/password_reset_web.py`: Handles password reset initiation and token validation.
+- **NEW:** `py/screener_credentials_web.py`: Flask blueprint for unified screener source credential UI and API (add/edit/delete/rotate) with admin RBAC enforcement and audit logging.
 
 **Multi-Phase Flask App Structure:**
-- `portal_web_main.py`: Flask app for provisioning, bootstrapping, and all static files and all operational blueprints (phases in this order: configuration → provisioning → bootstrapping → registration → login → main_web.py with iframe display for: status, settings, logs, ledger, COA, test, configuration, account, users, etc.)
+- `portal_web_main.py`: Flask app for provisioning, bootstrapping, and all static files and all operational blueprints (phases in this order: configuration → provisioning → bootstrapping → registration → login → main_web.py with iframe display for: status, settings, logs, ledger, COA, test, configuration, account, users, screener_credentials, etc.)
 - **Flask modularization and phase control ensures that privileged routes, registration, or dashboard features can never be loaded or called outside their authorized lifecycle phase.**
 
 **Support Modules (from tbot_web/support/):**
@@ -107,6 +111,7 @@ Real-Time Monitoring Dashboard
 - `session_manager.py`: Handles web session lifecycle, token management, timeouts.
 - `utils_coa_web.py`: COA UI and logic helpers; used by COA endpoints for audit-compliant management.
 - `utils_web.py`: Web-only helpers, UI utilities, non-secret logic.
+- **NEW:** `screener_credentials_web.py` support files for credential management integration.
 
 **Provisioning/Bootstrapping (Backend Integration):**
 - **All provisioning, key generation, secret creation, and DB initialization is performed by `tbot_bot/config/provisioning_runner.py`, which is triggered by a provisioning flag/file written by the Web UI.**
@@ -156,6 +161,21 @@ Real-Time Monitoring Dashboard
 - Admins can view, edit, and export COA; all edits via inline editor are versioned and audit-logged, with exports in Markdown/CSV for compliance.
 - All management logic routes through `utils_coa_web.py` (UI logic) and `coa_utils_ledger.py` (ledger backend).
 
+**Screener Credential Management Workflows:**  
+- Centralized credential management UI for all screener/universe API sources (Finnhub, IBKR, Polygon, Yahoo, etc.).
+- Unified add, edit, rotate, and delete flows.
+- Field validation (required provider label, generic indexed key/value pairs).
+- All changes audit logged without logging secret values.
+- Encrypted secrets file: `storage/secrets/screener_api.json.enc`.
+- Screener modules must only load credentials from central secrets file via `secrets_manager.py`.
+- UI accessible only by admin roles.
+- Backend routes with RBAC for CRUD operations.
+- All writes atomic, encrypted, and backup rotated with timestamp.
+- UI warns on missing/expired credentials.
+- Screener keys use generic indexed format (PROVIDER_01, SCREENER_NAME_01, etc.).
+- UI checkboxes for selecting credential usage: universe building, analyzing, trading, monitoring (any or all).
+- Logs all changes to `output/logs/screener_credentials_audit.log`.
+
 **TEST_MODE Runtime Control:**  
 - Admin UI controls for triggering, monitoring, and resetting TEST_MODE; logs and ledgers for test runs are isolated from production data.
 - All UI actions during TEST_MODE are audited and restricted to admin roles.
@@ -163,17 +183,17 @@ Real-Time Monitoring Dashboard
 **Deployment/Isolation:**
 - Dashboard and bot logic fully decoupled (UI can be disabled with zero impact to trading).
 - HTTPS strongly recommended.
-- Non-admins: low-bandwidth, read-only access; admin: full COA/ledger control.
+- Non-admins: low-bandwidth, read-only access; admin: full COA/ledger/control.
 - Multi-user RBAC; audit trail enforced for every change.
 
 **Testing and Compliance:**
-- CI/pytest test suites for all endpoints, COA/ledger workflows, and RBAC.
+- CI/pytest test suites for all endpoints, COA/ledger/screener workflows, and RBAC.
 - All output (COA/log/credential) is local to bot, never pushed externally.
 - Manual CLI provisioning prohibited.
 - All user credential management occurs post-bootstrap in dedicated UI.
 
 **Summary:**  
-- Audit-compliant, live monitoring and control dashboard with full user, password reset, COA, and ledger management.  
+- Audit-compliant, live monitoring and control dashboard with full user, password reset, COA, ledger, and screener credential management.  
 - All privileged setup and bot launching is performed by backend scripts in `tbot_bot/config/` as triggered by the Web UI, never directly by Flask or web endpoints.
 - Systemd and Flask modularization ensures only phase-appropriate code is loaded, and no operational blueprints are active before provisioning or registration is complete.
 
@@ -190,7 +210,7 @@ Flask Blueprint Overview
 
 - `main_web.py`
   - URL Prefix: `/`
-  - Role: Central router for main dashboard, status, logs, ledger, test UI, account, users, and configuration/settings. Renders all core UI iframes for dashboard panels.
+  - Role: Central router for main dashboard, status, logs, ledger, test UI, account, users, configuration/settings, and screener credentials UI.
   - Loads only when bot_state in [`started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `stopped`].
   - Renders `main.html`, `wait.html`, `test.html`, or error pages based on bot state.
 
@@ -264,6 +284,14 @@ Flask Blueprint Overview
   - Role: Universe cache viewing and management API/UI.
   - Admin-only access, accessible when bot is active.
 
+- `screener_credentials_web.py`
+  - URL Prefix: `/screener_credentials`
+  - Role: Screener source credential management UI and API.
+  - Admin-only access.
+  - CRUD operations: add, edit, rotate, delete credentials.
+  - Access controlled by RBAC.
+  - Integrates with encrypted secrets storage and audit logging.
+
 --------------------------------------------------------------------------------
 UI Routing and Lifecycle Phase Enforcement
 --------------------------------------------------------------------------------
@@ -272,7 +300,7 @@ UI Routing and Lifecycle Phase Enforcement
 |--------------------------------|-----------------------------------------------------------------------------------|-------------------------------------------|
 | `initialize`, `provisioning`, `bootstrapping` | `configuration_web` only                                                | Show `configuration.html` UI              |
 | `registration`                 | `register_web`, `password_reset_web` only                                        | Show `register.html` UI                   |
-| `started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `stopped` | `main_web`, `status_web`, `logs_web`, `ledger_web`, `coa_web`, `settings_web`, `start_stop_web`, `test_web`, `account_web`, `users_web`, `password_reset_web`, `universe_web` | Show `main.html` dashboard and all panels |
+| `started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `stopped` | `main_web`, `status_web`, `logs_web`, `ledger_web`, `coa_web`, `settings_web`, `start_stop_web`, `test_web`, `account_web`, `users_web`, `password_reset_web`, `universe_web`, `screener_credentials_web` | Show `main.html` dashboard and all panels |
 | `graceful_closing_positions`, `emergency_closing_positions` | `main_web`, lifecycle blueprints                                      | Show main.html with shutdown feedback     |
 | `shutdown`, `shutdown_triggered`, `error`  | Error pages only                                                        | Show error or shutdown UI; block others   |
 
@@ -281,7 +309,7 @@ Access Control and RBAC
 --------------------------------------------------------------------------------
 
 - All endpoints enforce RBAC via `security_users.py`.
-- Admin-only access for sensitive blueprints (`ledger_web`, `coa_web`, `test_web`, `users_web`, `universe_web`).
+- Admin-only access for sensitive blueprints (`ledger_web`, `coa_web`, `test_web`, `users_web`, `universe_web`, `screener_credentials_web`).
 - Login required for all routes except initial bootstrap configuration.
 - Session management via `session_manager.py`.
 - CSRF protection applied on all form submissions via `csrf_protection.py`.
@@ -304,11 +332,10 @@ Trigger and Action Flow
 - Start/stop/kill commands via `/control` blueprint update bot_state and coordinate strategy lifecycle.
 - UI polling endpoints (`status_web`) provide real-time bot state for client-side UI updates.
 - User registration and password reset flows available after provisioning but before login.
-- All role changes, credential updates, COA/ledger edits, and test actions are logged with full audit trail.
+- All role changes, credential updates, COA/ledger edits, screener credential changes, and test actions are logged with full audit trail.
 
 ================================================================================
 Web Interface Status Design
-v046
 ================================================================================
 
 This document specifies the detailed design for the status dashboard panel in the TradeBot web interface, including system status overview, session summary, and operational notes.
@@ -403,8 +430,3 @@ Session Status Summary Panel
 - Audit trail: all state changes, session tags, and events are logged for 7+ days.
 
 **  
-
-
-
-
-
