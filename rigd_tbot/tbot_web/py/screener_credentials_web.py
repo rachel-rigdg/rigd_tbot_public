@@ -40,7 +40,6 @@ def credentials_page():
         except Exception as e:
             flash(f"Failed to load screener credentials: {e}", "error")
     providers = list(creds.keys()) if creds else []
-    # Inject creds and screener keys as JSON for JS usage (no placeholders)
     creds_json = json.dumps(creds)
     keys_json = json.dumps(SCREENER_KEYS)
     return render_template(

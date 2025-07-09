@@ -19,7 +19,7 @@ def load_screener_credentials() -> Dict:
     Returns dict with provider-labeled keys and secret values.
     """
     try:
-        return decrypt_json("screener_api")
+        return decrypt_json(SCREENER_CREDENTIALS_FILENAME)
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to load screener credentials: {e}")
 
@@ -28,7 +28,7 @@ def save_screener_credentials(credentials: Dict) -> None:
     Saves (encrypts) the provided credentials dict to the dedicated secrets file atomically.
     """
     try:
-        encrypt_json("screener_api", credentials)
+        encrypt_json(SCREENER_CREDENTIALS_FILENAME, credentials)
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to save screener credentials: {e}")
 

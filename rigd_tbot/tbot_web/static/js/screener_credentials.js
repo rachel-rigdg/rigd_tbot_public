@@ -3,17 +3,11 @@
 // 100% compliant with v046 screener credentials management spec.
 
 document.addEventListener("DOMContentLoaded", function () {
-    // Inject server-provided JSON into window for JS usage
-    if (typeof creds_json !== 'undefined') {
-        window.allCreds = JSON.parse(creds_json);
-    }
-    if (typeof keys_json !== 'undefined') {
-        window.screenerKeys = JSON.parse(keys_json);
-    }
+    // window.allCreds and window.screenerKeys are set by inline <script> in HTML template, no parsing here
 
     hideAllForms();
     // Show form if adding for first time (no credentials yet)
-    if (typeof window.showAddCredential !== 'undefined' && window.showAddCredential) {
+    if (typeof window.showAddCredential !== 'undefined' && window.showAddCredential === true) {
         showEditForm('');
     }
 });
