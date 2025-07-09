@@ -52,13 +52,13 @@ def add_credential():
     flash("Credential add/rotate only supported via secure UI/admin tool.", "error")
     return redirect(url_for("screener_credentials.credentials_page"))
 
-@screener_credentials_bp.route("/update/<provider>", methods=["POST"])
-def update_credential(provider):
-    flash("Credential update only supported via secure UI/admin tool.", "error")
+@screener_credentials_bp.route("/rotate", methods=["POST"])
+def rotate_credential():
+    flash("Credential rotate only supported via secure UI/admin tool.", "error")
     return redirect(url_for("screener_credentials.credentials_page"))
 
-@screener_credentials_bp.route("/delete/<provider>", methods=["POST"])
-def delete_credential(provider):
+@screener_credentials_bp.route("/delete", methods=["POST"])
+def delete_credential():
     flash("Credential delete only supported via secure UI/admin tool.", "error")
     return redirect(url_for("screener_credentials.credentials_page"))
 
