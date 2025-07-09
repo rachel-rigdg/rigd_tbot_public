@@ -9,6 +9,7 @@ from tbot_bot.support.secrets_manager import (
     load_screener_credentials,
     get_provider_credentials,
     save_screener_credentials,
+    update_provider_credentials,
     delete_provider_credentials,
     list_providers
 )
@@ -92,12 +93,7 @@ def update_credential():
         flash("Provider name and at least one credential field are required.", "error")
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
-        creds = load_screener_credentials()
-        if provider not in creds:
-            flash(f"Provider {provider} does not exist. Use Add to create.", "error")
-            return redirect(url_for("screener_credentials.credentials_page"))
-        creds[provider] = values
-        save_screener_credentials(creds)
+        update_provider_credentials(provider, values)
         flash(f"Updated credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to update credentials: {e}", "error")

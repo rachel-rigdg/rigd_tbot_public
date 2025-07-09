@@ -22,7 +22,7 @@ function showEditForm(provider) {
     document.getElementById("form-title").innerText = provider ? "Edit Provider Credentials" : "Add Provider Credentials";
     document.getElementById("provider-input").value = provider || "";
     clearCredentialFields();
-    if (provider && window.allCreds && window.allCreds[provider]) {
+    if (provider && window.allCreds && window.allCreds.hasOwnProperty(provider)) {
         populateCredentialFields(provider);
     }
 }
@@ -41,8 +41,10 @@ function populateCredentialFields(provider) {
     let data = window.allCreds[provider];
     if (!data) return;
     for (const key in data) {
-        let el = document.getElementById(key);
-        if (el) el.value = data[key];
+        if (data.hasOwnProperty(key)) {
+            let el = document.getElementById(key);
+            if (el) el.value = data[key];
+        }
     }
 }
 
