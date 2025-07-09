@@ -3,6 +3,14 @@
 // 100% compliant with v046 screener credentials management spec.
 
 document.addEventListener("DOMContentLoaded", function () {
+    // Inject server-provided JSON into window for JS usage
+    if (typeof creds_json !== 'undefined') {
+        window.allCreds = JSON.parse(creds_json);
+    }
+    if (typeof keys_json !== 'undefined') {
+        window.screenerKeys = JSON.parse(keys_json);
+    }
+
     hideAllForms();
     // Show form if adding for first time (no credentials yet)
     if (typeof window.showAddCredential !== 'undefined' && window.showAddCredential) {

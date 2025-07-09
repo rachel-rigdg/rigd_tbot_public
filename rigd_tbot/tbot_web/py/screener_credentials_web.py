@@ -40,13 +40,18 @@ def credentials_page():
         except Exception as e:
             flash(f"Failed to load screener credentials: {e}", "error")
     providers = list(creds.keys()) if creds else []
+    # Inject creds and screener keys as JSON for JS usage (no placeholders)
+    creds_json = json.dumps(creds)
+    keys_json = json.dumps(SCREENER_KEYS)
     return render_template(
         "screener_credentials.html",
         creds=creds,
         providers=providers,
         screener_creds_exist=not show_add,
         showAddCredential=show_add,
-        screener_keys=SCREENER_KEYS
+        screener_keys=SCREENER_KEYS,
+        creds_json=creds_json,
+        keys_json=keys_json
     )
 
 @screener_credentials_bp.route("/provider/<provider>", methods=["GET"])
