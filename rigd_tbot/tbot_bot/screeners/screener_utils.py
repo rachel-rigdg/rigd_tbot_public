@@ -1,7 +1,7 @@
 # tbot_bot/screeners/screener_utils.py
 # Utilities to load, validate, and manage the symbol universe cache for TradeBot screeners
 # Fully aligned with TradeBot v1.0.0+ staged/stable universe build specification.
-# STRICT: Only universe files built with /stock/symbol, /stock/profile2, /quote endpoints are valid.
+# STRICT: Only universe files built with /stock/symbol, /stock/profile2, /quote endpoints (or IBKR API equivalents) are valid.
 
 import json
 import logging
@@ -15,6 +15,7 @@ from tbot_bot.support.path_resolver import (
     resolve_screener_blocklist_path
 )
 from tbot_bot.support.decrypt_secrets import decrypt_json
+from tbot_bot.support.secrets_manager import get_screener_credentials_path
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_filter import (
     normalize_symbols, filter_symbols as core_filter_symbols, dedupe_symbols
@@ -30,7 +31,13 @@ BLOCKLIST_PATH = resolve_screener_blocklist_path()
 class UniverseCacheError(Exception):
     pass
 
+def screener_creds_exist() -> bool:
+    creds_path = get_screener_credentials_path()
+    return os.path.exists(creds_path)
+
 def get_screener_secrets() -> dict:
+    if not screener_creds_exist():
+        raise UniverseCacheError("Screener credentials not configured. Please configure screener credentials in the UI before running screener operations.")
     try:
         return decrypt_json("screener_api")
     except Exception as e:
@@ -41,6 +48,8 @@ def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)
 
 def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
+    if not screener_creds_exist():
+        raise UniverseCacheError("Screener credentials not configured. Please configure screener credentials in the UI before running screener operations.")
     path = resolve_universe_cache_path(bot_identity)
     if not os.path.exists(path):
         LOG.error(f"[screener_utils] Universe cache missing at path: {path}")
@@ -165,7 +174,6 @@ def filter_symbols(
     )
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:
-    # Use blocklist_manager; fallback to old loader if path forced
     if not path:
         bl_dict = load_blocklist_full()
         return list(bl_dict.keys())

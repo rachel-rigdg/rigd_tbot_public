@@ -23,7 +23,8 @@ def load_blocklist(path: str) -> Set[str]:
         for line in f:
             line = line.strip().upper()
             if line and not line.startswith("#"):
-                syms.add(line)
+                # Only add symbol (first comma)
+                syms.add(line.split(",", 1)[0])
     return syms
 
 def diff_blocklists(bl1: Set[str], bl2: Set[str]):

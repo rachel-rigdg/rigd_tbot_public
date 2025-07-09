@@ -13,6 +13,16 @@
 </head>
 <body>
     <h2>Universe Cache & Blocklist Inspection</h2>
+    <div style="margin-bottom:12px;">
+        <a href="{{ url_for('screener_credentials.credentials_page') }}">
+            <button type="button" id="configure-screener-credentials-btn">Configure Credentials</button>
+        </a>
+        {% if not screener_creds_exist %}
+            <div id="screener-creds-warning" style="margin-top:8px; color:#ff6347; font-weight:bold;">
+                Please configure screener credentials
+            </div>
+        {% endif %}
+    </div>
     <p><b>Status:</b> <span id="status-msg">{{ status_msg }}</span></p>
     <p><b>Cache File:</b> {{ cache_path }}</p>
     <p>
@@ -28,18 +38,21 @@
         <a href="{{ url_for('universe.universe_status') }}">Clear</a>
     </form>
     <form action="{{ url_for('universe.universe_rebuild') }}" method="post" style="display:inline;">
-        <button type="submit">Force Rebuild</button>
+        <button type="submit" {% if not screener_creds_exist %}disabled{% endif %}>Force Rebuild</button>
     </form>
     <form action="{{ url_for('universe.universe_refilter') }}" method="post" style="display:inline; margin-left: 10px;">
-        <button type="submit">Re-filter</button>
+        <button type="submit" {% if not screener_creds_exist %}disabled{% endif %}>Re-filter</button>
     </form>
     <form action="{{ url_for('universe.universe_blocklist') }}" method="get" style="display:inline; margin-left: 10px;">
         <button type="submit">Blocklist Manager</button>
     </form>
     <span style="margin-left:20px;">
-        <a href="{{ url_for('universe.universe_export', fmt='csv') }}">Export CSV</a> |
-        <a href="{{ url_for('universe.universe_export', fmt='json') }}">Export JSON</a> |
-        <a href="{{ url_for('universe.universe_export', fmt='blocklist') }}">Export Blocklist</a>
+        <a href="{{ url_for('universe.universe_export', fmt='csv') }}"
+           {% if not screener_creds_exist %}class="disabled-link" style="pointer-events:none;opacity:0.5;"{% endif %}>Export CSV</a> |
+        <a href="{{ url_for('universe.universe_export', fmt='json') }}"
+           {% if not screener_creds_exist %}class="disabled-link" style="pointer-events:none;opacity:0.5;"{% endif %}>Export JSON</a> |
+        <a href="{{ url_for('universe.universe_export', fmt='blocklist') }}"
+           {% if not screener_creds_exist %}class="disabled-link" style="pointer-events:none;opacity:0.5;"{% endif %}>Export Blocklist</a>
     </span>
     <div style="margin-top:16px; margin-bottom:16px; padding:8px; border:1px solid #999; background:#333;">
         <b>Universe Build Progress:</b>

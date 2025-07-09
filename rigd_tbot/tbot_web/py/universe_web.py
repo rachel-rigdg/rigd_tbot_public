@@ -15,6 +15,7 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path,
     resolve_screener_blocklist_path,
 )
+from tbot_bot.support.secrets_manager import get_screener_credentials_path
 import csv
 import io
 import json
@@ -24,6 +25,10 @@ universe_bp = Blueprint("universe", __name__, template_folder="../templates")
 
 UNFILTERED_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'output', 'screeners', 'symbol_universe.unfiltered.json'))
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
+
+def screener_creds_exist():
+    creds_path = get_screener_credentials_path()
+    return os.path.exists(creds_path)
 
 def load_json_file(path):
     try:
@@ -95,6 +100,7 @@ def universe_status():
     status_msg = f"Universe cache loaded: {len(final_symbols)} symbols." if final_symbols else "Universe cache not loaded or empty."
     data_source_label = "Final (complete)"
     search = request.args.get("search", "").upper()
+    creds_exists = screener_creds_exist()
     return render_template(
         "universe.html",
         unfiltered_symbols=unfiltered_symbols,
@@ -102,14 +108,18 @@ def universe_status():
         final_symbols=final_symbols,
         blocklist_entries=blocklist_entries,
         cache_ok=bool(final_symbols),
-        status_msg=status_msg,
+        status_msg=status_msg if creds_exists else "Screener credentials not configured.",
         cache_path=cache_path,
         search=search,
-        data_source_label=data_source_label
+        data_source_label=data_source_label,
+        screener_creds_exist=creds_exists
     )
 
 @universe_bp.route("/rebuild", methods=["POST"])
 def universe_rebuild():
+    if not screener_creds_exist():
+        flash("Screener credentials not configured. Please configure screener credentials before building the universe.", "error")
+        return redirect(url_for("universe.universe_status"))
     try:
         rebuild_main()
         flash("Universe cache rebuild complete.", "success")
@@ -119,6 +129,9 @@ def universe_rebuild():
 
 @universe_bp.route("/export/<fmt>", methods=["GET"])
 def universe_export(fmt):
+    if not screener_creds_exist():
+        flash("Screener credentials not configured. Please configure screener credentials before exporting.", "error")
+        return redirect(url_for("universe.universe_status"))
     try:
         final_symbols = load_universe_cache()
     except Exception:
@@ -181,13 +194,16 @@ def universe_status_message():
 
 @universe_bp.route("/refilter", methods=["POST"])
 def universe_refilter():
+    if not screener_creds_exist():
+        flash("Screener credentials not configured. Please configure screener credentials before filtering the universe.", "error")
+        return redirect(url_for("universe.universe_status"))
     try:
         unfiltered = load_json_file(UNFILTERED_PATH)
         from tbot_bot.config.env_bot import load_env_bot_config
         env = load_env_bot_config()
         exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
         min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
-        max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 100))
+        max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
         min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
         max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
         max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
@@ -203,7 +219,6 @@ def universe_refilter():
             blocklist=blocklist,
             max_size=max_size
         )
-        # Blocklist management: add symbols failing price filter
         low_price_symbols = [s["symbol"] for s in unfiltered if "lastClose" in s and s["lastClose"] is not None and s["lastClose"] < min_price]
         if low_price_symbols:
             add_to_blocklist(low_price_symbols, reason=f"Refiltered: price < {min_price}")
