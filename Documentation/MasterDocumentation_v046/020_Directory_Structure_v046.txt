@@ -233,6 +233,12 @@ rigd_tbot/
 │   │   └── watchdog_bot.py                         # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
 │   │
 │   ├── screeners/			            	                # Screener & Symbol Selection, staged universe/blocklist build, API quota minimization
+│   │   ├── symbol_sources/  
+│   │   │   ├── IBKR_source.py				# loader for IBKR Source
+│   │   │   ├── nasdaq_txt_source.py			# loader for nasdaqlisted.txt
+│   │   │   ├── polygon_source.py			# loader for Polygon API
+│   │   │   └── yahoo_source.py				# loader for Yahoo Finance, etc.
+│   │   │
 │   │   ├── alpaca_screener.py                             # Alpaca screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
 │   │   ├── blocklist_manager.py                           # Blocklist management: add/remove/update, timestamps, archival, blocklist polling/refresh logic
 │   │   ├── finnhub_screener.py          	                # Finnhub screener: fetches quotes for pre-built universe only; runtime filter minimal, all constraints pre-applied
