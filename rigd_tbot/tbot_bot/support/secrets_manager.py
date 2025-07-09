@@ -4,7 +4,7 @@
 
 import os
 from typing import Dict, Optional
-from tbot_bot.support.decrypt_secrets import decrypt_json
+from tbot_bot.support.decrypt_secrets import decrypt_json, encrypt_json
 
 SCREENER_CREDENTIALS_FILENAME = "screener_api.json.enc"
 
@@ -26,8 +26,10 @@ def save_screener_credentials(credentials: Dict) -> None:
     """
     Saves (encrypts) the provided credentials dict to the dedicated secrets file.
     """
-    # encrypt_json intentionally not imported here; only available in UI/management context.
-    raise NotImplementedError("Encryption/writing of screener credentials only permitted via web UI tools.")
+    try:
+        encrypt_json("screener_api", credentials)
+    except Exception as e:
+        raise RuntimeError(f"[secrets_manager] Failed to save screener credentials: {e}")
 
 def get_provider_credentials(provider: str) -> Optional[Dict]:
     """
@@ -45,13 +47,20 @@ def update_provider_credentials(provider: str, new_values: Dict) -> None:
     """
     Updates credentials for the given provider (add/edit), writes encrypted file atomically.
     """
-    raise NotImplementedError("Credential updates only permitted via web UI tools.")
+    creds = load_screener_credentials()
+    key = provider.strip().upper()
+    creds[key] = new_values
+    save_screener_credentials(creds)
 
 def delete_provider_credentials(provider: str) -> None:
     """
     Deletes credentials for the given provider.
     """
-    raise NotImplementedError("Credential deletions only permitted via web UI tools.")
+    creds = load_screener_credentials()
+    key = provider.strip().upper()
+    if key in creds:
+        del creds[key]
+        save_screener_credentials(creds)
 
 def list_providers() -> list:
     """

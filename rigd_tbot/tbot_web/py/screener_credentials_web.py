@@ -71,6 +71,9 @@ def add_credential():
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         creds = load_screener_credentials() if os.path.exists(get_screener_credentials_path()) else {}
+        if provider in creds:
+            flash(f"Provider {provider} already exists. Use Edit to update.", "error")
+            return redirect(url_for("screener_credentials.credentials_page"))
         creds[provider] = values
         save_screener_credentials(creds)
         flash(f"Added credentials for {provider}", "success")
@@ -90,7 +93,12 @@ def update_credential():
         flash("Provider name and at least one credential field are required.", "error")
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
-        update_provider_credentials(provider, values)
+        creds = load_screener_credentials()
+        if provider not in creds:
+            flash(f"Provider {provider} does not exist. Use Add to create.", "error")
+            return redirect(url_for("screener_credentials.credentials_page"))
+        creds[provider] = values
+        save_screener_credentials(creds)
         flash(f"Updated credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to update credentials: {e}", "error")
