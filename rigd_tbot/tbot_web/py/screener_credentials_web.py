@@ -9,7 +9,6 @@ from tbot_bot.support.secrets_manager import (
     load_screener_credentials,
     get_provider_credentials,
     save_screener_credentials,
-    update_provider_credentials,
     delete_provider_credentials,
     list_providers
 )

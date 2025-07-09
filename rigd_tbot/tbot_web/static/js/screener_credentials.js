@@ -22,7 +22,7 @@ function showEditForm(provider) {
     document.getElementById("form-title").innerText = provider ? "Edit Provider Credentials" : "Add Provider Credentials";
     document.getElementById("provider-input").value = provider || "";
     clearCredentialFields();
-    if (provider) {
+    if (provider && window.allCreds && window.allCreds[provider]) {
         populateCredentialFields(provider);
     }
 }

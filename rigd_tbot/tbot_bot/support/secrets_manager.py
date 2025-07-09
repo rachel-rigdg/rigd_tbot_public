@@ -5,11 +5,12 @@
 import os
 from typing import Dict, Optional
 from tbot_bot.support.decrypt_secrets import decrypt_json
+from tbot_bot.support.encrypt_secrets import encrypt_json
+from tbot_bot.support.path_resolver import get_secret_path
 
 SCREENER_CREDENTIALS_FILENAME = "screener_api.json.enc"
 
 def get_screener_credentials_path() -> str:
-    from tbot_bot.support.path_resolver import get_secret_path
     return get_secret_path(SCREENER_CREDENTIALS_FILENAME)
 
 def load_screener_credentials() -> Dict:
@@ -24,11 +25,12 @@ def load_screener_credentials() -> Dict:
 
 def save_screener_credentials(credentials: Dict) -> None:
     """
-    Saves (encrypts) the provided credentials dict to the dedicated secrets file.
+    Saves (encrypts) the provided credentials dict to the dedicated secrets file atomically.
     """
-    # Remove import of encrypt_json here to avoid ImportError during bootstrap.
-    # Encryption/writing only available via web UI tools; raise if called elsewhere.
-    raise NotImplementedError("Encryption/writing of screener credentials only permitted via web UI tools.")
+    try:
+        encrypt_json("screener_api", credentials)
+    except Exception as e:
+        raise RuntimeError(f"[secrets_manager] Failed to save screener credentials: {e}")
 
 def get_provider_credentials(provider: str) -> Optional[Dict]:
     """
@@ -46,13 +48,26 @@ def update_provider_credentials(provider: str, new_values: Dict) -> None:
     """
     Updates credentials for the given provider (add/edit), writes encrypted file atomically.
     """
-    raise NotImplementedError("Credential updates only permitted via web UI tools.")
+    try:
+        creds = load_screener_credentials()
+        key = provider.strip().upper()
+        creds[key] = new_values
+        save_screener_credentials(creds)
+    except Exception as e:
+        raise RuntimeError(f"[secrets_manager] Failed to update credentials: {e}")
 
 def delete_provider_credentials(provider: str) -> None:
     """
     Deletes credentials for the given provider.
     """
-    raise NotImplementedError("Credential deletions only permitted via web UI tools.")
+    try:
+        creds = load_screener_credentials()
+        key = provider.strip().upper()
+        if key in creds:
+            del creds[key]
+            save_screener_credentials(creds)
+    except Exception as e:
+        raise RuntimeError(f"[secrets_manager] Failed to delete credentials: {e}")
 
 def list_providers() -> list:
     """

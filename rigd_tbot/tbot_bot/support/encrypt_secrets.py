@@ -38,10 +38,16 @@ def encrypt_json(name: str, data: dict) -> None:
     json_bytes = json.dumps(data, indent=2).encode("utf-8")
 
     enc_path = SECRETS_DIR / f"{name}.json.enc"
+    tmp_path = SECRETS_DIR / f"{name}.json.enc.tmp"
+
     encrypted = fernet.encrypt(json_bytes)
 
-    with open(enc_path, "wb") as f:
+    with open(tmp_path, "wb") as f:
         f.write(encrypted)
+        f.flush()
+        f.seek(0)
+        f.flush()
+    tmp_path.rename(enc_path)
 
     log_event("encrypt_secrets", f"Encrypted {name}.json.enc at {utc_now().isoformat()}")
 
