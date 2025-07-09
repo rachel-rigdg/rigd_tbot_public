@@ -1,12 +1,13 @@
 # tbot_bot/support/secrets_manager.py
 # Central encryption/decryption/loader for all screener API credentials. (Called by all loaders/adapters.)
-# 100% compliant with v046 screener universe/credential spec.
+# 100% compliant with v046 screener universe/credential spec using generic indexed keys.
 
 import os
 from typing import Dict, Optional
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.encrypt_secrets import encrypt_json
 from tbot_bot.support.path_resolver import get_secret_path
+import re
 
 SCREENER_CREDENTIALS_FILENAME = "screener_api.json.enc"
 
@@ -16,7 +17,7 @@ def get_screener_credentials_path() -> str:
 def load_screener_credentials() -> Dict:
     """
     Loads decrypted screener/universe adapter credentials from dedicated encrypted secrets file.
-    Returns dict with provider-labeled keys and secret values.
+    Returns dict with indexed provider blocks, e.g. PROVIDER_01, SCREENER_NAME_01, etc.
     """
     try:
         return decrypt_json(SCREENER_CREDENTIALS_FILENAME)
@@ -34,44 +35,80 @@ def save_screener_credentials(credentials: Dict) -> None:
 
 def get_provider_credentials(provider: str) -> Optional[Dict]:
     """
-    Returns the dict of credentials for a given provider label.
+    Returns the dict of credentials for a given provider label by searching generic indexed keys.
     Example: provider = "FINNHUB" or "IBKR"
     """
     creds = load_screener_credentials()
-    key = provider.strip().upper()
-    for k in creds:
-        if k.strip().upper() == key:
-            return creds[k]
+    key_upper = provider.strip().upper()
+    provider_keys = [k for k, v in creds.items() if re.match(r"PROVIDER_\d{2}", k)]
+    for pkey in provider_keys:
+        if creds[pkey].strip().upper() == key_upper:
+            index = pkey.split("_")[-1]
+            # Gather all keys with this index
+            result = {}
+            for k, v in creds.items():
+                if k.endswith(f"_{index}"):
+                    result[k.rsplit("_", 1)[0]] = v
+            return result
     return None
 
 def update_provider_credentials(provider: str, new_values: Dict) -> None:
     """
-    Updates credentials for the given provider (add/edit), writes encrypted file atomically.
+    Updates credentials for the given provider (add/edit) by replacing the indexed block and saving.
     """
     try:
         creds = load_screener_credentials()
-        key = provider.strip().upper()
-        creds[key] = new_values
+        key_upper = provider.strip().upper()
+        provider_keys = [k for k, v in creds.items() if re.match(r"PROVIDER_\d{2}", k)]
+        # Find existing index or assign new
+        index = None
+        for pkey in provider_keys:
+            if creds[pkey].strip().upper() == key_upper:
+                index = pkey.split("_")[-1]
+                break
+        if index is None:
+            # Assign next available index
+            existing_indices = sorted(int(k.split("_")[-1]) for k in provider_keys)
+            index = f"{(existing_indices[-1]+1) if existing_indices else 1:02d}"
+        # Remove all keys with this index first
+        keys_to_remove = [k for k in creds if k.endswith(f"_{index}")]
+        for k in keys_to_remove:
+            del creds[k]
+        # Add new values with index suffix
+        for base_key, val in new_values.items():
+            creds[f"{base_key}_{index}"] = val
+        # Add provider key itself
+        creds[f"PROVIDER_{index}"] = key_upper
         save_screener_credentials(creds)
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to update credentials: {e}")
 
 def delete_provider_credentials(provider: str) -> None:
     """
-    Deletes credentials for the given provider.
+    Deletes credentials for the given provider by removing all indexed keys with matching provider.
     """
     try:
         creds = load_screener_credentials()
-        key = provider.strip().upper()
-        if key in creds:
-            del creds[key]
+        key_upper = provider.strip().upper()
+        provider_keys = [k for k, v in creds.items() if re.match(r"PROVIDER_\d{2}", k)]
+        index = None
+        for pkey in provider_keys:
+            if creds[pkey].strip().upper() == key_upper:
+                index = pkey.split("_")[-1]
+                break
+        if index:
+            keys_to_remove = [k for k in creds if k.endswith(f"_{index}")]
+            for k in keys_to_remove:
+                del creds[k]
+            del creds[f"PROVIDER_{index}"]
             save_screener_credentials(creds)
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to delete credentials: {e}")
 
 def list_providers() -> list:
     """
-    Returns list of provider keys in the credential file.
+    Returns list of provider names from the indexed credentials file.
     """
     creds = load_screener_credentials()
-    return list(creds.keys())
+    provider_keys = [v for k, v in creds.items() if re.match(r"PROVIDER_\d{2}", k)]
+    return provider_keys

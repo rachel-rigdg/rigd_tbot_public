@@ -1,6 +1,6 @@
 # tbot_bot/screeners/screener_utils.py
 # Utilities to load, validate, and manage the symbol universe cache for TradeBot screeners
-# Fully aligned with TradeBot v1.0.0+ staged/stable universe build specification.
+# Fully aligned with staged/stable universe build specification.
 # STRICT: Only universe files built with /stock/symbol, /stock/profile2, /quote endpoints (or IBKR API equivalents) are valid.
 
 import json
@@ -39,7 +39,7 @@ def get_screener_secrets() -> dict:
     if not screener_creds_exist():
         raise UniverseCacheError("Screener credentials not configured. Please configure screener credentials in the UI before running screener operations.")
     try:
-        return decrypt_json("screener_api")
+        return decrypt_json("screener_api.json.enc")
     except Exception as e:
         LOG.error(f"[screener_utils] Failed to load screener secrets: {e}")
         return {}

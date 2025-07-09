@@ -16,7 +16,7 @@ LOG = logging.getLogger(__name__)
 class ScreenerBase:
     """
     Abstract base class for all screener modules.
-    Enforces use of universe cache built using ONLY permitted Finnhub endpoints (/stock/symbol, /stock/profile2, /quote).
+    Enforces use of universe cache built using ONLY permitted endpoints (/stock/symbol, /stock/profile2, /quote).
     Subclasses must implement fetch_live_quotes() and filter_candidates().
     """
     def __init__(self, bot_identity: Optional[str] = None):

@@ -1,6 +1,6 @@
 # tbot_bot/screeners/symbol_sources/other_txt_source.py
 # Loader for otherlisted.txt (batch ops, normalization).
-# 100% compliant with v046 staged universe/blocklist/adapter spec.
+# 100% compliant with staged universe/blocklist/adapter spec.
 
 import csv
 from typing import List, Dict

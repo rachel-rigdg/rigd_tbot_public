@@ -1,6 +1,6 @@
 # tbot_bot/screeners/symbol_sources/polygon_source.py
 # Loader for Polygon API (free/paid, symbol/price/metadata, API key).
-# 100% compliant with v046 staged universe/blocklist/adapter spec.
+# 100% compliant with staged universe/blocklist/adapter spec.
 
 import requests
 from typing import List, Dict

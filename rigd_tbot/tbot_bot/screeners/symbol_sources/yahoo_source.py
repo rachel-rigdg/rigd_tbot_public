@@ -1,6 +1,6 @@
 # tbot_bot/screeners/symbol_sources/yahoo_source.py
 # Loader for Yahoo Finance (free/delayed prices, metadata)
-# 100% compliant with v046 staged universe/blocklist/adapter spec.
+# 100% compliant with staged universe/blocklist/adapter spec.
 
 import csv
 from typing import List, Dict
@@ -23,7 +23,7 @@ def load_yahoo_csv(path: str) -> List[Dict]:
             if symbol and name and "Test Issue" not in name:
                 syms.append({
                     "symbol": symbol.strip().upper(),
-                    "exchange": exch.strip().upper(),
+                    "exchange": exch.strip().upper() if exch else "US",
                     "companyName": name.strip(),
                     "sector": sector.strip(),
                     "industry": industry.strip()

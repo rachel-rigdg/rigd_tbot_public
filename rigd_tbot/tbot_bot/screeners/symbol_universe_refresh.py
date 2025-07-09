@@ -73,18 +73,18 @@ def append_to_blocklist(symbol, blocklist_path, reason="PRICE_BELOW_MIN"):
 def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj=None):
     import requests
     screener_secrets = get_screener_secrets()
-    FINNHUB_API_KEY = screener_secrets.get("FINNHUB_API_KEY") or screener_secrets.get("SCREENER_API_KEY") or screener_secrets.get("SCREENER_TOKEN")
-    FINNHUB_URL = screener_secrets.get("FINNHUB_URL", "https://finnhub.io/api/v1/")
-    FINNHUB_USERNAME = screener_secrets.get("FINNHUB_USERNAME", "")
-    FINNHUB_PASSWORD = screener_secrets.get("FINNHUB_PASSWORD", "")
+    FINNHUB_API_KEY = screener_secrets.get("SCREENER_API_KEY") or screener_secrets.get("SCREENER_TOKEN")
+    FINNHUB_URL = screener_secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
+    FINNHUB_USERNAME = screener_secrets.get("SCREENER_USERNAME", "")
+    FINNHUB_PASSWORD = screener_secrets.get("SCREENER_PASSWORD", "")
     UNIVERSE_SLEEP_TIME = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
     blocklist_path = BLOCKLIST_PATH
     if not FINNHUB_API_KEY:
-        raise RuntimeError("FINNHUB_API_KEY not set in screener_api.json.enc")
+        raise RuntimeError("SCREENER_API_KEY not set in screener_api.json.enc")
     unfiltered_symbols = load_unfiltered()
     filtered_symbols = []
     seen = set(s.get("symbol") for s in unfiltered_symbols)
-    blockset = set(line.strip().split(',')[0] for line in blocklist) if blocklist else set()
+    blockset = set(line.strip().split(',')[0].upper() for line in blocklist) if blocklist else set()
     for exch in exchanges:
         url = f"{FINNHUB_URL.rstrip('/')}/stock/symbol?exchange={exch.strip()}&token={FINNHUB_API_KEY}"
         auth = (FINNHUB_USERNAME, FINNHUB_PASSWORD) if FINNHUB_USERNAME and FINNHUB_PASSWORD else None
@@ -94,9 +94,10 @@ def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price
             continue
         for s in r.json():
             symbol = s.get("symbol")
-            if symbol in seen or symbol.upper() in blockset:
+            if not symbol:
                 continue
-            if symbol.upper() in blockset:
+            symbol_upper = symbol.upper()
+            if symbol_upper in seen or symbol_upper in blockset:
                 continue
             quote_url = f"{FINNHUB_URL.rstrip('/')}/quote?symbol={symbol}&token={FINNHUB_API_KEY}"
             quote = requests.get(quote_url, auth=auth)
@@ -114,7 +115,7 @@ def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price
             p = profile.json() if profile.status_code == 200 else {}
             time.sleep(UNIVERSE_SLEEP_TIME)
             obj = {
-                "symbol": symbol,
+                "symbol": symbol_upper,
                 "exchange": exch.strip(),
                 "lastClose": last_close,
                 "marketCap": p.get("marketCapitalization"),
@@ -122,10 +123,10 @@ def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price
                 "sector": p.get("finnhubIndustry") or "",
                 "industry": "",
                 "volume": q.get("v") or 0,
-                "isFractional": broker_obj.is_symbol_fractional(symbol) if broker_obj else None
+                "isFractional": broker_obj.is_symbol_fractional(symbol_upper) if broker_obj else None
             }
             unfiltered_symbols.append(obj)
-            seen.add(symbol)
+            seen.add(symbol_upper)
             write_unfiltered(dedupe_symbols(unfiltered_symbols))
             if len(unfiltered_symbols) % 100 == 0:
                 log_progress(
@@ -157,10 +158,10 @@ def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price
 
 def fetch_ibkr_symbols(secrets, env):
     import requests
-    IBKR_API_KEY = secrets.get("IBKR_API_KEY")
-    IBKR_BASE_URL = secrets.get("IBKR_BASE_URL", "https://localhost:5000/v1/api")
-    IBKR_USERNAME = secrets.get("IBKR_USERNAME", "")
-    IBKR_PASSWORD = secrets.get("IBKR_PASSWORD", "")
+    IBKR_API_KEY = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
+    IBKR_BASE_URL = secrets.get("SCREENER_URL", "https://localhost:5000/v1/api")
+    IBKR_USERNAME = secrets.get("SCREENER_USERNAME", "")
+    IBKR_PASSWORD = secrets.get("SCREENER_PASSWORD", "")
     UNIVERSE_SLEEP_TIME = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
     exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
@@ -174,7 +175,7 @@ def fetch_ibkr_symbols(secrets, env):
             blocklist = bf.readlines()
     except Exception:
         blocklist = []
-    blockset = set(line.strip().split(',')[0] for line in blocklist) if blocklist else set()
+    blockset = set(line.strip().split(',')[0].upper() for line in blocklist) if blocklist else set()
     unfiltered_symbols = load_unfiltered()
     filtered_symbols = []
     seen = set(s.get("symbol") for s in unfiltered_symbols)
@@ -187,7 +188,10 @@ def fetch_ibkr_symbols(secrets, env):
             continue
         for s in r.json().get("symbols", []):
             symbol = s.get("symbol")
-            if symbol in seen or symbol.upper() in blockset:
+            if not symbol:
+                continue
+            symbol_upper = symbol.upper()
+            if symbol_upper in seen or symbol_upper in blockset:
                 continue
             quote_url = f"{IBKR_BASE_URL.rstrip('/')}/quote?symbol={symbol}&apikey={IBKR_API_KEY}"
             quote = requests.get(quote_url, auth=auth, verify=False)
@@ -205,7 +209,7 @@ def fetch_ibkr_symbols(secrets, env):
             p = meta.json() if meta.status_code == 200 else {}
             time.sleep(UNIVERSE_SLEEP_TIME)
             obj = {
-                "symbol": symbol,
+                "symbol": symbol_upper,
                 "exchange": exch.strip(),
                 "lastClose": last_close,
                 "marketCap": p.get("marketCap"),
@@ -216,7 +220,7 @@ def fetch_ibkr_symbols(secrets, env):
                 "isFractional": p.get("isFractional") if p.get("isFractional") is not None else None
             }
             unfiltered_symbols.append(obj)
-            seen.add(symbol)
+            seen.add(symbol_upper)
             write_unfiltered(dedupe_symbols(unfiltered_symbols))
             if len(unfiltered_symbols) % 100 == 0:
                 log_progress(

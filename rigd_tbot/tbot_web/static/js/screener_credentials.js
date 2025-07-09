@@ -19,13 +19,16 @@ document.addEventListener("DOMContentLoaded", function () {
 function hideAllForms() {
     document.getElementById("credential-form-section").style.display = "none";
     document.getElementById("delete-confirm-section").style.display = "none";
+    document.getElementById("rotate-form-section")?.style.display = "none";
 }
 
 function showEditForm(provider) {
     hideAllForms();
     document.getElementById("credential-form-section").style.display = "block";
     document.getElementById("form-title").innerText = provider ? "Edit Provider Credentials" : "Add Provider Credentials";
-    document.getElementById("provider-input").value = provider || "";
+    const providerInput = document.getElementById("provider-input");
+    providerInput.value = provider || "";
+    providerInput.readOnly = !!provider;
     clearCredentialFields();
     if (provider && window.allCreds.hasOwnProperty(provider)) {
         populateCredentialFields(provider);
@@ -73,5 +76,15 @@ function confirmDeleteCredential(provider) {
 }
 
 function cancelDelete() {
+    hideAllForms();
+}
+
+function showRotateForm(provider) {
+    hideAllForms();
+    document.getElementById("rotate-form-section").style.display = "block";
+    document.getElementById("rotate-provider-input").value = provider;
+}
+
+function cancelRotate() {
     hideAllForms();
 }
