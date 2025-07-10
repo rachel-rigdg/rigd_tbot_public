@@ -1,5 +1,5 @@
 # tbot_web/py/screener_credentials_web.py
-# Updated for generic indexed credential management with explicit provider indexing and always writing to file
+# Updated for generic indexed credential management with explicit provider indexing and correct update logic.
 
 import os
 import json
@@ -8,7 +8,6 @@ from tbot_bot.support.secrets_manager import (
     get_screener_credentials_path,
     load_screener_credentials,
     get_provider_credentials,
-    save_screener_credentials,
     update_provider_credentials,
     delete_provider_credentials,
     list_providers
