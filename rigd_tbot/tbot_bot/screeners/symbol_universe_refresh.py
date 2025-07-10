@@ -1,4 +1,6 @@
 # tbot_bot/screeners/symbol_universe_refresh.py
+# UPDATE: Only use providers with UNIVERSE_ENABLED=="true" for universe build.
+# The selection logic now filters screener credentials to enforce the new usage flag.
 
 import sys
 import json
@@ -20,7 +22,10 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_log_path,
     resolve_screener_blocklist_path
 )
-from tbot_bot.support.secrets_manager import get_screener_credentials_path
+from tbot_bot.support.secrets_manager import (
+    get_screener_credentials_path,
+    load_screener_credentials
+)
 
 UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
 LOG_PATH = resolve_universe_log_path()
@@ -70,9 +75,28 @@ def append_to_blocklist(symbol, blocklist_path, reason="PRICE_BELOW_MIN"):
     except Exception:
         pass
 
+def get_universe_screener_creds():
+    # Only use providers with UNIVERSE_ENABLED=="true"
+    all_creds = load_screener_credentials()
+    provider_indices = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false") == "true"
+    ]
+    if not provider_indices:
+        raise RuntimeError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
+    # Return the first enabled provider's keys for legacy single-provider logic
+    idx = provider_indices[0]
+    return {
+        key.replace(f"_{idx}", ""): v
+        for key, v in all_creds.items()
+        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
+    }
+
 def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj=None):
     import requests
-    screener_secrets = get_screener_secrets()
+    screener_secrets = get_universe_screener_creds()
     FINNHUB_API_KEY = screener_secrets.get("SCREENER_API_KEY") or screener_secrets.get("SCREENER_TOKEN")
     FINNHUB_URL = screener_secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
     FINNHUB_USERNAME = screener_secrets.get("SCREENER_USERNAME", "")
@@ -140,7 +164,7 @@ def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price
                 min_price=min_price,
                 max_price=max_price,
                 min_market_cap=min_cap,
-                max_market_cap=max_cap,
+                max_cap=max_cap,
                 blocklist=blocklist,
                 max_size=None,
                 broker_obj=broker_obj
@@ -234,7 +258,7 @@ def fetch_ibkr_symbols(secrets, env):
                 min_price=min_price,
                 max_price=max_price,
                 min_market_cap=min_cap,
-                max_market_cap=max_cap,
+                max_cap=max_cap,
                 blocklist=blocklist,
                 max_size=None,
                 broker_obj=None
@@ -253,7 +277,7 @@ def fetch_ibkr_symbols(secrets, env):
 def fetch_broker_symbol_metadata_crash_resilient(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     if not screener_creds_exist():
         raise RuntimeError("Screener credentials not configured. Please configure screener credentials in the UI before building the universe.")
-    screener_secrets = get_screener_secrets()
+    screener_secrets = get_universe_screener_creds()
     screener_name = (screener_secrets.get("SCREENER_NAME") or "FINNHUB").strip().upper()
     broker_obj = get_active_broker()
     if screener_name == "FINNHUB":
@@ -297,7 +321,7 @@ def refilter_from_unfiltered(env, blocklist, exchanges, min_price, max_price, mi
         min_price=min_price,
         max_price=max_price,
         min_market_cap=min_cap,
-        max_market_cap=max_cap,
+        max_cap=max_cap,
         blocklist=blocklist,
         max_size=max_size,
         broker_obj=broker_obj

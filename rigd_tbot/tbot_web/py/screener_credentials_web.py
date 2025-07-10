@@ -1,9 +1,6 @@
 # tbot_web/py/screener_credentials_web.py
-# FIX: Ensures all form fields are captured and correctly written, guaranteeing persistent storage and immediate UI feedback.
-#       - Now builds the *full indexed credentials dict* per provider and calls save_screener_credentials directly.
-#       - add/update now always merges into the flat generic schema.
-#       - All changes immediately persist and propagate to disk and UI.
-#       - Audit log call can now be added in update_provider_credentials/save_screener_credentials.
+# UPDATE: Adds support for Universe and Trading usage flags in Add/Edit, saving "UNIVERSE_ENABLED_{idx}" and "TRADING_ENABLED_{idx}".
+# Fully enforces the new central usage flag schema.
 
 import os
 import json
@@ -32,6 +29,11 @@ SCREENER_KEYS = [
     "SCREENER_URL",
     "SCREENER_API_KEY",
     "SCREENER_TOKEN"
+]
+
+USAGE_KEYS = [
+    "UNIVERSE_ENABLED",
+    "TRADING_ENABLED"
 ]
 
 def unpack_credentials(creds: dict) -> dict:
@@ -73,6 +75,7 @@ def credentials_page():
             flash(f"Failed to load screener credentials: {e}", "error")
     creds_json = json.dumps(creds)
     keys_json = json.dumps(SCREENER_KEYS)
+    usage_keys_json = json.dumps(USAGE_KEYS)
     return render_template(
         "screener_credentials.html",
         creds=creds,
@@ -80,8 +83,10 @@ def credentials_page():
         screener_creds_exist=not show_add,
         showAddCredential=show_add,
         screener_keys=SCREENER_KEYS,
+        usage_keys=USAGE_KEYS,
         creds_json=creds_json,
-        keys_json=keys_json
+        keys_json=keys_json,
+        usage_keys_json=usage_keys_json
     )
 
 @screener_credentials_bp.route("/provider/<provider>", methods=["GET"])
@@ -104,6 +109,9 @@ def add_credential():
         val = request.form.get(key, "").strip()
         if val:
             values[key] = val
+    # Capture usage flags from form
+    universe_enabled = request.form.get("universe_enabled", "") == "on"
+    trading_enabled = request.form.get("trading_enabled", "") == "on"
     if not values:
         flash("At least one credential field is required.", "error")
         return redirect(url_for("screener_credentials.credentials_page"))
@@ -119,6 +127,8 @@ def add_credential():
         creds[f"PROVIDER_{idx}"] = provider
         for k, v in values.items():
             creds[f"{k}_{idx}"] = v
+        creds[f"UNIVERSE_ENABLED_{idx}"] = "true" if universe_enabled else "false"
+        creds[f"TRADING_ENABLED_{idx}"] = "true" if trading_enabled else "false"
         save_screener_credentials(creds)
         flash(f"Added credentials for {provider}", "success")
     except Exception as e:
@@ -136,8 +146,11 @@ def update_credential():
         val = request.form.get(key, "").strip()
         if val:
             values[key] = val
-    if not values:
-        flash("At least one credential field is required.", "error")
+    # Capture usage flags from form
+    universe_enabled = request.form.get("universe_enabled", "") == "on"
+    trading_enabled = request.form.get("trading_enabled", "") == "on"
+    if not values and not (universe_enabled or trading_enabled):
+        flash("At least one credential field or usage flag is required.", "error")
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         creds = load_screener_credentials() if os.path.exists(get_screener_credentials_path()) else {}
@@ -151,10 +164,11 @@ def update_credential():
             flash(f"Provider {provider} not found.", "error")
             return redirect(url_for("screener_credentials.credentials_page"))
         for k in SCREENER_KEYS:
-            # Overwrite or add new keys for this provider/index:
             v = values.get(k)
             if v:
                 creds[f"{k}_{idx}"] = v
+        creds[f"UNIVERSE_ENABLED_{idx}"] = "true" if universe_enabled else "false"
+        creds[f"TRADING_ENABLED_{idx}"] = "true" if trading_enabled else "false"
         save_screener_credentials(creds)
         flash(f"Updated credentials for {provider}", "success")
     except Exception as e:

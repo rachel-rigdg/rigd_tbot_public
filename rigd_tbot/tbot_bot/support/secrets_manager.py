@@ -1,4 +1,7 @@
 # tbot_bot/support/secrets_manager.py
+# UPDATE: Supports new usage flags ("UNIVERSE_ENABLED_{idx}", "TRADING_ENABLED_{idx}") in get_provider_credentials and update_provider_credentials,
+# ensures flags are always included in returned/saved dicts. No data loss for new keys. No business logic change to schema helpers.
+# Audit log remains as before.
 
 import os
 from typing import Dict, Optional
@@ -25,6 +28,8 @@ KEY_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "storage", "keys"
 )
+
+USAGE_FLAGS = ["UNIVERSE_ENABLED", "TRADING_ENABLED"]
 
 def _ensure_keyfile_exists(name: str):
     key_path = Path(KEY_DIR) / f"{name}.key"
@@ -53,7 +58,12 @@ def _load_schema() -> Dict:
 
 def _get_schema_keys() -> list:
     schema = _load_schema()
-    return [k for k in schema.get("properties", {}).keys() if k != "PROVIDER"]
+    keys = [k for k in schema.get("properties", {}).keys() if k != "PROVIDER"]
+    # Add usage flags to schema keys if not present
+    for flag in USAGE_FLAGS:
+        if flag not in keys:
+            keys.append(flag)
+    return keys
 
 def _create_empty_credentials_from_schema() -> Dict:
     return {}
@@ -92,6 +102,10 @@ def get_provider_credentials(provider: str) -> Optional[Dict]:
             for base_key in schema_keys:
                 k_full = f"{base_key}_{index}"
                 result[base_key] = creds.get(k_full, "")
+            # Always return usage flags too
+            for flag in USAGE_FLAGS:
+                k_flag = f"{flag}_{index}"
+                result[flag] = creds.get(k_flag, "false")
             return result
     return None
 
@@ -113,8 +127,11 @@ def update_provider_credentials(provider: str, new_values: Dict) -> None:
         keys_to_remove = [k for k in creds if k.endswith(f"_{index}")]
         for k in keys_to_remove:
             del creds[k]
+        # Always store all schema keys and usage flags
         for base_key in schema_keys:
             creds[f"{base_key}_{index}"] = new_values.get(base_key, "")
+        for flag in USAGE_FLAGS:
+            creds[f"{flag}_{index}"] = new_values.get(flag, "false")
         creds[f"PROVIDER_{index}"] = key_upper
         save_screener_credentials(creds)
         _audit_log("CREDENTIAL_UPDATED" if existed else "CREDENTIAL_ADDED", provider)

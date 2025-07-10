@@ -1,7 +1,6 @@
 # tbot_bot/screeners/screener_utils.py
-# Utilities to load, validate, and manage the symbol universe cache for TradeBot screeners
-# Fully aligned with staged/stable universe build specification.
-# STRICT: Only universe files built with /stock/symbol, /stock/profile2, /quote endpoints (or IBKR API equivalents) are valid.
+# UPDATE: Adds get_universe_screener_secrets(), loading credentials with UNIVERSE_ENABLED == "true"
+# Used for all universe build operations (vs. strategy/active screener use).
 
 import json
 import logging
@@ -15,7 +14,7 @@ from tbot_bot.support.path_resolver import (
     resolve_screener_blocklist_path
 )
 from tbot_bot.support.decrypt_secrets import decrypt_json
-from tbot_bot.support.secrets_manager import get_screener_credentials_path
+from tbot_bot.support.secrets_manager import get_screener_credentials_path, load_screener_credentials
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_filter import (
     normalize_symbols, filter_symbols as core_filter_symbols, dedupe_symbols
@@ -43,6 +42,27 @@ def get_screener_secrets() -> dict:
     except Exception as e:
         LOG.error(f"[screener_utils] Failed to load screener secrets: {e}")
         return {}
+
+def get_universe_screener_secrets() -> dict:
+    """
+    Loads the first screener provider where UNIVERSE_ENABLED == 'true'.
+    Returns the flat key/value dict for that provider.
+    """
+    all_creds = load_screener_credentials()
+    provider_indices = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false") == "true"
+    ]
+    if not provider_indices:
+        raise UniverseCacheError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
+    idx = provider_indices[0]
+    return {
+        key.replace(f"_{idx}", ""): v
+        for key, v in all_creds.items()
+        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
+    }
 
 def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)

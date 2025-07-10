@@ -1,18 +1,36 @@
 # tbot_bot/screeners/finnhub_screener.py
-# summary: Screens symbols using Finnhub (or generic screener) price, volume, VWAP data (strategy-specific filters, TEST_MODE aware)
-# Updated: Uses generic SCREENER_API_KEY, SCREENER_URL, SCREENER_USERNAME, SCREENER_PASSWORD per TradeBot specification
+# UPDATE: Loads screener credentials where TRADING_ENABLED == "true" per central flag.
+# Uses only enabled providers for active (strategy) screener operation.
 
 import requests
 import time
 from pathlib import Path
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.screeners.screener_utils import get_screener_secrets
 from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.screeners.screener_utils import load_universe_cache
+from tbot_bot.support.secrets_manager import load_screener_credentials
+
+def get_trading_screener_creds():
+    # Only use providers with TRADING_ENABLED == "true"
+    all_creds = load_screener_credentials()
+    provider_indices = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false") == "true"
+    ]
+    if not provider_indices:
+        raise RuntimeError("No screener providers enabled for active trading. Please enable at least one in the credential admin.")
+    idx = provider_indices[0]
+    return {
+        key.replace(f"_{idx}", ""): v
+        for key, v in all_creds.items()
+        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
+    }
 
 config = get_bot_config()
-screener_secrets = get_screener_secrets()
+screener_secrets = get_trading_screener_creds()
 SCREENER_API_KEY = (
     screener_secrets.get("SCREENER_API_KEY", "")
     or screener_secrets.get("SCREENER_TOKEN", "")

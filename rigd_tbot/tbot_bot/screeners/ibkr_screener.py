@@ -1,12 +1,13 @@
 # tbot_bot/screeners/ibkr_screener.py
-# summary: Screens symbols using IBKR price, volume, and VWAP data (strategy-specific filters)
-# Updated: Uses cached universe and quote-only fetches per TradeBot specification
+# UPDATE: Loads screener credentials where TRADING_ENABLED == "true" per central flag.
+# Only enabled providers are used for IBKR screener operation.
 
 import time
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.screeners.screener_utils import get_screener_secrets, load_universe_cache
 from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.screeners.screener_utils import load_universe_cache
+from tbot_bot.support.secrets_manager import load_screener_credentials
 
 # Placeholder: replace with real IBKR API imports and logic as needed
 def ibkr_get_quote(symbol):
@@ -21,8 +22,26 @@ def ibkr_get_quote(symbol):
     vwap = (c + o) / 2
     return {"symbol": symbol, "c": c, "o": o, "vwap": vwap}
 
+def get_trading_screener_creds():
+    # Only use providers with TRADING_ENABLED == "true"
+    all_creds = load_screener_credentials()
+    provider_indices = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false") == "true"
+    ]
+    if not provider_indices:
+        raise RuntimeError("No screener providers enabled for active trading. Please enable at least one in the credential admin.")
+    idx = provider_indices[0]
+    return {
+        key.replace(f"_{idx}", ""): v
+        for key, v in all_creds.items()
+        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
+    }
+
 config = get_bot_config()
-broker_creds = get_screener_secrets()
+broker_creds = get_trading_screener_creds()
 LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
