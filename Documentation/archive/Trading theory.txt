@@ -1,36 +1,0 @@
-
-
-
-Trading Strategy: 20-Minute trading strategy  Bot  Running with FastApi on a Digital Ocean server to perform trades in a bi-directional manner  
-	Test Mode:
-	•	Functions just like Live mode, 
-	•	1-minute analysis + 1-minute monitoring
-	•	Volume filters are skipped
-	•	Used for rapid logic testing, paper trades, not real trades
-	
-
-Live Mode:
-
-Strategy_open logic: 
-	•	Core Workflow:
-	•	 bot triggers at 9:30 AM EST.
-	•	20-minute analysis window collects real-time price/volume data.
-	•	Bot identifies high/low breakout range and selects up to 4 top trade candidates.
-	•	then Orders are only placed if price breaks above/below range + buffer.
-	•	then Trailing stop-loss of 2% manages downside risk.
-	•	Monitoring window is 30 minutes, with hard exit at the end of window. (Approx 10:20 am
-	•	Allocation Logic:
-	•	Dynamic position weighting based on how many trades pass the buffer, and in which order:
-	•	1 trade → 100% of allocation
-	•	2 trades → 60/40 split
-	•	3 trades → 40/30/30
-	•	4 trades → 40/20/20/20
-
-
-
-Strategy_mid logic: 
-
-
-Strategy_close logic: 
-
-

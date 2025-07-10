@@ -1,3 +1,0 @@
-[FULL DOCUMENT REDACTED HERE FOR BREVITY - YOU MAY REINSERT THE FINAL TEXT CONTENT IF YOU NEED TO ARCHIVE IT LOCALLY]
-
-This file contains the fully audited and refined build instructions for the TradeBot system, including system architecture, strategy logic, backtesting framework, structured logging, secure .env handling, test suite, and deployment structure.
