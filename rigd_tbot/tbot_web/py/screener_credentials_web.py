@@ -1,5 +1,9 @@
 # tbot_web/py/screener_credentials_web.py
-# Updated for generic indexed credential management with explicit provider indexing and correct update logic.
+# FIX: Ensures all form fields are captured and correctly written, guaranteeing persistent storage and immediate UI feedback.
+#       - Now builds the *full indexed credentials dict* per provider and calls save_screener_credentials directly.
+#       - add/update now always merges into the flat generic schema.
+#       - All changes immediately persist and propagate to disk and UI.
+#       - Audit log call can now be added in update_provider_credentials/save_screener_credentials.
 
 import os
 import json
@@ -44,6 +48,15 @@ def unpack_credentials(creds: dict) -> dict:
                 base_key = k.rsplit("_", 1)[0]
                 providers[pname][base_key] = v
     return providers
+
+def get_next_index(creds):
+    indices = []
+    for k in creds:
+        m = re.match(r"PROVIDER_(\d{2})$", k)
+        if m:
+            indices.append(int(m.group(1)))
+    idx = max(indices) + 1 if indices else 1
+    return f"{idx:02d}"
 
 @screener_credentials_bp.route("/", methods=["GET"])
 def credentials_page():
@@ -96,11 +109,17 @@ def add_credential():
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         creds = load_screener_credentials() if os.path.exists(get_screener_credentials_path()) else {}
+        # Find if provider already exists:
         unpacked_creds = unpack_credentials(creds)
         if provider in unpacked_creds:
             flash(f"Provider {provider} already exists. Use Edit to update.", "error")
             return redirect(url_for("screener_credentials.credentials_page"))
-        update_provider_credentials(provider, values)
+        # Assign next index:
+        idx = get_next_index(creds)
+        creds[f"PROVIDER_{idx}"] = provider
+        for k, v in values.items():
+            creds[f"{k}_{idx}"] = v
+        save_screener_credentials(creds)
         flash(f"Added credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to add credentials: {e}", "error")
@@ -121,7 +140,22 @@ def update_credential():
         flash("At least one credential field is required.", "error")
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
-        update_provider_credentials(provider, values)
+        creds = load_screener_credentials() if os.path.exists(get_screener_credentials_path()) else {}
+        # Find the correct index for this provider:
+        idx = None
+        for k, v in creds.items():
+            if k.startswith("PROVIDER_") and v.strip().upper() == provider:
+                idx = k.split("_")[-1]
+                break
+        if not idx:
+            flash(f"Provider {provider} not found.", "error")
+            return redirect(url_for("screener_credentials.credentials_page"))
+        for k in SCREENER_KEYS:
+            # Overwrite or add new keys for this provider/index:
+            v = values.get(k)
+            if v:
+                creds[f"{k}_{idx}"] = v
+        save_screener_credentials(creds)
         flash(f"Updated credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to update credentials: {e}", "error")
@@ -137,19 +171,16 @@ def rotate_credential():
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         creds = load_screener_credentials()
-        unpacked_creds = unpack_credentials(creds)
-        if provider not in unpacked_creds:
-            flash(f"Provider {provider} not found.", "error")
-            return redirect(url_for("screener_credentials.credentials_page"))
-        index = None
+        # Find the correct index for this provider:
+        idx = None
         for k, v in creds.items():
             if re.match(r"PROVIDER_\d{2}", k) and v.strip().upper() == provider:
-                index = k.split("_")[-1]
+                idx = k.split("_")[-1]
                 break
-        if not index:
+        if not idx:
             flash(f"Provider index for {provider} not found.", "error")
             return redirect(url_for("screener_credentials.credentials_page"))
-        creds[f"{new_key}_{index}"] = new_value
+        creds[f"{new_key}_{idx}"] = new_value
         save_screener_credentials(creds)
         flash(f"Rotated credential for {provider}: {new_key}", "success")
     except Exception as e:
