@@ -96,7 +96,7 @@ def save_configuration():
         "BROKER_PASSWORD":       form.get("broker_password", "").strip(),
         "BROKER_TOKEN":          form.get("broker_token", "").strip(),
     }
-        smtp_data = {
+    smtp_data = {
         "ALERT_EMAIL":    form.get("alert_email", "").strip(),
         "SMTP_USER":      form.get("smtp_user", "").strip(),
         "SMTP_PASS":      form.get("smtp_pass", "").strip(),
