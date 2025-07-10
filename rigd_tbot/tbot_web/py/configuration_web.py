@@ -96,15 +96,7 @@ def save_configuration():
         "BROKER_PASSWORD":       form.get("broker_password", "").strip(),
         "BROKER_TOKEN":          form.get("broker_token", "").strip(),
     }
-    screener_api_data = {
-        "SCREENER_NAME":     form.get("screener_name", "").strip(),
-        "SCREENER_USERNAME": form.get("screener_username", "").strip(),
-        "SCREENER_PASSWORD": form.get("screener_password", "").strip(),
-        "SCREENER_URL":      form.get("screener_url", "").strip(),
-        "SCREENER_API_KEY":  form.get("screener_api_key", "").strip(),
-        "SCREENER_TOKEN":    form.get("screener_token", "").strip(),
-    }
-    smtp_data = {
+        smtp_data = {
         "ALERT_EMAIL":    form.get("alert_email", "").strip(),
         "SMTP_USER":      form.get("smtp_user", "").strip(),
         "SMTP_PASS":      form.get("smtp_pass", "").strip(),
@@ -125,7 +117,6 @@ def save_configuration():
     config = {
         "bot_identity":    bot_identity_data,
         "broker":          broker_data,
-        "screener_api":    screener_api_data,
         "smtp":            smtp_data,
         "network_config":  network_config_data,
         "acct_api":        acct_api_data,
@@ -140,7 +131,6 @@ def save_configuration():
             try:
                 config_encryption.encrypt_and_write("bot_identity", bot_identity_data)
                 config_encryption.encrypt_and_write("broker", broker_data)
-                config_encryption.encrypt_and_write("screener_api", screener_api_data)
                 config_encryption.encrypt_and_write("smtp", smtp_data)
                 config_encryption.encrypt_and_write("network_config", network_config_data)
                 config_encryption.encrypt_and_write("acct_api", acct_api_data)

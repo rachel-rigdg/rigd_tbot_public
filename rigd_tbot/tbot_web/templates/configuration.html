@@ -68,28 +68,7 @@
                 <input type="number" id="port" name="port" min="1" max="65535" required value="{{ config['network_config']['PORT'] if config.get('network_config') else '6900' }}" />
             </fieldset>
         </div><br><br>
-        <div class="fieldblock-config">
-            <fieldset >
-                <legend>Screener Settings</legend>
-                <label for="screener_name">Screener Name</label>
-                <input type="text" id="screener_name" name="screener_name" maxlength="64" value="{{ config['screener_api']['SCREENER_NAME'] if config.get('screener_api') else 'Finnhub' }}" />
-                <br><br>
-                <label for="screener_username">Screener Username (optional)</label>
-                <input type="text" id="screener_username" name="screener_username" value="{{ config['screener_api']['SCREENER_USERNAME'] if config.get('screener_api') else '' }}" />
-                <br><br>
-                <label for="screener_password">Screener Password (optional)</label>
-                <input type="password" id="screener_password" name="screener_password" value="" placeholder="Enter new password or leave blank to keep existing" />
-                <br><br>
-                <label for="screener_url">Screener URL</label>
-                <input type="text" id="screener_url" name="screener_url" value="{{ config['screener_api']['SCREENER_URL'] if config.get('screener_api') else 'https://finnhub.io/api/v1/' }}" />
-                <br><br>
-                <label for="screener_api_key">Screener API Key</label>
-                <input type="text" id="screener_api_key" name="screener_api_key" value="{{ config['screener_api']['SCREENER_API_KEY'] if config.get('screener_api') else '' }}" />
-                <br><br>
-                <label for="screener_token">Screener Token (optional)</label>
-                <input type="text" id="screener_token" name="screener_token" value="{{ config['screener_api']['SCREENER_TOKEN'] if config.get('screener_api') else '' }}" />
-            </fieldset>
-        </div><br><br>
+    
         <div class="fieldblock-config">
             <fieldset >
                 <legend>Broker Settings</legend>
