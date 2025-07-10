@@ -33,7 +33,7 @@ def decrypt_json(name: str, _recursing: bool=False) -> Dict:
     fernet = Fernet(key)
     enc_path = ENCRYPTED_DIR / f"{name}.json.enc"
     if not enc_path.is_file():
-        print("decrypt_secrets", f"DEBUG: Looking for encrypted file at: {enc_path}", level="warning")
+        print("decrypt_secrets", f"DEBUG: Looking for encrypted file at: {enc_path}")
         raise FileNotFoundError(f"Missing encrypted file: {enc_path}")
 
     try:
@@ -42,7 +42,7 @@ def decrypt_json(name: str, _recursing: bool=False) -> Dict:
         parsed = json.loads(decrypted.decode("utf-8"))
         return parsed
     except Exception as e:
-        print("decrypt_secrets", f"Failed to decrypt {name}.json.enc: {e}", level="error")
+        print("decrypt_secrets", f"Failed to decrypt {name}.json.enc: {e}")
         raise RuntimeError(f"Decryption failed for {name}.json.enc: {e}")
 
 def load_bot_identity(default: Optional[str] = None) -> Optional[str]:
@@ -62,12 +62,12 @@ def load_bot_identity(default: Optional[str] = None) -> Optional[str]:
         return identity
     except FileNotFoundError:
         if not _warned_missing_identity:
-            print("decrypt_secrets", "bot_identity.json.enc or key not found; returning default", level="warning")
+            print("decrypt_secrets", "bot_identity.json.enc or key not found; returning default")
             _warned_missing_identity = True
         return default
     except Exception:
         if not _warned_missing_identity:
-            print("decrypt_secrets", "bot_identity.json.enc or key not found; returning default", level="warning")
+            print("decrypt_secrets", "bot_identity.json.enc or key not found; returning default")
             _warned_missing_identity = True
         return default
 
