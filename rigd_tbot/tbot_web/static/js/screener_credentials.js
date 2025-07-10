@@ -12,14 +12,14 @@ document.addEventListener("DOMContentLoaded", function () {
         showEditForm('');
     }
 
-    // Set form action dynamically on load
     updateCredentialFormAction('');
 });
 
 function hideAllForms() {
     document.getElementById("credential-form-section").style.display = "none";
     document.getElementById("delete-confirm-section").style.display = "none";
-    document.getElementById("rotate-form-section")?.style.display = "none";
+    var rotateForm = document.getElementById("rotate-form-section");
+    if (rotateForm) rotateForm.style.display = "none";
 }
 
 function showEditForm(provider) {

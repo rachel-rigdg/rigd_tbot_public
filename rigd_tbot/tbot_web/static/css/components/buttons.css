@@ -8,9 +8,9 @@ button, .tab-button {
   
     
     padding : 5px 10px;
-    background-color: #333333;
-    color: #fff;
-    border: solid 1px #999999;
+    background-color: #e7ba4a;
+    color: #222;
+    border: none;
     border-radius: 6px;
     cursor: pointer;
     font-size: 1.12em;
@@ -61,7 +61,7 @@ button,
 }
 button::-moz-focus-inner {
     border-style: none;
-    background-color:#333;
+    background-color:#d9a011;
 }
 button:-moz-focusring {
     outline: 1px dotted ButtonText;

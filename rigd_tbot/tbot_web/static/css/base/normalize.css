@@ -13,6 +13,7 @@ main {
 h1 {
     font-size: 2em;
     margin: 0.67em 0;
+    color:#e7ba4a;
 }
 hr {
     box-sizing: content-box;
@@ -31,6 +32,7 @@ a {
 abbr[title] {
     border-bottom: none;
     text-decoration: underline dotted;
+    color:#e7ba4a;
 }
 b,
 strong {

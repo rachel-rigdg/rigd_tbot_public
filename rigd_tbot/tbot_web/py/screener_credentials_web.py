@@ -1,5 +1,5 @@
 # tbot_web/py/screener_credentials_web.py
-# Updated for generic indexed credential management
+# Updated for generic indexed credential management with explicit provider indexing and always writing to file
 
 import os
 import json
@@ -31,23 +31,18 @@ SCREENER_KEYS = [
 ]
 
 def unpack_credentials(creds: dict) -> dict:
-    """
-    Converts indexed credential dict (flat keys with _NN suffix) into nested dict keyed by provider name.
-    Returns { provider_name: { key: value, ... }, ... }
-    """
     providers = {}
     provider_indices = {}
     for k, v in creds.items():
-        m = re.match(r'^(PROVIDER|SCREENER_NAME)_(\d{2})$', k)
-        if m and m.group(1) == "PROVIDER":
-            provider_indices[m.group(2)] = v.upper()
+        m = re.match(r'^PROVIDER_(\d{2})$', k)
+        if m:
+            provider_indices[m.group(1)] = v.upper()
     for idx, pname in provider_indices.items():
         providers[pname] = {}
         for k, v in creds.items():
-            if k.endswith(f"_{idx}"):
+            if k.endswith(f"_{idx}") and not k.startswith("PROVIDER_"):
                 base_key = k.rsplit("_", 1)[0]
-                if base_key != "PROVIDER":
-                    providers[pname][base_key] = v
+                providers[pname][base_key] = v
     return providers
 
 @screener_credentials_bp.route("/", methods=["GET"])
@@ -80,7 +75,7 @@ def credentials_page():
 def get_provider(provider):
     cred = get_provider_credentials(provider)
     if cred:
-        data = {k: "********" for k in cred.keys()}  # mask all values
+        data = {k: "********" for k in cred.keys()}
     else:
         data = {}
     return jsonify(data)
@@ -101,13 +96,13 @@ def add_credential():
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         creds = load_screener_credentials() if os.path.exists(get_screener_credentials_path()) else {}
-        # Check if provider exists in indexed creds
         unpacked_creds = unpack_credentials(creds)
         if provider in unpacked_creds:
             flash(f"Provider {provider} already exists. Use Edit to update.", "error")
             return redirect(url_for("screener_credentials.credentials_page"))
-        # Use update_provider_credentials to add new provider block
         update_provider_credentials(provider, values)
+        # Always reload and save file after update to ensure disk sync
+        save_screener_credentials(load_screener_credentials())
         flash(f"Added credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to add credentials: {e}", "error")
@@ -129,6 +124,7 @@ def update_credential():
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         update_provider_credentials(provider, values)
+        save_screener_credentials(load_screener_credentials())
         flash(f"Updated credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to update credentials: {e}", "error")
@@ -148,8 +144,6 @@ def rotate_credential():
         if provider not in unpacked_creds:
             flash(f"Provider {provider} not found.", "error")
             return redirect(url_for("screener_credentials.credentials_page"))
-        # Update key in raw creds with correct index
-        # Find index of provider
         index = None
         for k, v in creds.items():
             if re.match(r"PROVIDER_\d{2}", k) and v.strip().upper() == provider:
@@ -173,6 +167,7 @@ def delete_credential():
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         delete_provider_credentials(provider)
+        save_screener_credentials(load_screener_credentials())
         flash(f"Deleted credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to delete credentials: {e}", "error")

@@ -1,6 +1,6 @@
 # tbot_bot/support/secrets_manager.py
 # Central encryption/decryption/loader for all screener API credentials. (Called by all loaders/adapters.)
-# 100% compliant with v046 screener universe/credential spec using generic indexed keys and schema initialization.
+# 100% compliant with screener universe/credential spec using generic indexed keys and schema initialization.
 
 import os
 from typing import Dict, Optional
@@ -29,22 +29,17 @@ def _load_schema() -> Dict:
 
 def _create_empty_credentials_from_schema() -> Dict:
     schema = _load_schema()
-    creds = {}
-    properties = schema.get("properties", {})
-    # Set all keys from schema properties to empty strings or default
-    for key in properties:
-        creds[key] = ""
-    return creds
+    # Only create empty indexed block, not populate all fields for all indices
+    return {}
 
 def load_screener_credentials() -> Dict:
     """
     Loads decrypted screener/universe adapter credentials from dedicated encrypted secrets file.
-    If missing, creates an empty base structure file from schema and returns empty dict.
+    If missing, creates an empty dict file (no providers) based on schema.
     Returns dict with indexed provider blocks, e.g. PROVIDER_01, SCREENER_NAME_01, etc.
     """
     path = get_screener_credentials_path()
     if not os.path.exists(path):
-        # Create empty base credential structure from schema
         empty_creds = _create_empty_credentials_from_schema()
         try:
             save_screener_credentials(empty_creds)
@@ -76,7 +71,6 @@ def get_provider_credentials(provider: str) -> Optional[Dict]:
     for pkey in provider_keys:
         if creds[pkey].strip().upper() == key_upper:
             index = pkey.split("_")[-1]
-            # Gather all keys with this index
             result = {}
             for k, v in creds.items():
                 if k.endswith(f"_{index}"):
@@ -87,29 +81,28 @@ def get_provider_credentials(provider: str) -> Optional[Dict]:
 def update_provider_credentials(provider: str, new_values: Dict) -> None:
     """
     Updates credentials for the given provider (add/edit) by replacing the indexed block and saving.
+    Only fields found in the schema properties are allowed.
     """
     try:
         creds = load_screener_credentials()
+        schema = _load_schema()
+        allowed = set(schema.get("properties", {}).keys())
         key_upper = provider.strip().upper()
         provider_keys = [k for k, v in creds.items() if re.match(r"PROVIDER_\d{2}", k)]
-        # Find existing index or assign new
         index = None
         for pkey in provider_keys:
             if creds[pkey].strip().upper() == key_upper:
                 index = pkey.split("_")[-1]
                 break
         if index is None:
-            # Assign next available index
             existing_indices = sorted(int(k.split("_")[-1]) for k in provider_keys)
             index = f"{(existing_indices[-1]+1) if existing_indices else 1:02d}"
-        # Remove all keys with this index first
         keys_to_remove = [k for k in creds if k.endswith(f"_{index}")]
         for k in keys_to_remove:
             del creds[k]
-        # Add new values with index suffix
         for base_key, val in new_values.items():
-            creds[f"{base_key}_{index}"] = val
-        # Add provider key itself
+            if base_key in allowed and base_key != "PROVIDER":
+                creds[f"{base_key}_{index}"] = val
         creds[f"PROVIDER_{index}"] = key_upper
         save_screener_credentials(creds)
     except Exception as e:
