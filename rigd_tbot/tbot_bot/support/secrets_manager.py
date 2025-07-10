@@ -1,6 +1,5 @@
 # tbot_bot/support/secrets_manager.py
 # Central encryption/decryption/loader for all screener API credentials. (Called by all loaders/adapters.)
-# 100% compliant with v046 screener universe/credential spec using generic indexed keys and schema enforcement.
 
 import os
 from typing import Dict, Optional
@@ -84,7 +83,7 @@ def get_provider_credentials(provider: str) -> Optional[Dict]:
 
 def update_provider_credentials(provider: str, new_values: Dict) -> None:
     """
-    Updates credentials for the given provider (add/edit) by replacing the indexed block and saving.
+    Updates credentials for the given provider (add/edit) by updating indexed keys, preserving any existing keys not overwritten by the user.
     Ensures all schema keys are present for the provider, even if blank.
     """
     try:
@@ -100,12 +99,14 @@ def update_provider_credentials(provider: str, new_values: Dict) -> None:
         if index is None:
             existing_indices = sorted(int(k.split("_")[-1]) for k in provider_keys)
             index = f"{(existing_indices[-1]+1) if existing_indices else 1:02d}"
-        keys_to_remove = [k for k in creds if k.endswith(f"_{index}")]
-        for k in keys_to_remove:
-            del creds[k]
-        # Write all schema keys for this provider index, blank if not supplied
+        # Preserve all existing keys for this provider index, only update those present in new_values
         for base_key in schema_keys:
-            creds[f"{base_key}_{index}"] = new_values.get(base_key, "")
+            field_key = f"{base_key}_{index}"
+            if base_key in new_values:
+                creds[field_key] = new_values[base_key]
+            elif field_key not in creds:
+                creds[field_key] = ""
+            # else: preserve existing value if present
         creds[f"PROVIDER_{index}"] = key_upper
         save_screener_credentials(creds)
     except Exception as e:
