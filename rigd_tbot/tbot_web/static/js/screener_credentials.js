@@ -46,11 +46,9 @@ function clearCredentialFields() {
 function populateCredentialFields(provider) {
     const data = window.allCreds[provider];
     if (!data) return;
-    for (const key in data) {
-        if (data.hasOwnProperty(key)) {
-            const el = document.getElementById(key);
-            if (el) el.value = data[key];
-        }
+    for (const key of window.screenerKeys) {
+        const el = document.getElementById(key);
+        if (el) el.value = (data[key] !== undefined) ? data[key] : "";
     }
 }
 

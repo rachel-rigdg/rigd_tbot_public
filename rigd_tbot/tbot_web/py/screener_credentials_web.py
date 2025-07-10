@@ -101,8 +101,6 @@ def add_credential():
             flash(f"Provider {provider} already exists. Use Edit to update.", "error")
             return redirect(url_for("screener_credentials.credentials_page"))
         update_provider_credentials(provider, values)
-        # Always reload and save file after update to ensure disk sync
-        save_screener_credentials(load_screener_credentials())
         flash(f"Added credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to add credentials: {e}", "error")
@@ -124,7 +122,6 @@ def update_credential():
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         update_provider_credentials(provider, values)
-        save_screener_credentials(load_screener_credentials())
         flash(f"Updated credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to update credentials: {e}", "error")
@@ -167,7 +164,6 @@ def delete_credential():
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
         delete_provider_credentials(provider)
-        save_screener_credentials(load_screener_credentials())
         flash(f"Deleted credentials for {provider}", "success")
     except Exception as e:
         flash(f"Failed to delete credentials: {e}", "error")

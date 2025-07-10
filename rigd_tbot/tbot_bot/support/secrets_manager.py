@@ -1,6 +1,6 @@
 # tbot_bot/support/secrets_manager.py
 # Central encryption/decryption/loader for all screener API credentials. (Called by all loaders/adapters.)
-# 100% compliant with screener universe/credential spec using generic indexed keys and schema initialization.
+# 100% compliant with v046 screener universe/credential spec using generic indexed keys and schema enforcement.
 
 import os
 from typing import Dict, Optional
@@ -27,9 +27,12 @@ def _load_schema() -> Dict:
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to load screener credentials schema: {e}")
 
-def _create_empty_credentials_from_schema() -> Dict:
+def _get_schema_keys() -> list:
     schema = _load_schema()
-    # Only create empty indexed block, not populate all fields for all indices
+    return [k for k in schema.get("properties", {}).keys() if k != "PROVIDER"]
+
+def _create_empty_credentials_from_schema() -> Dict:
+    # Return an empty dict (no provider blocks).
     return {}
 
 def load_screener_credentials() -> Dict:
@@ -72,21 +75,21 @@ def get_provider_credentials(provider: str) -> Optional[Dict]:
         if creds[pkey].strip().upper() == key_upper:
             index = pkey.split("_")[-1]
             result = {}
-            for k, v in creds.items():
-                if k.endswith(f"_{index}"):
-                    result[k.rsplit("_", 1)[0]] = v
+            schema_keys = _get_schema_keys()
+            for base_key in schema_keys:
+                k_full = f"{base_key}_{index}"
+                result[base_key] = creds.get(k_full, "")
             return result
     return None
 
 def update_provider_credentials(provider: str, new_values: Dict) -> None:
     """
     Updates credentials for the given provider (add/edit) by replacing the indexed block and saving.
-    Only fields found in the schema properties are allowed.
+    Ensures all schema keys are present for the provider, even if blank.
     """
     try:
         creds = load_screener_credentials()
-        schema = _load_schema()
-        allowed = set(schema.get("properties", {}).keys())
+        schema_keys = _get_schema_keys()
         key_upper = provider.strip().upper()
         provider_keys = [k for k, v in creds.items() if re.match(r"PROVIDER_\d{2}", k)]
         index = None
@@ -100,9 +103,9 @@ def update_provider_credentials(provider: str, new_values: Dict) -> None:
         keys_to_remove = [k for k in creds if k.endswith(f"_{index}")]
         for k in keys_to_remove:
             del creds[k]
-        for base_key, val in new_values.items():
-            if base_key in allowed and base_key != "PROVIDER":
-                creds[f"{base_key}_{index}"] = val
+        # Write all schema keys for this provider index, blank if not supplied
+        for base_key in schema_keys:
+            creds[f"{base_key}_{index}"] = new_values.get(base_key, "")
         creds[f"PROVIDER_{index}"] = key_upper
         save_screener_credentials(creds)
     except Exception as e:
