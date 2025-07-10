@@ -10,7 +10,8 @@ from tbot_bot.support.secrets_manager import (
     get_provider_credentials,
     update_provider_credentials,
     delete_provider_credentials,
-    list_providers
+    list_providers,
+    save_screener_credentials
 )
 import re
 

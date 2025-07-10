@@ -10,28 +10,46 @@ from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.config_fetch import get_live_config_for_rotation
 from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
+import os
 
 # Constants
 ROOT = Path(__file__).resolve().parents[1] / "storage"
 KEY_DIR = ROOT / "keys"
 SECRETS_DIR = ROOT / "secrets"
 
+def generate_and_write_key(key_name: str) -> bytes:
+    """
+    Generates a new Fernet key and writes it to /storage/keys/{key_name}.key if it doesn't exist.
+    Returns the key as bytes.
+    """
+    key_path = KEY_DIR / f"{key_name}.key"
+    if not key_path.is_file():
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        key = Fernet.generate_key()
+        key_path.write_text(key.decode("utf-8"))
+        log_event("encrypt_secrets", f"Generated new Fernet key: {key_path}")
+        return key
+    return key_path.read_text(encoding="utf-8").strip().encode()
+
 def load_key(key_name: str, default=None) -> bytes:
     """
     Loads a Fernet key from /storage/keys/{key_name}.key
     Returns default if missing and default is provided, else raises.
+    If the key does not exist, it will be created automatically.
     """
     key_path = KEY_DIR / f"{key_name}.key"
     if not key_path.is_file():
         if default is not None:
             return default
-        raise FileNotFoundError(f"Missing key file: {key_path}")
+        # Create the key if missing
+        return generate_and_write_key(key_name)
     return key_path.read_text(encoding="utf-8").strip().encode()
 
 def encrypt_json(name: str, data: dict) -> None:
     """
     Encrypts the given dictionary as JSON into {name}.json.enc using {name}.key.
     Writes encrypted file to /storage/secrets/.
+    If the key does not exist, it will be created automatically.
     """
     key = load_key(name)
     fernet = Fernet(key)
@@ -40,6 +58,7 @@ def encrypt_json(name: str, data: dict) -> None:
     enc_path = SECRETS_DIR / f"{name}.json.enc"
     tmp_path = SECRETS_DIR / f"{name}.json.enc.tmp"
 
+    SECRETS_DIR.mkdir(parents=True, exist_ok=True)
     encrypted = fernet.encrypt(json_bytes)
 
     with open(tmp_path, "wb") as f:

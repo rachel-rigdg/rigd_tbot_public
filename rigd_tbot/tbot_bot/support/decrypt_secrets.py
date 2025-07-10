@@ -15,10 +15,26 @@ ENCRYPTED_DIR = ROOT / "secrets"
 
 _warned_missing_identity = False
 
+def generate_and_write_key_if_missing(key_name: str) -> bytes:
+    """
+    Generates and writes a Fernet key if missing, returns the key bytes.
+    Used for compatibility with auto-keying in encrypt_secrets.py.
+    """
+    key_path = KEY_DIR / f"{key_name}.key"
+    if not key_path.is_file():
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        from cryptography.fernet import Fernet
+        key = Fernet.generate_key()
+        key_path.write_text(key.decode("utf-8"))
+        log_event("decrypt_secrets", f"Generated new Fernet key (on decrypt): {key_path}")
+        return key
+    return key_path.read_text(encoding="utf-8").strip().encode()
+
 def load_key(key_name: str) -> bytes:
     key_path = KEY_DIR / f"{key_name}.key"
     if not key_path.is_file():
-        raise FileNotFoundError(f"Missing key file: {key_path}")
+        # Compat: auto-create key if encrypt_secrets.py policy allows it
+        return generate_and_write_key_if_missing(key_name)
     return key_path.read_text(encoding="utf-8").strip().encode()
 
 def decrypt_json(name: str, _recursing: bool=False) -> Dict:
