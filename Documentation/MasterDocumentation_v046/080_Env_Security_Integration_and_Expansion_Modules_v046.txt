@@ -113,224 +113,369 @@ SESSION_TIMEOUT_MINUTES=120
  .env_bot / env_bot.enc – Trading Bot Configuration File
 ================================================================================
 
-# .env_bot – TradeBot Configuration v1.0.0+
+# .env_bot – TradeBot Configuration 
 # All strategy logic, broker routing, and runtime behavior are driven by this file.
 # Time values are specified in UTC. Comments indicate usage and system impact.
+
+
+
 # -----------------------------------------
 # General & Debugging
 # -----------------------------------------
+
 # Version tag (must match VERSION.md)
 VERSION_TAG=v1.0.0
+
 # debug or release – sets internal behavior and logging verbosity
 BUILD_MODE=release
+
 # Master kill switch to block all trading activity
 DISABLE_ALL_TRADES=false
+
 # Logging level: quiet, info, or verbose
 DEBUG_LOG_LEVEL=verbose
+
 # Enable writing log files to /logs and /backups
 ENABLE_LOGGING=true
+
 # json (structured) or csv (flat) log output format
 LOG_FORMAT=json
+
 # -----------------------------------------
 # Trade Execution & Risk Controls
 # -----------------------------------------
+
 # If true, bot will wait for manual confirmation before sending trades
 TRADE_CONFIRMATION_REQUIRED=false
+
 # Number of times to retry failed broker API calls      
 API_RETRY_LIMIT=3
+
 # how many seconds before timeout 
 API_TIMEOUT=30
+
 # Allow fractional shares (broker must support)
 FRACTIONAL=true
+
 # Total capital allocated per strategy session (e.g., 2% of account)
 TOTAL_ALLOCATION=0.02
+
 # Max number of trades allowed per strategy window
 MAX_TRADES=4
+
 # Trade weight percentages based on number of triggered trades
 WEIGHTS=0.4,0.2,0.2,0.2
+
 # Absolute loss limit (e.g., 5% of capital); triggers shutdown
 DAILY_LOSS_LIMIT=0.05
+
 # Maximum allocation per trade based on account value (2.5%)
 MAX_RISK_PER_TRADE=0.025
+
 # Cap on total simultaneous positions across all strategies
 MAX_OPEN_POSITIONS=5                   
+
+
+# -----------------------------------------
+# Screeners Configuration
+# -----------------------------------------
+
+
+# Universe cache file max age in days (max allowable staleness)
+SCREENER_UNIVERSE_MAX_AGE_DAYS=3
+
+# Universe filters: Exchanges allowed (comma-separated, case-sensitive)
+SCREENER_UNIVERSE_EXCHANGES=US
+
+# Universe filters: Minimum price (last close)
+SCREENER_UNIVERSE_MIN_PRICE=2
+
+# Universe filters: Maximum price (last close)
+SCREENER_UNIVERSE_MAX_PRICE=10000
+
+# Universe filters: Minimum market cap (USD)
+SCREENER_UNIVERSE_MIN_MARKET_CAP=300000000
+
+# Universe filters: Maximum market cap (USD)
+SCREENER_UNIVERSE_MAX_MARKET_CAP=10000000000
+
+# Universe max size cap: maximum symbols allowed after filtering; truncates by liquidity/market cap
+SCREENER_UNIVERSE_MAX_SIZE=2000
+
+# Manual exclusion blocklist file path (relative to project root)
+SCREENER_UNIVERSE_BLOCKLIST_PATH=output/screeners/screener_blocklist.txt
+
+# Test mode universe override: comma-separated list of tickers used when TEST_MODE=true
+SCREENER_TEST_MODE_UNIVERSE=AAPL,MSFT,GOOG,AMZN,FB,TSLA,NFLX,BABA,JPM,BRK.B,JNJ,V,PG,DIS,NVDA,MA,HD,PYPL,ADBE,CMCSA
+
+
 # -----------------------------------------
 # Price & Volume Filters
 # -----------------------------------------
+
 # Minimum price allowed per trade
-MIN_PRICE=5
+MIN_PRICE=2
+
 # Maximum price allowed per trade
-MAX_PRICE=100
+MAX_PRICE=1000
+
 # Minimum volume filter 
-MIN_VOLUME_THRESHOLD=1000000       
+MIN_VOLUME_THRESHOLD=500000       
+
 # Finnhub Guard filter 
 ENABLE_FUNNHUB_FUNDAMENTALS_FILTER=true
-MAX_PE_RATIO=50
-MAX_DEBT_EQUITY=2.5
+
+MAX_PE_RATIO=60
+
+MAX_DEBT_EQUITY=3.5
+
+
+
 # -----------------------------------------
 # Strategy Routing & Broker Mode
 # -----------------------------------------
-# Broker Name (Options: ALPACA, IBKR, TRADIER, etc.)
-BROKER_NAME="ALPACA"  
+
+
 # Strategy run order; values: open, mid, close
 STRATEGY_SEQUENCE=open,mid,close
+
 # Optional: override normal order and run only one strategy
 STRATEGY_OVERRIDE=
+
 # -----------------------------------------
 # Automated Rebalance Triggers
 # -----------------------------------------
+
+# Broker Account Balance
+ACCOUNT_BALANCE=99987
+
 # Master toggle for automated rebalancing
 REBALANCE_ENABLED=true     
+
 # Trigger threshold (fractional, e.g., 0.10 = 10% deviation)              
 REBALANCE_THRESHOLD=0.10     
+
 # Check interval in seconds (default: 3600s = 1 hour)            
 REBALANCE_CHECK_INTERVAL=3600           
+
+
 # -----------------------------------------
 # Failover Broker Routing
 # -----------------------------------------
+
 # Master toggle for failover routing
-FAILOVER_ENABLED=true                
+FAILOVER_ENABLED=true  
+                  
 # Tag applied to rerouted trades in logs/ledgers
 FAILOVER_LOG_TAG=FAILOVER_ACTIVE         
+
+
+
 # -----------------------------------------
 # Global Time & Polling
 # -----------------------------------------
+
+
+ # e.g. 9:30 AM New York (US/Eastern) is 14:30 UTC
+MARKET_OPEN_UTC=14:30     
+
+ # e.g. 4:00 PM New York (US/Eastern) is 21:00 UTC
+MARKET_CLOSE_UTC=21:00    
+
 # Days allowed for trading (UTC-based control logic)
 TRADING_DAYS=mon,tue,wed,thu,fri
-# Interval between polling cycles for runtime monitoring
-SLEEP_TIME=1s
+
+# Interval between polling cycles for runtime monitoring (seconds)
+UNIVERSE_SLEEP_TIME=0.3
+STRATEGY_SLEEP_TIME=0.03
+
 # -----------------------------------------
 # OPEN Strategy Configuration (20 min trading)
 # -----------------------------------------
+
+
 # Maximum gap allowed from open to current price (used in screener)
 MAX_GAP_PCT_OPEN=0.1
+
 # Minimum and maximum market cap allowed for OPEN strategy candidates
-MIN_MARKET_CAP_OPEN=2000000000
+MIN_MARKET_CAP_OPEN=300000000
 MAX_MARKET_CAP_OPEN=10000000000
+
 # Enable or disable OPEN strategy
 STRAT_OPEN_ENABLED=true
+
 # UTC start time (market open = 9:30 AM EST)
 START_TIME_OPEN=14:30
+
 # Minutes to track high/low range before breakout
 OPEN_ANALYSIS_TIME=20
+
 # Minutes to for breakout to happen
 OPEN_BREAKOUT_TIME=10
+
 # Minutes to monitor active positions
 OPEN_MONITORING_TIME=30
+
 # Breakout threshold above high/low range (e.g., 2%)
 STRAT_OPEN_BUFFER=0.02
+
 # Shorting method: InverseETF, disabled, ShortSell, LongPut,
 SHORT_TYPE_OPEN= InverseETF               
+
 # -----------------------------------------
 # MID Strategy Configuration (VWAP Reversion)
 # -----------------------------------------
+
 # Maximum gap allowed from open to current price (used in screener)
 MAX_GAP_PCT_MID=0.1
+
 # Minimum and maximum market cap allowed for MID strategy candidates
-MIN_MARKET_CAP_MID=2000000000
+MIN_MARKET_CAP_MID=300000000
 MAX_MARKET_CAP_MID=10000000000
+
+
 # Enable or disable MID strategy
 STRAT_MID_ENABLED=true
+
 # UTC start time (10:30 AM EST)
 START_TIME_MID=15:30
+
 # Minutes before trade signal is evaluated
 MID_ANALYSIS_TIME=15
+
 # Minutes to for breakout to happen
 MID_BREAKOUT_TIME=10
+
 # Maximum hold time after entry
 MID_MONITORING_TIME=30
+
 # VWAP deviation required to enter trade
 STRAT_MID_VWAP_THRESHOLD=0.02
+
 # Shorting method: InverseETF, ShortSell, LongPut,  or disabled
 SHORT_TYPE_MID= InverseETF              
+
 # -----------------------------------------
 # CLOSE Strategy Configuration (EOD Momentum/Fade)
 # -----------------------------------------
+
 # Maximum gap allowed from open to current price (used in screener)
 MAX_GAP_PCT_CLOSE=0.1
+
 # Minimum and maximum market cap allowed for CLOSE strategy candidates
-MIN_MARKET_CAP_CLOSE=2000000000
+MIN_MARKET_CAP_CLOSE=300000000
 MAX_MARKET_CAP_CLOSE=10000000000
+
+
 # Enable or disable CLOSE strategy
 STRAT_CLOSE_ENABLED=true
+
 # UTC start time (2:30 PM EST)
 START_TIME_CLOSE=19:30
+
 # Minutes to detect signal
 CLOSE_ANALYSIS_TIME=5
+
 # Minutes to for breakout to happen
 CLOSE_BREAKOUT_TIME=5
+
 # Duration to manage position after entry
 CLOSE_MONITORING_TIME=25
+
 # Min VIX level required to allow entry
 STRAT_CLOSE_VIX_THRESHOLD=15
+
 # Shorting method: InverseETF, ShortSell, LongPut, or disabled
 SHORT_TYPE_CLOSE= InverseETF               
+
 # -----------------------------------------
 # Notifications
 # -----------------------------------------
+
 # Send email alert on trade entry
 NOTIFY_ON_FILL=true
+
 # Send email alert on trade exit
 NOTIFY_ON_EXIT=true                    
+
 # -----------------------------------------
 # Reporting & Ledger Export
 # -----------------------------------------
+
 # auto = export after each trade, off = no export
 LEDGER_EXPORT_MODE=auto
+
+
 # -----------------------------------------
 # Defense Mode (Disaster Risk Reduction)
 # -----------------------------------------
+
 # Set true if Disaster Protocol triggers; resets to false on recovery
 DEFENSE_MODE_ACTIVE=false
+
 # Percentage of normal MAX_CONCURRENT_TRADES allowed (rounded down)
 DEFENSE_MODE_TRADE_LIMIT_PCT=66
+
 # Maximum session allocation allowed during Defense Mode (e.g., 1%)
 DEFENSE_MODE_TOTAL_ALLOCATION=0.01
+
 # -----------------------------------------
 # ENHANCEMENT MODULE TOGGLES 
 # -----------------------------------------
+
 # --- Rebalance Notification ---
 ENABLE_REBALANCE_NOTIFIER=true
 # Notify accounting if float deviates ±10% from target
 REBALANCE_TRIGGER_PCT=10                         
+
 # --- Role-Based Web Access ---
 # Enable multi-user roles in web dashboard
-RBAC_ENABLED=true
-# Default role for new users                                
-DEFAULT_USER_ROLE=viewer
+RBAC_ENABLED=true             
+ # Default role for new users                   
+DEFAULT_USER_ROLE=viewer                        
+
 # --- Strategy Optimizer ---
 ENABLE_STRATEGY_OPTIMIZER=true
 # Historical days for parameter tuning
-OPTIMIZER_BACKTEST_LOOKBACK_DAYS=30
-# Options: grid_search, bayesian, genetic              
-OPTIMIZER_ALGORITHM=grid_search                
+OPTIMIZER_BACKTEST_LOOKBACK_DAYS=30    
+# Options: grid_search, bayesian, genetic          
+OPTIMIZER_ALGORITHM=grid_search                  
 OPTIMIZER_OUTPUT_DIR=backtest_results/strategy_tuning/
+
 # --- Real-Time Alerts ---
 NOTIFY_ON_FILL=true
 NOTIFY_ON_EXIT=true
 NOTIFY_ON_FAILURE=true
- # Options: email, slack, sms, pagerduty
-CRITICAL_ALERT_CHANNEL=pagerduty
-# Options: email, slack                
-ROUTINE_ALERT_CHANNEL=email
+# Options: email, slack, sms, pagerduty
+CRITICAL_ALERT_CHANNEL=pagerduty    
+# Options: email, slack             
+ROUTINE_ALERT_CHANNEL=email                      
+
 # --- Backtest Slippage Modeling ---
 ENABLE_SLIPPAGE_MODEL=true
 # Options: none, rule_based, randomized
-SLIPPAGE_SIMULATION_TYPE=randomized
- # Average slippage %              
-SLIPPAGE_MEAN_PCT=0.15 
-# Standard deviation                         
-SLIPPAGE_STDDEV_PCT=0.10
- # Artificial delay (in milliseconds) per order                         
+SLIPPAGE_SIMULATION_TYPE=randomized              
+# Average slippage %
+SLIPPAGE_MEAN_PCT=0.15                          
+ # Standard deviation 
+SLIPPAGE_STDDEV_PCT=0.10                        
+ # Artificial delay (in milliseconds) per order
 SIMULATED_LATENCY_MS=500                        
+
+
+
 # --- black_scholes_filter Enhancements (if applicable) ---
 ENABLE_BSM_FILTER=true
 # Reject if >15% over/under priced
-MAX_BSM_DEVIATION=0.15
-# Used in BSM if not supplied dynamically              
-RISK_FREE_RATE=0.045
-# Options: static, dynamic — dynamic adjusts by JURISDICTION_CODE via bot_identity                
+MAX_BSM_DEVIATION=0.15             
+ # Used in BSM if not supplied dynamically 
+RISK_FREE_RATE=0.045               
+# Options: static, dynamic — dynamic adjusts by JURISDICTION_CODE via bot_identity
 RISK_FREE_RATE_SOURCE=dynamic       
+
+
+
+
 
 
 =============================================================================================================================================
