@@ -1,6 +1,6 @@
 # tbot_bot/support/secrets_manager.py
 # Central encryption/decryption/loader for all screener API credentials. (Called by all loaders/adapters.)
-# 100% compliant with v046 screener universe/credential spec using generic indexed keys.
+# 100% compliant with v046 screener universe/credential spec using generic indexed keys and schema initialization.
 
 import os
 from typing import Dict, Optional
@@ -8,17 +8,49 @@ from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.encrypt_secrets import encrypt_json
 from tbot_bot.support.path_resolver import get_secret_path
 import re
+import json
 
 SCREENER_CREDENTIALS_FILENAME = "screener_api.json.enc"
+SCREENER_SCHEMA_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),  # tbot_bot/support/
+    "core", "schemas", "screener_credentials_schema.json"
+)
 
 def get_screener_credentials_path() -> str:
     return get_secret_path(SCREENER_CREDENTIALS_FILENAME)
 
+def _load_schema() -> Dict:
+    try:
+        with open(SCREENER_SCHEMA_PATH, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+        return schema
+    except Exception as e:
+        raise RuntimeError(f"[secrets_manager] Failed to load screener credentials schema: {e}")
+
+def _create_empty_credentials_from_schema() -> Dict:
+    schema = _load_schema()
+    creds = {}
+    properties = schema.get("properties", {})
+    # Set all keys from schema properties to empty strings or default
+    for key in properties:
+        creds[key] = ""
+    return creds
+
 def load_screener_credentials() -> Dict:
     """
     Loads decrypted screener/universe adapter credentials from dedicated encrypted secrets file.
+    If missing, creates an empty base structure file from schema and returns empty dict.
     Returns dict with indexed provider blocks, e.g. PROVIDER_01, SCREENER_NAME_01, etc.
     """
+    path = get_screener_credentials_path()
+    if not os.path.exists(path):
+        # Create empty base credential structure from schema
+        empty_creds = _create_empty_credentials_from_schema()
+        try:
+            save_screener_credentials(empty_creds)
+        except Exception as e:
+            raise RuntimeError(f"[secrets_manager] Failed to create empty screener credentials file: {e}")
+        return empty_creds
     try:
         return decrypt_json(SCREENER_CREDENTIALS_FILENAME)
     except Exception as e:
