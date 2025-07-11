@@ -17,9 +17,14 @@ class NasdaqTxtProvider(ProviderBase):
     Downloads and parses NASDAQ official symbol list as needed.
     """
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
         print("NasdaqTxtProvider instantiated!")  # DEBUG
-        super().__init__(config)
+        merged = {}
+        if config:
+            merged.update(config)
+        if creds:
+            merged.update(creds)
+        super().__init__(merged)
         self.local_path = self.config.get("local_path", "nasdaqlisted.txt")
         self.force_download = bool(self.config.get("force_download", False))
         self.fetch_if_missing = bool(self.config.get("fetch_if_missing", True))

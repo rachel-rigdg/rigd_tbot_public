@@ -15,7 +15,7 @@ class AlpacaProvider(ProviderBase):
     Implements ProviderBase.
     """
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
         """
         Accepts injected configuration and credentials dict.
         Required keys:
@@ -27,7 +27,13 @@ class AlpacaProvider(ProviderBase):
             - API_TIMEOUT (int, default 30)
             - API_SLEEP (float, default 0.2)
         """
-        super().__init__(config)
+        # Support dual-init: config+creds (compliance with registry usage)
+        merged = {}
+        if config:
+            merged.update(config)
+        if creds:
+            merged.update(creds)
+        super().__init__(merged)
         self.api_key = self.config.get("BROKER_API_KEY", "")
         self.secret_key = self.config.get("BROKER_SECRET_KEY", "")
         self.api_url = self.config.get("BROKER_URL", "https://data.alpaca.markets")

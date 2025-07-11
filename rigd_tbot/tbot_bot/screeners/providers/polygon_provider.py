@@ -1,5 +1,5 @@
 # tbot_bot/screeners/providers/polygon_provider.py
-# Polygon provider adapter: fetches symbols using injected API keys/config.
+# Polygon provider adapter: fetches symbols and quotes using injected API keys/config.
 # 100% stateless, all configuration and credentials must be injected by caller.
 
 import requests
@@ -9,7 +9,7 @@ from tbot_bot.screeners.provider_base import ProviderBase
 
 class PolygonProvider(ProviderBase):
     """
-    Polygon adapter for symbol/metadata loading.
+    Polygon adapter for symbol/metadata and quote loading.
     Requires injected config/credentials dict (never reads env).
     """
 
@@ -77,6 +77,38 @@ class PolygonProvider(ProviderBase):
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
         """
-        NOT IMPLEMENTED. PolygonProvider does not provide fetch_quotes in this adapter.
+        Fetches latest daily close/open/vwap for given symbols via Polygon API.
+        Returns list of dicts: {symbol, c, o, vwap}
         """
-        raise NotImplementedError("PolygonProvider does not support quote fetching in this adapter.")
+        quotes = []
+        base_url = "https://api.polygon.io/v2/aggs/ticker"
+        for idx, symbol in enumerate(symbols):
+            url = f"{base_url}/{symbol}/prev"
+            params = {"adjusted": "true", "apiKey": self.api_key}
+            try:
+                resp = requests.get(url, params=params, timeout=10)
+                if resp.status_code != 200:
+                    self.log(f"Polygon error for {symbol}: HTTP {resp.status_code} {resp.text}")
+                    continue
+                results = resp.json().get("results", [])
+                if not results:
+                    self.log(f"No Polygon agg data for {symbol}")
+                    continue
+                bar = results[0]
+                close = float(bar.get("c", 0))
+                open_ = float(bar.get("o", 0))
+                high = float(bar.get("h", 0))
+                low = float(bar.get("l", 0))
+                vwap = (high + low + close) / 3 if all([high, low, close]) else close
+                quotes.append({
+                    "symbol": symbol,
+                    "c": close,
+                    "o": open_,
+                    "vwap": vwap
+                })
+            except Exception as e:
+                self.log(f"Exception fetching Polygon quote for {symbol}: {e}")
+                continue
+            if idx % 50 == 0 and idx > 0:
+                self.log(f"Fetched Polygon quotes for {idx} symbols...")
+        return quotes

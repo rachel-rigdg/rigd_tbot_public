@@ -15,7 +15,7 @@ class FinnhubProvider(ProviderBase):
     Implements ProviderBase.
     """
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
         """
         Accepts injected configuration and credentials dict.
         Required keys:
@@ -26,7 +26,12 @@ class FinnhubProvider(ProviderBase):
             - API_SLEEP (float, default 0.03)
             - LOG_LEVEL ('silent' or 'verbose')
         """
-        super().__init__(config)
+        merged = {}
+        if config:
+            merged.update(config)
+        if creds:
+            merged.update(creds)
+        super().__init__(merged)
         self.api_key = (
             self.config.get("SCREENER_API_KEY", "") or
             self.config.get("SCREENER_TOKEN", "")

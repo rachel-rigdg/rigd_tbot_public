@@ -64,12 +64,11 @@ class YahooProvider(ProviderBase):
 
     def fetch_universe_symbols(self, exchanges, min_price, max_price, min_cap, max_cap, blocklist, max_size) -> List[Dict]:
         """
-        ProviderBase-compliant stub for universe build. Returns empty list (or all from CSV if present).
+        ProviderBase-compliant stub for universe build. Returns all from CSV if present.
         """
         try:
             symbols = self.fetch_symbols()
         except Exception as e:
             self.log(f"fetch_universe_symbols failed: {e}")
             return []
-        # You may filter here by exchange/min_price/min_cap if needed, but spec: stub = all from CSV
         return symbols

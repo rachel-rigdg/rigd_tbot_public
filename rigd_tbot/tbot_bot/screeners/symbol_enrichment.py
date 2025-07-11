@@ -7,6 +7,7 @@
 import os
 import sys
 import json
+import time
 from datetime import datetime, timezone
 from tbot_bot.screeners.screener_utils import (
     load_unfiltered_cache, save_universe_cache, dedupe_symbols, load_blocklist
@@ -39,9 +40,10 @@ def get_enrichment_provider_creds():
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
            and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
+           and not all_creds.get(f"SCREENER_NAME_{k.split('_')[-1]}", "").upper().endswith("_TXT")
     ]
     if not provider_indices:
-        raise RuntimeError("No enrichment provider enabled for universe build. Enable one in the credential admin.")
+        raise RuntimeError("No valid enrichment provider enabled for universe build. Enable a data API provider (not *_TXT) in the credential admin.")
     idx = provider_indices[0]
     return {
         key.replace(f"_{idx}", ""): v
@@ -72,6 +74,7 @@ def append_blocklist(new_block_syms):
 
 def main():
     env = load_env_bot_config()
+    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
     unfiltered = load_unfiltered_cache()
     if not unfiltered or len(unfiltered) < 10:
         log_progress("No symbols to enrich (unfiltered cache empty or missing).")
@@ -86,8 +89,17 @@ def main():
 
     blocklist = set(load_blocklist(BLOCKLIST_PATH))
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
-    screener_secrets = get_enrichment_provider_creds()
+    try:
+        screener_secrets = get_enrichment_provider_creds()
+    except Exception as e:
+        log_progress("No valid enrichment provider enabled. Aborting enrichment.", {"error": str(e)})
+        print(f"ERROR: {e}")
+        sys.exit(2)
     name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
+    if name.endswith("_TXT"):
+        log_progress("TXT provider selected as enrichment provider, aborting enrichment.", {"provider": name})
+        print(f"ERROR: TXT providers (like {name}) cannot be used for enrichment. Enable a data API provider (e.g. Finnhub, Polygon).")
+        sys.exit(2)
     ProviderClass = get_provider_class(name)
     if ProviderClass is None:
         raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
@@ -101,8 +113,11 @@ def main():
     new_blocked = set()
 
     BATCH_SIZE = 100
+    total_batches = (len(all_symbols) + BATCH_SIZE - 1) // BATCH_SIZE
+
     for i in range(0, len(all_symbols), BATCH_SIZE):
         batch = all_symbols[i:i+BATCH_SIZE]
+        print(f"[symbol_enrichment] Processing batch {i//BATCH_SIZE + 1} of {total_batches}, symbols {i+1}-{i+len(batch)}")
         try:
             quotes = provider.fetch_quotes(batch)
         except Exception as e:
@@ -143,6 +158,7 @@ def main():
                 break
         if len(enriched) >= max_size:
             break
+        time.sleep(sleep_time)
 
     write_partial(dedupe_symbols(enriched))
     save_universe_cache(dedupe_symbols(enriched), bot_identity=bot_identity)

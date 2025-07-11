@@ -13,7 +13,7 @@ class NasdaqProvider(ProviderBase):
     All config and credentials must be injected at init.
     """
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
         """
         Accepts injected configuration and credentials.
         Required keys for IBKR:
@@ -22,7 +22,12 @@ class NasdaqProvider(ProviderBase):
             - API_SLEEP (optional, default 0.2)
             - LOG_LEVEL ('silent' or 'verbose')
         """
-        super().__init__(config)
+        merged = {}
+        if config:
+            merged.update(config)
+        if creds:
+            merged.update(creds)
+        super().__init__(merged)
         self.host = self.config.get("IBKR_HOST", "127.0.0.1")
         self.port = int(self.config.get("IBKR_PORT", 7497))
         self.client_id = int(self.config.get("IBKR_CLIENT_ID", 2))
