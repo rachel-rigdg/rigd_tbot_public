@@ -41,4 +41,7 @@ def get_provider_class(provider_name: str) -> Optional[Type]:
     if not provider_name or not isinstance(provider_name, str):
         return None
     key = provider_name.strip().upper()
-    return PROVIDER_REGISTRY.get(key)
+    print(f"[DEBUG] get_provider_class called with provider_name='{provider_name}', resolved key='{key}'")  # DEBUG
+    result = PROVIDER_REGISTRY.get(key)
+    print(f"[DEBUG] PROVIDER_REGISTRY resolved result: {result}")  # DEBUG
+    return result

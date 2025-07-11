@@ -19,17 +19,15 @@ class ProviderBase:
       - All I/O errors must be raised as exceptions, not silenced
     """
 
-    def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None):
         """
-        Initialize the provider with injected config and credential dictionaries.
+        Initialize the provider with injected config dictionary.
         No provider may access environment variables, globals, or internal credential loaders.
         """
+        print(f"ProviderBase __init__ called with config={config} ({type(config)})")  # DEBUG TRACE
         if config is None or not isinstance(config, dict):
             raise ValueError("ProviderBase requires config dict injection at instantiation.")
-        if creds is None or not isinstance(creds, dict):
-            raise ValueError("ProviderBase requires creds dict injection at instantiation.")
         self.config = config
-        self.creds = creds
 
     def fetch_symbols(self) -> List[Dict]:
         """
@@ -62,7 +60,7 @@ class ProviderBase:
         max_size: int = None
     ) -> List[Dict]:
         """
-        Fetch and filter universe symbols for build using injected config/creds and arguments.
+        Fetch and filter universe symbols for build using injected config and arguments.
         Returns a list of normalized, deduped symbol dicts ready for cache.
         This is the main entrypoint for symbol_universe_refresh orchestration.
         Must be implemented in subclass.

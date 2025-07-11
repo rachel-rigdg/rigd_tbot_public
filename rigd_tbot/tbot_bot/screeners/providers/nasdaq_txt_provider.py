@@ -18,13 +18,7 @@ class NasdaqTxtProvider(ProviderBase):
     """
 
     def __init__(self, config: Optional[Dict] = None):
-        """
-        Accepts config:
-            - 'local_path': path to save/load nasdaqlisted.txt (default "nasdaqlisted.txt")
-            - 'force_download': always redownload if True
-            - 'fetch_if_missing': fetch if not present (default True)
-            - 'LOG_LEVEL': "silent" or "verbose"
-        """
+        print("NasdaqTxtProvider instantiated!")  # DEBUG
         super().__init__(config)
         self.local_path = self.config.get("local_path", "nasdaqlisted.txt")
         self.force_download = bool(self.config.get("force_download", False))
@@ -50,6 +44,18 @@ class NasdaqTxtProvider(ProviderBase):
         """
         self.log("fetch_quotes() called on TXT provider; not supported.")
         return []
+
+    def fetch_universe_symbols(self, exchanges, min_price, max_price, min_cap, max_cap, blocklist, max_size) -> List[Dict]:
+        print("NasdaqTxtProvider.fetch_universe_symbols CALLED!")  # DEBUG
+        """
+        ProviderBase-compliant stub for universe build. Returns all from TXT.
+        """
+        try:
+            symbols = self.fetch_symbols()
+        except Exception as e:
+            self.log(f"fetch_universe_symbols failed: {e}")
+            return []
+        return symbols
 
     def _fetch_txt_if_needed(self):
         """
