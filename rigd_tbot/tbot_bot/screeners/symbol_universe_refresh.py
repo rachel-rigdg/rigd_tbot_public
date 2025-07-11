@@ -81,7 +81,7 @@ def get_universe_screener_creds():
     }
 
 def get_provider_module_and_class(screener_secrets):
-    name = (screener_secrets.get("SCREENER_NAME") or "").strip().lower()
+    name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
     if not name:
         raise RuntimeError("SCREENER_NAME not set in universe-enabled credentials.")
     module_map = {
@@ -118,7 +118,10 @@ def get_provider_module_and_class(screener_secrets):
 def fetch_universe_symbols_with_provider(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     screener_secrets = get_universe_screener_creds()
     ProviderClass = get_provider_module_and_class(screener_secrets)
-    provider = ProviderClass(config=env, creds=screener_secrets)
+    # FIX: Only pass config, merge screener_secrets into env
+    merged_config = env.copy()
+    merged_config.update(screener_secrets)
+    provider = ProviderClass(merged_config)
     return provider.fetch_universe_symbols(
         exchanges=exchanges,
         min_price=min_price,

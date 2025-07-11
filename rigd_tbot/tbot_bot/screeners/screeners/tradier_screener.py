@@ -15,7 +15,7 @@ def get_trading_screener_creds():
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").upper() == "true"
            and all_creds.get(k, "").strip().upper() == "TRADIER"
     ]
     if not provider_indices:

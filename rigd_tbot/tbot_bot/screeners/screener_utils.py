@@ -53,7 +53,7 @@ def get_universe_screener_secrets() -> dict:
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
+           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").upper() == "true"
     ]
     if not provider_indices:
         raise UniverseCacheError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
