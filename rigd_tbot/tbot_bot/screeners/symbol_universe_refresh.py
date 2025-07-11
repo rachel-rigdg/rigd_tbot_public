@@ -6,7 +6,6 @@ import json
 import os
 from datetime import datetime, timezone
 from typing import List, Dict
-from importlib import import_module
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
     save_universe_cache, load_blocklist, UniverseCacheError
@@ -22,6 +21,7 @@ from tbot_bot.support.secrets_manager import (
     get_screener_credentials_path,
     load_screener_credentials
 )
+from tbot_bot.screeners.provider_registry import get_provider_class
 
 UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
 LOG_PATH = resolve_universe_log_path()
@@ -69,7 +69,7 @@ def get_universe_screener_creds():
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false") == "true"
+           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
     ]
     if not provider_indices:
         raise RuntimeError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
@@ -80,84 +80,16 @@ def get_universe_screener_creds():
         if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
     }
 
-def get_provider_module_and_class(screener_secrets):
-    name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
-    # DEBUG LOG: show the loaded screener_secrets and SCREENER_NAME used for lookup
-    print(f"DEBUG: screener_secrets = {screener_secrets}")
-    print(f"DEBUG: name = '{name}'")
-    if not name:
-        raise RuntimeError("SCREENER_NAME not set in universe-enabled credentials.")
-    module_map = {
-        "FINNHUB": "tbot_bot.screeners.providers.finnhub_provider",
-        "IBKR": "tbot_bot.screeners.providers.ibkr_provider",
-        "ALPACA": "tbot_bot.screeners.providers.alpaca_provider",
-        "TRADIER": "tbot_bot.screeners.providers.tradier_provider",
-        "POLYGON": "tbot_bot.screeners.providers.polygon_provider",
-        "NASDAQ": "tbot_bot.screeners.providers.nasdaq_provider",
-        "NASDAQ_TXT": "tbot_bot.screeners.providers.nasdaq_txt_provider",
-        "NYSE": "tbot_bot.screeners.providers.nyse_provider",
-        "OTHER_TXT": "tbot_bot.screeners.providers.other_txt_provider",
-        "YAHOO": "tbot_bot.screeners.providers.yahoo_provider"
-    }
-    class_map = {
-        "FINNHUB": "FinnhubProvider",
-        "IBKR": "IBKRProvider",
-        "ALPACA": "AlpacaProvider",
-        "TRADIER": "TradierProvider",
-        "POLYGON": "PolygonProvider",
-        "NASDAQ": "NasdaqProvider",
-        "NASDAQ_TXT": "NasdaqTxtProvider",
-        "NYSE": "NyseProvider",
-        "OTHER_TXT": "OtherTxtProvider",
-        "YAHOO": "YahooProvider"
-    }
-
-    mod_name = module_map.get(name)
-    cls_name = class_map.get(name)
-    if not mod_name or not cls_name:
-        raise RuntimeError(f"No provider module/class mapping found for SCREENER_NAME '{name}'")
-    module = import_module(mod_name)
-    return getattr(module, cls_name)
-
 def fetch_symbols_with_provider(env):
     screener_secrets = get_universe_screener_creds()
-    ProviderClass = get_provider_module_and_class(screener_secrets)
+    name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
+    ProviderClass = get_provider_class(name)
+    if ProviderClass is None:
+        raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
     merged_config = env.copy()
     merged_config.update(screener_secrets)
-    provider = ProviderClass(merged_config)
-    # Only fetch_symbols(), no filtering
+    provider = ProviderClass(merged_config, screener_secrets)
     return provider.fetch_symbols()
-
-def enrich_symbols_with_metrics(symbols, env):
-    # Use enrichment provider: FINNHUB or YAHOO
-    # Try FINNHUB first, else fallback to YAHOO
-    screener_creds = load_screener_credentials()
-    enrichment_provider = None
-    for idx in sorted(set(k.split("_")[-1] for k in screener_creds if k.startswith("PROVIDER_"))):
-        name = (screener_creds.get(f"SCREENER_NAME_{idx}", "")).strip().upper()
-        if name in ("FINNHUB", "YAHOO"):
-            provider_creds = {
-                key.replace(f"_{idx}", ""): v
-                for key, v in screener_creds.items()
-                if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
-            }
-            ProviderClass = get_provider_module_and_class(provider_creds)
-            merged_config = env.copy()
-            merged_config.update(provider_creds)
-            enrichment_provider = ProviderClass(merged_config)
-            break
-    if enrichment_provider is None:
-        raise RuntimeError("No enrichment provider (FINNHUB/YAHOO) enabled in credentials.")
-    symbol_list = [s["symbol"] for s in symbols]
-    metrics = enrichment_provider.fetch_quotes(symbol_list)
-    metrics_map = {m["symbol"]: m for m in metrics}
-    enriched = []
-    for s in symbols:
-        m = metrics_map.get(s["symbol"])
-        if m:
-            s.update(m)
-        enriched.append(s)
-    return enriched
 
 def main():
     if not screener_creds_exist():
@@ -165,7 +97,7 @@ def main():
         sys.exit(2)
     env = load_env_bot_config()
     exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
-    min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
+    min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
     max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
     max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
@@ -187,7 +119,6 @@ def main():
     except Exception:
         blocklist = []
 
-    # Stage 1: fetch all symbols (from TXT)
     try:
         symbols_unfiltered = fetch_symbols_with_provider(env)
         if not symbols_unfiltered or len(symbols_unfiltered) < 10:
@@ -197,51 +128,26 @@ def main():
         log_progress("Failed to fetch screener symbols", {"error": str(e)})
         raise
 
-    # Stage 2: enrichment with FINNHUB/YAHOO etc for price/cap, only non-blocklisted
-    try:
-        symbols_raw = [s for s in symbols_unfiltered if s["symbol"] not in blocklist]
-        enriched_symbols = enrich_symbols_with_metrics(symbols_raw, env)
-        # Remove those that are now missing required fields, e.g., price/cap
-        filtered_symbols = []
-        for s in enriched_symbols:
-            last = s.get("c") or s.get("close") or s.get("lastClose") or s.get("price")
-            cap = s.get("marketCap") or s.get("market_cap")
-            if last is not None and cap is not None:
-                try:
-                    last_val = float(last)
-                    cap_val = float(cap)
-                except Exception:
-                    continue
-                if (min_price <= last_val <= max_price) and (min_cap <= cap_val <= max_cap):
-                    filtered_symbols.append(s)
-        if not filtered_symbols:
-            raise RuntimeError("No symbols passed enrichment filter.")
-    except Exception as e:
-        log_progress("Failed during enrichment/filter", {"error": str(e)})
-        raise
+    log_progress("Fetched symbols from screener provider", {"count": len(symbols_unfiltered)})
 
-    log_progress("Fetched filtered symbols from screener provider", {"count": len(filtered_symbols)})
-
-    filtered_symbols.sort(key=lambda x: x["symbol"])
+    # STAGE 2 (no enrichment here): Only dedupe, write unfiltered; enrichment is handled in symbol_enrichment.py
 
     try:
-        write_partial(dedupe_symbols(filtered_symbols))
+        write_partial(dedupe_symbols(symbols_unfiltered))
     except Exception as e:
         log_progress("Write partial failed", {"error": str(e)})
 
     try:
-        save_universe_cache(dedupe_symbols(filtered_symbols), bot_identity=bot_identity)
-        log_progress("Universe cache build complete", {"final_count": len(filtered_symbols)})
+        save_universe_cache(dedupe_symbols(symbols_unfiltered), bot_identity=bot_identity)
+        log_progress("Universe cache build complete", {"final_count": len(symbols_unfiltered)})
     except Exception as e:
         log_progress("Failed to write universe cache", {"error": str(e)})
         raise
 
-    _merge_and_dedupe_partials()
-
     audit = {
         "build_time_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
         "total_symbols_fetched": len(symbols_unfiltered),
-        "total_symbols_final": len(filtered_symbols),
+        "total_symbols_final": len(symbols_unfiltered),
         "exchanges": exchanges,
         "blocklist_entries": len(blocklist),
         "cache_path": resolve_universe_cache_path(bot_identity),

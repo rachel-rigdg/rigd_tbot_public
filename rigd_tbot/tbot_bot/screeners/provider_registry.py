@@ -1,6 +1,6 @@
 # tbot_bot/screeners/provider_registry.py
 # Central registry for all provider adapters.
-# Maps provider names/keys to their respective provider adapter classes.
+# Maps provider names/keys to their respective provider adapter classes and import paths.
 # Enables dynamic loading and uniform instantiation with injected config/credentials.
 # All classes must subclass ProviderBase and never perform env/global reads.
 
@@ -30,18 +30,46 @@ PROVIDER_REGISTRY: Dict[str, Type] = {
     "YAHOO": YahooProvider,
 }
 
+PROVIDER_MODULE_PATHS: Dict[str, str] = {
+    "ALPACA": "tbot_bot.screeners.providers.alpaca_provider",
+    "FINNHUB": "tbot_bot.screeners.providers.finnhub_provider",
+    "IBKR": "tbot_bot.screeners.providers.ibkr_provider",
+    "POLYGON": "tbot_bot.screeners.providers.polygon_provider",
+    "TRADIER": "tbot_bot.screeners.providers.tradier_provider",
+    "NASDAQ": "tbot_bot.screeners.providers.nasdaq_provider",
+    "NASDAQ_TXT": "tbot_bot.screeners.providers.nasdaq_txt_provider",
+    "NYSE": "tbot_bot.screeners.providers.nyse_provider",
+    "OTHER_TXT": "tbot_bot.screeners.providers.other_txt_provider",
+    "YAHOO": "tbot_bot.screeners.providers.yahoo_provider",
+}
+
+PROVIDER_CLASS_NAMES: Dict[str, str] = {
+    "ALPACA": "AlpacaProvider",
+    "FINNHUB": "FinnhubProvider",
+    "IBKR": "IBKRProvider",
+    "POLYGON": "PolygonProvider",
+    "TRADIER": "TradierProvider",
+    "NASDAQ": "NasdaqProvider",
+    "NASDAQ_TXT": "NasdaqTxtProvider",
+    "NYSE": "NyseProvider",
+    "OTHER_TXT": "OtherTxtProvider",
+    "YAHOO": "YahooProvider",
+}
+
 def get_provider_class(provider_name: str) -> Optional[Type]:
-    """
-    Retrieve the provider adapter class by string key (case-insensitive).
-    Args:
-        provider_name (str): Provider key (e.g., "ALPACA", "NASDAQ").
-    Returns:
-        Type: Adapter class, or None if not found.
-    """
     if not provider_name or not isinstance(provider_name, str):
         return None
     key = provider_name.strip().upper()
-    print(f"[DEBUG] get_provider_class called with provider_name='{provider_name}', resolved key='{key}'")  # DEBUG
-    result = PROVIDER_REGISTRY.get(key)
-    print(f"[DEBUG] PROVIDER_REGISTRY resolved result: {result}")  # DEBUG
-    return result
+    return PROVIDER_REGISTRY.get(key)
+
+def get_provider_module_path(provider_name: str) -> Optional[str]:
+    if not provider_name or not isinstance(provider_name, str):
+        return None
+    key = provider_name.strip().upper()
+    return PROVIDER_MODULE_PATHS.get(key)
+
+def get_provider_class_name(provider_name: str) -> Optional[str]:
+    if not provider_name or not isinstance(provider_name, str):
+        return None
+    key = provider_name.strip().upper()
+    return PROVIDER_CLASS_NAMES.get(key)
