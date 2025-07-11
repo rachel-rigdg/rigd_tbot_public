@@ -85,29 +85,30 @@ def get_provider_module_and_class(screener_secrets):
     if not name:
         raise RuntimeError("SCREENER_NAME not set in universe-enabled credentials.")
     module_map = {
-        "finnhub": "tbot_bot.screeners.providers.finnhub_provider",
-        "ibkr": "tbot_bot.screeners.providers.ibkr_provider",
-        "alpaca": "tbot_bot.screeners.providers.alpaca_provider",
-        "tradier": "tbot_bot.screeners.providers.tradier_provider",
-        "polygon": "tbot_bot.screeners.providers.polygon_provider",
-        "nasdaq": "tbot_bot.screeners.providers.nasdaq_provider",
-        "nasdaq_txt": "tbot_bot.screeners.providers.nasdaq_txt_provider",
-        "nyse": "tbot_bot.screeners.providers.nyse_provider",
-        "other_txt": "tbot_bot.screeners.providers.other_txt_provider",
-        "yahoo": "tbot_bot.screeners.providers.yahoo_provider"
+        "FINNHUB": "tbot_bot.screeners.providers.finnhub_provider",
+        "IBKR": "tbot_bot.screeners.providers.ibkr_provider",
+        "ALPACA": "tbot_bot.screeners.providers.alpaca_provider",
+        "TRADIER": "tbot_bot.screeners.providers.tradier_provider",
+        "POLYGON": "tbot_bot.screeners.providers.polygon_provider",
+        "NASDAQ": "tbot_bot.screeners.providers.nasdaq_provider",
+        "NASDAQ_TXT": "tbot_bot.screeners.providers.nasdaq_txt_provider",
+        "NYSE": "tbot_bot.screeners.providers.nyse_provider",
+        "OTHER_TXT": "tbot_bot.screeners.providers.other_txt_provider",
+        "YAHOO": "tbot_bot.screeners.providers.yahoo_provider"
     }
     class_map = {
-        "finnhub": "FinnhubProvider",
-        "ibkr": "IBKRProvider",
-        "alpaca": "AlpacaProvider",
-        "tradier": "TradierProvider",
-        "polygon": "PolygonProvider",
-        "nasdaq": "NasdaqProvider",
-        "nasdaq_txt": "NasdaqTxtProvider",
-        "nyse": "NyseProvider",
-        "other_txt": "OtherTxtProvider",
-        "yahoo": "YahooProvider"
+        "FINNHUB": "FinnhubProvider",
+        "IBKR": "IBKRProvider",
+        "ALPACA": "AlpacaProvider",
+        "TRADIER": "TradierProvider",
+        "POLYGON": "PolygonProvider",
+        "NASDAQ": "NasdaqProvider",
+        "NASDAQ_TXT": "NasdaqTxtProvider",
+        "NYSE": "NyseProvider",
+        "OTHER_TXT": "OtherTxtProvider",
+        "YAHOO": "YahooProvider"
     }
+
     mod_name = module_map.get(name)
     cls_name = class_map.get(name)
     if not mod_name or not cls_name:
