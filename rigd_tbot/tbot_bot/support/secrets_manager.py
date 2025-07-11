@@ -1,10 +1,13 @@
 # tbot_bot/support/secrets_manager.py
-# UPDATE: Supports new usage flags ("UNIVERSE_ENABLED_{idx}", "TRADING_ENABLED_{idx}") in get_provider_credentials and update_provider_credentials,
-# ensures flags are always included in returned/saved dicts. No data loss for new keys. No business logic change to schema helpers.
-# Audit log remains as before.
+# Fully compliant with modular, indexed, secure screener credential management.
+# - Supports dynamic provider indexing (PROVIDER_01, PROVIDER_02, ...).
+# - Usage flags (UNIVERSE_ENABLED, TRADING_ENABLED) always present per provider.
+# - Atomic encrypted file I/O.
+# - UTC audit log for all add/update/delete.
+# - Never stores or logs secrets in plaintext.
 
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.encrypt_secrets import encrypt_json
 from tbot_bot.support.path_resolver import get_secret_path
@@ -16,6 +19,7 @@ from cryptography.fernet import Fernet
 
 SCREENER_CREDENTIALS_FILENAME = "screener_api"
 SCREENER_CREDENTIALS_FILE_ENC = "screener_api.json.enc"
+
 SCREENER_SCHEMA_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "core", "schemas", "screener_credentials_schema.json"
@@ -56,10 +60,9 @@ def _load_schema() -> Dict:
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to load screener credentials schema: {e}")
 
-def _get_schema_keys() -> list:
+def _get_schema_keys() -> List[str]:
     schema = _load_schema()
     keys = [k for k in schema.get("properties", {}).keys() if k != "PROVIDER"]
-    # Add usage flags to schema keys if not present
     for flag in USAGE_FLAGS:
         if flag not in keys:
             keys.append(flag)
@@ -102,7 +105,6 @@ def get_provider_credentials(provider: str) -> Optional[Dict]:
             for base_key in schema_keys:
                 k_full = f"{base_key}_{index}"
                 result[base_key] = creds.get(k_full, "")
-            # Always return usage flags too
             for flag in USAGE_FLAGS:
                 k_flag = f"{flag}_{index}"
                 result[flag] = creds.get(k_flag, "false")
@@ -123,11 +125,10 @@ def update_provider_credentials(provider: str, new_values: Dict) -> None:
         existed = index is not None
         if index is None:
             existing_indices = sorted([int(k.split("_")[-1]) for k in provider_keys] or [0])
-            index = f"{(existing_indices[-1]+1) if existing_indices else 1:02d}"
+            index = f"{(existing_indices[-1] + 1) if existing_indices else 1:02d}"
         keys_to_remove = [k for k in creds if k.endswith(f"_{index}")]
         for k in keys_to_remove:
             del creds[k]
-        # Always store all schema keys and usage flags
         for base_key in schema_keys:
             creds[f"{base_key}_{index}"] = new_values.get(base_key, "")
         for flag in USAGE_FLAGS:
@@ -158,7 +159,6 @@ def delete_provider_credentials(provider: str) -> None:
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to delete credentials: {e}")
 
-def list_providers() -> list:
+def list_providers() -> List[str]:
     creds = load_screener_credentials()
-    provider_keys = [v for k, v in creds.items() if re.match(r"PROVIDER_\d{2}", k)]
-    return provider_keys
+    return [v for k, v in creds.items() if re.match(r"PROVIDER_\d{2}", k)]

@@ -23,7 +23,6 @@ def load_blocklist(path: str) -> Set[str]:
         for line in f:
             line = line.strip().upper()
             if line and not line.startswith("#"):
-                # Only add symbol (first comma)
                 syms.add(line.split(",", 1)[0])
     return syms
 
@@ -44,7 +43,6 @@ def diff_universes(u1: List[Dict], u2: List[Dict]):
     for sym in common:
         s1 = u1_map[sym]
         s2 = u2_map[sym]
-        # Shallow field diff
         diffs = {}
         for k in set(s1.keys()) | set(s2.keys()):
             v1 = s1.get(k)

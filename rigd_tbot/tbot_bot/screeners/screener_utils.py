@@ -1,6 +1,6 @@
 # tbot_bot/screeners/screener_utils.py
-# UPDATE: Adds get_universe_screener_secrets(), loading credentials with UNIVERSE_ENABLED == "true"
-# Used for all universe build operations (vs. strategy/active screener use).
+# Utility functions for universe cache and credential management.
+# 100% compliant with modular, usage-flagged, multi-provider screener credentials system.
 
 import json
 import logging
@@ -45,15 +45,15 @@ def get_screener_secrets() -> dict:
 
 def get_universe_screener_secrets() -> dict:
     """
-    Loads the first screener provider where UNIVERSE_ENABLED == 'true'.
-    Returns the flat key/value dict for that provider.
+    Loads the first provider with UNIVERSE_ENABLED == 'true' (case-insensitive).
+    Returns flat key/value dict for that provider, ready for direct injection.
     """
     all_creds = load_screener_credentials()
     provider_indices = [
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false") == "true"
+           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
     ]
     if not provider_indices:
         raise UniverseCacheError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
@@ -181,6 +181,11 @@ def filter_symbols(
     max_size: Optional[int] = None,
     broker_obj=None
 ) -> List[Dict]:
+    """
+    Filters symbols using core filtering logic.
+    Supports filtering by exchange, price range, market cap, blocklist exclusion, and broker fractional eligibility.
+    Returns filtered and deduplicated list of symbol dicts.
+    """
     return core_filter_symbols(
         symbols,
         exchanges,
@@ -194,6 +199,10 @@ def filter_symbols(
     )
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:
+    """
+    Loads blocklist from the specified path or full blocklist manager.
+    Returns list of blocklisted symbol strings (uppercase).
+    """
     if not path:
         bl_dict = load_blocklist_full()
         return list(bl_dict.keys())
@@ -216,6 +225,10 @@ def load_blocklist(path: Optional[str] = None) -> List[str]:
     return blocklist
 
 def is_cache_stale(bot_identity: Optional[str] = None) -> bool:
+    """
+    Determines if the universe cache is stale or invalid.
+    Returns True if cache is missing or invalid; False otherwise.
+    """
     try:
         _ = load_universe_cache(bot_identity)
         return False
@@ -223,6 +236,9 @@ def is_cache_stale(bot_identity: Optional[str] = None) -> bool:
         return True
 
 def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetime]:
+    """
+    Returns the datetime of the universe cache build or None if unavailable.
+    """
     path = resolve_universe_cache_path(bot_identity)
     if not os.path.exists(path):
         return None
@@ -240,6 +256,9 @@ def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetim
         return None
 
 def get_symbol_set(bot_identity: Optional[str] = None) -> set:
+    """
+    Returns a set of symbols currently in the universe cache.
+    """
     try:
         symbols = load_universe_cache(bot_identity)
         return set(s.get("symbol") for s in symbols if "symbol" in s)

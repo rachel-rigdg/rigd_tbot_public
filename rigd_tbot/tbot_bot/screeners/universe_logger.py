@@ -10,7 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 def get_universe_log_path():
-    # Writes to output/screeners/universe_ops.log using path_resolver.
+    """
+    Resolves log file path for universe operations.
+    Ensures output directory exists.
+    """
     from tbot_bot.support.path_resolver import resolve_universe_log_path
     log_path = resolve_universe_log_path()
     log_dir = Path(log_path).parent
@@ -18,38 +21,57 @@ def get_universe_log_path():
     return str(log_path)
 
 class UTCFormatter(logging.Formatter):
+    """
+    Formatter that prints UTC ISO timestamps for log records.
+    """
     converter = lambda *args: datetime.now(tz=timezone.utc).timetuple()
     def formatTime(self, record, datefmt=None):
         dt = datetime.utcfromtimestamp(record.created).replace(tzinfo=timezone.utc)
         return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 def get_universe_logger():
+    """
+    Initializes and returns a singleton logger instance for universe operations.
+    Logs to file and console with UTC timestamps and audit-level info.
+    Prevents duplicate handlers.
+    """
     log_path = get_universe_log_path()
     logger = logging.getLogger("universe_logger")
     if getattr(logger, "_initialized", False):
         return logger
+
     logger.setLevel(logging.INFO)
+    # Remove any old handlers first to avoid log duplication
+    logger.handlers = []
+
     fh = logging.FileHandler(log_path)
     fh.setLevel(logging.INFO)
     fh.setFormatter(UTCFormatter("[%(asctime)s][%(levelname)s] %(message)s"))
     logger.addHandler(fh)
+
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     ch.setFormatter(UTCFormatter("[%(asctime)s][%(levelname)s] %(message)s"))
     logger.addHandler(ch)
+
     logger._initialized = True
     return logger
 
 def log_universe_event(event: str, details: dict = None, level: str = "info"):
     """
     Logs a universe/blocklist/staged build event with structured audit detail.
-    Used for all universe, blocklist, staged, recovery, and archiving ops.
+    Used for all universe, blocklist, staged, recovery, and archiving operations.
+    Includes event name and optional JSON-serializable details dict.
+    Supports 'info', 'warning', and 'error' log levels.
     """
     logger = get_universe_logger()
     msg = f"{event}"
     if details:
         import json
-        msg += " | " + json.dumps(details, default=str)
+        try:
+            msg += " | " + json.dumps(details, default=str, ensure_ascii=False)
+        except Exception as e:
+            msg += f" | [Failed to serialize details: {e}]"
     if level == "error":
         logger.error(msg)
     elif level == "warning":

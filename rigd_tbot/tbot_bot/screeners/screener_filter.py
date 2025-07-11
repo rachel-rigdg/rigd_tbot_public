@@ -21,14 +21,14 @@ MIC_TO_EXCHANGE = {
     "XPHL": "NASDAQ",
 }
 
-SYMBOL_KEYS      = ("symbol", "ticker", "displaySymbol")
-EXCHANGE_KEYS    = ("exchange", "exch", "mic", "exchCode")
-LASTCLOSE_KEYS   = ("lastClose", "close", "last_price", "price", "c", "pc")
-MKTCAP_KEYS      = ("marketCap", "market_cap", "mktcap", "market_capitalization", "marketCapitalization")
-NAME_KEYS        = ("name", "description", "companyName")
-SECTOR_KEYS      = ("sector", "industry", "finnhubIndustry")
-VOLUME_KEYS      = ("volume", "vol", "v")
-IS_FRACTIONAL_KEYS = ("isFractional", "fractional", "fractional_enabled")
+SYMBOL_KEYS         = ("symbol", "ticker", "displaySymbol")
+EXCHANGE_KEYS       = ("exchange", "exch", "mic", "exchCode")
+LASTCLOSE_KEYS      = ("lastClose", "close", "last_price", "price", "c", "pc")
+MKTCAP_KEYS         = ("marketCap", "market_cap", "mktcap", "market_capitalization", "marketCapitalization")
+NAME_KEYS           = ("name", "description", "companyName")
+SECTOR_KEYS         = ("sector", "industry", "finnhubIndustry")
+VOLUME_KEYS         = ("volume", "vol", "v")
+IS_FRACTIONAL_KEYS  = ("isFractional", "fractional", "fractional_enabled")
 
 def mic_to_exchange(mic: Optional[str]) -> Optional[str]:
     mic = str(mic).upper().strip() if mic else ""
@@ -97,6 +97,7 @@ def normalize_symbol(raw: Dict) -> Dict:
             else:
                 norm["isFractional"] = bool(v)
             break
+    # Copy all other unknown fields (but do not overwrite normalized keys)
     for k in raw:
         if k not in norm:
             norm[k] = raw[k]

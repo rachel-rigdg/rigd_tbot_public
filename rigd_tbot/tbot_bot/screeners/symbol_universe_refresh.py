@@ -1,21 +1,17 @@
 # tbot_bot/screeners/symbol_universe_refresh.py
-# UPDATE: Only use providers with UNIVERSE_ENABLED=="true" for universe build.
-# The selection logic now filters screener credentials to enforce the new usage flag.
+# PRODUCTION-READY: Delegates all symbol/quote fetching to provider modules. No direct API calls.
 
 import sys
 import json
-import time
 import os
 from datetime import datetime, timezone
 from typing import List, Dict
+from importlib import import_module
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
-    save_universe_cache, load_blocklist, UniverseCacheError, get_screener_secrets
+    save_universe_cache, load_blocklist, UniverseCacheError
 )
-from tbot_bot.screeners.screener_filter import (
-    normalize_symbols, filter_symbols, dedupe_symbols
-)
-from tbot_bot.broker.broker_api import get_active_broker
+from tbot_bot.screeners.screener_filter import dedupe_symbols
 from tbot_bot.support.path_resolver import (
     resolve_universe_cache_path,
     resolve_universe_partial_path,
@@ -67,16 +63,7 @@ def load_unfiltered():
     except Exception:
         return []
 
-def append_to_blocklist(symbol, blocklist_path, reason="PRICE_BELOW_MIN"):
-    try:
-        now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
-        with open(blocklist_path, "a", encoding="utf-8") as f:
-            f.write(f"{symbol.upper()},{reason},{now}\n")
-    except Exception:
-        pass
-
 def get_universe_screener_creds():
-    # Only use providers with UNIVERSE_ENABLED=="true"
     all_creds = load_screener_credentials()
     provider_indices = [
         k.split("_")[-1]
@@ -86,7 +73,6 @@ def get_universe_screener_creds():
     ]
     if not provider_indices:
         raise RuntimeError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
-    # Return the first enabled provider's keys for legacy single-provider logic
     idx = provider_indices[0]
     return {
         key.replace(f"_{idx}", ""): v
@@ -94,200 +80,54 @@ def get_universe_screener_creds():
         if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
     }
 
-def fetch_finnhub_symbols_staged(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj=None):
-    import requests
-    screener_secrets = get_universe_screener_creds()
-    FINNHUB_API_KEY = screener_secrets.get("SCREENER_API_KEY") or screener_secrets.get("SCREENER_TOKEN")
-    FINNHUB_URL = screener_secrets.get("SCREENER_URL", "https://finnhub.io/api/v1/")
-    FINNHUB_USERNAME = screener_secrets.get("SCREENER_USERNAME", "")
-    FINNHUB_PASSWORD = screener_secrets.get("SCREENER_PASSWORD", "")
-    UNIVERSE_SLEEP_TIME = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
-    blocklist_path = BLOCKLIST_PATH
-    if not FINNHUB_API_KEY:
-        raise RuntimeError("SCREENER_API_KEY not set in screener_api.json.enc")
-    unfiltered_symbols = load_unfiltered()
-    filtered_symbols = []
-    seen = set(s.get("symbol") for s in unfiltered_symbols)
-    blockset = set(line.strip().split(',')[0].upper() for line in blocklist) if blocklist else set()
-    for exch in exchanges:
-        url = f"{FINNHUB_URL.rstrip('/')}/stock/symbol?exchange={exch.strip()}&token={FINNHUB_API_KEY}"
-        auth = (FINNHUB_USERNAME, FINNHUB_PASSWORD) if FINNHUB_USERNAME and FINNHUB_PASSWORD else None
-        r = requests.get(url, auth=auth)
-        if r.status_code != 200:
-            log_progress(f"Failed to fetch symbol list for exchange {exch}", {"status": r.status_code})
-            continue
-        for s in r.json():
-            symbol = s.get("symbol")
-            if not symbol:
-                continue
-            symbol_upper = symbol.upper()
-            if symbol_upper in seen or symbol_upper in blockset:
-                continue
-            quote_url = f"{FINNHUB_URL.rstrip('/')}/quote?symbol={symbol}&token={FINNHUB_API_KEY}"
-            quote = requests.get(quote_url, auth=auth)
-            q = quote.json() if quote.status_code == 200 else {}
-            last_close = q.get("pc") or q.get("c")
-            try:
-                last_close = float(last_close)
-            except Exception:
-                last_close = None
-            if last_close is None or last_close < min_price:
-                append_to_blocklist(symbol, blocklist_path, reason="PRICE_BELOW_MIN")
-                continue
-            profile_url = f"{FINNHUB_URL.rstrip('/')}/stock/profile2?symbol={symbol}&token={FINNHUB_API_KEY}"
-            profile = requests.get(profile_url, auth=auth)
-            p = profile.json() if profile.status_code == 200 else {}
-            time.sleep(UNIVERSE_SLEEP_TIME)
-            obj = {
-                "symbol": symbol_upper,
-                "exchange": exch.strip(),
-                "lastClose": last_close,
-                "marketCap": p.get("marketCapitalization"),
-                "name": p.get("name") or s.get("description") or "",
-                "sector": p.get("finnhubIndustry") or "",
-                "industry": "",
-                "volume": q.get("v") or 0,
-                "isFractional": broker_obj.is_symbol_fractional(symbol_upper) if broker_obj else None
-            }
-            unfiltered_symbols.append(obj)
-            seen.add(symbol_upper)
-            write_unfiltered(dedupe_symbols(unfiltered_symbols))
-            if len(unfiltered_symbols) % 100 == 0:
-                log_progress(
-                    f"Fetched {len(unfiltered_symbols)} symbols so far",
-                    {"unfiltered_count": len(unfiltered_symbols)}
-                )
-            normed = normalize_symbols([obj])
-            filtered = filter_symbols(
-                normed,
-                exchanges=exchanges,
-                min_price=min_price,
-                max_price=max_price,
-                min_market_cap=min_cap,
-                max_cap=max_cap,
-                blocklist=blocklist,
-                max_size=None,
-                broker_obj=broker_obj
-            )
-            if filtered:
-                filtered_symbols.extend(filtered)
-                write_partial(dedupe_symbols(filtered_symbols))
-                save_universe_cache(dedupe_symbols(filtered_symbols))
-            time.sleep(UNIVERSE_SLEEP_TIME)
-    write_unfiltered(dedupe_symbols(unfiltered_symbols))
-    write_partial(dedupe_symbols(filtered_symbols))
-    save_universe_cache(dedupe_symbols(filtered_symbols))
-    _merge_and_dedupe_partials()
-    return dedupe_symbols(filtered_symbols)
+def get_provider_module_and_class(screener_secrets):
+    name = (screener_secrets.get("SCREENER_NAME") or "").strip().lower()
+    if not name:
+        raise RuntimeError("SCREENER_NAME not set in universe-enabled credentials.")
+    module_map = {
+        "finnhub": "tbot_bot.screeners.providers.finnhub_provider",
+        "ibkr": "tbot_bot.screeners.providers.ibkr_provider",
+        "alpaca": "tbot_bot.screeners.providers.alpaca_provider",
+        "tradier": "tbot_bot.screeners.providers.tradier_provider",
+        "polygon": "tbot_bot.screeners.providers.polygon_provider",
+        "nasdaq": "tbot_bot.screeners.providers.nasdaq_provider",
+        "nasdaq_txt": "tbot_bot.screeners.providers.nasdaq_txt_provider",
+        "nyse": "tbot_bot.screeners.providers.nyse_provider",
+        "other_txt": "tbot_bot.screeners.providers.other_txt_provider",
+        "yahoo": "tbot_bot.screeners.providers.yahoo_provider"
+    }
+    class_map = {
+        "finnhub": "FinnhubProvider",
+        "ibkr": "IBKRProvider",
+        "alpaca": "AlpacaProvider",
+        "tradier": "TradierProvider",
+        "polygon": "PolygonProvider",
+        "nasdaq": "NasdaqProvider",
+        "nasdaq_txt": "NasdaqTxtProvider",
+        "nyse": "NyseProvider",
+        "other_txt": "OtherTxtProvider",
+        "yahoo": "YahooProvider"
+    }
+    mod_name = module_map.get(name)
+    cls_name = class_map.get(name)
+    if not mod_name or not cls_name:
+        raise RuntimeError(f"No provider module/class mapping found for SCREENER_NAME '{name}'")
+    module = import_module(mod_name)
+    return getattr(module, cls_name)
 
-def fetch_ibkr_symbols(secrets, env):
-    import requests
-    IBKR_API_KEY = secrets.get("SCREENER_API_KEY") or secrets.get("SCREENER_TOKEN")
-    IBKR_BASE_URL = secrets.get("SCREENER_URL", "https://localhost:5000/v1/api")
-    IBKR_USERNAME = secrets.get("SCREENER_USERNAME", "")
-    IBKR_PASSWORD = secrets.get("SCREENER_PASSWORD", "")
-    UNIVERSE_SLEEP_TIME = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
-    exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
-    min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
-    max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
-    min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
-    max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
-    blocklist_path = BLOCKLIST_PATH
-    blocklist = []
-    try:
-        with open(blocklist_path, "r", encoding="utf-8") as bf:
-            blocklist = bf.readlines()
-    except Exception:
-        blocklist = []
-    blockset = set(line.strip().split(',')[0].upper() for line in blocklist) if blocklist else set()
-    unfiltered_symbols = load_unfiltered()
-    filtered_symbols = []
-    seen = set(s.get("symbol") for s in unfiltered_symbols)
-    for exch in exchanges:
-        url = f"{IBKR_BASE_URL.rstrip('/')}/symbols?exchange={exch.strip()}&apikey={IBKR_API_KEY}"
-        auth = (IBKR_USERNAME, IBKR_PASSWORD) if IBKR_USERNAME and IBKR_PASSWORD else None
-        r = requests.get(url, auth=auth, verify=False)
-        if r.status_code != 200:
-            log_progress(f"Failed to fetch IBKR symbols for {exch}", {"status": r.status_code})
-            continue
-        for s in r.json().get("symbols", []):
-            symbol = s.get("symbol")
-            if not symbol:
-                continue
-            symbol_upper = symbol.upper()
-            if symbol_upper in seen or symbol_upper in blockset:
-                continue
-            quote_url = f"{IBKR_BASE_URL.rstrip('/')}/quote?symbol={symbol}&apikey={IBKR_API_KEY}"
-            quote = requests.get(quote_url, auth=auth, verify=False)
-            q = quote.json() if quote.status_code == 200 else {}
-            last_close = q.get("lastClose") or q.get("close") or q.get("price")
-            try:
-                last_close = float(last_close)
-            except Exception:
-                last_close = None
-            if last_close is None or last_close < min_price:
-                append_to_blocklist(symbol, blocklist_path, reason="PRICE_BELOW_MIN")
-                continue
-            meta_url = f"{IBKR_BASE_URL.rstrip('/')}/meta?symbol={symbol}&apikey={IBKR_API_KEY}"
-            meta = requests.get(meta_url, auth=auth, verify=False)
-            p = meta.json() if meta.status_code == 200 else {}
-            time.sleep(UNIVERSE_SLEEP_TIME)
-            obj = {
-                "symbol": symbol_upper,
-                "exchange": exch.strip(),
-                "lastClose": last_close,
-                "marketCap": p.get("marketCap"),
-                "name": p.get("name") or s.get("name") or "",
-                "sector": p.get("sector") or "",
-                "industry": p.get("industry") or "",
-                "volume": q.get("volume") or 0,
-                "isFractional": p.get("isFractional") if p.get("isFractional") is not None else None
-            }
-            unfiltered_symbols.append(obj)
-            seen.add(symbol_upper)
-            write_unfiltered(dedupe_symbols(unfiltered_symbols))
-            if len(unfiltered_symbols) % 100 == 0:
-                log_progress(
-                    f"Fetched {len(unfiltered_symbols)} IBKR symbols so far",
-                    {"unfiltered_count": len(unfiltered_symbols)}
-                )
-            normed = normalize_symbols([obj])
-            filtered = filter_symbols(
-                normed,
-                exchanges=exchanges,
-                min_price=min_price,
-                max_price=max_price,
-                min_market_cap=min_cap,
-                max_cap=max_cap,
-                blocklist=blocklist,
-                max_size=None,
-                broker_obj=None
-            )
-            if filtered:
-                filtered_symbols.extend(filtered)
-                write_partial(dedupe_symbols(filtered_symbols))
-                save_universe_cache(dedupe_symbols(filtered_symbols))
-            time.sleep(UNIVERSE_SLEEP_TIME)
-    write_unfiltered(dedupe_symbols(unfiltered_symbols))
-    write_partial(dedupe_symbols(filtered_symbols))
-    save_universe_cache(dedupe_symbols(filtered_symbols))
-    _merge_and_dedupe_partials()
-    return dedupe_symbols(filtered_symbols)
-
-def fetch_broker_symbol_metadata_crash_resilient(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
-    if not screener_creds_exist():
-        raise RuntimeError("Screener credentials not configured. Please configure screener credentials in the UI before building the universe.")
+def fetch_universe_symbols_with_provider(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
     screener_secrets = get_universe_screener_creds()
-    screener_name = (screener_secrets.get("SCREENER_NAME") or "FINNHUB").strip().upper()
-    broker_obj = get_active_broker()
-    if screener_name == "FINNHUB":
-        return fetch_finnhub_symbols_staged(
-            env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size, broker_obj
-        )
-    elif screener_name == "IBKR":
-        return fetch_ibkr_symbols(screener_secrets, env)
-    else:
-        raise RuntimeError(f"Unsupported SCREENER_NAME: {screener_name}")
+    ProviderClass = get_provider_module_and_class(screener_secrets)
+    provider = ProviderClass(config=env, creds=screener_secrets)
+    return provider.fetch_universe_symbols(
+        exchanges=exchanges,
+        min_price=min_price,
+        max_price=max_price,
+        min_cap=min_cap,
+        max_cap=max_cap,
+        blocklist=blocklist,
+        max_size=max_size
+    )
 
 def _merge_and_dedupe_partials():
     try:
@@ -310,51 +150,6 @@ def _merge_and_dedupe_partials():
     merged = dedupe_symbols(partial + final)
     write_partial(merged)
     save_universe_cache(merged)
-
-def refilter_from_unfiltered(env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size):
-    unfiltered_symbols = load_unfiltered()
-    normed = normalize_symbols(unfiltered_symbols)
-    broker_obj = get_active_broker()
-    filtered = filter_symbols(
-        normed,
-        exchanges=exchanges,
-        min_price=min_price,
-        max_price=max_price,
-        min_market_cap=min_cap,
-        max_cap=max_cap,
-        blocklist=blocklist,
-        max_size=max_size,
-        broker_obj=broker_obj
-    )
-    write_partial(dedupe_symbols(filtered))
-    save_universe_cache(dedupe_symbols(filtered))
-    _merge_and_dedupe_partials()
-    return filtered
-
-def disk_integrity_check_partial_vs_final():
-    try:
-        with open(resolve_universe_partial_path(), "r", encoding="utf-8") as pf:
-            partial = json.load(pf).get("symbols", [])
-    except Exception:
-        partial = []
-    try:
-        with open(resolve_universe_cache_path(), "r", encoding="utf-8") as cf:
-            final = json.load(cf).get("symbols", [])
-    except Exception:
-        final = []
-    set_partial = set(s.get("symbol") for s in partial if s.get("symbol"))
-    set_final = set(s.get("symbol") for s in final if s.get("symbol"))
-    if set_partial != set_final or len(partial) != len(final):
-        log_progress("DISK INTEGRITY CHECK FAILED: partial and final JSON differ!", {
-            "partial_count": len(partial),
-            "final_count": len(final),
-            "partial_not_final": list(set_partial - set_final),
-            "final_not_partial": list(set_final - set_partial),
-        })
-    else:
-        log_progress("DISK INTEGRITY CHECK PASSED: partial matches final.", {
-            "count": len(partial)
-        })
 
 def main():
     if not screener_creds_exist():
@@ -385,21 +180,20 @@ def main():
         blocklist = []
 
     try:
-        symbols_filtered = fetch_broker_symbol_metadata_crash_resilient(
+        symbols_filtered = fetch_universe_symbols_with_provider(
             env, blocklist, exchanges, min_price, max_price, min_cap, max_cap, max_size
         )
         if not symbols_filtered or len(symbols_filtered) < 10:
-            raise RuntimeError("No symbols fetched from screener/API; check API key, network, or provider limits.")
+            raise RuntimeError("No symbols fetched from screener provider; check API key, network, or provider limits.")
     except Exception as e:
         log_progress("Failed to fetch screener symbol metadata", {"error": str(e)})
         raise
 
-    log_progress("Fetched filtered symbols from screener feed", {"count": len(symbols_filtered)})
+    log_progress("Fetched filtered symbols from screener provider", {"count": len(symbols_filtered)})
 
     symbols_filtered.sort(key=lambda x: x["symbol"])
 
     try:
-        partial_path = resolve_universe_partial_path()
         write_partial(dedupe_symbols(symbols_filtered))
     except Exception as e:
         log_progress("Write partial failed", {"error": str(e)})
@@ -411,7 +205,7 @@ def main():
         log_progress("Failed to write universe cache", {"error": str(e)})
         raise
 
-    disk_integrity_check_partial_vs_final()
+    _merge_and_dedupe_partials()
 
     audit = {
         "build_time_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),

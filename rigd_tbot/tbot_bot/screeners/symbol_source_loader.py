@@ -1,17 +1,21 @@
 # tbot_bot/screeners/symbol_source_loader.py
-# UPDATE: Always uses universe screener provider with UNIVERSE_ENABLED == "true" (get_universe_screener_secrets) for API keys/URLs.
-# Hardcoded API key params replaced by dynamic provider config.
+# 100% compliant: Always uses universe screener provider with UNIVERSE_ENABLED == "true" (get_universe_screener_secrets) for API keys/URLs.
+# No hardcoded API keys; dynamic provider config only.
 
 import csv
 import os
 import json
-from typing import List, Dict, Set
+from typing import List, Dict
+
 from tbot_bot.screeners.screener_utils import get_universe_screener_secrets
 
 def load_nasdaq_listed(path: str) -> List[Dict]:
     syms = []
     with open(path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader((line for line in f if not line.startswith("File") and not line.startswith("\n")), delimiter="|")
+        reader = csv.DictReader(
+            (line for line in f if not line.startswith("File") and not line.startswith("\n")),
+            delimiter="|"
+        )
         for row in reader:
             symbol = row.get("Symbol")
             name = row.get("Security Name", "")
@@ -26,7 +30,10 @@ def load_nasdaq_listed(path: str) -> List[Dict]:
 def load_nyse_listed(path: str) -> List[Dict]:
     syms = []
     with open(path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader((line for line in f if not line.startswith("File") and not line.startswith("\n")), delimiter="|")
+        reader = csv.DictReader(
+            (line for line in f if not line.startswith("File") and not line.startswith("\n")),
+            delimiter="|"
+        )
         for row in reader:
             symbol = row.get("ACT Symbol") or row.get("Symbol")
             exch = row.get("Exchange", "NYSE")
@@ -42,25 +49,39 @@ def load_nyse_listed(path: str) -> List[Dict]:
 def load_polygon_symbols(provider_cfg: dict) -> List[Dict]:
     import requests
     api_key = provider_cfg.get("SCREENER_API_KEY") or provider_cfg.get("SCREENER_TOKEN")
-    url = f"https://api.polygon.io/v3/reference/tickers?market=stocks&active=true&apiKey={api_key}"
+    url = f"https://api.polygon.io/v3/reference/tickers"
+    params = {
+        "market": "stocks",
+        "active": "true",
+        "apiKey": api_key,
+        "limit": 1000,
+        "order": "asc"
+    }
     syms = []
-    page = 1
-    while True:
-        r = requests.get(url + f"&limit=1000&page={page}")
-        if r.status_code != 200:
+    next_url = url
+    while next_url:
+        resp = requests.get(next_url, params=params if next_url == url else None)
+        if resp.status_code != 200:
             break
-        data = r.json()
-        tickers = data.get("results", [])
-        for t in tickers:
-            if t.get("primary_exchange") in ("XNYS", "XNAS"):
+        data = resp.json()
+        for t in data.get("results", []):
+            exch_code = t.get("primary_exchange")
+            symbol = t.get("ticker", "").upper()
+            name = t.get("name", "")
+            if exch_code == "XNAS":
+                exch = "NASDAQ"
+            elif exch_code == "XNYS":
+                exch = "NYSE"
+            else:
+                exch = exch_code or "US"
+            if exch in ("NASDAQ", "NYSE"):
                 syms.append({
-                    "symbol": t.get("ticker", "").upper(),
-                    "exchange": "NASDAQ" if t.get("primary_exchange") == "XNAS" else "NYSE",
-                    "companyName": t.get("name", "")
+                    "symbol": symbol,
+                    "exchange": exch,
+                    "companyName": name
                 })
-        if not data.get("next_url"):
-            break
-        page += 1
+        next_url = data.get("next_url")
+        params = None  # Only pass params on first call
     return syms
 
 def load_finnhub_symbols(provider_cfg: dict, exchanges: List[str]) -> List[Dict]:

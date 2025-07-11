@@ -1,38 +1,28 @@
-# tbot_bot/screeners/ibkr_screener.py
-# UPDATE: Loads screener credentials where TRADING_ENABLED == "true" per central flag.
-# Only enabled providers are used for IBKR screener operation.
+# tbot_bot/screeners/screeners/finnhub_screener.py
+# Loads screener credentials where TRADING_ENABLED == "true" and PROVIDER == "FINNHUB" per central flag.
+# Uses only enabled providers for active (strategy) screener operation. 100% generic screener keys.
 
+import requests
 import time
+from pathlib import Path
 from tbot_bot.screeners.screener_base import ScreenerBase
 from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.screeners.screener_utils import load_universe_cache
 from tbot_bot.support.secrets_manager import load_screener_credentials
 
-# Placeholder: replace with real IBKR API imports and logic as needed
-def ibkr_get_quote(symbol):
-    """
-    Replace this stub with real IBKR market data API call.
-    Return dict: {"symbol":..., "c":..., "o":..., "vwap":...}
-    """
-    # Example (mock): simulate current, open, vwap
-    import random
-    c = round(random.uniform(10, 200), 2)
-    o = round(c * random.uniform(0.97, 1.03), 2)
-    vwap = (c + o) / 2
-    return {"symbol": symbol, "c": c, "o": o, "vwap": vwap}
-
 def get_trading_screener_creds():
-    # Only use providers with TRADING_ENABLED == "true"
+    # Only use providers with TRADING_ENABLED == "true" and PROVIDER == "FINNHUB"
     all_creds = load_screener_credentials()
     provider_indices = [
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false") == "true"
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
+           and all_creds.get(k, "").strip().upper() == "FINNHUB"
     ]
     if not provider_indices:
-        raise RuntimeError("No screener providers enabled for active trading. Please enable at least one in the credential admin.")
+        raise RuntimeError("No FINNHUB screener providers enabled for active trading. Please enable at least one in the credential admin.")
     idx = provider_indices[0]
     return {
         key.replace(f"_{idx}", ""): v
@@ -41,43 +31,72 @@ def get_trading_screener_creds():
     }
 
 config = get_bot_config()
-broker_creds = get_trading_screener_creds()
+screener_creds = get_trading_screener_creds()
+SCREENER_API_KEY = (
+    screener_creds.get("SCREENER_API_KEY", "")
+    or screener_creds.get("SCREENER_TOKEN", "")
+)
+SCREENER_URL = screener_creds.get("SCREENER_URL", "https://finnhub.io/api/v1/")
+SCREENER_USERNAME = screener_creds.get("SCREENER_USERNAME", "")
+SCREENER_PASSWORD = screener_creds.get("SCREENER_PASSWORD", "")
 LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
+API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
 FRACTIONAL = config.get("FRACTIONAL", True)
+STRATEGY_SLEEP_TIME = float(config.get("STRATEGY_SLEEP_TIME", 0.03))
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+
+def is_test_mode_active():
+    return TEST_MODE_FLAG.exists()
 
 def log(msg):
     if LOG_LEVEL == "verbose":
-        print(msg)
+        print(f"[Finnhub Screener] {msg}")
 
-class IBKRScreener(ScreenerBase):
+class FinnhubScreener(ScreenerBase):
     """
-    IBKR screener: loads eligible symbols from universe cache,
-    fetches latest quotes from IBKR, filters per strategy.
+    Finnhub screener: loads eligible symbols from universe cache,
+    fetches latest quotes from Finnhub API using screener credentials,
+    filters per strategy, test mode aware.
     """
     def fetch_live_quotes(self, symbols):
         """
-        Fetches latest price/open/vwap for each symbol using IBKR API.
+        Fetches latest price/open/vwap for each symbol using Finnhub API.
         Returns list of dicts: [{"symbol":..., "c":..., "o":..., "vwap":...}, ...]
         """
         quotes = []
         for idx, symbol in enumerate(symbols):
+            url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
+            auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
             try:
-                quote = ibkr_get_quote(symbol)
-                if quote and all(k in quote for k in ("c", "o", "vwap")):
-                    quotes.append(quote)
+                resp = requests.get(url, timeout=API_TIMEOUT, auth=auth)
+                if resp.status_code != 200:
+                    log(f"Error fetching quote for {symbol}: HTTP {resp.status_code}")
+                    continue
+                data = resp.json()
+                c = float(data.get("c", 0))
+                o = float(data.get("o", 0))
+                vwap = float(data.get("vwap", 0)) if "vwap" in data and data.get("vwap", 0) else (c if c else 0)
+                quotes.append({
+                    "symbol": symbol,
+                    "c": c,
+                    "o": o,
+                    "vwap": vwap
+                })
             except Exception as e:
                 log(f"Exception fetching quote for {symbol}: {e}")
                 continue
-            if idx % 50 == 0:
+            if idx % 50 == 0 and idx > 0:
                 log(f"Fetched {idx} quotes...")
-            time.sleep(0.2)  # Throttle if needed
+            time.sleep(STRATEGY_SLEEP_TIME)
         return quotes
 
     def filter_candidates(self, quotes):
         """
         Filters the list of quote dicts using price, gap, and other rules.
+        TEST_MODE: Only price filter, returns first N passing.
         Returns eligible symbol dicts.
         """
         strategy = self.env.get("STRATEGY_NAME", "open")
@@ -88,8 +107,8 @@ class IBKRScreener(ScreenerBase):
         min_cap = float(self.env.get(min_cap_key, 2e9))
         max_cap = float(self.env.get(max_cap_key, 1e10))
         limit = int(self.env.get("SCREENER_LIMIT", 3))
+        test_mode_active = is_test_mode_active()
 
-        # Use marketCap, exchange, isFractional from universe cache if available
         try:
             universe_cache = {s["symbol"]: s for s in load_universe_cache()}
         except Exception:
@@ -136,9 +155,22 @@ class IBKRScreener(ScreenerBase):
             current = q["price"]
             open_ = q["open"]
             vwap = q["vwap"]
+
+            if test_mode_active:
+                results.append({
+                    "symbol": symbol,
+                    "price": current,
+                    "vwap": vwap,
+                    "momentum": abs(current - open_) / open_
+                })
+                if len(results) >= limit:
+                    break
+                continue
+
             gap = abs((current - open_) / open_)
             if gap > max_gap:
                 continue
+
             momentum = abs(current - open_) / open_
             results.append({
                 "symbol": symbol,
@@ -146,5 +178,9 @@ class IBKRScreener(ScreenerBase):
                 "vwap": vwap,
                 "momentum": momentum
             })
-        results.sort(key=lambda x: x["momentum"], reverse=True)
-        return results
+
+        if not test_mode_active:
+            results.sort(key=lambda x: x["momentum"], reverse=True)
+            return results[:limit]
+        else:
+            return results[:limit]

@@ -1,6 +1,6 @@
 # tbot_bot/screeners/blocklist_manager.py
 # Centralized blocklist management for staged symbol universe builds and daily universe maintenance.
-# 100% spec-compliant. Handles dynamic creation, updating, polling, and cleaning of the blocklist
+# Handles dynamic creation, updating, polling, and cleaning of the blocklist
 # for symbols that fail core filters (e.g., price, exchange, permanent delisting).
 
 import os
@@ -20,12 +20,20 @@ def log_blocklist_event(event: str, details: dict = None):
     now = utc_now().isoformat()
     msg = f"[{now}] {event}"
     if details:
-        msg += " | " + json.dumps(details)
+        try:
+            msg += " | " + json.dumps(details, ensure_ascii=False)
+        except Exception:
+            msg += f" | [Unserializable details: {details}]"
+    os.makedirs(os.path.dirname(BLOCKLIST_LOG_PATH), exist_ok=True)
     with open(BLOCKLIST_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(msg + "\n")
 
 def load_blocklist(path: str = BLOCKLIST_PATH) -> Dict[str, dict]:
-    """Returns blocklist as dict {symbol: {"reason":..., "timestamp":...}}"""
+    """
+    Returns blocklist as dict {symbol: {"reason":..., "timestamp":...}}
+    Lines are CSV: symbol,reason,timestamp
+    Ignores comment/hash lines and empty lines.
+    """
     blocklist = {}
     if not os.path.isfile(path):
         return blocklist
@@ -42,7 +50,10 @@ def load_blocklist(path: str = BLOCKLIST_PATH) -> Dict[str, dict]:
     return blocklist
 
 def save_blocklist(blocklist: Dict[str, dict], path: str = BLOCKLIST_PATH):
-    """Save blocklist dict to file."""
+    """
+    Save blocklist dict to file, CSV (symbol,reason,timestamp), sorted.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for sym, meta in sorted(blocklist.items()):
             reason = meta.get("reason", "")
@@ -58,7 +69,12 @@ def add_to_blocklist(symbols: List[str], reason: str = ""):
     for s in symbols:
         blocklist[s] = {"reason": reason, "timestamp": now}
     save_blocklist(blocklist)
-    log_blocklist_event("Added to blocklist", {"symbols": symbols, "reason": reason, "before": before_count, "after": len(blocklist)})
+    log_blocklist_event("Added to blocklist", {
+        "symbols": symbols,
+        "reason": reason,
+        "before": before_count,
+        "after": len(blocklist)
+    })
 
 def remove_from_blocklist(symbols: List[str], reason: str = ""):
     now = utc_now().isoformat()
@@ -69,7 +85,12 @@ def remove_from_blocklist(symbols: List[str], reason: str = ""):
         if s in blocklist:
             del blocklist[s]
     save_blocklist(blocklist)
-    log_blocklist_event("Removed from blocklist", {"symbols": symbols, "reason": reason, "before": before_count, "after": len(blocklist)})
+    log_blocklist_event("Removed from blocklist", {
+        "symbols": symbols,
+        "reason": reason,
+        "before": before_count,
+        "after": len(blocklist)
+    })
 
 def update_blocklist_price_poll(price_map: dict, min_price: float):
     """

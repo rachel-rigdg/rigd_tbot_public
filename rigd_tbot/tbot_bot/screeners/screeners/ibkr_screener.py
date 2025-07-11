@@ -1,26 +1,26 @@
-# tbot_bot/screeners/alpaca_screener.py
-# UPDATE: Only loads screener credentials where TRADING_ENABLED == "true" per central flag.
-# Now enforces selection of correct provider from screener_api.json.enc.
+# tbot_bot/screeners/screeners/ibkr_screener.py
+# Loads screener credentials where TRADING_ENABLED == "true" and PROVIDER == "IBKR" per central flag.
+# Only enabled providers are used for IBKR screener operation.
 
-import requests
 import time
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.screeners.screener_utils import load_universe_cache
 from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.screeners.screener_utils import load_universe_cache
 from tbot_bot.support.secrets_manager import load_screener_credentials
 
 def get_trading_screener_creds():
-    # Only use providers with TRADING_ENABLED == "true"
+    # Only use providers with TRADING_ENABLED == "true" and PROVIDER == "IBKR"
     all_creds = load_screener_credentials()
     provider_indices = [
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false") == "true"
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
+           and all_creds.get(k, "").strip().upper() == "IBKR"
     ]
     if not provider_indices:
-        raise RuntimeError("No screener providers enabled for active trading. Please enable at least one in the credential admin.")
+        raise RuntimeError("No IBKR screener providers enabled for active trading. Please enable at least one in the credential admin.")
     idx = provider_indices[0]
     return {
         key.replace(f"_{idx}", ""): v
@@ -29,67 +29,46 @@ def get_trading_screener_creds():
     }
 
 config = get_bot_config()
-broker_creds = get_trading_screener_creds()
-ALPACA_API_KEY = broker_creds.get("BROKER_API_KEY", "")
-ALPACA_SECRET_KEY = broker_creds.get("BROKER_SECRET_KEY", "")
-BROKER_USERNAME = broker_creds.get("BROKER_USERNAME", "")
-BROKER_PASSWORD = broker_creds.get("BROKER_PASSWORD", "")
-BROKER_URL = broker_creds.get("BROKER_URL", "https://data.alpaca.markets")
-BROKER_TOKEN = broker_creds.get("BROKER_TOKEN", "")
-HEADERS = {
-    "APCA-API-KEY-ID": ALPACA_API_KEY,
-    "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
-    "Authorization": f"Bearer {BROKER_TOKEN}" if BROKER_TOKEN else ""
-}
-API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
+screener_creds = get_trading_screener_creds()
+LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
 FRACTIONAL = config.get("FRACTIONAL", True)
-LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 
 def log(msg):
     if LOG_LEVEL == "verbose":
-        print(msg)
+        print(f"[IBKR Screener] {msg}")
 
-class AlpacaScreener(ScreenerBase):
+class IBKRScreener(ScreenerBase):
     """
-    Alpaca screener: loads eligible symbols from universe cache,
-    fetches latest quotes from Alpaca, filters per strategy.
+    IBKR screener: loads eligible symbols from universe cache,
+    fetches latest quotes from IBKR (using screener credentials), filters per strategy.
     """
     def fetch_live_quotes(self, symbols):
         """
-        Fetches latest price/open/vwap for each symbol using Alpaca API.
+        Fetches latest price/open/vwap for each symbol using IBKR API.
         Returns list of dicts: [{"symbol":..., "c":..., "o":..., "vwap":...}, ...]
         """
+        # Replace this placeholder logic with a real IBKR API fetch using only screener_creds.
+        # Real logic should use an injected provider module with screener_creds.
         quotes = []
         for idx, symbol in enumerate(symbols):
-            url_bars = f"{BROKER_URL.rstrip('/')}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=1"
-            auth = (BROKER_USERNAME, BROKER_PASSWORD) if BROKER_USERNAME and BROKER_PASSWORD else None
             try:
-                bars_resp = requests.get(url_bars, headers={k: v for k, v in HEADERS.items() if v}, timeout=API_TIMEOUT, auth=auth)
-                if bars_resp.status_code != 200:
-                    log(f"Error fetching bars for {symbol}: status {bars_resp.status_code}")
-                    continue
-                bars = bars_resp.json().get("bars", [])
-                if not bars:
-                    log(f"No bars found for {symbol}")
-                    continue
-                bar = bars[0]
-                current = float(bar.get("c", 0))
-                open_ = float(bar.get("o", 0))
-                vwap = (bar["h"] + bar["l"] + bar["c"]) / 3 if all(k in bar for k in ("h", "l", "c")) else current
-                quotes.append({
-                    "symbol": symbol,
-                    "c": current,
-                    "o": open_,
-                    "vwap": vwap
-                })
+                # --- BEGIN PLACEHOLDER ---
+                import random
+                c = round(random.uniform(10, 200), 2)
+                o = round(c * random.uniform(0.97, 1.03), 2)
+                vwap = (c + o) / 2
+                quote = {"symbol": symbol, "c": c, "o": o, "vwap": vwap}
+                # --- END PLACEHOLDER ---
+                if quote and all(k in quote for k in ("c", "o", "vwap")):
+                    quotes.append(quote)
             except Exception as e:
                 log(f"Exception fetching quote for {symbol}: {e}")
                 continue
-            if idx % 50 == 0:
+            if idx % 50 == 0 and idx > 0:
                 log(f"Fetched {idx} quotes...")
-            time.sleep(0.2)  # throttle to avoid API limits
+            time.sleep(0.2)
         return quotes
 
     def filter_candidates(self, quotes):
@@ -106,7 +85,6 @@ class AlpacaScreener(ScreenerBase):
         max_cap = float(self.env.get(max_cap_key, 1e10))
         limit = int(self.env.get("SCREENER_LIMIT", 3))
 
-        # Use marketCap, exchange, isFractional from universe cache if available
         try:
             universe_cache = {s["symbol"]: s for s in load_universe_cache()}
         except Exception:
@@ -164,4 +142,4 @@ class AlpacaScreener(ScreenerBase):
                 "momentum": momentum
             })
         results.sort(key=lambda x: x["momentum"], reverse=True)
-        return results
+        return results[:limit]

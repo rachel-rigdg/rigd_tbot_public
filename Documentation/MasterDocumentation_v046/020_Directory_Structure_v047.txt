@@ -231,34 +231,38 @@ rigd_tbot/
 │   │   ├── tbot_supervisor.py                      # CENTRAL SUPERVISOR. Manages all bot phase/state transitions, persistent monitoring, and all subprocess lifecycle. Only one instance allowed; always launched by main.py if present. Handles/waits for and may restart monitor, runtime, or other persistent bot subprocesses. Never runs strategy code directly.
 │   │   └── watchdog_bot.py                         # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
 │   │
-│   ├── screeners/			            	                    # Screener & Symbol Selection, staged universe/blocklist build, API quota minimization, modular sources
-│   │   ├── providers/                                         # Modular provider adapters: stateless API fetchers for symbols/quotes, accept injected config/credentials
-│   │   │   ├── finnhub.py                                    # Finnhub provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   ├── ibkr.py                                       # IBKR provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   ├── alpaca.py                                     # Alpaca provider adapter: fetches quotes with injected credentials, no internal env reads
-│   │   │   ├── tradier.py                                    # Tradier provider adapter: fetches quotes, symbols with injected config only
-│   │   │   ├── polygon.py                                    # Polygon provider adapter: fetches symbols with injected API keys/config
-│   │   │   ├── yahoo.py                                      # Yahoo provider adapter: fetches symbols via CSV/web scraping, injected config if any
-│   │   │   ├── txt_nasdaq.py                                 # Nasdaqlisted.txt adapter: loads symbols from files, no internal config reads
-│   │   │   └── txt_nyse.py                                   # Other exchanges TXT adapter: loads symbols, injected config if needed
+│   ├── screeners/			            	# Screener & Symbol Selection, staged universe/blocklist build, API quota minimization, modular providers
+│   │   ├── providers/                              	# Pure data fetch adapters, stateless, config-injected
+│   │   │   ├── alpaca_provider.py                  	# Alpaca provider adapter: fetches quotes with injected credentials, no internal env reads
+│   │   │   ├── finnhub_provider.py                 	# Finnhub provider adapter: fetches symbols and quotes via injected API keys/config
+│   │   │   ├── ibkr_provider.py                    	# IBKR provider adapter: fetches symbols and quotes via injected API keys/config
+│   │   │   ├── polygon_provider.py                 	# Polygon provider adapter: fetches symbols with injected API keys/config
+│   │   │   ├── nasdaq_provider.py                    # NASDAQ provider adapter: fetches symbols and quotes via injected API keys/config
+│   │   │   ├── nasdaq_txt_provider.py                # Nasdaqlisted.txt adapter: loads symbols from files, no internal config reads
+│   │   │   ├── nyse_provider.py                      # NYSE provider adapter: fetches symbols and quotes via injected API keys/config
+│   │   │   ├── other_txt_provider.py                 # Other exchanges TXT adapter: loads symbols, injected config if needed
+│   │   │   ├── tradier_provider.py                 	# Tradier provider adapter: fetches quotes and symbols with injected config only
+│   │   │   └── yahoo_provider.py                      # Yahoo provider adapter: fetches symbols via CSV/web scraping, injected config if any
 │   │   │
-│   │   ├── provider_base.py                                  # Abstract base class/interface for all provider adapters: standardizes fetch_symbols method
-│   │   ├── provider_registry.py                              # Maps provider strings to adapter classes; single source for fetching providers dynamically
-│   │   ├── alpaca_screener.py                               # Alpaca screener: runtime quote filtering; delegates symbol/quote fetch to provider adapters
-│   │   ├── blocklist_manager.py                             # Blocklist manager: add/remove/update, timestamps, archival, periodic polling/recovery logic, UI integration
-│   │   ├── finnhub_screener.py                              # Finnhub screener: runtime quote filtering; uses provider adapter for fetches
-│   │   ├── ibkr_screener.py                                 # IBKR screener: runtime quote filtering; uses provider adapter for fetches
-│   │   ├── screener_base.py                                 # Abstract screener base: core interface, loads universe, wires screener modules, credential loader, calls providers
-│   │   ├── screener_filter.py                               # Symbol normalization/filtering: blocklist-first, broker/fractional-aware, spec-compliant, dedupe logic
-│   │   ├── screener_utils.py                                # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
-│   │   ├── symbol_source_loader.py                          # Orchestrates symbol source loading: calls provider adapters with injected config, normalizes and merges symbols
-│   │   ├── symbol_universe_refresh.py                       # Orchestrates staged, free-first universe/blocklist build, crash-resume, multi-pass output, calls providers dynamically
-│   │   ├── tradier_screener.py                              # Tradier screener: runtime quote filtering; uses provider adapter for fetches
-│   │   ├── universe_archiver.py                             # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
-│   │   ├── universe_diff.py                                 # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
-│   │   ├── universe_logger.py                               # Dedicated, UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions
-│   │   ├── universe_rebuild_cli.py                          # CLI to trigger universe/blocklist rebuild, validation, archival, manual recovery/force rebuild
-│   │   └── universe_validation.py                           # Full validation/QA/drift/field/spec checks for universes/blocklists, dedupe, schema, credential/field presence
+│   │   ├── screeners/                              	# Runtime filter modules using providers' data
+│   │   │   ├── alpaca_screener.py                         # Alpaca screener: runtime quote filtering; delegates symbol/quote fetch to provider adapters
+│   │   │   ├── finnhub_screener.py                        # Finnhub screener: runtime quote filtering; uses provider adapter for fetches
+│   │   │   ├── ibkr_screener.py                           # IBKR screener: runtime quote filtering; uses provider adapter for fetches
+│   │   │   └── tradier_screener.py                        # Tradier screener: runtime quote filtering; uses provider adapter for fetches
+│   │   │
+│   │   ├── provider_base.py                           # Abstract base class/interface for all provider adapters: standardizes fetch_symbols method
+│   │   ├── provider_registry.py                       # Maps provider strings to adapter classes; single source for dynamic provider loading
+│   │   ├── blocklist_manager.py                       # Blocklist manager: add/remove/update, timestamps, archival, polling/recovery, UI integration
+│   │   ├── screener_base.py                           # Abstract screener base: core interface, loads universe, wires modules, calls providers, credential loader
+│   │   ├── screener_filter.py                         # Symbol normalization/filtering: blocklist-first, broker/fractional-aware, spec-compliant, dedupe logic
+│   │   ├── screener_utils.py                          # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
+│   │   ├── symbol_source_loader.py                    # Orchestrates symbol source loading: calls provider adapters with injected config, normalizes and merges symbols
+│   │   ├── symbol_universe_refresh.py                 # Orchestrates staged, free-first universe/blocklist build, crash-resume, multi-pass output, dynamic provider calls
+│   │   ├── universe_archiver.py                       # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
+│   │   ├── universe_diff.py                           # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
+│   │   ├── universe_logger.py                         # Dedicated, UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions
+│   │   ├── universe_rebuild_cli.py                    # CLI to trigger universe/blocklist rebuild, validation, archival, manual recovery/force rebuild
+│   │   └── universe_validation.py                     # Full validation/QA/drift/field/spec checks for universes/blocklists, dedupe, schema, credential/field presence
 │   │
 │   ├── storage/				                    # Persistent runtime data: encrypted secrets, keys, backups, and exports
 │   │   ├── backups/                                # Daily encrypted ledger/config backups (UTC timestamped)

@@ -1,98 +1,106 @@
-# tbot_bot/symbol_sources/finnhub_source.py
-# Loader for finnhub (paid/unlimited, symbol/price/metadata, API).
+# tbot_bot/screeners/screeners/alpaca_screener.py
+# Loads screener credentials where TRADING_ENABLED == "true" and PROVIDER == "ALPACA" per spec.
+# Uses ONLY generic SCREENER_ keys—never BROKER_—and never reads internal env for credentials.
 
 import requests
 import time
-from pathlib import Path
 from tbot_bot.screeners.screener_base import ScreenerBase
-from tbot_bot.screeners.screener_utils import get_screener_secrets
+from tbot_bot.screeners.screener_utils import load_universe_cache
 from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.screeners.screener_utils import load_universe_cache
+from tbot_bot.support.secrets_manager import load_screener_credentials
+
+def get_trading_screener_creds():
+    """
+    Loads screener credentials where TRADING_ENABLED == 'true' and PROVIDER == 'ALPACA'.
+    Returns dict of keys for the first enabled ALPACA provider.
+    """
+    all_creds = load_screener_credentials()
+    candidates = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+        and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
+        and all_creds.get(k, "").strip().upper() == "ALPACA"
+    ]
+    if not candidates:
+        raise RuntimeError("No ALPACA screener provider enabled for active trading. Please enable in credential admin.")
+    idx = candidates[0]
+    return {
+        key.replace(f"_{idx}", ""): v
+        for key, v in all_creds.items()
+        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
+    }
 
 config = get_bot_config()
-screener_secrets = get_screener_secrets()
+screener_creds = get_trading_screener_creds()
+SCREENER_API_KEY = screener_creds.get("SCREENER_API_KEY", "")
+SCREENER_SECRET_KEY = screener_creds.get("SCREENER_SECRET_KEY", "")
+SCREENER_USERNAME = screener_creds.get("SCREENER_USERNAME", "")
+SCREENER_PASSWORD = screener_creds.get("SCREENER_PASSWORD", "")
+SCREENER_URL = screener_creds.get("SCREENER_URL", "https://data.alpaca.markets")
+SCREENER_TOKEN = screener_creds.get("SCREENER_TOKEN", "")
 
-# Support multiple providers indexed generically, pick Finnhub creds by provider key
-def find_finnhub_credentials():
-    for i in range(1, 20):
-        provider_key = f"PROVIDER_{i:02d}"
-        creds_prefix = f"_{i:02d}"
-        if screener_secrets.get(provider_key, "").upper() == "FINNHUB":
-            return {
-                "api_key": screener_secrets.get(f"SCREENER_API_KEY{creds_prefix}", ""),
-                "token": screener_secrets.get(f"SCREENER_TOKEN{creds_prefix}", ""),
-                "url": screener_secrets.get(f"SCREENER_URL{creds_prefix}", "https://finnhub.io/api/v1/"),
-                "username": screener_secrets.get(f"SCREENER_USERNAME{creds_prefix}", ""),
-                "password": screener_secrets.get(f"SCREENER_PASSWORD{creds_prefix}", ""),
-            }
-    return {}
+HEADERS = {
+    "APCA-API-KEY-ID": SCREENER_API_KEY,
+    "APCA-API-SECRET-KEY": SCREENER_SECRET_KEY,
+    "Authorization": f"Bearer {SCREENER_TOKEN}" if SCREENER_TOKEN else ""
+}
 
-finnhub_creds = find_finnhub_credentials()
-SCREENER_API_KEY = finnhub_creds.get("api_key", "") or finnhub_creds.get("token", "")
-SCREENER_URL = finnhub_creds.get("url", "https://finnhub.io/api/v1/")
-SCREENER_USERNAME = finnhub_creds.get("username", "")
-SCREENER_PASSWORD = finnhub_creds.get("password", "")
-
-LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
 FRACTIONAL = config.get("FRACTIONAL", True)
-STRATEGY_SLEEP_TIME = float(config.get("STRATEGY_SLEEP_TIME", 0.03))
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
-TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
-
-def is_test_mode_active():
-    return TEST_MODE_FLAG.exists()
+LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
 
 def log(msg):
     if LOG_LEVEL == "verbose":
-        print(msg)
+        print(f"[Alpaca Screener] {msg}")
 
-class FinnhubScreener(ScreenerBase):
+class AlpacaScreener(ScreenerBase):
     """
-    Generic screener: loads eligible symbols from universe cache,
-    fetches latest quotes from SCREENER_URL using SCREENER_API_KEY,
-    filters per strategy, test mode aware.
-    Uses STRATEGY_SLEEP_TIME from env config for API rate limiting.
+    Alpaca screener: loads eligible symbols from universe cache,
+    fetches latest quotes from Alpaca, filters per strategy.
     """
     def fetch_live_quotes(self, symbols):
         """
-        Fetches latest price/open/vwap for each symbol using generic screener API.
+        Fetches latest price/open/vwap for each symbol using Alpaca API.
         Returns list of dicts: [{"symbol":..., "c":..., "o":..., "vwap":...}, ...]
         """
         quotes = []
         for idx, symbol in enumerate(symbols):
-            url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
+            url_bars = f"{SCREENER_URL.rstrip('/')}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=1"
             auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
             try:
-                resp = requests.get(url, timeout=API_TIMEOUT, auth=auth)
-                if resp.status_code != 200:
-                    log(f"Error fetching quote for {symbol}: {resp.status_code}")
+                bars_resp = requests.get(url_bars, headers={k: v for k, v in HEADERS.items() if v}, timeout=API_TIMEOUT, auth=auth)
+                if bars_resp.status_code != 200:
+                    log(f"Error fetching bars for {symbol}: HTTP {bars_resp.status_code}")
                     continue
-                data = resp.json()
-                c = float(data.get("c", 0))
-                o = float(data.get("o", 0))
-                vwap = float(data.get("vwap", 0)) if "vwap" in data and data.get("vwap", 0) else (c if c else 0)
+                bars = bars_resp.json().get("bars", [])
+                if not bars:
+                    log(f"No bars data for {symbol}")
+                    continue
+                bar = bars[0]
+                current = float(bar.get("c", 0))
+                open_ = float(bar.get("o", 0))
+                vwap = (bar["h"] + bar["l"] + bar["c"]) / 3 if all(k in bar for k in ("h", "l", "c")) else current
                 quotes.append({
                     "symbol": symbol,
-                    "c": c,
-                    "o": o,
+                    "c": current,
+                    "o": open_,
                     "vwap": vwap
                 })
             except Exception as e:
                 log(f"Exception fetching quote for {symbol}: {e}")
                 continue
-            if idx % 50 == 0:
+            if idx % 50 == 0 and idx > 0:
                 log(f"Fetched {idx} quotes...")
-            time.sleep(STRATEGY_SLEEP_TIME)
+            time.sleep(0.2)
         return quotes
 
     def filter_candidates(self, quotes):
         """
         Filters the list of quote dicts using price, gap, and other rules.
-        TEST_MODE: Only price filter, returns first N passing.
         Returns eligible symbol dicts.
         """
         strategy = self.env.get("STRATEGY_NAME", "open")
@@ -103,9 +111,7 @@ class FinnhubScreener(ScreenerBase):
         min_cap = float(self.env.get(min_cap_key, 2e9))
         max_cap = float(self.env.get(max_cap_key, 1e10))
         limit = int(self.env.get("SCREENER_LIMIT", 3))
-        test_mode_active = is_test_mode_active()
 
-        # Use marketCap from universe cache if available
         try:
             universe_cache = {s["symbol"]: s for s in load_universe_cache()}
         except Exception:
@@ -117,10 +123,8 @@ class FinnhubScreener(ScreenerBase):
             current = float(q.get("c", 0))
             open_ = float(q.get("o", 0))
             vwap = float(q.get("vwap", 0))
-
             if current <= 0 or open_ <= 0 or vwap <= 0:
                 continue
-
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
             is_fractional = universe_cache.get(symbol, {}).get("isFractional", None)
@@ -135,7 +139,6 @@ class FinnhubScreener(ScreenerBase):
                 "open": open_
             })
 
-        # Centralized filter (no placeholders)
         filtered = core_filter_symbols(
             price_candidates,
             exchanges=["US"],
@@ -155,22 +158,9 @@ class FinnhubScreener(ScreenerBase):
             current = q["price"]
             open_ = q["open"]
             vwap = q["vwap"]
-
-            if test_mode_active:
-                results.append({
-                    "symbol": symbol,
-                    "price": current,
-                    "vwap": vwap,
-                    "momentum": abs(current - open_) / open_
-                })
-                if len(results) >= limit:
-                    break
-                continue
-
             gap = abs((current - open_) / open_)
             if gap > max_gap:
                 continue
-
             momentum = abs(current - open_) / open_
             results.append({
                 "symbol": symbol,
@@ -178,9 +168,5 @@ class FinnhubScreener(ScreenerBase):
                 "vwap": vwap,
                 "momentum": momentum
             })
-
-        if not test_mode_active:
-            results.sort(key=lambda x: x["momentum"], reverse=True)
-            return results[:limit]
-        else:
-            return results[:limit]
+        results.sort(key=lambda x: x["momentum"], reverse=True)
+        return results

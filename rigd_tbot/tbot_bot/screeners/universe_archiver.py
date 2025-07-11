@@ -95,7 +95,6 @@ def restore_latest_blocklist():
         return True
     return False
 
-# Example CLI usage:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Universe/blocklist archival utility")

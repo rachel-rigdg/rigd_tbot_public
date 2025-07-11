@@ -27,7 +27,6 @@ def load_blocklist(path: str) -> Set[str]:
         for line in f:
             line = line.strip().upper()
             if line and not line.startswith("#"):
-                # Only add symbol (first comma)
                 syms.add(line.split(",", 1)[0])
     return syms
 
@@ -39,7 +38,6 @@ def validate_universe(path: str) -> bool:
     except Exception as e:
         print(f"  ERROR: Failed to load JSON: {e}")
         return False
-    # Root type
     if isinstance(data, dict) and "symbols" in data:
         symbols = data["symbols"]
         schema = data.get("schema_version")
@@ -58,14 +56,12 @@ def validate_universe(path: str) -> bool:
         print("  ERROR: Symbols field is not a list")
         return False
 
-    # Deduplication check
     syms = [s.get("symbol", "").upper() for s in symbols if "symbol" in s]
     dups = set([s for s in syms if syms.count(s) > 1])
     if dups:
         print(f"  ERROR: Duplicate symbols found: {dups}")
         return False
 
-    # Field compliance
     bad = []
     for s in symbols:
         missing = [k for k in REQUIRED_FIELDS if k not in s or s[k] in (None, "", "None")]
