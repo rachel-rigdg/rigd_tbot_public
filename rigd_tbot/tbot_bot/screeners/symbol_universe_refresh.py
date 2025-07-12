@@ -88,7 +88,7 @@ def fetch_symbols_with_provider(env):
         raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
     merged_config = env.copy()
     merged_config.update(screener_secrets)
-    provider = ProviderClass(merged_config, screener_secrets)
+    provider = ProviderClass(merged_config)  # FIX: only pass config
     return provider.fetch_symbols()
 
 def main():

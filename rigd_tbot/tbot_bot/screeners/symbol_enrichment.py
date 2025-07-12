@@ -105,7 +105,7 @@ def main():
         raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
     merged_config = env.copy()
     merged_config.update(screener_secrets)
-    provider = ProviderClass(merged_config, screener_secrets)
+    provider = ProviderClass(merged_config)  # FIX: only pass config
 
     symbols = [s for s in normalize_symbols(unfiltered) if s.get("symbol") not in blocklist]
     all_symbols = [s["symbol"] for s in symbols if "symbol" in s]
