@@ -1,6 +1,6 @@
 # tbot_web/py/screener_credentials_web.py
 # UPDATE: Adds support for Universe, Trading, and Enrichment usage flags in Add/Edit, saving "UNIVERSE_ENABLED_{idx}", "TRADING_ENABLED_{idx}", and "ENRICHMENT_ENABLED_{idx}".
-# Fully enforces the new central usage flag schema.
+# Fully enforces the new central usage flag schema with strict lowercase 'true'/'false' and trimmed values.
 
 import os
 import json
@@ -43,13 +43,17 @@ def unpack_credentials(creds: dict) -> dict:
     for k, v in creds.items():
         m = re.match(r'^PROVIDER_(\d{2})$', k)
         if m:
-            provider_indices[m.group(1)] = v.upper()
+            provider_indices[m.group(1)] = v.upper().strip() if isinstance(v, str) else v
     for idx, pname in provider_indices.items():
         providers[pname] = {}
         for k, v in creds.items():
             if k.endswith(f"_{idx}") and not k.startswith("PROVIDER_"):
                 base_key = k.rsplit("_", 1)[0]
-                providers[pname][base_key] = v
+                # Normalize usage flags to lowercase trimmed strings
+                if base_key in USAGE_KEYS:
+                    providers[pname][base_key] = (v.strip().lower() if isinstance(v, str) else v)
+                else:
+                    providers[pname][base_key] = v
     return providers
 
 def get_next_index(creds):

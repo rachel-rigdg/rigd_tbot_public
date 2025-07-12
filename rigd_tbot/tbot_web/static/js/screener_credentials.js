@@ -32,21 +32,9 @@ function showEditForm(provider) {
     clearCredentialFields();
     if (provider && window.allCreds.hasOwnProperty(provider)) {
         populateCredentialFields(provider);
-        if(window.allCreds[provider]["UNIVERSE_ENABLED"] === "true") {
-            document.getElementById("universe_enabled").checked = true;
-        } else {
-            document.getElementById("universe_enabled").checked = false;
-        }
-        if(window.allCreds[provider]["TRADING_ENABLED"] === "true") {
-            document.getElementById("trading_enabled").checked = true;
-        } else {
-            document.getElementById("trading_enabled").checked = false;
-        }
-        if(window.allCreds[provider]["ENRICHMENT_ENABLED"] === "true") {
-            document.getElementById("enrichment_enabled").checked = true;
-        } else {
-            document.getElementById("enrichment_enabled").checked = false;
-        }
+        document.getElementById("universe_enabled").checked = window.allCreds[provider]["UNIVERSE_ENABLED"] === "true";
+        document.getElementById("trading_enabled").checked = window.allCreds[provider]["TRADING_ENABLED"] === "true";
+        document.getElementById("enrichment_enabled").checked = window.allCreds[provider]["ENRICHMENT_ENABLED"] === "true";
     } else {
         document.getElementById("universe_enabled").checked = false;
         document.getElementById("trading_enabled").checked = false;
@@ -74,11 +62,7 @@ function populateCredentialFields(provider) {
 function updateCredentialFormAction(provider) {
     const form = document.getElementById("credential-form");
     if (!form) return;
-    if (provider && window.allCreds.hasOwnProperty(provider)) {
-        form.action = "/screener_credentials/update";
-    } else {
-        form.action = "/screener_credentials/add";
-    }
+    form.action = (provider && window.allCreds.hasOwnProperty(provider)) ? "/screener_credentials/update" : "/screener_credentials/add";
 }
 
 function cancelEdit() {

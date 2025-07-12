@@ -39,7 +39,6 @@ def read_nasdaq_txt_symbols():
         raise RuntimeError(f"Nasdaq listed txt file missing: {NASDAQ_TXT_PATH}")
     symbols = []
     with open(NASDAQ_TXT_PATH, "r", encoding="utf-8") as f:
-        # Skip header line if present
         for line in f:
             line = line.strip()
             if not line or line.startswith("Symbol|"):
@@ -58,7 +57,7 @@ def get_enrichment_provider_creds():
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"ENRICHMENT_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
+           and all_creds.get(f"ENRICHMENT_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
            and not all_creds.get(f"SCREENER_NAME_{k.split('_')[-1]}", "").upper().endswith("_TXT")
     ]
     if not provider_indices:
