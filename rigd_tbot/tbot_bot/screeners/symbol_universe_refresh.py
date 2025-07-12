@@ -4,6 +4,7 @@
 import sys
 import json
 import os
+import time
 from datetime import datetime, timezone
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
@@ -55,6 +56,7 @@ def main():
     batch_size = 100
     blocklist_path = BLOCKLIST_PATH
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
+    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
 
     log_progress("Universe build parameters", {
         "exchanges": exchanges,
@@ -124,6 +126,7 @@ def main():
         })
         if enriched_count >= max_size:
             break
+        time.sleep(sleep_time)
 
     # Finalize: copy partial.json to final universe
     try:

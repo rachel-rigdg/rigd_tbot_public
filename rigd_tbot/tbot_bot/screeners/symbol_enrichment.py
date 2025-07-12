@@ -52,7 +52,7 @@ def get_enrichment_provider_creds():
 
 def main():
     env = load_env_bot_config()
-    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 0.5))
+    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
     try:
         screener_secrets = get_enrichment_provider_creds()
@@ -72,7 +72,6 @@ def main():
     merged_config.update(screener_secrets)
     provider = ProviderClass(merged_config)
 
-    # Load raw symbol source (e.g. nasdaqlisted.txt already parsed into unfiltered cache)
     unfiltered = load_unfiltered_cache()
     if not unfiltered or len(unfiltered) < 1:
         log_progress("No symbols to enrich (unfiltered cache empty or missing).")
@@ -90,7 +89,7 @@ def main():
     enriched_count = 0
     blocklisted_count = 0
 
-    BATCH_SIZE = 100
+    BATCH_SIZE = 1
     total_batches = (len(symbol_ids) + BATCH_SIZE - 1) // BATCH_SIZE
 
     for i in range(0, len(symbol_ids), BATCH_SIZE):
@@ -103,7 +102,6 @@ def main():
         except Exception as e:
             log_progress("Failed to fetch quotes for batch", {"error": str(e), "batch": batch_syms})
             print(f"[symbol_enrichment] Batch {batch_num} failed: {e}", flush=True)
-            # Blocklist only on total batch fetch failure (transient failures do not blocklist individual symbols)
             for sym in batch_syms:
                 atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z\n")
                 blocklisted_count += 1
