@@ -1,7 +1,7 @@
 # tbot_bot/support/secrets_manager.py
 # Fully compliant with modular, indexed, secure screener credential management.
 # - Supports dynamic provider indexing (PROVIDER_01, PROVIDER_02, ...).
-# - Usage flags (UNIVERSE_ENABLED, TRADING_ENABLED) always present per provider.
+# - Usage flags (UNIVERSE_ENABLED, TRADING_ENABLED, ENRICHMENT_ENABLED) always present per provider.
 # - Atomic encrypted file I/O.
 # - UTC audit log for all add/update/delete.
 # - Never stores or logs secrets in plaintext.
@@ -33,7 +33,7 @@ KEY_DIR = os.path.join(
     "storage", "keys"
 )
 
-USAGE_FLAGS = ["UNIVERSE_ENABLED", "TRADING_ENABLED"]
+USAGE_FLAGS = ["UNIVERSE_ENABLED", "TRADING_ENABLED", "ENRICHMENT_ENABLED"]
 
 def _ensure_keyfile_exists(name: str):
     key_path = Path(KEY_DIR) / f"{name}.key"

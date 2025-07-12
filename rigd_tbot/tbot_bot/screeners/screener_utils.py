@@ -95,6 +95,23 @@ def get_universe_screener_secrets() -> dict:
         if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
     }
 
+def get_enrichment_provider_secrets() -> dict:
+    all_creds = load_screener_credentials()
+    provider_indices = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+           and all_creds.get(f"ENRICHMENT_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
+    ]
+    if not provider_indices:
+        raise UniverseCacheError("No screener providers enabled for enrichment. Please enable at least one with ENRICHMENT_ENABLED in the credential admin.")
+    idx = provider_indices[0]
+    return {
+        key.replace(f"_{idx}", ""): v
+        for key, v in all_creds.items()
+        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
+    }
+
 def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)
 

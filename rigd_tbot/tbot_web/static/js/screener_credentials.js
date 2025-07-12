@@ -1,6 +1,6 @@
 // tbot_web/static/js/screener_credentials.js
 // JS: UI logic, API calls, masking, save/remove, field validation.
-// 100% compliant with v046 screener credentials management spec.
+// 100% compliant with v046 screener credentials management spec, now with full ENRICHMENT_ENABLED support.
 
 document.addEventListener("DOMContentLoaded", function () {
     if (typeof window.allCreds === 'undefined') window.allCreds = {};
@@ -42,9 +42,15 @@ function showEditForm(provider) {
         } else {
             document.getElementById("trading_enabled").checked = false;
         }
+        if(window.allCreds[provider]["ENRICHMENT_ENABLED"] === "true") {
+            document.getElementById("enrichment_enabled").checked = true;
+        } else {
+            document.getElementById("enrichment_enabled").checked = false;
+        }
     } else {
         document.getElementById("universe_enabled").checked = false;
         document.getElementById("trading_enabled").checked = false;
+        document.getElementById("enrichment_enabled").checked = false;
     }
     updateCredentialFormAction(provider);
 }

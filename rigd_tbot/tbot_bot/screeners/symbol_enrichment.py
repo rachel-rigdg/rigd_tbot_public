@@ -38,11 +38,11 @@ def get_enrichment_provider_creds():
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
+           and all_creds.get(f"ENRICHMENT_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
            and not all_creds.get(f"SCREENER_NAME_{k.split('_')[-1]}", "").upper().endswith("_TXT")
     ]
     if not provider_indices:
-        raise RuntimeError("No valid enrichment provider enabled for universe build. Enable a data API provider (not *_TXT) in the credential admin.")
+        raise RuntimeError("No valid enrichment provider enabled for universe enrichment. Enable at least one API provider (not *_TXT) in the credential admin with ENRICHMENT_ENABLED checked.")
     idx = provider_indices[0]
     return {
         key.replace(f"_{idx}", ""): v
@@ -69,7 +69,7 @@ def main():
         raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
     merged_config = env.copy()
     merged_config.update(screener_secrets)
-    print("DEBUG_CREDENTIALS:", json.dumps(merged_config, indent=2))  # <<<<<< DEBUG LINE
+    print("DEBUG_CREDENTIALS:", json.dumps(merged_config, indent=2))
     provider = ProviderClass(merged_config)
 
     unfiltered = load_unfiltered_cache()
@@ -147,7 +147,6 @@ def main():
         print(f"[symbol_enrichment] Batch {batch_num} complete. Total enriched so far: {enriched_count}", flush=True)
         if enriched_count >= max_size:
             break
-        # Removed sleep here to avoid double sleeping, throttling inside provider.fetch_quotes
 
     log_progress("Enrichment complete", {
         "enriched_count": enriched_count,

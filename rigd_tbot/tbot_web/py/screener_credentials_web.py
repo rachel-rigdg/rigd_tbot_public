@@ -1,5 +1,5 @@
 # tbot_web/py/screener_credentials_web.py
-# UPDATE: Adds support for Universe and Trading usage flags in Add/Edit, saving "UNIVERSE_ENABLED_{idx}" and "TRADING_ENABLED_{idx}".
+# UPDATE: Adds support for Universe, Trading, and Enrichment usage flags in Add/Edit, saving "UNIVERSE_ENABLED_{idx}", "TRADING_ENABLED_{idx}", and "ENRICHMENT_ENABLED_{idx}".
 # Fully enforces the new central usage flag schema.
 
 import os
@@ -33,7 +33,8 @@ SCREENER_KEYS = [
 
 USAGE_KEYS = [
     "UNIVERSE_ENABLED",
-    "TRADING_ENABLED"
+    "TRADING_ENABLED",
+    "ENRICHMENT_ENABLED"
 ]
 
 def unpack_credentials(creds: dict) -> dict:
@@ -112,6 +113,7 @@ def add_credential():
     # Capture usage flags from form
     universe_enabled = request.form.get("universe_enabled", "") == "on"
     trading_enabled = request.form.get("trading_enabled", "") == "on"
+    enrichment_enabled = request.form.get("enrichment_enabled", "") == "on"
     if not values:
         flash("At least one credential field is required.", "error")
         return redirect(url_for("screener_credentials.credentials_page"))
@@ -129,6 +131,7 @@ def add_credential():
             creds[f"{k}_{idx}"] = v
         creds[f"UNIVERSE_ENABLED_{idx}"] = "true" if universe_enabled else "false"
         creds[f"TRADING_ENABLED_{idx}"] = "true" if trading_enabled else "false"
+        creds[f"ENRICHMENT_ENABLED_{idx}"] = "true" if enrichment_enabled else "false"
         save_screener_credentials(creds)
         flash(f"Added credentials for {provider}", "success")
     except Exception as e:
@@ -149,7 +152,8 @@ def update_credential():
     # Capture usage flags from form
     universe_enabled = request.form.get("universe_enabled", "") == "on"
     trading_enabled = request.form.get("trading_enabled", "") == "on"
-    if not values and not (universe_enabled or trading_enabled):
+    enrichment_enabled = request.form.get("enrichment_enabled", "") == "on"
+    if not values and not (universe_enabled or trading_enabled or enrichment_enabled):
         flash("At least one credential field or usage flag is required.", "error")
         return redirect(url_for("screener_credentials.credentials_page"))
     try:
@@ -169,6 +173,7 @@ def update_credential():
                 creds[f"{k}_{idx}"] = v
         creds[f"UNIVERSE_ENABLED_{idx}"] = "true" if universe_enabled else "false"
         creds[f"TRADING_ENABLED_{idx}"] = "true" if trading_enabled else "false"
+        creds[f"ENRICHMENT_ENABLED_{idx}"] = "true" if enrichment_enabled else "false"
         save_screener_credentials(creds)
         flash(f"Updated credentials for {provider}", "success")
     except Exception as e:
