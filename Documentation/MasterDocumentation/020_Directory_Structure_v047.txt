@@ -233,15 +233,10 @@ rigd_tbot/
 │   │
 │   ├── screeners/			            	# Screener & Symbol Selection, staged universe/blocklist build, API quota minimization, modular providers
 │   │   ├── providers/                              	# Pure data fetch adapters, stateless, config-injected
-│   │   │   ├── alpaca_provider.py                  	# Alpaca provider adapter: fetches quotes with injected credentials, no internal env reads
 │   │   │   ├── finnhub_provider.py                 	# Finnhub provider adapter: fetches symbols and quotes via injected API keys/config
 │   │   │   ├── ibkr_provider.py                    	# IBKR provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   ├── polygon_provider.py                 	# Polygon provider adapter: fetches symbols with injected API keys/config
 │   │   │   ├── nasdaq_provider.py                    # NASDAQ provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   ├── nasdaq_txt_provider.py                # Nasdaqlisted.txt adapter: loads symbols from files, no internal config reads
 │   │   │   ├── nyse_provider.py                      # NYSE provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   ├── other_txt_provider.py                 # Other exchanges TXT adapter: loads symbols, injected config if needed
-│   │   │   ├── tradier_provider.py                 	# Tradier provider adapter: fetches quotes and symbols with injected config only
 │   │   │   └── yahoo_provider.py                      # Yahoo provider adapter: fetches symbols via CSV/web scraping, injected config if any
 │   │   │
 │   │   ├── screeners/                              	# Runtime filter modules using providers' data
@@ -250,12 +245,13 @@ rigd_tbot/
 │   │   │   ├── ibkr_screener.py                           # IBKR screener: runtime quote filtering; uses provider adapter for fetches
 │   │   │   └── tradier_screener.py                        # Tradier screener: runtime quote filtering; uses provider adapter for fetches
 │   │   │
+│   │   ├── blocklist_manager.py                        # Blocklist manager: add/remove/update, timestamps, archival, polling/recovery, UI integration - Centralized blocklist management for staged symbol universe builds and daily universe maintenance.
 │   │   ├── provider_base.py                           # Abstract base class/interface for all provider adapters: standardizes fetch_symbols method
 │   │   ├── provider_registry.py                       # Maps provider strings to adapter classes; single source for dynamic provider loading
-│   │   ├── blocklist_manager.py                       # Blocklist manager: add/remove/update, timestamps, archival, polling/recovery, UI integration
 │   │   ├── screener_base.py                           # Abstract screener base: core interface, loads universe, wires modules, calls providers, credential loader
 │   │   ├── screener_filter.py                         # Symbol normalization/filtering: blocklist-first, broker/fractional-aware, spec-compliant, dedupe logic
 │   │   ├── screener_utils.py                          # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
+│   │   ├── symbol_enrichment.py                        # Stage 2: Enriches symbols in symbol_universe.unfiltered.json with price, market cap, and volume via active enrichment provider (e.g. Finnhub).
 │   │   ├── symbol_source_loader.py                    # Orchestrates symbol source loading: calls provider adapters with injected config, normalizes and merges symbols
 │   │   ├── symbol_universe_refresh.py                 # Orchestrates staged, free-first universe/blocklist build, crash-resume, multi-pass output, dynamic provider calls
 │   │   ├── universe_archiver.py                       # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)

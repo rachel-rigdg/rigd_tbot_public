@@ -4,6 +4,7 @@
 alpaca-trade-api==3.2.0           # Alpaca trading integration
 ib_insync==0.9.83                 # Interactive Brokers trading integration
 finnhub-python==2.4.17            # Finnhub stock screener & data
+yfinance==0.2.40                  # Yahoo Finance integration
 
 # === Networking & Requests ===
 requests==2.31.0                  # HTTP requests (used by Finnhub, others)
