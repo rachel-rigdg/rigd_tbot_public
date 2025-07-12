@@ -9,6 +9,7 @@ from typing import Type, Dict, Optional
 from tbot_bot.screeners.providers.finnhub_provider import FinnhubProvider
 from tbot_bot.screeners.providers.ibkr_provider import IBKRProvider
 from tbot_bot.screeners.providers.nasdaq_provider import NasdaqProvider
+from tbot_bot.screeners.providers.nasdaq_txt_provider import NasdaqTxtProvider
 from tbot_bot.screeners.providers.nyse_provider import NyseProvider
 from tbot_bot.screeners.providers.yahoo_provider import YahooProvider
 

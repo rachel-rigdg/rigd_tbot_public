@@ -231,35 +231,36 @@ rigd_tbot/
 │   │   ├── tbot_supervisor.py                      # CENTRAL SUPERVISOR. Manages all bot phase/state transitions, persistent monitoring, and all subprocess lifecycle. Only one instance allowed; always launched by main.py if present. Handles/waits for and may restart monitor, runtime, or other persistent bot subprocesses. Never runs strategy code directly.
 │   │   └── watchdog_bot.py                         # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
 │   │
-│   ├── screeners/			            	# Screener & Symbol Selection, staged universe/blocklist build, API quota minimization, modular providers
-│   │   ├── providers/                              	# Pure data fetch adapters, stateless, config-injected
-│   │   │   ├── finnhub_provider.py                 	# Finnhub provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   ├── ibkr_provider.py                    	# IBKR provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   ├── nasdaq_provider.py                    # NASDAQ provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   ├── nyse_provider.py                      # NYSE provider adapter: fetches symbols and quotes via injected API keys/config
-│   │   │   └── yahoo_provider.py                      # Yahoo provider adapter: fetches symbols via CSV/web scraping, injected config if any
+│   ├── screeners/			            	# Screener & Symbol Selection: staged universe build (nasdaqlisted.txt + yfinance enrichment), atomic batch writes, blocklist, spec-compliant, quota-efficient, modular providers
+│   │   ├── providers/                              	# Pure data fetch/enrichment adapters, stateless, config-injected only
+│   │   │   ├── finnhub_provider.py                 	# Finnhub provider adapter: fetches symbols/quotes via injected API keys/config
+│   │   │   ├── ibkr_provider.py                    	# IBKR provider adapter: fetches symbols/quotes via injected API keys/config
+│   │   │   ├── nasdaq_provider.py                   # NASDAQ provider adapter: fetches symbols/quotes via injected API keys/config
+│   │   │   ├── nasdaq_txt_provider.py               # Nasdaqlisted.txt provider adapter: downloads/parses official NASDAQ symbol list (no credentials needed); used for universe seed
+│   │   │   ├── nyse_provider.py                     # NYSE provider adapter: fetches symbols/quotes via injected API keys/config
+│   │   │   └── yahoo_provider.py                    # Yahoo (yfinance) provider adapter: enriches symbols with price, market cap, and volume data for universe enrichment
 │   │   │
-│   │   ├── screeners/                              	# Runtime filter modules using providers' data
-│   │   │   ├── alpaca_screener.py                         # Alpaca screener: runtime quote filtering; delegates symbol/quote fetch to provider adapters
-│   │   │   ├── finnhub_screener.py                        # Finnhub screener: runtime quote filtering; uses provider adapter for fetches
-│   │   │   ├── ibkr_screener.py                           # IBKR screener: runtime quote filtering; uses provider adapter for fetches
-│   │   │   └── tradier_screener.py                        # Tradier screener: runtime quote filtering; uses provider adapter for fetches
+│   │   ├── screeners/                             	# Runtime filter modules using providers' data (for screening, not universe build)
+│   │   │   ├── alpaca_screener.py                  # Alpaca screener: runtime quote filtering; delegates symbol/quote fetch to provider adapters
+│   │   │   ├── finnhub_screener.py                 # Finnhub screener: runtime quote filtering; uses provider adapter for fetches
+│   │   │   ├── ibkr_screener.py                    # IBKR screener: runtime quote filtering; uses provider adapter for fetches
+│   │   │   └── tradier_screener.py                 # Tradier screener: runtime quote filtering; uses provider adapter for fetches
 │   │   │
-│   │   ├── blocklist_manager.py                        # Blocklist manager: add/remove/update, timestamps, archival, polling/recovery, UI integration - Centralized blocklist management for staged symbol universe builds and daily universe maintenance.
-│   │   ├── provider_base.py                           # Abstract base class/interface for all provider adapters: standardizes fetch_symbols method
-│   │   ├── provider_registry.py                       # Maps provider strings to adapter classes; single source for dynamic provider loading
-│   │   ├── screener_base.py                           # Abstract screener base: core interface, loads universe, wires modules, calls providers, credential loader
-│   │   ├── screener_filter.py                         # Symbol normalization/filtering: blocklist-first, broker/fractional-aware, spec-compliant, dedupe logic
-│   │   ├── screener_utils.py                          # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
-│   │   ├── symbol_enrichment.py                        # Stage 2: Enriches symbols in symbol_universe.unfiltered.json with price, market cap, and volume via active enrichment provider (e.g. Finnhub).
-│   │   ├── symbol_source_loader.py                    # Orchestrates symbol source loading: calls provider adapters with injected config, normalizes and merges symbols
-│   │   ├── symbol_universe_refresh.py                 # Orchestrates staged, free-first universe/blocklist build, crash-resume, multi-pass output, dynamic provider calls
-│   │   ├── universe_orchestrator.py                    # Orchestrates the full nightly universe build process by running: symbol_universe_refresh.py (fetch symbols, write unfiltered universe) AND symbol_enrichment.py (enrich, filter, blocklist, write final universe)
-│   │   ├── universe_archiver.py                       # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
-│   │   ├── universe_diff.py                           # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
-│   │   ├── universe_logger.py                         # Dedicated, UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions
-│   │   ├── universe_rebuild_cli.py                    # CLI to trigger universe/blocklist rebuild, validation, archival, manual recovery/force rebuild
-│   │   └── universe_validation.py                     # Full validation/QA/drift/field/spec checks for universes/blocklists, dedupe, schema, credential/field presence
+│   │   ├── blocklist_manager.py                    # Blocklist manager: add/remove/update symbols, reasons, timestamps; atomic writes; used in universe filter pipeline and daily ops
+│   │   ├── provider_base.py                        # Abstract base class/interface for all provider adapters: requires fetch_symbols and fetch_quotes interface
+│   │   ├── provider_registry.py                    # Maps provider strings to adapter classes (including nasdaq_txt_provider); single source for dynamic provider loading
+│   │   ├── screener_base.py                        # Abstract screener base: core interface, loads universe, wires modules, calls providers, credential loader
+│   │   ├── screener_filter.py                      # Symbol normalization/filtering: blocklist-first, spec-compliant, dedupe logic, universe batch filter
+│   │   ├── screener_utils.py                       # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
+│   │   ├── symbol_enrichment.py                    # Stage 2: Enrichment—reads nasdaqlisted.txt, enriches each symbol via yfinance, atomically appends enriched symbol to unfiltered.json, writes blocklist for failures, partial.json for filtered
+│   │   ├── symbol_source_loader.py                 # Loads all symbol sources (CSV, API, txt) using provider adapters, normalizes and merges for universe build
+│   │   ├── symbol_universe_refresh.py              # Orchestrates staged, batchwise universe build: reads nasdaqlisted.txt, enriches each batch with yfinance, atomically updates unfiltered.json/partial.json/final.json, blocklists rejects
+│   │   ├── universe_orchestrator.py                # Main entry: runs symbol_universe_refresh.py (fetch/enrich/filter/write), atomic/batch, logs progress; triggers full nightly build
+│   │   ├── universe_archiver.py                    # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
+│   │   ├── universe_diff.py                        # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
+│   │   ├── universe_logger.py                      # Dedicated UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions
+│   │   ├── universe_rebuild_cli.py                 # CLI to trigger universe/blocklist rebuild, validation, archival, manual recovery/force rebuild
+│   │   └── universe_validation.py                  # Full validation/QA/drift/field/spec checks for universes/blocklists, dedupe, schema, credential/field presence
 │   │
 │   ├── storage/				                    # Persistent runtime data: encrypted secrets, keys, backups, and exports
 │   │   ├── backups/                                # Daily encrypted ledger/config backups (UTC timestamped)

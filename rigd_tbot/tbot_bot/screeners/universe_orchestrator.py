@@ -14,7 +14,7 @@ def log(msg):
 
 def run_module(module_path):
     log(f"Starting {module_path}...")
-    proc = subprocess.run([sys.executable, module_path.replace('.', '/') + '.py'], capture_output=True, text=True)
+    proc = subprocess.run([sys.executable, "-m", module_path], capture_output=True, text=True)
     if proc.returncode != 0:
         log(f"{module_path} failed with exit code {proc.returncode}")
         print(proc.stdout)
