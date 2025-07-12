@@ -18,7 +18,6 @@ class YahooProvider(ProviderBase):
     def __init__(self, config: Optional[Dict] = None):
         super().__init__(config)
         self.symbol_list = self.config.get("symbol_list")
-        self.csv_path = self.config.get("csv_path", "yahoo_symbols.csv")
         self.log_level = str(self.config.get("LOG_LEVEL", "silent")).lower()
 
     def log(self, msg):
@@ -27,37 +26,16 @@ class YahooProvider(ProviderBase):
 
     def fetch_symbols(self) -> List[Dict]:
         """
-        Loads symbols from provided symbol list or Yahoo-exported CSV file (or compatible).
-        Returns list of dicts: {symbol, exchange, companyName, sector, industry}
+        Loads symbols from provided symbol list.
+        Returns list of dicts: {symbol}
         """
         syms = []
         if self.symbol_list and isinstance(self.symbol_list, list):
             syms = [{"symbol": s.strip().upper()} for s in self.symbol_list if s.strip()]
             self.log(f"Loaded {len(syms)} symbols from provided symbol_list.")
             return syms
-
-        path = self.csv_path
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"[YahooProvider] Symbol CSV not found at path: {path}")
-        import csv
-        with open(path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                symbol = row.get("Symbol") or row.get("symbol")
-                name = row.get("Name") or row.get("Company Name") or ""
-                exch = row.get("Exchange", "US")
-                sector = row.get("Sector", "")
-                industry = row.get("Industry", "")
-                if symbol and name and "Test Issue" not in name:
-                    syms.append({
-                        "symbol": symbol.strip().upper(),
-                        "exchange": exch.strip().upper() if exch else "US",
-                        "companyName": name.strip(),
-                        "sector": sector.strip(),
-                        "industry": industry.strip()
-                    })
-        self.log(f"Loaded {len(syms)} symbols from Yahoo CSV.")
-        return syms
+        self.log("No symbol_list provided to YahooProvider.")
+        return []
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
         """
@@ -99,7 +77,7 @@ class YahooProvider(ProviderBase):
 
     def fetch_universe_symbols(self, exchanges, min_price, max_price, min_cap, max_cap, blocklist, max_size) -> List[Dict]:
         """
-        ProviderBase-compliant stub for universe build. Returns all from CSV or symbol_list if present.
+        ProviderBase-compliant stub for universe build. Returns all from symbol_list if present.
         """
         try:
             symbols = self.fetch_symbols()
