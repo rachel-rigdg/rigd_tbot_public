@@ -83,6 +83,7 @@ class FinnhubProvider(ProviderBase):
         """
         quotes = []
         for idx, symbol in enumerate(symbols):
+            print(f"[FinnhubProvider][DEBUG] Fetching symbol: {symbol} (idx={idx}) using API_KEY={self.api_key[:6]}...")  # <<<<<<<<<<<<<<
             auth = (self.username, self.password) if self.username and self.password else None
             try:
                 # Retry mechanism for quote

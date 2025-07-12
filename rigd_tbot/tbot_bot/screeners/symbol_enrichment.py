@@ -52,6 +52,7 @@ def get_enrichment_provider_creds():
 
 def main():
     env = load_env_bot_config()
+    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 1.0))
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
     try:
         screener_secrets = get_enrichment_provider_creds()
@@ -89,64 +90,60 @@ def main():
     enriched_count = 0
     blocklisted_count = 0
 
-    BATCH_SIZE = 1
-    total_batches = (len(symbol_ids) + BATCH_SIZE - 1) // BATCH_SIZE
-
-    for i in range(0, len(symbol_ids), BATCH_SIZE):
-        batch_syms = symbol_ids[i:i+BATCH_SIZE]
-        batch_num = (i // BATCH_SIZE) + 1
-        print(f"[symbol_enrichment] Processing batch {batch_num} of {total_batches}, symbols {i+1}-{i+len(batch_syms)}", flush=True)
-        log_progress("Processing batch", {"batch_num": batch_num, "of": total_batches, "start_idx": i+1, "end_idx": i+len(batch_syms)})
+    for i, sym in enumerate(symbol_ids):
+        print(f"[symbol_enrichment] Processing symbol {i+1} of {len(symbol_ids)}: {sym}", flush=True)
+        log_progress("Processing symbol", {"symbol_num": i+1, "total": len(symbol_ids), "symbol": sym})
         try:
-            quotes = provider.fetch_quotes(batch_syms)
+            quotes = provider.fetch_quotes([sym])
         except Exception as e:
-            log_progress("Failed to fetch quotes for batch", {"error": str(e), "batch": batch_syms})
-            print(f"[symbol_enrichment] Batch {batch_num} failed: {e}", flush=True)
-            for sym in batch_syms:
-                atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z\n")
-                blocklisted_count += 1
+            log_progress("Failed to fetch quote for symbol", {"error": str(e), "symbol": sym})
+            print(f"[symbol_enrichment] Fetch failed for symbol {sym}: {e}", flush=True)
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z\n")
+            blocklisted_count += 1
             continue
         quote_map = {q["symbol"]: q for q in quotes if "symbol" in q}
-        for s in all_symbols[i:i+BATCH_SIZE]:
-            sym = s["symbol"]
-            q = quote_map.get(sym)
-            if not q:
-                atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_quote|{datetime.utcnow().isoformat()}Z\n")
-                blocklisted_count += 1
-                continue
-            price = q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
-            cap = q.get("marketCap") or q.get("market_cap")
-            volume = q.get("v") or q.get("volume")
-            try:
-                price = float(price)
-                cap = float(cap) if cap is not None else None
-            except Exception:
-                atomic_append_text(BLOCKLIST_PATH, f"{sym}|invalid_fields|{datetime.utcnow().isoformat()}Z\n")
-                blocklisted_count += 1
-                continue
-            record = dict(s)
-            record["lastClose"] = price
-            if cap is not None:
-                record["marketCap"] = cap
-            if volume is not None:
-                record["volume"] = volume
-            for k in q:
-                if k not in record:
-                    record[k] = q[k]
-            atomic_append_json(UNFILTERED_PATH, record)
-            filter_result, reason = passes_filter(record, exchanges, min_price, max_price, min_cap, max_cap)
-            if filter_result:
-                atomic_append_json(PARTIAL_PATH, record)
-                enriched_count += 1
-            else:
-                atomic_append_text(BLOCKLIST_PATH, f"{sym}|{reason}|{datetime.utcnow().isoformat()}Z\n")
-                blocklisted_count += 1
-            if enriched_count >= max_size:
-                print(f"[symbol_enrichment] Reached max universe size {max_size}, stopping enrichment.", flush=True)
-                break
-        print(f"[symbol_enrichment] Batch {batch_num} complete. Total enriched so far: {enriched_count}", flush=True)
+        s = next((x for x in all_symbols if x.get("symbol") == sym), None)
+        if not s:
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_source|{datetime.utcnow().isoformat()}Z\n")
+            blocklisted_count += 1
+            continue
+        q = quote_map.get(sym)
+        if not q:
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_quote|{datetime.utcnow().isoformat()}Z\n")
+            blocklisted_count += 1
+            continue
+        price = q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
+        cap = q.get("marketCap") or q.get("market_cap")
+        volume = q.get("v") or q.get("volume")
+        try:
+            price = float(price)
+            cap = float(cap) if cap is not None else None
+        except Exception:
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|invalid_fields|{datetime.utcnow().isoformat()}Z\n")
+            blocklisted_count += 1
+            continue
+        record = dict(s)
+        record["lastClose"] = price
+        if cap is not None:
+            record["marketCap"] = cap
+        if volume is not None:
+            record["volume"] = volume
+        for k in q:
+            if k not in record:
+                record[k] = q[k]
+        atomic_append_json(UNFILTERED_PATH, record)
+        filter_result, reason = passes_filter(record, exchanges, min_price, max_price, min_cap, max_cap)
+        if filter_result:
+            atomic_append_json(PARTIAL_PATH, record)
+            enriched_count += 1
+        else:
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|{reason}|{datetime.utcnow().isoformat()}Z\n")
+            blocklisted_count += 1
         if enriched_count >= max_size:
+            print(f"[symbol_enrichment] Reached max universe size {max_size}, stopping enrichment.", flush=True)
             break
+        print(f"[symbol_enrichment] Symbol {i+1} complete. Total enriched so far: {enriched_count}", flush=True)
+        time.sleep(sleep_time)
 
     log_progress("Enrichment complete", {
         "enriched_count": enriched_count,

@@ -23,7 +23,9 @@ def run_module(module_path):
     log(f"{module_path} completed successfully.")
 
 def main():
+    # Step 1: Run symbol_universe_refresh to build the initial unfiltered symbol cache
     run_module("tbot_bot.screeners.symbol_universe_refresh")
+    # Step 2: Run symbol_enrichment to enrich symbols (slow, throttled, per-symbol)
     run_module("tbot_bot.screeners.symbol_enrichment")
     log("Universe orchestration completed successfully.")
 
