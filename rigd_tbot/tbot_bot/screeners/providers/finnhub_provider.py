@@ -23,7 +23,7 @@ class FinnhubProvider(ProviderBase):
             - SCREENER_URL (default: https://finnhub.io/api/v1/)
             - SCREENER_USERNAME/SCREENER_PASSWORD (rare, optional)
             - API_TIMEOUT (int, default 30)
-            - API_SLEEP (float, default 0.03)
+            - UNIVERSE_SLEEP_TIME (float, default 2.0)
             - LOG_LEVEL ('silent' or 'verbose')
         """
         merged = {}
@@ -40,7 +40,7 @@ class FinnhubProvider(ProviderBase):
         self.username = self.config.get("SCREENER_USERNAME", "")
         self.password = self.config.get("SCREENER_PASSWORD", "")
         self.timeout = int(self.config.get("API_TIMEOUT", 30))
-        self.sleep = float(self.config.get("API_SLEEP", 0.03))
+        self.sleep = float(self.config.get("UNIVERSE_SLEEP_TIME", 2.0))
         self.log_level = str(self.config.get("LOG_LEVEL", "silent")).lower()
 
     def log(self, msg):
