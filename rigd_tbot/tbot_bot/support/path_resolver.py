@@ -190,10 +190,6 @@ def resolve_screener_blocklist_path() -> str:
     return str(screeners_dir / "screener_blocklist.txt")
 
 def resolve_blocklist_archive_path(archive_date: str = None) -> str:
-    """
-    Returns path to blocklist archive, for a given date string (YYYYMMDD), or today's date.
-    Example: tbot_bot/output/screeners/blocklist_archive_20250630.txt
-    """
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
     screeners_dir.mkdir(parents=True, exist_ok=True)
@@ -202,10 +198,6 @@ def resolve_blocklist_archive_path(archive_date: str = None) -> str:
     return str(screeners_dir / f"blocklist_archive_{archive_date}.txt")
 
 def resolve_universe_archive_path(archive_date: str = None) -> str:
-    """
-    Returns path to symbol universe archive for a given date string (YYYYMMDD), or today's date.
-    Example: tbot_bot/output/screeners/symbol_universe_20250630.json
-    """
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
     screeners_dir.mkdir(parents=True, exist_ok=True)
@@ -276,6 +268,12 @@ def resolve_symbol_universe_refresh_path() -> str:
 def resolve_integration_test_runner_path() -> str:
     return resolve_test_script_path("integration_test_runner.py")
 
+def resolve_nasdaqlisted_txt_path() -> str:
+    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
+    screeners_dir = base_output_dir / "screeners"
+    screeners_dir.mkdir(parents=True, exist_ok=True)
+    return str(screeners_dir / "nasdaqlisted.txt")
+
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -320,5 +318,6 @@ __all__ = [
     "resolve_trade_logger_path",
     "resolve_status_logger_path",
     "resolve_symbol_universe_refresh_path",
-    "resolve_integration_test_runner_path"
+    "resolve_integration_test_runner_path",
+    "resolve_nasdaqlisted_txt_path"
 ]
