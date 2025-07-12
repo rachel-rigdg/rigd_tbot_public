@@ -2,7 +2,7 @@
 # Flask blueprint for universe cache and blocklist management per staged symbol universe spec.
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app, jsonify
-from tbot_bot.screeners.universe_orchestrator import main as orchestrator_main
+import subprocess
 from tbot_bot.screeners.screener_utils import load_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
 from tbot_bot.screeners.blocklist_manager import (
     add_to_blocklist,
@@ -121,8 +121,15 @@ def universe_rebuild():
         flash("Screener credentials not configured. Please configure screener credentials before building the universe.", "error")
         return redirect(url_for("universe.universe_status"))
     try:
-        orchestrator_main()
-        flash("Universe cache rebuild complete.", "success")
+        proc = subprocess.run(
+            ["python3", "tbot_bot/screeners/universe_orchestrator.py"],
+            capture_output=True,
+            text=True
+        )
+        if proc.returncode != 0:
+            flash(f"Universe cache rebuild failed: {proc.stderr}", "error")
+        else:
+            flash("Universe cache rebuild complete.", "success")
     except Exception as e:
         flash(f"Universe cache rebuild failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))

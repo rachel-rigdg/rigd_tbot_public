@@ -32,6 +32,19 @@ function showEditForm(provider) {
     clearCredentialFields();
     if (provider && window.allCreds.hasOwnProperty(provider)) {
         populateCredentialFields(provider);
+        if(window.allCreds[provider]["UNIVERSE_ENABLED"] === "true") {
+            document.getElementById("universe_enabled").checked = true;
+        } else {
+            document.getElementById("universe_enabled").checked = false;
+        }
+        if(window.allCreds[provider]["TRADING_ENABLED"] === "true") {
+            document.getElementById("trading_enabled").checked = true;
+        } else {
+            document.getElementById("trading_enabled").checked = false;
+        }
+    } else {
+        document.getElementById("universe_enabled").checked = false;
+        document.getElementById("trading_enabled").checked = false;
     }
     updateCredentialFormAction(provider);
 }
