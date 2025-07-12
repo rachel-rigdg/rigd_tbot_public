@@ -1,23 +1,18 @@
 # tbot_bot/screeners/providers/yahoo_provider.py
-# Yahoo provider adapter: fetches symbols/prices via Yahoo Finance API (yfinance), supports injected config.
-# 100% ProviderBase-compliant, stateless, config-injected only.
+# Yahoo provider adapter: fetches US equity symbols/prices via yfinance, no CSV or user list required.
 
-import os
 from typing import List, Dict, Optional
 import yfinance as yf
-
 from tbot_bot.screeners.provider_base import ProviderBase
 
 class YahooProvider(ProviderBase):
     """
     Yahoo symbol provider adapter.
-    Fetches symbols and metadata from Yahoo Finance API using yfinance.
-    Accepts injected config (may contain 'symbol_list', 'csv_path', 'LOG_LEVEL').
+    Fetches US symbols and metadata from yfinance (auto discovery).
     """
 
     def __init__(self, config: Optional[Dict] = None):
         super().__init__(config)
-        self.symbol_list = self.config.get("symbol_list")
         self.log_level = str(self.config.get("LOG_LEVEL", "silent")).lower()
 
     def log(self, msg):
@@ -26,16 +21,56 @@ class YahooProvider(ProviderBase):
 
     def fetch_symbols(self) -> List[Dict]:
         """
-        Loads symbols from provided symbol list.
-        Returns list of dicts: {symbol}
+        Uses yfinance to enumerate all US stock tickers.
+        Returns list of dicts: {symbol, exchange, companyName, sector, industry}
         """
-        syms = []
-        if self.symbol_list and isinstance(self.symbol_list, list):
-            syms = [{"symbol": s.strip().upper()} for s in self.symbol_list if s.strip()]
-            self.log(f"Loaded {len(syms)} symbols from provided symbol_list.")
-            return syms
-        self.log("No symbol_list provided to YahooProvider.")
-        return []
+        import requests
+        import time
+
+        # Use the official NASDAQ symbol list as base
+        url = "ftp://ftp.nasdaqtrader.com/SymbolDirectory/nasdaqlisted.txt"
+        try:
+            response = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&exchange=nasdaq&download=true", headers={"User-Agent": "Mozilla/5.0"})
+            data = response.json()
+            rows = data["data"]["rows"]
+            syms = []
+            for row in rows:
+                symbol = row["symbol"]
+                name = row.get("name", "")
+                if symbol and "Test Issue" not in name:
+                    syms.append({
+                        "symbol": symbol,
+                        "exchange": "NASDAQ",
+                        "companyName": name,
+                        "sector": row.get("sector", ""),
+                        "industry": row.get("industry", ""),
+                    })
+            self.log(f"Loaded {len(syms)} NASDAQ symbols from NASDAQ.com API.")
+        except Exception as e:
+            self.log(f"Failed to fetch NASDAQ symbols: {e}")
+            syms = []
+
+        # Do same for NYSE
+        try:
+            response = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&exchange=nyse&download=true", headers={"User-Agent": "Mozilla/5.0"})
+            data = response.json()
+            rows = data["data"]["rows"]
+            for row in rows:
+                symbol = row["symbol"]
+                name = row.get("name", "")
+                if symbol and "Test Issue" not in name:
+                    syms.append({
+                        "symbol": symbol,
+                        "exchange": "NYSE",
+                        "companyName": name,
+                        "sector": row.get("sector", ""),
+                        "industry": row.get("industry", ""),
+                    })
+            self.log(f"Loaded {len(rows)} NYSE symbols from NASDAQ.com API.")
+        except Exception as e:
+            self.log(f"Failed to fetch NYSE symbols: {e}")
+
+        return syms
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
         """
@@ -77,7 +112,7 @@ class YahooProvider(ProviderBase):
 
     def fetch_universe_symbols(self, exchanges, min_price, max_price, min_cap, max_cap, blocklist, max_size) -> List[Dict]:
         """
-        ProviderBase-compliant stub for universe build. Returns all from symbol_list if present.
+        ProviderBase-compliant stub for universe build. Returns all from fetch_symbols.
         """
         try:
             symbols = self.fetch_symbols()
