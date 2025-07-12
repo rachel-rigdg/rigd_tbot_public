@@ -1,5 +1,5 @@
 # tbot_bot/screeners/symbol_enrichment.py
-# Stage 2: Reads symbols from nasdaqlisted.txt, enriches each symbol using yfinance (or other API), and atomically appends enriched dict to symbol_universe.unfiltered.json.
+# Stage 2: Reads symbols from nasdaqlisted.txt, enriches each symbol using appropriate provider and API, and atomically appends enriched dict to symbol_universe.unfiltered.json.
 # Applies batch filter, blocklists failures, appends passing symbols to partial.json, blocklisted to screener_blocklist.txt. No in-memory global state.
 
 import os
@@ -52,7 +52,6 @@ def get_enrichment_provider_creds():
 
 def main():
     env = load_env_bot_config()
-    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
     try:
         screener_secrets = get_enrichment_provider_creds()
@@ -70,6 +69,7 @@ def main():
         raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
     merged_config = env.copy()
     merged_config.update(screener_secrets)
+    print("DEBUG_CREDENTIALS:", json.dumps(merged_config, indent=2))  # <<<<<< DEBUG LINE
     provider = ProviderClass(merged_config)
 
     unfiltered = load_unfiltered_cache()
@@ -147,7 +147,7 @@ def main():
         print(f"[symbol_enrichment] Batch {batch_num} complete. Total enriched so far: {enriched_count}", flush=True)
         if enriched_count >= max_size:
             break
-        time.sleep(sleep_time)
+        # Removed sleep here to avoid double sleeping, throttling inside provider.fetch_quotes
 
     log_progress("Enrichment complete", {
         "enriched_count": enriched_count,

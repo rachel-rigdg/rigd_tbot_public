@@ -23,7 +23,7 @@ class FinnhubProvider(ProviderBase):
             - SCREENER_URL (default: https://finnhub.io/api/v1/)
             - SCREENER_USERNAME/SCREENER_PASSWORD (rare, optional)
             - API_TIMEOUT (int, default 30)
-            - UNIVERSE_SLEEP_TIME (float, default 2.0)
+            - UNIVERSE_SLEEP_TIME (float, default 2.0) -- hardcoded to 2.0 here
             - LOG_LEVEL ('silent' or 'verbose')
         """
         merged = {}
@@ -40,10 +40,11 @@ class FinnhubProvider(ProviderBase):
         self.username = self.config.get("SCREENER_USERNAME", "")
         self.password = self.config.get("SCREENER_PASSWORD", "")
         self.timeout = int(self.config.get("API_TIMEOUT", 30))
-        # Always use UNIVERSE_SLEEP_TIME, fallback 2.0
-        self.sleep = float(self.config.get("UNIVERSE_SLEEP_TIME", 2.0))
+        # HARD-CODE sleep to 2.0 seconds to enforce throttling
+        self.sleep = 2.0
         self.log_level = str(self.config.get("LOG_LEVEL", "silent")).lower()
         print(f"[FinnhubProvider] Enforced sleep between all API calls: {self.sleep:.2f} seconds")
+        print(f"[FinnhubProvider] DEBUG Credentials: API_KEY={self.api_key[:6]}... URL={self.api_url}")
 
     def log(self, msg):
         if self.log_level == "verbose":

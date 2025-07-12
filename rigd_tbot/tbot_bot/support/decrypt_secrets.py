@@ -114,8 +114,14 @@ def decrypt_all_secrets(secret_names: list) -> dict:
     return result
 
 if __name__ == "__main__":
+    import sys
+    # Usage: python3 -m tbot_bot.support.decrypt_secrets <encrypted_file_basename>
+    if len(sys.argv) != 2:
+        print("Usage: python3 -m tbot_bot.support.decrypt_secrets <basename> (no .json.enc)")
+        sys.exit(1)
+    basename = sys.argv[1].replace('.json.enc','').replace('.enc','')
     try:
-        data = decrypt_json("env")  # Example: decrypt env.json.enc using env.key
+        data = decrypt_json(basename)
         print(json.dumps(data, indent=2))
     except Exception as e:
         print(f"[decrypt_secrets] {e}")
