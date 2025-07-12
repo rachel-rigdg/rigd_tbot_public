@@ -9,3 +9,5 @@ backups/
 .DS_Store
 *.sqlite
 *.log
+IBKR/
+ibgateway-stable-standalone-linux-x64.sh
