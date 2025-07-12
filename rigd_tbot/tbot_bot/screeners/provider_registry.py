@@ -15,6 +15,7 @@ from tbot_bot.screeners.providers.yahoo_provider import YahooProvider
 PROVIDER_REGISTRY: Dict[str, Type] = {
     "FINNHUB": FinnhubProvider,
     "IBKR": IBKRProvider,
+    "NASDAQ_TXT": NasdaqTxtProvider,
     "NASDAQ": NasdaqProvider,
     "NYSE": NyseProvider,
     "YAHOO": YahooProvider,
@@ -24,6 +25,7 @@ PROVIDER_MODULE_PATHS: Dict[str, str] = {
     "FINNHUB": "tbot_bot.screeners.providers.finnhub_provider",
     "IBKR": "tbot_bot.screeners.providers.ibkr_provider",
     "NASDAQ": "tbot_bot.screeners.providers.nasdaq_provider",
+    "NASDAQ_TXT": "tbot_bot.screeners.providers.nasdaq_txt_provider",
     "NYSE": "tbot_bot.screeners.providers.nyse_provider",
     "YAHOO": "tbot_bot.screeners.providers.yahoo_provider",
 }
@@ -32,6 +34,7 @@ PROVIDER_CLASS_NAMES: Dict[str, str] = {
     "FINNHUB": "FinnhubProvider",
     "IBKR": "IBKRProvider",
     "NASDAQ": "NasdaqProvider",
+    "NASDAQ_TXT": "NasdaqTxtProvider",
     "NYSE": "NyseProvider",
     "YAHOO": "YahooProvider",
 }
