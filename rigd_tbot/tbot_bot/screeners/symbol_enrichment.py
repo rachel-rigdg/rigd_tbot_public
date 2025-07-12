@@ -93,19 +93,19 @@ def main():
         screener_secrets = get_enrichment_provider_creds()
     except Exception as e:
         log_progress("No valid enrichment provider enabled. Aborting enrichment.", {"error": str(e)})
-        print(f"ERROR: {e}")
+        print(f"ERROR: {e}", flush=True)
         sys.exit(2)
     name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
     if name.endswith("_TXT"):
         log_progress("TXT provider selected as enrichment provider, aborting enrichment.", {"provider": name})
-        print(f"ERROR: TXT providers (like {name}) cannot be used for enrichment. Enable a data API provider (e.g. Finnhub, Polygon).")
+        print(f"ERROR: TXT providers (like {name}) cannot be used for enrichment. Enable a data API provider (e.g. Finnhub, Polygon).", flush=True)
         sys.exit(2)
     ProviderClass = get_provider_class(name)
     if ProviderClass is None:
         raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
     merged_config = env.copy()
     merged_config.update(screener_secrets)
-    provider = ProviderClass(merged_config)  # FIX: only pass config
+    provider = ProviderClass(merged_config)
 
     symbols = [s for s in normalize_symbols(unfiltered) if s.get("symbol") not in blocklist]
     all_symbols = [s["symbol"] for s in symbols if "symbol" in s]
@@ -117,11 +117,14 @@ def main():
 
     for i in range(0, len(all_symbols), BATCH_SIZE):
         batch = all_symbols[i:i+BATCH_SIZE]
-        print(f"[symbol_enrichment] Processing batch {i//BATCH_SIZE + 1} of {total_batches}, symbols {i+1}-{i+len(batch)}")
+        batch_num = (i // BATCH_SIZE) + 1
+        print(f"[symbol_enrichment] Processing batch {batch_num} of {total_batches}, symbols {i+1}-{i+len(batch)}", flush=True)
+        log_progress("Processing batch", {"batch_num": batch_num, "of": total_batches, "start_idx": i+1, "end_idx": i+len(batch)})
         try:
             quotes = provider.fetch_quotes(batch)
         except Exception as e:
             log_progress("Failed to fetch quotes for batch", {"error": str(e), "batch": batch})
+            print(f"[symbol_enrichment] Batch {batch_num} failed: {e}", flush=True)
             for sym in batch:
                 new_blocked.add(sym)
             continue
@@ -156,7 +159,9 @@ def main():
             enriched.append(record)
             if len(enriched) >= max_size:
                 break
+        print(f"[symbol_enrichment] Batch {batch_num} complete. Total enriched so far: {len(enriched)}", flush=True)
         if len(enriched) >= max_size:
+            print(f"[symbol_enrichment] Reached max universe size {max_size}, stopping enrichment.", flush=True)
             break
         time.sleep(sleep_time)
 
@@ -174,4 +179,5 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         log_progress("Enrichment failed and raised exception", {"error": str(e)})
+        print(f"ERROR: {e}", flush=True)
         sys.exit(1)

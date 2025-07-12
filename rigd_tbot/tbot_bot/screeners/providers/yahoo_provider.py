@@ -23,18 +23,18 @@ class YahooProvider(ProviderBase):
         """
         Uses yfinance to enumerate all US stock tickers.
         Returns list of dicts: {symbol, exchange, companyName, sector, industry}
+        Logs progress as symbols are collected.
         """
         import requests
         import time
 
-        # Use the official NASDAQ symbol list as base
-        url = "ftp://ftp.nasdaqtrader.com/SymbolDirectory/nasdaqlisted.txt"
+        syms = []
+        # Fetch NASDAQ
         try:
             response = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&exchange=nasdaq&download=true", headers={"User-Agent": "Mozilla/5.0"})
             data = response.json()
             rows = data["data"]["rows"]
-            syms = []
-            for row in rows:
+            for i, row in enumerate(rows):
                 symbol = row["symbol"]
                 name = row.get("name", "")
                 if symbol and "Test Issue" not in name:
@@ -45,17 +45,18 @@ class YahooProvider(ProviderBase):
                         "sector": row.get("sector", ""),
                         "industry": row.get("industry", ""),
                     })
-            self.log(f"Loaded {len(syms)} NASDAQ symbols from NASDAQ.com API.")
+                if i > 0 and i % 1000 == 0:
+                    self.log(f"Collected {i} NASDAQ symbols...")
+            self.log(f"Loaded {len(rows)} NASDAQ symbols from NASDAQ.com API.")
         except Exception as e:
             self.log(f"Failed to fetch NASDAQ symbols: {e}")
-            syms = []
 
-        # Do same for NYSE
+        # Fetch NYSE
         try:
             response = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&exchange=nyse&download=true", headers={"User-Agent": "Mozilla/5.0"})
             data = response.json()
             rows = data["data"]["rows"]
-            for row in rows:
+            for i, row in enumerate(rows):
                 symbol = row["symbol"]
                 name = row.get("name", "")
                 if symbol and "Test Issue" not in name:
@@ -66,10 +67,13 @@ class YahooProvider(ProviderBase):
                         "sector": row.get("sector", ""),
                         "industry": row.get("industry", ""),
                     })
+                if i > 0 and i % 1000 == 0:
+                    self.log(f"Collected {i} NYSE symbols...")
             self.log(f"Loaded {len(rows)} NYSE symbols from NASDAQ.com API.")
         except Exception as e:
             self.log(f"Failed to fetch NYSE symbols: {e}")
 
+        self.log(f"Total US symbols collected: {len(syms)}")
         return syms
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
@@ -105,7 +109,7 @@ class YahooProvider(ProviderBase):
             except Exception as e:
                 self.log(f"Exception fetching Yahoo quote for {symbol}: {e}")
                 continue
-            if idx % 50 == 0 and idx > 0:
+            if idx > 0 and idx % 100 == 0:
                 self.log(f"Fetched Yahoo quotes for {idx} symbols...")
             time.sleep(sleep_time)
         return quotes
@@ -120,3 +124,4 @@ class YahooProvider(ProviderBase):
             self.log(f"fetch_universe_symbols failed: {e}")
             return []
         return symbols
+
