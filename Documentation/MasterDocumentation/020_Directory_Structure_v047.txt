@@ -254,6 +254,7 @@ rigd_tbot/
 │   │   ├── symbol_enrichment.py                        # Stage 2: Enriches symbols in symbol_universe.unfiltered.json with price, market cap, and volume via active enrichment provider (e.g. Finnhub).
 │   │   ├── symbol_source_loader.py                    # Orchestrates symbol source loading: calls provider adapters with injected config, normalizes and merges symbols
 │   │   ├── symbol_universe_refresh.py                 # Orchestrates staged, free-first universe/blocklist build, crash-resume, multi-pass output, dynamic provider calls
+│   │   ├── universe_orchestrator.py                    # Orchestrates the full nightly universe build process by running: symbol_universe_refresh.py (fetch symbols, write unfiltered universe) AND symbol_enrichment.py (enrich, filter, blocklist, write final universe)
 │   │   ├── universe_archiver.py                       # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
 │   │   ├── universe_diff.py                           # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
 │   │   ├── universe_logger.py                         # Dedicated, UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions

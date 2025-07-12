@@ -74,7 +74,7 @@ def append_blocklist(new_block_syms):
 
 def main():
     env = load_env_bot_config()
-    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 0.3))
+    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 0.5))
     unfiltered = load_unfiltered_cache()
     if not unfiltered or len(unfiltered) < 10:
         log_progress("No symbols to enrich (unfiltered cache empty or missing).")

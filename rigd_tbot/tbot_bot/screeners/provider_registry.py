@@ -12,9 +12,7 @@ from tbot_bot.screeners.providers.ibkr_provider import IBKRProvider
 from tbot_bot.screeners.providers.polygon_provider import PolygonProvider
 from tbot_bot.screeners.providers.tradier_provider import TradierProvider
 from tbot_bot.screeners.providers.nasdaq_provider import NasdaqProvider
-from tbot_bot.screeners.providers.nasdaq_txt_provider import NasdaqTxtProvider
 from tbot_bot.screeners.providers.nyse_provider import NyseProvider
-from tbot_bot.screeners.providers.other_txt_provider import OtherTxtProvider
 from tbot_bot.screeners.providers.yahoo_provider import YahooProvider
 
 PROVIDER_REGISTRY: Dict[str, Type] = {
@@ -24,9 +22,7 @@ PROVIDER_REGISTRY: Dict[str, Type] = {
     "POLYGON": PolygonProvider,
     "TRADIER": TradierProvider,
     "NASDAQ": NasdaqProvider,
-    "NASDAQ_TXT": NasdaqTxtProvider,
     "NYSE": NyseProvider,
-    "OTHER_TXT": OtherTxtProvider,
     "YAHOO": YahooProvider,
 }
 
@@ -37,9 +33,7 @@ PROVIDER_MODULE_PATHS: Dict[str, str] = {
     "POLYGON": "tbot_bot.screeners.providers.polygon_provider",
     "TRADIER": "tbot_bot.screeners.providers.tradier_provider",
     "NASDAQ": "tbot_bot.screeners.providers.nasdaq_provider",
-    "NASDAQ_TXT": "tbot_bot.screeners.providers.nasdaq_txt_provider",
     "NYSE": "tbot_bot.screeners.providers.nyse_provider",
-    "OTHER_TXT": "tbot_bot.screeners.providers.other_txt_provider",
     "YAHOO": "tbot_bot.screeners.providers.yahoo_provider",
 }
 
@@ -50,9 +44,7 @@ PROVIDER_CLASS_NAMES: Dict[str, str] = {
     "POLYGON": "PolygonProvider",
     "TRADIER": "TradierProvider",
     "NASDAQ": "NasdaqProvider",
-    "NASDAQ_TXT": "NasdaqTxtProvider",
     "NYSE": "NyseProvider",
-    "OTHER_TXT": "OtherTxtProvider",
     "YAHOO": "YahooProvider",
 }
 

@@ -53,7 +53,7 @@ def get_universe_screener_secrets() -> dict:
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").upper() == "true"
+           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
     ]
     if not provider_indices:
         raise UniverseCacheError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
@@ -186,6 +186,7 @@ def filter_symbols(
     Supports filtering by exchange, price range, market cap, blocklist exclusion, and broker fractional eligibility.
     Returns filtered and deduplicated list of symbol dicts.
     """
+    # Fractional trading eligibility check disabled during universe build per spec
     return core_filter_symbols(
         symbols,
         exchanges,
@@ -195,7 +196,7 @@ def filter_symbols(
         max_market_cap,
         blocklist,
         max_size,
-        broker_obj=broker_obj
+        broker_obj=None  # Force None to skip fractional checks at universe build stage
     )
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:

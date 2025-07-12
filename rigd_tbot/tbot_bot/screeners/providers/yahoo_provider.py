@@ -31,7 +31,6 @@ class YahooProvider(ProviderBase):
         Returns list of dicts: {symbol, exchange, companyName, sector, industry}
         """
         syms = []
-        # Use provided list if given
         if self.symbol_list and isinstance(self.symbol_list, list):
             syms = [{"symbol": s.strip().upper()} for s in self.symbol_list if s.strip()]
             self.log(f"Loaded {len(syms)} symbols from provided symbol_list.")
@@ -65,6 +64,11 @@ class YahooProvider(ProviderBase):
         Fetches latest price, open, vwap for each symbol using Yahoo Finance API (yfinance).
         Returns list of dicts: [{symbol, c, o, vwap}]
         """
+        import time
+        from tbot_bot.config.env_bot import load_env_bot_config
+        env = load_env_bot_config()
+        sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 0.5))
+
         quotes = []
         for idx, symbol in enumerate(symbols):
             try:
@@ -90,6 +94,7 @@ class YahooProvider(ProviderBase):
                 continue
             if idx % 50 == 0 and idx > 0:
                 self.log(f"Fetched Yahoo quotes for {idx} symbols...")
+            time.sleep(sleep_time)
         return quotes
 
     def fetch_universe_symbols(self, exchanges, min_price, max_price, min_cap, max_cap, blocklist, max_size) -> List[Dict]:

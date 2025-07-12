@@ -28,7 +28,6 @@ MKTCAP_KEYS         = ("marketCap", "market_cap", "mktcap", "market_capitalizati
 NAME_KEYS           = ("name", "description", "companyName")
 SECTOR_KEYS         = ("sector", "industry", "finnhubIndustry")
 VOLUME_KEYS         = ("volume", "vol", "v")
-IS_FRACTIONAL_KEYS  = ("isFractional", "fractional", "fractional_enabled")
 
 def mic_to_exchange(mic: Optional[str]) -> Optional[str]:
     mic = str(mic).upper().strip() if mic else ""
@@ -86,17 +85,6 @@ def normalize_symbol(raw: Dict) -> Dict:
             except Exception:
                 norm["volume"] = 0
             break
-    for k in IS_FRACTIONAL_KEYS:
-        v = raw.get(k)
-        if v not in (None, "", "None"):
-            # Only set if broker provided; Finnhub does not return this
-            if isinstance(v, bool):
-                norm["isFractional"] = v
-            elif isinstance(v, str):
-                norm["isFractional"] = v.lower() == "true"
-            else:
-                norm["isFractional"] = bool(v)
-            break
     # Copy all other unknown fields (but do not overwrite normalized keys)
     for k in raw:
         if k not in norm:
@@ -132,14 +120,7 @@ def filter_symbol(
         return False
     if lc is None or mc is None:
         return False
-    # Fractional eligibility for high-priced stocks
-    if lc >= max_price:
-        if broker_obj and hasattr(broker_obj, "is_symbol_fractional"):
-            if not broker_obj.is_symbol_fractional(sym):
-                return False
-        elif "isFractional" in s and s["isFractional"] is not None and not s["isFractional"]:
-            return False
-    elif not (min_price <= lc < max_price):
+    if not (min_price <= lc <= max_price):
         return False
     if not (min_market_cap <= mc <= max_market_cap):
         return False

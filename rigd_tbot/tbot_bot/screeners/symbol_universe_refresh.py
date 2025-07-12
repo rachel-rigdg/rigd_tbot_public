@@ -91,31 +91,6 @@ def fetch_symbols_with_provider(env):
     provider = ProviderClass(merged_config, screener_secrets)
     return provider.fetch_symbols()
 
-def filter_symbols(symbols, env, blocklist):
-    exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
-    min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
-    max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
-    min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
-    max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
-    max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
-    filtered = []
-    for s in symbols:
-        if s.get("symbol") in blocklist:
-            continue
-        last = s.get("c") or s.get("close") or s.get("lastClose") or s.get("price")
-        cap = s.get("marketCap") or s.get("market_cap")
-        try:
-            last_val = float(last) if last is not None else None
-            cap_val = float(cap) if cap is not None else None
-        except Exception:
-            continue
-        if last_val is not None and cap_val is not None:
-            if (min_price <= last_val <= max_price) and (min_cap <= cap_val <= max_cap):
-                filtered.append(s)
-        if len(filtered) >= max_size:
-            break
-    return dedupe_symbols(filtered)
-
 def main():
     if not screener_creds_exist():
         print("Screener credentials not configured. Please configure screener credentials in the UI before building the universe.")
@@ -168,7 +143,7 @@ def main():
         log_progress("Failed to write universe cache", {"error": str(e)})
         raise
 
-    # Enrichment/filtering is *not* performed here; handled in symbol_enrichment.py only
+    # No enrichment or filtering done here; handled only in symbol_enrichment.py
 
     audit = {
         "build_time_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),

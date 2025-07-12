@@ -34,8 +34,13 @@ function fetchAndRenderTable(type, bodyId, countId, limit=100) {
     const search = document.getElementById("search-symbol").value || "";
     fetch(`/universe/table/${type}?search=${encodeURIComponent(search)}&offset=0&limit=${limit}`)
         .then(r => r.json()).then(rows => {
-            document.getElementById(bodyId).innerHTML = rows.map(renderRow).join("");
-            if (countId) document.getElementById(countId).textContent = rows.length;
+            let tbody = document.getElementById(bodyId);
+            if (tbody) {
+                tbody.innerHTML = rows.map(renderRow).join("");
+            }
+            if (countId && document.getElementById(countId)) {
+                document.getElementById(countId).textContent = rows.length;
+            }
         });
 }
 
@@ -58,9 +63,9 @@ function refreshTables() {
 
 function fetchCounts() {
     fetch("/universe/counts").then(r => r.json()).then(obj => {
-        document.getElementById("unfiltered-count").textContent = obj.unfiltered;
-        document.getElementById("partial-count").textContent = obj.partial;
-        document.getElementById("final-count").textContent = obj.filtered;
+        if (document.getElementById("unfiltered-count")) document.getElementById("unfiltered-count").textContent = obj.unfiltered;
+        if (document.getElementById("partial-count")) document.getElementById("partial-count").textContent = obj.partial;
+        if (document.getElementById("final-count")) document.getElementById("final-count").textContent = obj.filtered;
     });
 }
 
