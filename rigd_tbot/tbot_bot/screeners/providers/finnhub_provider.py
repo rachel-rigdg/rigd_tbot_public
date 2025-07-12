@@ -74,30 +74,45 @@ class FinnhubProvider(ProviderBase):
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
         """
-        Fetches latest price/open/vwap for each symbol via Finnhub API.
-        Returns list of dicts: {symbol, c, o, vwap}
+        Fetches latest price/open/vwap and market cap for each symbol via Finnhub API.
+        Returns list of dicts: {symbol, c, o, vwap, marketCap}
         """
         quotes = []
         for idx, symbol in enumerate(symbols):
-            url = f"{self.api_url.rstrip('/')}/quote?symbol={symbol}&token={self.api_key}"
             auth = (self.username, self.password) if self.username and self.password else None
+            # Fetch quote (price)
             try:
-                resp = requests.get(url, timeout=self.timeout, auth=auth)
-                if resp.status_code != 200:
-                    self.log(f"Error fetching quote for {symbol}: HTTP {resp.status_code}")
+                url_quote = f"{self.api_url.rstrip('/')}/quote?symbol={symbol}&token={self.api_key}"
+                resp_q = requests.get(url_quote, timeout=self.timeout, auth=auth)
+                if resp_q.status_code != 200:
+                    self.log(f"Error fetching quote for {symbol}: HTTP {resp_q.status_code}")
                     continue
-                data = resp.json()
-                c = float(data.get("c", 0))
-                o = float(data.get("o", 0))
-                vwap = float(data.get("vwap", 0)) if "vwap" in data and data.get("vwap", 0) else (c if c else 0)
-                quotes.append({
-                    "symbol": symbol,
-                    "c": c,
-                    "o": o,
-                    "vwap": vwap
-                })
+                data_q = resp_q.json()
+                c = float(data_q.get("c", 0))
+                o = float(data_q.get("o", 0))
+                vwap = float(data_q.get("vwap", 0)) if "vwap" in data_q and data_q.get("vwap", 0) else (c if c else 0)
+                # Fetch profile2 (market cap)
+                url_profile = f"{self.api_url.rstrip('/')}/stock/profile2?symbol={symbol}&token={self.api_key}"
+                resp_p = requests.get(url_profile, timeout=self.timeout, auth=auth)
+                if resp_p.status_code != 200:
+                    self.log(f"Error fetching profile2 for {symbol}: HTTP {resp_p.status_code}")
+                    continue
+                data_p = resp_p.json()
+                market_cap = data_p.get("marketCapitalization", None)
+                if c and market_cap:
+                    quotes.append({
+                        "symbol": symbol,
+                        "c": c,
+                        "o": o,
+                        "vwap": vwap,
+                        "marketCap": market_cap
+                    })
+                    if self.log_level == "verbose":
+                        print(f"QUOTE[{idx}]: {symbol} | Close: {c} Open: {o} VWAP: {vwap} MarketCap: {market_cap}")
+                else:
+                    self.log(f"Skipping {symbol}: missing price or market cap")
             except Exception as e:
-                self.log(f"Exception fetching quote for {symbol}: {e}")
+                self.log(f"Exception fetching quote/profile2 for {symbol}: {e}")
                 continue
             if idx % 50 == 0 and idx > 0:
                 self.log(f"Fetched quotes for {idx} symbols...")
