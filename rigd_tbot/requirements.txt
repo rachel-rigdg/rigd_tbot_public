@@ -2,7 +2,8 @@
 
 # === Trading APIs ===
 alpaca-trade-api==3.2.0           # Alpaca trading integration
-ib_insync==0.9.83                 # Interactive Brokers trading integration
+ib_insync==0.9.83                 # Interactive Brokers trading integration (preferred, high-level wrapper)
+# ibapi                         # DO NOT USE RAW ibapi. Use ib_insync only.
 finnhub-python==2.4.17            # Finnhub stock screener & data
 yfinance==0.2.40                  # Yahoo Finance integration
 
@@ -35,4 +36,4 @@ psutil==5.9.8                     # Process utilities for singleton/supervisor e
 
 # === Testing ===
 pytest==8.2.2                     # Modern Python testing framework (for CLI and test harness)
-matplotlib==3.8.4		  # Plotting engine for backtesting
+matplotlib==3.8.4                 # Plotting engine for backtesting

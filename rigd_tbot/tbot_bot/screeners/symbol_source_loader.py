@@ -124,7 +124,7 @@ def load_ibkr_symbols(provider_cfg: dict, exchanges: List[str]) -> List[Dict]:
     return syms
 
 def load_yahoo_symbols() -> List[Dict]:
-    # Placeholder for future Yahoo provider integration; currently no CSV/FTP usage.
+    # No CSV or FTP Yahoo loading; use YahooProvider directly for all Yahoo operations.
     return []
 
 def dedupe_symbols(symbols: List[Dict]) -> List[Dict]:

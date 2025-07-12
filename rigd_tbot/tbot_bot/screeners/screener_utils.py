@@ -44,10 +44,6 @@ def get_screener_secrets() -> dict:
         return {}
 
 def get_universe_screener_secrets() -> dict:
-    """
-    Loads the first provider with UNIVERSE_ENABLED == 'true' (case-insensitive).
-    Returns flat key/value dict for that provider, ready for direct injection.
-    """
     all_creds = load_screener_credentials()
     provider_indices = [
         k.split("_")[-1]
@@ -186,7 +182,6 @@ def filter_symbols(
     Supports filtering by exchange, price range, market cap, blocklist exclusion, and broker fractional eligibility.
     Returns filtered and deduplicated list of symbol dicts.
     """
-    # Fractional trading eligibility check disabled during universe build per spec
     return core_filter_symbols(
         symbols,
         exchanges,
@@ -196,14 +191,10 @@ def filter_symbols(
         max_market_cap,
         blocklist,
         max_size,
-        broker_obj=None  # Force None to skip fractional checks at universe build stage
+        broker_obj=None
     )
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:
-    """
-    Loads blocklist from the specified path or full blocklist manager.
-    Returns list of blocklisted symbol strings (uppercase).
-    """
     if not path:
         bl_dict = load_blocklist_full()
         return list(bl_dict.keys())
@@ -226,10 +217,6 @@ def load_blocklist(path: Optional[str] = None) -> List[str]:
     return blocklist
 
 def is_cache_stale(bot_identity: Optional[str] = None) -> bool:
-    """
-    Determines if the universe cache is stale or invalid.
-    Returns True if cache is missing or invalid; False otherwise.
-    """
     try:
         _ = load_universe_cache(bot_identity)
         return False
@@ -237,9 +224,6 @@ def is_cache_stale(bot_identity: Optional[str] = None) -> bool:
         return True
 
 def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetime]:
-    """
-    Returns the datetime of the universe cache build or None if unavailable.
-    """
     path = resolve_universe_cache_path(bot_identity)
     if not os.path.exists(path):
         return None
@@ -257,9 +241,6 @@ def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetim
         return None
 
 def get_symbol_set(bot_identity: Optional[str] = None) -> set:
-    """
-    Returns a set of symbols currently in the universe cache.
-    """
     try:
         symbols = load_universe_cache(bot_identity)
         return set(s.get("symbol") for s in symbols if "symbol" in s)

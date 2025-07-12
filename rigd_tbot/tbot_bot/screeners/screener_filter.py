@@ -1,7 +1,6 @@
 # tbot_bot/screeners/screener_filter.py
 # Centralized, screener-agnostic symbol normalization and filtering for TradeBot v1.0.0+
 # 100% spec-compliant: robust field alias handling, MIC/exchange mapping, type safety, blocklist-first, and staged cap/price gating.
-# Supports broker-level tradability and fractional checks. Staged blocklist and all runtime/fetch compliance per spec.
 
 import re
 from decimal import Decimal

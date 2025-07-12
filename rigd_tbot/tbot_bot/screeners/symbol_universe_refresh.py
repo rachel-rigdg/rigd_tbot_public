@@ -1,5 +1,5 @@
 # tbot_bot/screeners/symbol_universe_refresh.py
-# PRODUCTION-READY: Delegates all symbol/quote fetching to provider modules. No direct API calls.
+# PRODUCTION-READY: Implements batchwise universe build with atomic batch writes and filtering, using yfinance for symbol/quote fetching.
 
 import sys
 import json
@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import List, Dict
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
-    save_universe_cache, load_blocklist, UniverseCacheError
+    save_universe_cache, load_blocklist, UniverseCacheError, filter_symbols
 )
 from tbot_bot.screeners.screener_filter import dedupe_symbols
 from tbot_bot.support.path_resolver import (
@@ -24,6 +24,8 @@ from tbot_bot.support.secrets_manager import (
 from tbot_bot.screeners.provider_registry import get_provider_class
 
 UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
+PARTIAL_PATH = resolve_universe_partial_path()
+FINAL_PATH = resolve_universe_cache_path()
 LOG_PATH = resolve_universe_log_path()
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
 
@@ -39,57 +41,11 @@ def log_progress(msg: str, details: dict = None):
     with open(LOG_PATH, "a", encoding="utf-8") as logf:
         logf.write(record + "\n")
 
-def write_partial(symbols, meta=None):
-    partial_path = resolve_universe_partial_path()
-    cache_obj = {
-        "schema_version": "1.0.0",
-        "build_timestamp_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
-        "symbols": symbols
-    }
-    if meta:
-        cache_obj["meta"] = meta
-    with open(partial_path, "w", encoding="utf-8") as pf:
-        json.dump(cache_obj, pf, indent=2)
-
-def write_unfiltered(unfiltered_symbols):
-    with open(UNFILTERED_PATH, "w", encoding="utf-8") as uf:
-        json.dump({"symbols": unfiltered_symbols}, uf, indent=2)
-
-def load_unfiltered():
-    try:
-        with open(UNFILTERED_PATH, "r", encoding="utf-8") as uf:
-            data = json.load(uf)
-            return data.get("symbols", [])
-    except Exception:
-        return []
-
-def get_universe_screener_creds():
-    all_creds = load_screener_credentials()
-    provider_indices = [
-        k.split("_")[-1]
-        for k, v in all_creds.items()
-        if k.startswith("PROVIDER_")
-           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
-    ]
-    if not provider_indices:
-        raise RuntimeError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
-    idx = provider_indices[0]
-    return {
-        key.replace(f"_{idx}", ""): v
-        for key, v in all_creds.items()
-        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
-    }
-
-def fetch_symbols_with_provider(env):
-    screener_secrets = get_universe_screener_creds()
-    name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
-    ProviderClass = get_provider_class(name)
-    if ProviderClass is None:
-        raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
-    merged_config = env.copy()
-    merged_config.update(screener_secrets)
-    provider = ProviderClass(merged_config)  # FIX: only pass config
-    return provider.fetch_symbols()
+def atomic_write_json(path, obj):
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(tmp_path, path)
 
 def main():
     if not screener_creds_exist():
@@ -102,6 +58,7 @@ def main():
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
     max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
     max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
+    batch_size = 100
     blocklist_path = BLOCKLIST_PATH
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
 
@@ -119,36 +76,78 @@ def main():
     except Exception:
         blocklist = []
 
-    try:
-        symbols_unfiltered = fetch_symbols_with_provider(env)
-        if not symbols_unfiltered or len(symbols_unfiltered) < 10:
-            raise RuntimeError("No symbols fetched from screener provider; check API key, network, or provider limits.")
-        write_unfiltered(symbols_unfiltered)
-    except Exception as e:
-        log_progress("Failed to fetch screener symbols", {"error": str(e)})
-        raise
+    # Fetch provider and iterate in batches
+    all_creds = load_screener_credentials()
+    provider_indices = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
+    ]
+    if not provider_indices:
+        raise RuntimeError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
+    idx = provider_indices[0]
+    screener_secrets = {
+        key.replace(f"_{idx}", ""): v
+        for key, v in all_creds.items()
+        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
+    }
+    name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
+    ProviderClass = get_provider_class(name)
+    if ProviderClass is None:
+        raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
+    merged_config = env.copy()
+    merged_config.update(screener_secrets)
+    provider = ProviderClass(merged_config)
 
-    log_progress("Fetched symbols from screener provider", {"count": len(symbols_unfiltered)})
+    symbols_unfiltered = []
+    partial_symbols = []
+    count = 0
 
-    # Write initial unfiltered and deduped symbols (pre-enrichment)
-    try:
-        write_partial(dedupe_symbols(symbols_unfiltered))
-    except Exception as e:
-        log_progress("Write partial failed", {"error": str(e)})
+    # Build in batches, writing after each batch
+    syms = provider.fetch_symbols()
+    total = len(syms)
+    log_progress("Fetched all symbols from provider", {"total_symbols": total})
 
-    try:
-        save_universe_cache(dedupe_symbols(symbols_unfiltered), bot_identity=bot_identity)
-        log_progress("Universe cache build complete", {"final_count": len(symbols_unfiltered)})
-    except Exception as e:
-        log_progress("Failed to write universe cache", {"error": str(e)})
-        raise
+    for i in range(0, total, batch_size):
+        batch = syms[i:i + batch_size]
+        count += len(batch)
+        # Append raw to unfiltered
+        symbols_unfiltered.extend(batch)
+        atomic_write_json(UNFILTERED_PATH, {"symbols": symbols_unfiltered})
+        # Filter batch and append to partial
+        filtered = filter_symbols(
+            symbols=batch,
+            exchanges=exchanges,
+            min_price=min_price,
+            max_price=max_price,
+            min_market_cap=min_cap,
+            max_market_cap=max_cap,
+            blocklist=blocklist,
+            max_size=max_size
+        )
+        partial_symbols.extend(filtered)
+        atomic_write_json(PARTIAL_PATH, {
+            "schema_version": "1.0.0",
+            "build_timestamp_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+            "symbols": partial_symbols
+        })
+        log_progress("Batch processed", {
+            "batch_start": i + 1,
+            "batch_end": i + len(batch),
+            "unfiltered_count": len(symbols_unfiltered),
+            "partial_count": len(partial_symbols)
+        })
 
-    # No enrichment or filtering done here; handled only in symbol_enrichment.py
+    # After all batches, copy partial to final
+    atomic_write_json(FINAL_PATH, dedupe_symbols(partial_symbols))
+    save_universe_cache(dedupe_symbols(partial_symbols), bot_identity=bot_identity)
+    log_progress("Universe cache build complete", {"final_count": len(partial_symbols)})
 
     audit = {
         "build_time_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
         "total_symbols_fetched": len(symbols_unfiltered),
-        "total_symbols_final": len(symbols_unfiltered),
+        "total_symbols_final": len(partial_symbols),
         "exchanges": exchanges,
         "blocklist_entries": len(blocklist),
         "cache_path": resolve_universe_cache_path(bot_identity),

@@ -45,8 +45,9 @@ class YahooProvider(ProviderBase):
                         "industry": row.get("industry", ""),
                     })
                 print(f"SYMBOL[{i}]: {symbol} | {name}")
-                if i > 0 and i % 1000 == 0:
+                if i > 0 and i % 100 == 0:
                     print(f"[YahooProvider] Collected {i} NASDAQ symbols...")
+                time.sleep(0.01)
             print(f"[YahooProvider] Loaded {len(rows)} NASDAQ symbols from NASDAQ.com API.")
         except Exception as e:
             print(f"[YahooProvider] Failed to fetch NASDAQ symbols: {e}")
@@ -68,8 +69,9 @@ class YahooProvider(ProviderBase):
                         "industry": row.get("industry", ""),
                     })
                 print(f"SYMBOL[{i}]: {symbol} | {name}")
-                if i > 0 and i % 1000 == 0:
+                if i > 0 and i % 100 == 0:
                     print(f"[YahooProvider] Collected {i} NYSE symbols...")
+                time.sleep(0.01)
             print(f"[YahooProvider] Loaded {len(rows)} NYSE symbols from NASDAQ.com API.")
         except Exception as e:
             print(f"[YahooProvider] Failed to fetch NYSE symbols: {e}")
@@ -111,7 +113,7 @@ class YahooProvider(ProviderBase):
             except Exception as e:
                 print(f"[YahooProvider] Exception fetching Yahoo quote for {symbol}: {e}")
                 continue
-            if idx > 0 and idx % 100 == 0:
+            if idx > 0 and idx % 10 == 0:
                 print(f"[YahooProvider] Fetched Yahoo quotes for {idx} symbols...")
             time.sleep(sleep_time)
         return quotes

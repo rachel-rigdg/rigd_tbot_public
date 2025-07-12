@@ -6,6 +6,8 @@ LIVE_PATH="/Volumes/8TB_RAID_01/jobs/TradeBot/Tradebot-001-Live/rigd_tbot"
 REMOTE_USER="tbot"
 REMOTE_HOST="45.55.150.216"
 REMOTE_PATH="/home/tbot/rigd_tbot/"
+IBKR_INSTALLER_PATH="IBKR/ibgateway-stable-standalone-linux-x64.sh"
+REMOTE_IBKR_PATH="/home/tbot/IBKR/"
 SSH_KEY="$HOME/.ssh/id_ed25519"
 DEV_PATH="$(pwd)"
 SYSTEMD_PATH="systemd_units"
@@ -61,6 +63,9 @@ case "$direction" in
 esac
 echo "Profile     : $IGNORE_FILE"
 echo "SSH Key     : $SSH_KEY"
+if [[ "$direction" == "2" || "$direction" == "5" ]]; then
+  echo "IBKR Gateway Installer will also be synced to $REMOTE_IBKR_PATH"
+fi
 echo "======================================================"
 echo ""
 
@@ -76,6 +81,9 @@ case "$direction" in
     rsync -avn $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$LIVE_PATH/" "$TO"
     sleep 1
     rsync -avn $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LIVE_PATH/$SYSTEMD_PATH/" "$TO$SYSTEMD_PATH/"
+    echo ""
+    echo "🔎 [IBKR] DRY RUN: Syncing IB Gateway installer to $REMOTE_IBKR_PATH ..."
+    rsync -avn $RSYNC_OPTS -e "ssh -i $SSH_KEY" "../../$IBKR_INSTALLER_PATH" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_IBKR_PATH"
     ;;
   3)
     rsync -avn $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$FROM" "$LIVE_PATH/"
@@ -91,6 +99,9 @@ case "$direction" in
     rsync -avn $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$DEV_PATH/" "$TO"
     sleep 1
     rsync -avn $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$DEV_PATH/$SYSTEMD_PATH/" "$TO$SYSTEMD_PATH/"
+    echo ""
+    echo "🔎 [IBKR] DRY RUN: Syncing IB Gateway installer to $REMOTE_IBKR_PATH ..."
+    rsync -avn $RSYNC_OPTS -e "ssh -i $SSH_KEY" "../../$IBKR_INSTALLER_PATH" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_IBKR_PATH"
     ;;
 esac
 
@@ -120,6 +131,9 @@ case "$direction" in
   2)
     rsync -avz --progress $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$LIVE_PATH/" "$TO"
     rsync -avz --progress $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LIVE_PATH/$SYSTEMD_PATH/" "$TO$SYSTEMD_PATH/"
+    echo ""
+    echo "🚀 [IBKR] Syncing IB Gateway installer to $REMOTE_IBKR_PATH ..."
+    rsync -avz --progress $RSYNC_OPTS -e "ssh -i $SSH_KEY" "../../$IBKR_INSTALLER_PATH" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_IBKR_PATH"
     ;;
   3)
     rsync -avz --progress $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$FROM" "$LIVE_PATH/"
@@ -132,6 +146,9 @@ case "$direction" in
   5)
     rsync -avz --progress $RSYNC_OPTS --exclude-from="$IGNORE_FILE" -e "ssh -i $SSH_KEY" "$DEV_PATH/" "$TO"
     rsync -avz --progress $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$DEV_PATH/$SYSTEMD_PATH/" "$TO$SYSTEMD_PATH/"
+    echo ""
+    echo "🚀 [IBKR] Syncing IB Gateway installer to $REMOTE_IBKR_PATH ..."
+    rsync -avz --progress $RSYNC_OPTS -e "ssh -i $SSH_KEY" "../../$IBKR_INSTALLER_PATH" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_IBKR_PATH"
     ;;
 esac
 
