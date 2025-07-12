@@ -58,7 +58,7 @@ def get_enrichment_provider_creds():
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
            and all_creds.get(f"ENRICHMENT_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
-           and not all_creds.get(f"SCREENER_NAME_{k.split('_')[-1]}", "").upper().endswith("_TXT")
+           and not (all_creds.get(f"SCREENER_NAME_{k.split('_')[-1]}", "") or "").upper().endswith("_TXT")
     ]
     if not provider_indices:
         raise RuntimeError("No valid enrichment provider enabled for universe enrichment. Enable at least one API provider (not *_TXT) in the credential admin with ENRICHMENT_ENABLED checked.")
