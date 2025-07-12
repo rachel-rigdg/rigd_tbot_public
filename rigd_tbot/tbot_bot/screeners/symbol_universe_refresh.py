@@ -1,19 +1,19 @@
 # tbot_bot/screeners/symbol_universe_refresh.py
-# PRODUCTION-READY: Implements batchwise universe build with atomic batch writes and filtering, using yfinance for symbol/quote fetching.
+# Implements atomic, staged universe build: reads symbol source, enriches and writes to unfiltered.json per symbol, filters to partial.json, blocklists rejects, and finalizes to symbol_universe.json.
 
 import sys
 import json
 import os
 from datetime import datetime, timezone
-from typing import List, Dict
 from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_utils import (
-    save_universe_cache, load_blocklist, UniverseCacheError, filter_symbols
+    atomic_append_json, atomic_append_text, load_blocklist, dedupe_symbols
 )
-from tbot_bot.screeners.screener_filter import dedupe_symbols
+from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter
 from tbot_bot.support.path_resolver import (
-    resolve_universe_cache_path,
+    resolve_universe_unfiltered_path,
     resolve_universe_partial_path,
+    resolve_universe_cache_path,
     resolve_universe_log_path,
     resolve_screener_blocklist_path
 )
@@ -23,7 +23,7 @@ from tbot_bot.support.secrets_manager import (
 )
 from tbot_bot.screeners.provider_registry import get_provider_class
 
-UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
+UNFILTERED_PATH = resolve_universe_unfiltered_path()
 PARTIAL_PATH = resolve_universe_partial_path()
 FINAL_PATH = resolve_universe_cache_path()
 LOG_PATH = resolve_universe_log_path()
@@ -33,7 +33,7 @@ def screener_creds_exist():
     creds_path = get_screener_credentials_path()
     return os.path.exists(creds_path)
 
-def log_progress(msg: str, details: dict = None):
+def log_progress(msg, details=None):
     now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     record = f"[{now}] {msg}"
     if details:
@@ -41,18 +41,12 @@ def log_progress(msg: str, details: dict = None):
     with open(LOG_PATH, "a", encoding="utf-8") as logf:
         logf.write(record + "\n")
 
-def atomic_write_json(path, obj):
-    tmp_path = path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2)
-    os.replace(tmp_path, path)
-
 def main():
     if not screener_creds_exist():
         print("Screener credentials not configured. Please configure screener credentials in the UI before building the universe.")
         sys.exit(2)
     env = load_env_bot_config()
-    exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ").split(",")]
+    exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
     max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
@@ -71,10 +65,9 @@ def main():
     })
 
     try:
-        with open(blocklist_path, "r", encoding="utf-8") as bf:
-            blocklist = [b.strip() for b in bf.readlines() if b.strip()]
+        blocklist = set(load_blocklist(blocklist_path))
     except Exception:
-        blocklist = []
+        blocklist = set()
 
     all_creds = load_screener_credentials()
     provider_indices = [
@@ -99,53 +92,59 @@ def main():
     merged_config.update(screener_secrets)
     provider = ProviderClass(merged_config)
 
-    symbols_unfiltered = []
-    partial_symbols = []
-    count = 0
-
     syms = provider.fetch_symbols()
     total = len(syms)
     log_progress("Fetched all symbols from provider", {"total_symbols": total})
 
+    enriched_count = 0
+    blocklisted_count = 0
+
     for i in range(0, total, batch_size):
-        batch = syms[i:i + batch_size]
-        count += len(batch)
-        symbols_unfiltered.extend(batch)
-        atomic_write_json(UNFILTERED_PATH, {"symbols": symbols_unfiltered})
-        filtered = filter_symbols(
-            symbols=batch,
-            exchanges=exchanges,
-            min_price=min_price,
-            max_price=max_price,
-            min_market_cap=min_cap,
-            max_market_cap=max_cap,
-            blocklist=blocklist,
-            max_size=max_size
-        )
-        partial_symbols.extend(filtered)
-        atomic_write_json(PARTIAL_PATH, {
-            "schema_version": "1.0.0",
-            "build_timestamp_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
-            "symbols": partial_symbols
-        })
+        batch_syms = syms[i:i + batch_size]
+        batch_norm = normalize_symbols(batch_syms)
+        for sym_obj in batch_norm:
+            sym = sym_obj.get("symbol")
+            if not sym or sym in blocklist:
+                continue
+            atomic_append_json(UNFILTERED_PATH, sym_obj)
+            filter_result, reason = passes_filter(sym_obj, exchanges, min_price, max_price, min_cap, max_cap)
+            if filter_result:
+                atomic_append_json(PARTIAL_PATH, sym_obj)
+                enriched_count += 1
+            else:
+                atomic_append_text(BLOCKLIST_PATH, f"{sym}|{reason}|{datetime.utcnow().isoformat()}Z\n")
+                blocklisted_count += 1
+            if enriched_count >= max_size:
+                break
         log_progress("Batch processed", {
             "batch_start": i + 1,
-            "batch_end": i + len(batch),
-            "unfiltered_count": len(symbols_unfiltered),
-            "partial_count": len(partial_symbols)
+            "batch_end": i + len(batch_syms),
+            "unfiltered_count": enriched_count + blocklisted_count,
+            "partial_count": enriched_count
         })
+        if enriched_count >= max_size:
+            break
 
-    atomic_write_json(FINAL_PATH, dedupe_symbols(partial_symbols))
-    save_universe_cache(dedupe_symbols(partial_symbols), bot_identity=bot_identity)
-    log_progress("Universe cache build complete", {"final_count": len(partial_symbols)})
+    # Finalize: copy partial.json to final universe
+    try:
+        with open(PARTIAL_PATH, "r", encoding="utf-8") as pf:
+            partial_data = json.load(pf)
+        with open(FINAL_PATH, "w", encoding="utf-8") as ff:
+            json.dump(partial_data, ff, indent=2)
+    except Exception as e:
+        log_progress("Failed to finalize universe", {"error": str(e)})
+        print(f"ERROR: Finalization failed: {e}", flush=True)
+        sys.exit(1)
+
+    log_progress("Universe cache build complete", {"final_count": enriched_count})
 
     audit = {
         "build_time_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
-        "total_symbols_fetched": len(symbols_unfiltered),
-        "total_symbols_final": len(partial_symbols),
+        "total_symbols_fetched": total,
+        "total_symbols_final": enriched_count,
         "exchanges": exchanges,
         "blocklist_entries": len(blocklist),
-        "cache_path": resolve_universe_cache_path(bot_identity),
+        "cache_path": FINAL_PATH,
     }
     log_progress("Universe build summary", audit)
 

@@ -1,10 +1,10 @@
 # tbot_bot/screeners/screener_filter.py
-# Centralized, screener-agnostic symbol normalization and filtering for TradeBot v1.0.0+
-# 100% spec-compliant: robust field alias handling, MIC/exchange mapping, type safety, blocklist-first, and staged cap/price gating.
+# Centralized, screener-agnostic symbol normalization and atomic filter for TradeBot v1.0.0+
+# Implements robust field handling, blocklist-first, and returns (bool, reason) for atomic append logic.
 
 import re
 from decimal import Decimal
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 MIC_TO_EXCHANGE = {
     "XNAS": "NASDAQ",
@@ -93,7 +93,7 @@ def normalize_symbol(raw: Dict) -> Dict:
 def normalize_symbols(symbols: List[Dict]) -> List[Dict]:
     return [normalize_symbol(s) for s in symbols]
 
-def filter_symbol(
+def passes_filter(
     s: Dict,
     exchanges: List[str],
     min_price: float,
@@ -102,31 +102,31 @@ def filter_symbol(
     max_market_cap: float,
     blockset: Optional[set] = None,
     broker_obj=None
-) -> bool:
+) -> Tuple[bool, str]:
     exch = s.get("exchange", "")
     sym = s.get("symbol", "")
     lc  = s.get("lastClose", None)
     mc  = s.get("marketCap", None)
     # Blocklist-first check
     if blockset and sym.upper() in blockset:
-        return False
+        return False, "blocklisted"
     # Exchange compliance
     if "US" in [e.upper() for e in exchanges]:
         valid_exchange = exch.upper() in ("NASDAQ", "NYSE", "AMEX", "BATS", "OTC")
     else:
         valid_exchange = exch and exch.upper() in [e.upper() for e in exchanges]
     if not (valid_exchange and sym):
-        return False
+        return False, "exchange"
     if lc is None or mc is None:
-        return False
+        return False, "missing_fields"
     if not (min_price <= lc <= max_price):
-        return False
+        return False, "price"
     if not (min_market_cap <= mc <= max_market_cap):
-        return False
+        return False, "market_cap"
     if broker_obj and hasattr(broker_obj, "is_symbol_tradable"):
         if not broker_obj.is_symbol_tradable(sym):
-            return False
-    return True
+            return False, "not_tradable"
+    return True, ""
 
 def filter_symbols(
     symbols: List[Dict],
@@ -143,7 +143,7 @@ def filter_symbols(
     normalized = normalize_symbols(symbols)
     filtered = [
         s for s in normalized
-        if filter_symbol(
+        if passes_filter(
             s,
             exchanges,
             min_price,
@@ -152,7 +152,7 @@ def filter_symbols(
             max_market_cap,
             blockset,
             broker_obj
-        )
+        )[0]
     ]
     if max_size is not None and len(filtered) > max_size:
         filtered.sort(key=lambda x: x.get("marketCap", 0.0) or 0.0, reverse=True)

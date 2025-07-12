@@ -1,6 +1,5 @@
 # tbot_bot/screeners/screener_utils.py
-# Utility functions for universe cache and credential management.
-# 100% compliant with modular, usage-flagged, multi-provider screener credentials system.
+# Utility functions for universe cache and credential management, atomic append helpers, and atomic load/save for universe/build outputs.
 
 import json
 import logging
@@ -11,6 +10,7 @@ from typing import List, Dict, Optional
 from tbot_bot.support.path_resolver import (
     resolve_universe_cache_path,
     resolve_universe_partial_path,
+    resolve_universe_unfiltered_path,
     resolve_screener_blocklist_path
 )
 from tbot_bot.support.decrypt_secrets import decrypt_json
@@ -24,11 +24,42 @@ from tbot_bot.screeners.blocklist_manager import load_blocklist as load_blocklis
 LOG = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "1.0.0"
-UNFILTERED_PATH = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
+UNFILTERED_PATH = resolve_universe_unfiltered_path()
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
 
 class UniverseCacheError(Exception):
     pass
+
+def atomic_append_json(path: str, obj: dict):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):
+        with open(path, "r+", encoding="utf-8") as f:
+            try:
+                data = json.load(f)
+                if isinstance(data, dict) and "symbols" in data:
+                    symbols = data["symbols"]
+                elif isinstance(data, list):
+                    symbols = data
+                else:
+                    symbols = []
+            except Exception:
+                symbols = []
+            symbols.append(obj)
+            f.seek(0)
+            if isinstance(data, dict) and "symbols" in data:
+                data["symbols"] = symbols
+                json.dump(data, f, indent=2)
+            else:
+                json.dump({"schema_version": SCHEMA_VERSION, "build_timestamp_utc": utc_now().isoformat(), "symbols": symbols}, f, indent=2)
+            f.truncate()
+    else:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"schema_version": SCHEMA_VERSION, "build_timestamp_utc": utc_now().isoformat(), "symbols": [obj]}, f, indent=2)
+
+def atomic_append_text(path: str, line: str):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line if line.endswith("\n") else line + "\n")
 
 def screener_creds_exist() -> bool:
     creds_path = get_screener_credentials_path()
@@ -136,10 +167,11 @@ def load_partial_cache() -> List[Dict]:
         return []
 
 def load_unfiltered_cache() -> List[Dict]:
-    if not os.path.exists(UNFILTERED_PATH):
+    path = UNFILTERED_PATH
+    if not os.path.exists(path):
         return []
     try:
-        with open(UNFILTERED_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data.get("symbols", [])
     except Exception:
@@ -177,11 +209,6 @@ def filter_symbols(
     max_size: Optional[int] = None,
     broker_obj=None
 ) -> List[Dict]:
-    """
-    Filters symbols using core filtering logic.
-    Supports filtering by exchange, price range, market cap, blocklist exclusion, and broker fractional eligibility.
-    Returns filtered and deduplicated list of symbol dicts.
-    """
     return core_filter_symbols(
         symbols,
         exchanges,
@@ -196,8 +223,8 @@ def filter_symbols(
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:
     if not path:
-        bl_dict = load_blocklist_full()
-        return list(bl_dict.keys())
+        blockset = load_blocklist_full()
+        return list(blockset)
     if not os.path.isfile(path):
         LOG.warning(f"[screener_utils] Blocklist file not found or not provided: {path}")
         return []
@@ -208,7 +235,7 @@ def load_blocklist(path: Optional[str] = None) -> List[str]:
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                sym = line.split(",", 1)[0].upper()
+                sym = line.split("|", 1)[0].upper()
                 blocklist.append(sym)
     except Exception as e:
         LOG.error(f"[screener_utils] Failed to load blocklist file '{path}': {e}")

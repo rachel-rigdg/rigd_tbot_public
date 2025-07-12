@@ -1,12 +1,10 @@
 # tbot_bot/screeners/blocklist_manager.py
-# Centralized blocklist management for staged symbol universe builds and daily universe maintenance.
-# Handles dynamic creation, updating, polling, and cleaning of the blocklist
-# for symbols that fail core filters (e.g., price, exchange, permanent delisting).
+# Centralized blocklist management for atomic symbol universe builds and daily maintenance.
+# Handles dynamic append of blocklisted symbols (per enrichment/filter step) with reason and timestamp.
 
 import os
 import json
 from datetime import datetime, timezone
-from typing import List, Set, Dict
 
 from tbot_bot.support.path_resolver import resolve_screener_blocklist_path
 
@@ -28,99 +26,76 @@ def log_blocklist_event(event: str, details: dict = None):
     with open(BLOCKLIST_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(msg + "\n")
 
-def load_blocklist(path: str = BLOCKLIST_PATH) -> Dict[str, dict]:
+def atomic_append_text(path: str, line: str):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line if line.endswith("\n") else line + "\n")
+
+def load_blocklist(path: str = BLOCKLIST_PATH):
     """
-    Returns blocklist as dict {symbol: {"reason":..., "timestamp":...}}
-    Lines are CSV: symbol,reason,timestamp
-    Ignores comment/hash lines and empty lines.
+    Returns blocklist as set of symbols.
+    Each line: symbol|reason|timestamp (pipe-delimited).
     """
-    blocklist = {}
+    blockset = set()
     if not os.path.isfile(path):
-        return blocklist
+        return blockset
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            parts = line.split(",", 2)
-            symbol = parts[0].upper()
-            reason = parts[1] if len(parts) > 1 else ""
-            timestamp = parts[2] if len(parts) > 2 else ""
-            blocklist[symbol] = {"reason": reason, "timestamp": timestamp}
-    return blocklist
+            parts = line.split("|", 2)
+            if parts:
+                blockset.add(parts[0].upper())
+    return blockset
 
-def save_blocklist(blocklist: Dict[str, dict], path: str = BLOCKLIST_PATH):
+def get_blocklist_entries(path: str = BLOCKLIST_PATH):
     """
-    Save blocklist dict to file, CSV (symbol,reason,timestamp), sorted.
+    Returns list of blocklist dicts: [{"symbol": ..., "reason": ..., "timestamp": ...}]
     """
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        for sym, meta in sorted(blocklist.items()):
-            reason = meta.get("reason", "")
-            timestamp = meta.get("timestamp", "")
-            f.write(f"{sym},{reason},{timestamp}\n")
-    log_blocklist_event("Blocklist updated", {"count": len(blocklist)})
+    entries = []
+    if not os.path.isfile(path):
+        return entries
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("|")
+            if len(parts) >= 3:
+                symbol, reason, timestamp = parts[:3]
+            elif len(parts) == 2:
+                symbol, reason = parts[:2]
+                timestamp = ""
+            elif len(parts) == 1:
+                symbol = parts[0]
+                reason = timestamp = ""
+            else:
+                continue
+            entries.append({"symbol": symbol, "reason": reason, "timestamp": timestamp})
+    return entries
 
-def add_to_blocklist(symbols: List[str], reason: str = ""):
-    now = utc_now().isoformat()
-    symbols = [s.upper() for s in symbols]
-    blocklist = load_blocklist()
-    before_count = len(blocklist)
-    for s in symbols:
-        blocklist[s] = {"reason": reason, "timestamp": now}
-    save_blocklist(blocklist)
-    log_blocklist_event("Added to blocklist", {
-        "symbols": symbols,
-        "reason": reason,
-        "before": before_count,
-        "after": len(blocklist)
-    })
+def add_to_blocklist(symbol: str, reason: str = ""):
+    now = utc_now().isoformat() + "Z"
+    entry = f"{symbol.upper()}|{reason}|{now}"
+    atomic_append_text(BLOCKLIST_PATH, entry)
+    log_blocklist_event("Added to blocklist", {"symbol": symbol.upper(), "reason": reason, "timestamp": now})
 
-def remove_from_blocklist(symbols: List[str], reason: str = ""):
-    now = utc_now().isoformat()
-    symbols = [s.upper() for s in symbols]
-    blocklist = load_blocklist()
-    before_count = len(blocklist)
-    for s in symbols:
-        if s in blocklist:
-            del blocklist[s]
-    save_blocklist(blocklist)
-    log_blocklist_event("Removed from blocklist", {
-        "symbols": symbols,
-        "reason": reason,
-        "before": before_count,
-        "after": len(blocklist)
-    })
-
-def update_blocklist_price_poll(price_map: dict, min_price: float):
-    """
-    Polls and removes symbols from the blocklist if price >= min_price.
-    `price_map` should be {symbol: price}
-    """
-    blocklist = load_blocklist()
-    remove_syms = [s for s, p in price_map.items() if p is not None and p >= min_price and s.upper() in blocklist]
-    if remove_syms:
-        remove_from_blocklist(remove_syms, reason=f"Moved above min price {min_price}")
-
-def blocklist_for_universe_build(symbols: List[dict], min_price: float) -> Set[str]:
-    """
-    Build/update blocklist set during staged universe build.
-    Any symbol with price < min_price or delisted/exchange mismatch is added.
-    """
-    block_syms = set()
-    now = utc_now().isoformat()
-    for entry in symbols:
-        symbol = entry.get("symbol", "").upper()
-        last_close = entry.get("lastClose", None)
-        exch = entry.get("exchange", "")
-        if last_close is None or last_close < min_price or exch not in ("NASDAQ", "NYSE"):
-            block_syms.add(symbol)
-    if block_syms:
-        add_to_blocklist(list(block_syms), reason="Universe build price/exchange fail")
-    return block_syms
+def remove_from_blocklist(symbol: str):
+    symbol = symbol.upper()
+    entries = get_blocklist_entries()
+    updated = [e for e in entries if e["symbol"].upper() != symbol]
+    with open(BLOCKLIST_PATH, "w", encoding="utf-8") as f:
+        for e in updated:
+            f.write(f"{e['symbol']}|{e['reason']}|{e['timestamp']}\n")
+    log_blocklist_event("Removed from blocklist", {"symbol": symbol})
 
 def is_blocked(symbol: str) -> bool:
     return symbol.upper() in load_blocklist()
 
 def get_blocklist_count() -> int:
     return len(load_blocklist())
+
+def clear_blocklist():
+    open(BLOCKLIST_PATH, "w", encoding="utf-8").close()
+    log_blocklist_event("Blocklist cleared")
