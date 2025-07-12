@@ -8,11 +8,12 @@ import json
 import time
 from datetime import datetime, timezone
 from tbot_bot.screeners.screener_utils import (
-    atomic_append_json, load_unfiltered_cache, dedupe_symbols, load_blocklist, atomic_append_text
+    atomic_append_json, load_blocklist, atomic_append_text
 )
 from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter
 from tbot_bot.support.path_resolver import (
-    resolve_universe_partial_path, resolve_universe_cache_path, resolve_screener_blocklist_path, resolve_universe_log_path, resolve_universe_unfiltered_path
+    resolve_universe_partial_path, resolve_universe_cache_path, resolve_screener_blocklist_path, resolve_universe_log_path, resolve_universe_unfiltered_path,
+    resolve_nasdaqlisted_txt_path
 )
 from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.config.env_bot import load_env_bot_config
@@ -23,6 +24,7 @@ FINAL_PATH = resolve_universe_cache_path()
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
 LOG_PATH = resolve_universe_log_path()
 UNFILTERED_PATH = resolve_universe_unfiltered_path()
+NASDAQ_TXT_PATH = resolve_nasdaqlisted_txt_path()
 
 def log_progress(msg, details=None):
     now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
@@ -31,6 +33,24 @@ def log_progress(msg, details=None):
         record += " | " + json.dumps(details)
     with open(LOG_PATH, "a", encoding="utf-8") as logf:
         logf.write(record + "\n")
+
+def read_nasdaq_txt_symbols():
+    if not os.path.isfile(NASDAQ_TXT_PATH):
+        raise RuntimeError(f"Nasdaq listed txt file missing: {NASDAQ_TXT_PATH}")
+    symbols = []
+    with open(NASDAQ_TXT_PATH, "r", encoding="utf-8") as f:
+        # Skip header line if present
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("Symbol|"):
+                continue
+            parts = line.split("|")
+            if len(parts) < 1:
+                continue
+            sym = parts[0].strip().upper()
+            if sym and not sym.startswith("ZVZZT"):  # skip placeholder/test issues
+                symbols.append({"symbol": sym})
+    return symbols
 
 def get_enrichment_provider_creds():
     all_creds = load_screener_credentials()
@@ -52,7 +72,7 @@ def get_enrichment_provider_creds():
 
 def main():
     env = load_env_bot_config()
-    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 1.0))
+    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
     try:
         screener_secrets = get_enrichment_provider_creds()
@@ -73,9 +93,9 @@ def main():
     print("DEBUG_CREDENTIALS:", json.dumps(merged_config, indent=2))
     provider = ProviderClass(merged_config)
 
-    unfiltered = load_unfiltered_cache()
-    if not unfiltered or len(unfiltered) < 1:
-        log_progress("No symbols to enrich (unfiltered cache empty or missing).")
+    nasdaq_symbols = read_nasdaq_txt_symbols()
+    if not nasdaq_symbols:
+        log_progress("Nasdaq listed txt symbols missing or empty.")
         sys.exit(1)
     exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
@@ -85,7 +105,7 @@ def main():
     max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
 
     blocklist = set(load_blocklist(BLOCKLIST_PATH))
-    all_symbols = [s for s in normalize_symbols(unfiltered) if s.get("symbol") not in blocklist]
+    all_symbols = [s for s in normalize_symbols(nasdaq_symbols) if s.get("symbol") not in blocklist]
     symbol_ids = [s["symbol"] for s in all_symbols if "symbol" in s]
     enriched_count = 0
     blocklisted_count = 0
