@@ -53,13 +53,14 @@ def read_nasdaq_txt_symbols():
 
 def get_enrichment_provider_creds():
     all_creds = load_screener_credentials()
-    provider_indices = [
-        k.split("_")[-1]
-        for k, v in all_creds.items()
-        if k.startswith("PROVIDER_")
-           and all_creds.get(f"ENRICHMENT_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
-           and not (all_creds.get(f"SCREENER_NAME_{k.split('_')[-1]}", "") or "").upper().endswith("_TXT")
-    ]
+    provider_indices = []
+    for k, v in all_creds.items():
+        if k.startswith("PROVIDER_"):
+            idx = k.split("_")[-1]
+            enrichment_enabled = all_creds.get(f"ENRICHMENT_ENABLED_{idx}", "false")
+            screener_name = all_creds.get(f"SCREENER_NAME_{idx}", "")
+            if enrichment_enabled is not None and enrichment_enabled.lower() == "true" and screener_name and not screener_name.upper().endswith("_TXT"):
+                provider_indices.append(idx)
     if not provider_indices:
         raise RuntimeError("No valid enrichment provider enabled for universe enrichment. Enable at least one API provider (not *_TXT) in the credential admin with ENRICHMENT_ENABLED checked.")
     idx = provider_indices[0]
