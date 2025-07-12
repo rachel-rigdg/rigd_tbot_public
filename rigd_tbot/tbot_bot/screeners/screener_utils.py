@@ -38,17 +38,21 @@ def atomic_append_json(path: str, obj: dict):
                 data = json.load(f)
                 if isinstance(data, dict) and "symbols" in data:
                     symbols = data["symbols"]
+                    base_data = data
                 elif isinstance(data, list):
                     symbols = data
+                    base_data = None
                 else:
                     symbols = []
+                    base_data = None
             except Exception:
                 symbols = []
+                base_data = None
             symbols.append(obj)
             f.seek(0)
-            if isinstance(data, dict) and "symbols" in data:
-                data["symbols"] = symbols
-                json.dump(data, f, indent=2)
+            if base_data and isinstance(base_data, dict) and "symbols" in base_data:
+                base_data["symbols"] = symbols
+                json.dump(base_data, f, indent=2)
             else:
                 json.dump({"schema_version": SCHEMA_VERSION, "build_timestamp_utc": utc_now().isoformat(), "symbols": symbols}, f, indent=2)
             f.truncate()
