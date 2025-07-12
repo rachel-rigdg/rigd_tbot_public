@@ -125,3 +125,8 @@ class YahooProvider(ProviderBase):
             return []
         return symbols
 
+if __name__ == "__main__":
+    p = YahooProvider({"LOG_LEVEL": "verbose"})
+    syms = p.fetch_symbols()
+    print("SYMBOL COUNT:", len(syms))
+    print("FIRST 5:", syms[:5])
