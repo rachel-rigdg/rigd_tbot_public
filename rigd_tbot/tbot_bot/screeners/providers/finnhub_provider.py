@@ -78,27 +78,50 @@ class FinnhubProvider(ProviderBase):
         """
         Fetches latest price/open/vwap and market cap for each symbol via Finnhub API.
         Returns list of dicts: {symbol, c, o, vwap, marketCap}
+        Implements simple retry and backoff on 429/503 errors.
         """
         quotes = []
         for idx, symbol in enumerate(symbols):
             auth = (self.username, self.password) if self.username and self.password else None
             try:
-                url_quote = f"{self.api_url.rstrip('/')}/quote?symbol={symbol}&token={self.api_key}"
-                resp_q = requests.get(url_quote, timeout=self.timeout, auth=auth)
-                if resp_q.status_code != 200:
-                    self.log(f"Error fetching quote for {symbol}: HTTP {resp_q.status_code}")
+                # Retry mechanism for quote
+                for attempt in range(3):
+                    url_quote = f"{self.api_url.rstrip('/')}/quote?symbol={symbol}&token={self.api_key}"
+                    resp_q = requests.get(url_quote, timeout=self.timeout, auth=auth)
+                    if resp_q.status_code == 200:
+                        break
+                    elif resp_q.status_code in (429, 503):
+                        self.log(f"Rate limited or service unavailable fetching quote for {symbol}, attempt {attempt + 1}/3")
+                        time.sleep(self.sleep * (attempt + 1))
+                    else:
+                        self.log(f"Error fetching quote for {symbol}: HTTP {resp_q.status_code}")
+                        break
+                else:
+                    self.log(f"Failed to fetch quote for {symbol} after retries")
                     continue
                 data_q = resp_q.json()
                 c = float(data_q.get("c", 0))
                 o = float(data_q.get("o", 0))
                 vwap = float(data_q.get("vwap", 0)) if "vwap" in data_q and data_q.get("vwap", 0) else (c if c else 0)
-                url_profile = f"{self.api_url.rstrip('/')}/stock/profile2?symbol={symbol}&token={self.api_key}"
-                resp_p = requests.get(url_profile, timeout=self.timeout, auth=auth)
-                if resp_p.status_code != 200:
-                    self.log(f"Error fetching profile2 for {symbol}: HTTP {resp_p.status_code}")
+
+                # Retry mechanism for profile2
+                for attempt in range(3):
+                    url_profile = f"{self.api_url.rstrip('/')}/stock/profile2?symbol={symbol}&token={self.api_key}"
+                    resp_p = requests.get(url_profile, timeout=self.timeout, auth=auth)
+                    if resp_p.status_code == 200:
+                        break
+                    elif resp_p.status_code in (429, 503):
+                        self.log(f"Rate limited or service unavailable fetching profile2 for {symbol}, attempt {attempt + 1}/3")
+                        time.sleep(self.sleep * (attempt + 1))
+                    else:
+                        self.log(f"Error fetching profile2 for {symbol}: HTTP {resp_p.status_code}")
+                        break
+                else:
+                    self.log(f"Failed to fetch profile2 for {symbol} after retries")
                     continue
                 data_p = resp_p.json()
                 market_cap = data_p.get("marketCapitalization", None)
+
                 if c and market_cap:
                     quotes.append({
                         "symbol": symbol,

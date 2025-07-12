@@ -103,6 +103,7 @@ def main():
         except Exception as e:
             log_progress("Failed to fetch quotes for batch", {"error": str(e), "batch": batch_syms})
             print(f"[symbol_enrichment] Batch {batch_num} failed: {e}", flush=True)
+            # Blocklist only on total batch fetch failure (transient failures do not blocklist individual symbols)
             for sym in batch_syms:
                 atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z\n")
                 blocklisted_count += 1
@@ -125,7 +126,6 @@ def main():
                 atomic_append_text(BLOCKLIST_PATH, f"{sym}|invalid_fields|{datetime.utcnow().isoformat()}Z\n")
                 blocklisted_count += 1
                 continue
-            # Atomic append enriched symbol to unfiltered.json
             record = dict(s)
             record["lastClose"] = price
             if cap is not None:
@@ -136,7 +136,6 @@ def main():
                 if k not in record:
                     record[k] = q[k]
             atomic_append_json(UNFILTERED_PATH, record)
-            # Filtering per locked spec
             filter_result, reason = passes_filter(record, exchanges, min_price, max_price, min_cap, max_cap)
             if filter_result:
                 atomic_append_json(PARTIAL_PATH, record)
