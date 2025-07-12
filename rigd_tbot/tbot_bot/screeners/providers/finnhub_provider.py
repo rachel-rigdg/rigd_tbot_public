@@ -16,16 +16,6 @@ class FinnhubProvider(ProviderBase):
     """
 
     def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
-        """
-        Accepts injected configuration and credentials dict.
-        Required keys:
-            - SCREENER_API_KEY or SCREENER_TOKEN
-            - SCREENER_URL (default: https://finnhub.io/api/v1/)
-            - SCREENER_USERNAME/SCREENER_PASSWORD (rare, optional)
-            - API_TIMEOUT (int, default 30)
-            - UNIVERSE_SLEEP_TIME (float, default 2.0) -- hardcoded to 2.0 here
-            - LOG_LEVEL ('silent' or 'verbose')
-        """
         merged = {}
         if config:
             merged.update(config)
@@ -40,7 +30,6 @@ class FinnhubProvider(ProviderBase):
         self.username = self.config.get("SCREENER_USERNAME", "")
         self.password = self.config.get("SCREENER_PASSWORD", "")
         self.timeout = int(self.config.get("API_TIMEOUT", 30))
-        # HARD-CODE sleep to 2.0 seconds to enforce throttling
         self.sleep = 2.0
         self.log_level = str(self.config.get("LOG_LEVEL", "silent")).lower()
         print(f"[FinnhubProvider] Enforced sleep between all API calls: {self.sleep:.2f} seconds")
@@ -51,10 +40,6 @@ class FinnhubProvider(ProviderBase):
             print(f"[FinnhubProvider] {msg}")
 
     def fetch_symbols(self) -> List[Dict]:
-        """
-        Fetches the full set of tradable US equities from Finnhub.
-        Returns a list of dicts: symbol, exchange, name
-        """
         url = f"{self.api_url.rstrip('/')}/stock/symbol?exchange=US&token={self.api_key}"
         try:
             resp = requests.get(url, timeout=self.timeout, auth=(self.username, self.password) if self.username and self.password else None)
@@ -65,32 +50,34 @@ class FinnhubProvider(ProviderBase):
             return []
         syms = []
         for d in data:
-            # Required: symbol, exchange, name
-            if d.get("symbol") and d.get("type", "").upper() == "EQS":
-                syms.append({
-                    "symbol": d["symbol"].strip().upper(),
-                    "exchange": d.get("exchange", "US"),
-                    "name": d.get("description", "")
-                })
+            t = d.get("type")
+            t_str = t.upper() if isinstance(t, str) else ""
+            symbol_val = d.get("symbol")
+            if symbol_val and t_str == "EQS":
+                try:
+                    syms.append({
+                        "symbol": symbol_val.strip().upper(),
+                        "exchange": d.get("exchange", "US"),
+                        "name": d.get("description", "")
+                    })
+                except Exception:
+                    continue
         self.log(f"Fetched {len(syms)} Finnhub equity symbols.")
         return syms
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
-        """
-        Fetches latest price/open/vwap and market cap for each symbol via Finnhub API.
-        Returns list of dicts: {symbol, c, o, vwap, marketCap}
-        Implements simple retry and backoff on 429/503 errors.
-        """
         quotes = []
         for idx, symbol in enumerate(symbols):
-            print(f"[FinnhubProvider][DEBUG] Fetching symbol: {symbol} (idx={idx}) using API_KEY={self.api_key[:6]}...")  # <<<<<<<<<<<<<<
+            print(f"[FinnhubProvider][DEBUG] Fetching symbol: {symbol} (idx={idx}) using API_KEY={self.api_key[:6]}...")
             auth = (self.username, self.password) if self.username and self.password else None
             try:
                 # Retry mechanism for quote
+                data_q = None
                 for attempt in range(3):
                     url_quote = f"{self.api_url.rstrip('/')}/quote?symbol={symbol}&token={self.api_key}"
                     resp_q = requests.get(url_quote, timeout=self.timeout, auth=auth)
                     if resp_q.status_code == 200:
+                        data_q = resp_q.json()
                         break
                     elif resp_q.status_code in (429, 503):
                         self.log(f"Rate limited or service unavailable fetching quote for {symbol}, attempt {attempt + 1}/3")
@@ -98,19 +85,21 @@ class FinnhubProvider(ProviderBase):
                     else:
                         self.log(f"Error fetching quote for {symbol}: HTTP {resp_q.status_code}")
                         break
-                else:
-                    self.log(f"Failed to fetch quote for {symbol} after retries")
+                if data_q is None or data_q.get("c") is None:
+                    self.log(f"Skipping {symbol}: no valid quote data (not found on Finnhub or missing fields)")
                     continue
-                data_q = resp_q.json()
+
                 c = float(data_q.get("c", 0))
                 o = float(data_q.get("o", 0))
                 vwap = float(data_q.get("vwap", 0)) if "vwap" in data_q and data_q.get("vwap", 0) else (c if c else 0)
 
                 # Retry mechanism for profile2
+                data_p = None
                 for attempt in range(3):
                     url_profile = f"{self.api_url.rstrip('/')}/stock/profile2?symbol={symbol}&token={self.api_key}"
                     resp_p = requests.get(url_profile, timeout=self.timeout, auth=auth)
                     if resp_p.status_code == 200:
+                        data_p = resp_p.json()
                         break
                     elif resp_p.status_code in (429, 503):
                         self.log(f"Rate limited or service unavailable fetching profile2 for {symbol}, attempt {attempt + 1}/3")
@@ -118,12 +107,11 @@ class FinnhubProvider(ProviderBase):
                     else:
                         self.log(f"Error fetching profile2 for {symbol}: HTTP {resp_p.status_code}")
                         break
-                else:
-                    self.log(f"Failed to fetch profile2 for {symbol} after retries")
+                if data_p is None or data_p.get("marketCapitalization") is None:
+                    self.log(f"Skipping {symbol}: no valid profile2 data (not found on Finnhub or missing fields)")
                     continue
-                data_p = resp_p.json()
-                market_cap = data_p.get("marketCapitalization", None)
 
+                market_cap = data_p.get("marketCapitalization", None)
                 if c and market_cap:
                     quotes.append({
                         "symbol": symbol,
@@ -135,7 +123,7 @@ class FinnhubProvider(ProviderBase):
                     if self.log_level == "verbose":
                         print(f"QUOTE[{idx}]: {symbol} | Close: {c} Open: {o} VWAP: {vwap} MarketCap: {market_cap}")
                 else:
-                    self.log(f"Skipping {symbol}: missing price or market cap")
+                    self.log(f"Skipping {symbol}: missing price or market cap after Finnhub query")
             except Exception as e:
                 self.log(f"Exception fetching quote/profile2 for {symbol}: {e}")
                 continue
