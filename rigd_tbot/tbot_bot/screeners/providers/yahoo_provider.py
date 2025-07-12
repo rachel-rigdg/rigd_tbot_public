@@ -92,13 +92,34 @@ class YahooProvider(ProviderBase):
                 high = float(bar["High"])
                 low = float(bar["Low"])
                 vwap = (high + low + close) / 3 if all([high, low, close]) else close
+
+                # Retrieve marketCap (try fast_info first, then info)
+                market_cap = None
+                try:
+                    if hasattr(ticker, "fast_info") and getattr(ticker, "fast_info", None):
+                        market_cap = getattr(ticker, "fast_info").get("market_cap")
+                except Exception:
+                    pass
+                if market_cap is None:
+                    try:
+                        info = ticker.info
+                        market_cap = info.get("marketCap")
+                    except Exception:
+                        market_cap = None
+
+                # Fallback: skip if marketCap is missing
+                if market_cap is None:
+                    print(f"[YahooProvider] No marketCap for {symbol}")
+                    continue
+
                 quotes.append({
                     "symbol": symbol,
                     "c": close,
                     "o": open_,
-                    "vwap": vwap
+                    "vwap": vwap,
+                    "marketCap": market_cap
                 })
-                print(f"QUOTE[{idx}]: {symbol} | Close: {close} Open: {open_} VWAP: {vwap}")
+                print(f"QUOTE[{idx}]: {symbol} | Close: {close} Open: {open_} VWAP: {vwap} MarketCap: {market_cap}")
             except Exception as e:
                 print(f"[YahooProvider] Exception fetching Yahoo quote for {symbol}: {e}")
                 continue
