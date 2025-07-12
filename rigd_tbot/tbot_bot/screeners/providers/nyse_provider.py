@@ -26,17 +26,18 @@ class NyseProvider(ProviderBase):
     def fetch_symbols(self) -> List[Dict]:
         """
         Return NYSE symbols as List[Dict] (symbol, exchange, companyName at minimum).
-        Not implemented.
+        Returns empty list and logs warning.
         """
-        self.log("fetch_symbols() called but not implemented.")
-        raise NotImplementedError("fetch_symbols() not implemented for NyseProvider")
+        self.log("fetch_symbols() not implemented for NyseProvider, returning empty list.")
+        return []
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
         """
-        Return quotes for given NYSE symbols. Not implemented.
+        Return quotes for given NYSE symbols.
+        Returns empty list and logs warning.
         """
-        self.log("fetch_quotes() called but not implemented.")
-        raise NotImplementedError("fetch_quotes() not implemented for NyseProvider")
+        self.log("fetch_quotes() not implemented for NyseProvider, returning empty list.")
+        return []
 
     def fetch_universe_symbols(
         self,
@@ -50,7 +51,7 @@ class NyseProvider(ProviderBase):
     ) -> List[Dict]:
         """
         Return filtered NYSE universe symbol dicts.
-        Not implemented.
+        Returns empty list and logs warning.
         """
-        self.log("fetch_universe_symbols() called but not implemented.")
-        raise NotImplementedError("fetch_universe_symbols() not implemented for NyseProvider")
+        self.log("fetch_universe_symbols() not implemented for NyseProvider, returning empty list.")
+        return []

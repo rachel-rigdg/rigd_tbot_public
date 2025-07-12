@@ -85,8 +85,9 @@ class FinnhubProvider(ProviderBase):
                     else:
                         self.log(f"Error fetching quote for {symbol}: HTTP {resp_q.status_code}")
                         break
-                if data_q is None or data_q.get("c") is None:
-                    self.log(f"Skipping {symbol}: no valid quote data (not found on Finnhub or missing fields)")
+                # If missing or bad data, skip
+                if not data_q or data_q.get("c") is None or data_q.get("c") == 0:
+                    self.log(f"Skipping {symbol}: no valid quote data (not found or missing fields)")
                     continue
 
                 c = float(data_q.get("c", 0))
@@ -107,23 +108,20 @@ class FinnhubProvider(ProviderBase):
                     else:
                         self.log(f"Error fetching profile2 for {symbol}: HTTP {resp_p.status_code}")
                         break
-                if data_p is None or data_p.get("marketCapitalization") is None:
-                    self.log(f"Skipping {symbol}: no valid profile2 data (not found on Finnhub or missing fields)")
+                if not data_p or data_p.get("marketCapitalization") is None or data_p.get("marketCapitalization") == 0:
+                    self.log(f"Skipping {symbol}: no valid profile2 data (not found or missing fields)")
                     continue
 
                 market_cap = data_p.get("marketCapitalization", None)
-                if c and market_cap:
-                    quotes.append({
-                        "symbol": symbol,
-                        "c": c,
-                        "o": o,
-                        "vwap": vwap,
-                        "marketCap": market_cap
-                    })
-                    if self.log_level == "verbose":
-                        print(f"QUOTE[{idx}]: {symbol} | Close: {c} Open: {o} VWAP: {vwap} MarketCap: {market_cap}")
-                else:
-                    self.log(f"Skipping {symbol}: missing price or market cap after Finnhub query")
+                quotes.append({
+                    "symbol": symbol,
+                    "c": c,
+                    "o": o,
+                    "vwap": vwap,
+                    "marketCap": market_cap
+                })
+                if self.log_level == "verbose":
+                    print(f"QUOTE[{idx}]: {symbol} | Close: {c} Open: {o} VWAP: {vwap} MarketCap: {market_cap}")
             except Exception as e:
                 self.log(f"Exception fetching quote/profile2 for {symbol}: {e}")
                 continue

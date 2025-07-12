@@ -74,18 +74,20 @@ class NasdaqTxtProvider(ProviderBase):
     def _load_from_txt(self) -> List[Dict]:
         """
         Loads and parses nasdaqlisted.txt into symbol dicts.
-        Skips test issues, placeholders, and blanks.
+        Skips test issues, placeholders, blanks, and garbage rows.
         """
         syms = []
         with open(self.local_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(
-                (line for line in f if line.strip() and not line.startswith("File")),
-                delimiter="|"
-            )
-            for row in reader:
-                symbol = row.get("Symbol", "").strip().upper()
-                name = row.get("Security Name", "").strip()
-                if not symbol or "Test Issue" in name or symbol.startswith("ZVZZT"):
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("Symbol|") or line.startswith("File Creation Time") or line.startswith("Nasdaq Traded"):
+                    continue
+                parts = line.split("|")
+                if len(parts) < 2:
+                    continue
+                symbol = parts[0].strip().upper()
+                name = parts[1].strip() if len(parts) > 1 else ""
+                if not symbol or "Test Issue" in name or symbol.startswith("ZVZZT") or symbol == "":  # skip blanks/garbage
                     continue
                 syms.append({
                     "symbol": symbol,

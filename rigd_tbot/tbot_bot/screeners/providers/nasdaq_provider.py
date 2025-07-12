@@ -14,14 +14,6 @@ class NasdaqProvider(ProviderBase):
     """
 
     def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
-        """
-        Accepts injected configuration and credentials.
-        Required keys for IBKR:
-            - IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID
-            - API_TIMEOUT (optional, default 30)
-            - API_SLEEP (optional, default 0.2)
-            - LOG_LEVEL ('silent' or 'verbose')
-        """
         merged = {}
         if config:
             merged.update(config)
@@ -71,11 +63,14 @@ class NasdaqProvider(ProviderBase):
                 exch = con.contract.exchange or "NASDAQ"
                 name = getattr(con, "description", "") or getattr(con, "longName", "")
                 if symbol:
-                    syms.append({
-                        "symbol": symbol.strip().upper(),
-                        "exchange": exch,
-                        "name": name
-                    })
+                    try:
+                        syms.append({
+                            "symbol": symbol.strip().upper(),
+                            "exchange": exch,
+                            "name": name
+                        })
+                    except Exception:
+                        continue
             self.log(f"Fetched {len(syms)} NASDAQ symbols from IBKR.")
             return syms
         except Exception as e:
@@ -95,6 +90,9 @@ class NasdaqProvider(ProviderBase):
                     last = float(ticker.last or 0)
                     open_ = float(ticker.open or 0)
                     vwap = float(ticker.vwap or last or 0)
+                    if last == 0 or open_ == 0:
+                        self.log(f"Skipping {symbol}: missing price data")
+                        continue
                     quotes.append({
                         "symbol": symbol,
                         "c": last,

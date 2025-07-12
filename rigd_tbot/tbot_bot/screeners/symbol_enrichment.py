@@ -1,6 +1,6 @@
 # tbot_bot/screeners/symbol_enrichment.py
-# Stage 2: Reads symbols from nasdaqlisted.txt, enriches each symbol using appropriate provider and API, and atomically appends enriched dict to symbol_universe.unfiltered.json.
-# Applies batch filter, blocklists failures, appends passing symbols to partial.json, blocklisted to screener_blocklist.txt. No in-memory global state.
+# Stage 2: Builds symbol universe directly from API provider. Enriches and filters symbols from provider.fetch_symbols().
+# Fails gracefully, applies blocklist overlay, persists results. No nasdaqlisted.txt dependency.
 
 import os
 import sys
@@ -12,8 +12,8 @@ from tbot_bot.screeners.screener_utils import (
 )
 from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter
 from tbot_bot.support.path_resolver import (
-    resolve_universe_partial_path, resolve_universe_cache_path, resolve_screener_blocklist_path, resolve_universe_log_path, resolve_universe_unfiltered_path,
-    resolve_nasdaqlisted_txt_path
+    resolve_universe_partial_path, resolve_universe_cache_path, resolve_screener_blocklist_path,
+    resolve_universe_log_path, resolve_universe_unfiltered_path
 )
 from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.config.env_bot import load_env_bot_config
@@ -24,7 +24,6 @@ FINAL_PATH = resolve_universe_cache_path()
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
 LOG_PATH = resolve_universe_log_path()
 UNFILTERED_PATH = resolve_universe_unfiltered_path()
-NASDAQ_TXT_PATH = resolve_nasdaqlisted_txt_path()
 
 def log_progress(msg, details=None):
     now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
@@ -33,23 +32,6 @@ def log_progress(msg, details=None):
         record += " | " + json.dumps(details)
     with open(LOG_PATH, "a", encoding="utf-8") as logf:
         logf.write(record + "\n")
-
-def read_nasdaq_txt_symbols():
-    if not os.path.isfile(NASDAQ_TXT_PATH):
-        raise RuntimeError(f"Nasdaq listed txt file missing: {NASDAQ_TXT_PATH}")
-    symbols = []
-    with open(NASDAQ_TXT_PATH, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("Symbol|"):
-                continue
-            parts = line.split("|")
-            if len(parts) < 1:
-                continue
-            sym = parts[0].strip().upper()
-            if sym and not sym.startswith("ZVZZT"):  # skip placeholder/test issues
-                symbols.append({"symbol": sym})
-    return symbols
 
 def get_enrichment_provider_creds():
     all_creds = load_screener_credentials()
@@ -93,9 +75,15 @@ def main():
     print("DEBUG_CREDENTIALS:", json.dumps(merged_config, indent=2))
     provider = ProviderClass(merged_config)
 
-    nasdaq_symbols = read_nasdaq_txt_symbols()
-    if not nasdaq_symbols:
-        log_progress("Nasdaq listed txt symbols missing or empty.")
+    try:
+        raw_symbols = provider.fetch_symbols()
+    except Exception as e:
+        log_progress("Provider fetch_symbols() failed, aborting.", {"error": str(e)})
+        print(f"ERROR: fetch_symbols failed: {e}", flush=True)
+        sys.exit(2)
+
+    if not raw_symbols:
+        log_progress("Provider returned no symbols.")
         sys.exit(1)
     exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
@@ -105,7 +93,7 @@ def main():
     max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
 
     blocklist = set(load_blocklist(BLOCKLIST_PATH))
-    all_symbols = [s for s in normalize_symbols(nasdaq_symbols) if s.get("symbol") not in blocklist]
+    all_symbols = [s for s in normalize_symbols(raw_symbols) if s.get("symbol") not in blocklist]
     symbol_ids = [s["symbol"] for s in all_symbols if "symbol" in s]
     enriched_count = 0
     blocklisted_count = 0
@@ -119,6 +107,11 @@ def main():
             log_progress("Failed to fetch quote for symbol", {"error": str(e), "symbol": sym})
             print(f"[symbol_enrichment] Fetch failed for symbol {sym}: {e}", flush=True)
             atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z\n")
+            blocklisted_count += 1
+            continue
+        if not quotes or not any(q.get("symbol", "") == sym for q in quotes):
+            log_progress("No quote data for symbol", {"symbol": sym})
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_data_from_api|{datetime.utcnow().isoformat()}Z\n")
             blocklisted_count += 1
             continue
         quote_map = {q["symbol"]: q for q in quotes if "symbol" in q}

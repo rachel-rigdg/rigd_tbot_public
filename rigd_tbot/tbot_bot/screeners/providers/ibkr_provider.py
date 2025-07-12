@@ -14,14 +14,6 @@ class IBKRProvider(ProviderBase):
     """
 
     def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
-        """
-        Accepts injected configuration and credentials dict.
-        Required keys:
-            - IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID, IBKR_USERNAME, IBKR_PASSWORD (if needed)
-            - API_TIMEOUT (default 30)
-            - API_SLEEP (default 0.2)
-            - LOG_LEVEL ('silent' or 'verbose')
-        """
         merged = {}
         if config:
             merged.update(config)
@@ -43,10 +35,6 @@ class IBKRProvider(ProviderBase):
             print(f"[IBKRProvider] {msg}")
 
     def _ensure_ibkr_client(self):
-        """
-        Lazily creates an IBKR client using ib_insync, if available.
-        Throws ImportError if ib_insync is not installed.
-        """
         if self._ib is not None:
             return self._ib
         try:
@@ -63,14 +51,9 @@ class IBKRProvider(ProviderBase):
             raise
 
     def fetch_symbols(self) -> List[Dict]:
-        """
-        Fetches tradable US equities from IBKR.
-        Returns a list of dicts: symbol, exchange, name
-        """
         try:
             ib = self._ensure_ibkr_client()
             from ib_insync import Stock
-            # Scanner for all US stocks. Replace logic as needed for your universe.
             contracts = ib.reqScannerData(
                 instrument="STK",
                 locationCode="STK.US.MAJOR",
@@ -82,11 +65,14 @@ class IBKRProvider(ProviderBase):
                 exch = getattr(con.contract, "exchange", None) or "SMART"
                 name = getattr(con, "description", "") or getattr(con, "longName", "")
                 if symbol:
-                    syms.append({
-                        "symbol": symbol.strip().upper(),
-                        "exchange": exch,
-                        "name": name
-                    })
+                    try:
+                        syms.append({
+                            "symbol": symbol.strip().upper(),
+                            "exchange": exch,
+                            "name": name
+                        })
+                    except Exception:
+                        continue
             self.log(f"Fetched {len(syms)} IBKR equity symbols.")
             return syms
         except Exception as e:
@@ -94,10 +80,6 @@ class IBKRProvider(ProviderBase):
             return []
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
-        """
-        Fetches latest price/open/vwap for each symbol via IBKR API.
-        Returns list of dicts: {symbol, c, o, vwap}
-        """
         try:
             ib = self._ensure_ibkr_client()
             from ib_insync import Stock
@@ -110,6 +92,9 @@ class IBKRProvider(ProviderBase):
                     last = float(ticker.last or 0)
                     open_ = float(ticker.open or 0)
                     vwap = float(ticker.vwap or last or 0)
+                    if last == 0 or open_ == 0:
+                        self.log(f"Skipping {symbol}: missing price data")
+                        continue
                     quotes.append({
                         "symbol": symbol,
                         "c": last,

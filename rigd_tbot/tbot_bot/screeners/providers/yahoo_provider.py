@@ -16,7 +16,8 @@ class YahooProvider(ProviderBase):
         self.log_level = str(self.config.get("LOG_LEVEL", "silent")).lower()
 
     def log(self, msg):
-        print(f"[YahooProvider] {msg}")
+        if self.log_level == "verbose":
+            print(f"[YahooProvider] {msg}")
 
     def fetch_symbols(self) -> List[Dict]:
         import requests
@@ -38,13 +39,12 @@ class YahooProvider(ProviderBase):
                         "sector": row.get("sector", ""),
                         "industry": row.get("industry", ""),
                     })
-                print(f"SYMBOL[{i}]: {symbol} | {name}")
                 if i > 0 and i % 100 == 0:
-                    print(f"[YahooProvider] Collected {i} NASDAQ symbols...")
+                    self.log(f"Collected {i} NASDAQ symbols...")
                 time.sleep(0.01)
-            print(f"[YahooProvider] Loaded {len(rows)} NASDAQ symbols from NASDAQ.com API.")
+            self.log(f"Loaded {len(rows)} NASDAQ symbols from NASDAQ.com API.")
         except Exception as e:
-            print(f"[YahooProvider] Failed to fetch NASDAQ symbols: {e}")
+            self.log(f"Failed to fetch NASDAQ symbols: {e}")
 
         try:
             response = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&exchange=nyse&download=true", headers={"User-Agent": "Mozilla/5.0"})
@@ -61,15 +61,14 @@ class YahooProvider(ProviderBase):
                         "sector": row.get("sector", ""),
                         "industry": row.get("industry", ""),
                     })
-                print(f"SYMBOL[{i}]: {symbol} | {name}")
                 if i > 0 and i % 100 == 0:
-                    print(f"[YahooProvider] Collected {i} NYSE symbols...")
+                    self.log(f"Collected {i} NYSE symbols...")
                 time.sleep(0.01)
-            print(f"[YahooProvider] Loaded {len(rows)} NYSE symbols from NASDAQ.com API.")
+            self.log(f"Loaded {len(rows)} NYSE symbols from NASDAQ.com API.")
         except Exception as e:
-            print(f"[YahooProvider] Failed to fetch NYSE symbols: {e}")
+            self.log(f"Failed to fetch NYSE symbols: {e}")
 
-        print(f"[YahooProvider] Total US symbols collected: {len(syms)}")
+        self.log(f"Total US symbols collected: {len(syms)}")
         return syms
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
@@ -80,7 +79,7 @@ class YahooProvider(ProviderBase):
         sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
 
         if sleep_time < 1.0:
-            print("[YahooProvider] WARNING: UNIVERSE_SLEEP_TIME is below 1.0; risk of throttling/high 429s.")
+            self.log("WARNING: UNIVERSE_SLEEP_TIME is below 1.0; risk of throttling/high 429s.")
 
         quotes = []
         for idx, symbol in enumerate(symbols):
@@ -88,7 +87,7 @@ class YahooProvider(ProviderBase):
                 ticker = yf.Ticker(symbol)
                 hist = ticker.history(period="2d")
                 if hist.empty:
-                    print(f"[YahooProvider] No Yahoo data for {symbol}")
+                    self.log(f"No Yahoo data for {symbol}")
                     continue
                 bar = hist.iloc[-1]
                 close = float(bar["Close"])
@@ -113,7 +112,7 @@ class YahooProvider(ProviderBase):
 
                 # Fallback: skip if marketCap is missing
                 if market_cap is None:
-                    print(f"[YahooProvider] No marketCap for {symbol}")
+                    self.log(f"No marketCap for {symbol}")
                     continue
 
                 quotes.append({
@@ -123,13 +122,13 @@ class YahooProvider(ProviderBase):
                     "vwap": vwap,
                     "marketCap": market_cap
                 })
-                print(f"QUOTE[{idx}]: {symbol} | Close: {close} Open: {open_} VWAP: {vwap} MarketCap: {market_cap}")
+                if self.log_level == "verbose":
+                    print(f"QUOTE[{idx}]: {symbol} | Close: {close} Open: {open_} VWAP: {vwap} MarketCap: {market_cap}")
             except Exception as e:
-                print(f"[YahooProvider] Exception fetching Yahoo quote for {symbol}: {e}")
+                self.log(f"Exception fetching Yahoo quote for {symbol}: {e}")
                 continue
             if idx > 0 and idx % 10 == 0:
-                print(f"[YahooProvider] Fetched Yahoo quotes for {idx} symbols...")
-            # Add random jitter (up to 1 second)
+                self.log(f"Fetched Yahoo quotes for {idx} symbols...")
             time.sleep(sleep_time + random.uniform(0, 1.0))
         return quotes
 
@@ -137,7 +136,7 @@ class YahooProvider(ProviderBase):
         try:
             symbols = self.fetch_symbols()
         except Exception as e:
-            print(f"[YahooProvider] fetch_universe_symbols failed: {e}")
+            self.log(f"fetch_universe_symbols failed: {e}")
             return []
         return symbols
 
