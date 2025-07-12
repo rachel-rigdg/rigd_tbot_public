@@ -26,11 +26,11 @@ SCREENER_SCHEMA_PATH = os.path.join(
 )
 AUDIT_LOG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "output", "logs", "screener_credentials_audit.log"
+    "tbot_bot", "output", "logs", "screener_credentials_audit.log"
 )
 KEY_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "storage", "keys"
+    "tbot_bot", "storage", "keys"
 )
 
 USAGE_FLAGS = ["UNIVERSE_ENABLED", "TRADING_ENABLED", "ENRICHMENT_ENABLED"]
