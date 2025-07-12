@@ -117,6 +117,7 @@ class YahooProvider(ProviderBase):
 
     def full_universe_build(self):
         import os, json, time
+        from datetime import datetime
         from tbot_bot.screeners.screener_filter import filter_symbols, dedupe_symbols
         from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path, resolve_universe_log_path
         from tbot_bot.config.env_bot import load_env_bot_config

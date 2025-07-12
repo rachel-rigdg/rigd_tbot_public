@@ -80,7 +80,7 @@ def main():
         log_progress("No symbols to enrich (unfiltered cache empty or missing).")
         sys.exit(1)
 
-    exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
+    exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
     max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 300_000_000))

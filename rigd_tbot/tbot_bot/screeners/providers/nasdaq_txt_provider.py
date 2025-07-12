@@ -18,7 +18,6 @@ class NasdaqTxtProvider(ProviderBase):
     """
 
     def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
-        print("NasdaqTxtProvider instantiated!")  # DEBUG
         merged = {}
         if config:
             merged.update(config)
@@ -47,11 +46,9 @@ class NasdaqTxtProvider(ProviderBase):
         Not supported for TXT provider (no quotes in file).
         Returns empty list.
         """
-        self.log("fetch_quotes() called on TXT provider; not supported.")
         return []
 
     def fetch_universe_symbols(self, exchanges, min_price, max_price, min_cap, max_cap, blocklist, max_size) -> List[Dict]:
-        print("NasdaqTxtProvider.fetch_universe_symbols CALLED!")  # DEBUG
         """
         ProviderBase-compliant stub for universe build. Returns all from TXT.
         """

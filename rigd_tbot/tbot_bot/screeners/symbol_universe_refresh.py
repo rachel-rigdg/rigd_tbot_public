@@ -52,7 +52,7 @@ def main():
         print("Screener credentials not configured. Please configure screener credentials in the UI before building the universe.")
         sys.exit(2)
     env = load_env_bot_config()
-    exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
+    exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
     max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
@@ -76,7 +76,6 @@ def main():
     except Exception:
         blocklist = []
 
-    # Fetch provider and iterate in batches
     all_creds = load_screener_credentials()
     provider_indices = [
         k.split("_")[-1]
@@ -104,7 +103,6 @@ def main():
     partial_symbols = []
     count = 0
 
-    # Build in batches, writing after each batch
     syms = provider.fetch_symbols()
     total = len(syms)
     log_progress("Fetched all symbols from provider", {"total_symbols": total})
@@ -112,10 +110,8 @@ def main():
     for i in range(0, total, batch_size):
         batch = syms[i:i + batch_size]
         count += len(batch)
-        # Append raw to unfiltered
         symbols_unfiltered.extend(batch)
         atomic_write_json(UNFILTERED_PATH, {"symbols": symbols_unfiltered})
-        # Filter batch and append to partial
         filtered = filter_symbols(
             symbols=batch,
             exchanges=exchanges,
@@ -139,7 +135,6 @@ def main():
             "partial_count": len(partial_symbols)
         })
 
-    # After all batches, copy partial to final
     atomic_write_json(FINAL_PATH, dedupe_symbols(partial_symbols))
     save_universe_cache(dedupe_symbols(partial_symbols), bot_identity=bot_identity)
     log_progress("Universe cache build complete", {"final_count": len(partial_symbols)})
