@@ -19,16 +19,10 @@ class YahooProvider(ProviderBase):
         print(f"[YahooProvider] {msg}")
 
     def fetch_symbols(self) -> List[Dict]:
-        """
-        Uses yfinance to enumerate all US stock tickers.
-        Returns list of dicts: {symbol, exchange, companyName, sector, industry}
-        Logs progress as symbols are collected.
-        """
         import requests
         import time
 
         syms = []
-        # Fetch NASDAQ
         try:
             response = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&exchange=nasdaq&download=true", headers={"User-Agent": "Mozilla/5.0"})
             data = response.json()
@@ -52,7 +46,6 @@ class YahooProvider(ProviderBase):
         except Exception as e:
             print(f"[YahooProvider] Failed to fetch NASDAQ symbols: {e}")
 
-        # Fetch NYSE
         try:
             response = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&exchange=nyse&download=true", headers={"User-Agent": "Mozilla/5.0"})
             data = response.json()
@@ -80,10 +73,6 @@ class YahooProvider(ProviderBase):
         return syms
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
-        """
-        Fetches latest price, open, vwap for each symbol using Yahoo Finance API (yfinance).
-        Returns list of dicts: [{symbol, c, o, vwap}]
-        """
         import time
         from tbot_bot.config.env_bot import load_env_bot_config
         env = load_env_bot_config()
@@ -119,9 +108,6 @@ class YahooProvider(ProviderBase):
         return quotes
 
     def fetch_universe_symbols(self, exchanges, min_price, max_price, min_cap, max_cap, blocklist, max_size) -> List[Dict]:
-        """
-        ProviderBase-compliant stub for universe build. Returns all from fetch_symbols.
-        """
         try:
             symbols = self.fetch_symbols()
         except Exception as e:
@@ -129,8 +115,91 @@ class YahooProvider(ProviderBase):
             return []
         return symbols
 
+    def full_universe_build(self):
+        import os, json, time
+        from tbot_bot.screeners.screener_filter import filter_symbols, dedupe_symbols
+        from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_universe_partial_path, resolve_universe_log_path
+        from tbot_bot.config.env_bot import load_env_bot_config
+
+        env = load_env_bot_config()
+        sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 0.5))
+        exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
+        min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
+        max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
+        min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 300_000_000))
+        max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
+        max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
+
+        log_path = resolve_universe_log_path()
+        unfiltered_path = "tbot_bot/output/screeners/symbol_universe.unfiltered.json"
+        partial_path = resolve_universe_partial_path()
+        final_path = resolve_universe_cache_path()
+        batch_size = 100
+
+        def logp(msg, details=None):
+            now = datetime.utcnow().replace(tzinfo=None).isoformat() + "Z"
+            rec = f"[{now}] {msg}"
+            if details:
+                rec += " | " + json.dumps(details)
+            with open(log_path, "a", encoding="utf-8") as logf:
+                logf.write(rec + "\n")
+            print(rec)
+
+        # Fresh build: overwrite files
+        all_syms = self.fetch_symbols()
+        n = len(all_syms)
+        logp("Starting full_universe_build", {"total_symbols": n, "batch_size": batch_size})
+
+        # Remove old files
+        for f in [unfiltered_path, partial_path, final_path]:
+            try: os.remove(f)
+            except Exception: pass
+
+        filtered_total = []
+        for batch_idx in range(0, n, batch_size):
+            batch = all_syms[batch_idx:batch_idx + batch_size]
+            # Write batch to unfiltered (append mode)
+            if os.path.exists(unfiltered_path):
+                with open(unfiltered_path, "r", encoding="utf-8") as uf:
+                    existing = json.load(uf).get("symbols", [])
+            else:
+                existing = []
+            batch_combined = existing + batch
+            with open(unfiltered_path, "w", encoding="utf-8") as uf:
+                json.dump({"symbols": batch_combined}, uf, indent=2)
+            logp("Wrote unfiltered batch", {"batch_start": batch_idx, "batch_size": len(batch)})
+
+            # Filter this batch and append to partial
+            filtered_batch = filter_symbols(
+                batch,
+                exchanges,
+                min_price,
+                max_price,
+                min_cap,
+                max_cap,
+                blocklist=None,
+                max_size=None
+            )
+            filtered_total.extend(filtered_batch)
+            with open(partial_path, "w", encoding="utf-8") as pf:
+                json.dump({
+                    "schema_version": "1.0.0",
+                    "build_timestamp_utc": datetime.utcnow().isoformat() + "Z",
+                    "symbols": filtered_total
+                }, pf, indent=2)
+            logp("Wrote filtered batch", {"filtered_batch": len(filtered_batch), "total_filtered": len(filtered_total)})
+
+            time.sleep(sleep_time)
+
+        # Write final
+        with open(final_path, "w", encoding="utf-8") as ff:
+            json.dump({
+                "schema_version": "1.0.0",
+                "build_timestamp_utc": datetime.utcnow().isoformat() + "Z",
+                "symbols": filtered_total
+            }, ff, indent=2)
+        logp("Wrote final universe", {"final_count": len(filtered_total)})
+
 if __name__ == "__main__":
     p = YahooProvider({"LOG_LEVEL": "verbose"})
-    syms = p.fetch_symbols()
-    print("SYMBOL COUNT:", len(syms))
-    print("FIRST 5:", syms[:5])
+    p.full_universe_build()
