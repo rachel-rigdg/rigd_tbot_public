@@ -74,9 +74,13 @@ class YahooProvider(ProviderBase):
 
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
         import time
+        import random
         from tbot_bot.config.env_bot import load_env_bot_config
         env = load_env_bot_config()
-        sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 0.5))
+        sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
+
+        if sleep_time < 1.0:
+            print("[YahooProvider] WARNING: UNIVERSE_SLEEP_TIME is below 1.0; risk of throttling/high 429s.")
 
         quotes = []
         for idx, symbol in enumerate(symbols):
@@ -125,7 +129,8 @@ class YahooProvider(ProviderBase):
                 continue
             if idx > 0 and idx % 10 == 0:
                 print(f"[YahooProvider] Fetched Yahoo quotes for {idx} symbols...")
-            time.sleep(sleep_time)
+            # Add random jitter (up to 1 second)
+            time.sleep(sleep_time + random.uniform(0, 1.0))
         return quotes
 
     def fetch_universe_symbols(self, exchanges, min_price, max_price, min_cap, max_cap, blocklist, max_size) -> List[Dict]:
@@ -144,7 +149,7 @@ class YahooProvider(ProviderBase):
         from tbot_bot.config.env_bot import load_env_bot_config
 
         env = load_env_bot_config()
-        sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 0.5))
+        sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
         exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
         min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
         max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
