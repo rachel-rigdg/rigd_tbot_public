@@ -53,6 +53,7 @@ def get_enrichment_provider_creds():
     }
 
 def main():
+    print("[DEBUG] symbol_enrichment.py main() starting", flush=True)
     env = load_env_bot_config()
     sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
@@ -63,25 +64,31 @@ def main():
         print(f"ERROR: {e}", flush=True)
         sys.exit(2)
     name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
+    print(f"[DEBUG] SCREENER_NAME: {name}", flush=True)
     if name.endswith("_TXT"):
         log_progress("TXT provider selected as enrichment provider, aborting enrichment.", {"provider": name})
-        print(f"ERROR: TXT providers (like {name}) cannot be used for enrichment. Enable a data API provider (e.g. Finnhub, Polygon).", flush=True)
+        print(f"ERROR: TXT providers (like {name}) cannot be used for enrichment. Enable a data API provider (e.g. Finnhub, IBKR, Yahoo).", flush=True)
         sys.exit(2)
     ProviderClass = get_provider_class(name)
     if ProviderClass is None:
-        raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
+        print(f"ERROR: No provider class mapping found for SCREENER_NAME '{name}'", flush=True)
+        log_progress("Provider class not found for enrichment.", {"provider": name})
+        sys.exit(2)
     merged_config = env.copy()
     merged_config.update(screener_secrets)
+    print("[DEBUG_CREDENTIALS]", json.dumps(merged_config, indent=2), flush=True)
     provider = ProviderClass(merged_config)
 
     try:
         raw_symbols = provider.fetch_symbols()
+        print(f"[DEBUG] provider.fetch_symbols() returned {len(raw_symbols)} symbols", flush=True)
     except Exception as e:
         log_progress("Provider fetch_symbols() failed, aborting.", {"error": str(e)})
         print(f"ERROR: fetch_symbols failed: {e}", flush=True)
         sys.exit(2)
 
     if not raw_symbols:
+        print("[DEBUG] Provider returned no symbols.", flush=True)
         log_progress("Provider returned no symbols.")
         sys.exit(1)
     exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
