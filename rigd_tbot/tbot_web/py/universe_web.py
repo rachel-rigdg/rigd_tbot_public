@@ -14,6 +14,7 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_cache_path,
     resolve_universe_partial_path,
     resolve_screener_blocklist_path,
+    resolve_universe_unfiltered_path,
 )
 from tbot_bot.support.secrets_manager import get_screener_credentials_path
 import csv
@@ -23,7 +24,7 @@ import os
 
 universe_bp = Blueprint("universe", __name__, template_folder="../templates")
 
-UNFILTERED_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'output', 'screeners', 'symbol_universe.unfiltered.json'))
+UNFILTERED_PATH = resolve_universe_unfiltered_path()
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
 
 def screener_creds_exist():
@@ -32,18 +33,18 @@ def screener_creds_exist():
 
 def load_json_file(path):
     try:
+        # Newline-delimited JSON file
         with open(path, "r", encoding="utf-8") as f:
-            # Try array first, else fallback to NDJSON (newline-delimited)
-            try:
-                data = json.load(f)
-                if isinstance(data, dict) and "symbols" in data:
-                    return data["symbols"]
-                elif isinstance(data, list):
-                    return data
-            except Exception:
-                f.seek(0)
-                return [json.loads(line) for line in f if line.strip()]
-        return []
+            items = []
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    items.append(json.loads(line))
+                except Exception:
+                    continue
+            return items
     except Exception:
         return []
 
@@ -249,10 +250,10 @@ def universe_blocklist():
         reason = request.form.get("reason", "")
         if symbol:
             if action == "add":
-                add_to_blocklist(symbol, reason=reason or "Manual add from UI")
+                add_to_blocklist([symbol], reason=reason or "Manual add from UI")
                 flash(f"Added {symbol} to blocklist.", "success")
             elif action == "remove":
-                remove_from_blocklist(symbol)
+                remove_from_blocklist([symbol], reason=reason or "Manual remove from UI")
                 flash(f"Removed {symbol} from blocklist.", "success")
     blocklist = []
     try:

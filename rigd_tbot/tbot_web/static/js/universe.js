@@ -1,168 +1,87 @@
-<!-- tbot_web/templates/universe.html -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <title>Universe Cache Inspection</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/static/css/base/normalize.css">
-    <link rel="stylesheet" href="/static/css/base/layout.css">
-    <link rel="stylesheet" href="/static/css/components/buttons.css">
-    <link rel="stylesheet" href="/static/css/pages/universe.css">
-    <script src="/static/js/universe.js"></script>
-</head>
-<body>
-    <h2>Universe Cache & Blocklist Inspection</h2>
-    <div style="margin-bottom:12px;">
-        <a href="{{ url_for('screener_credentials.credentials_page') }}">
-            <button type="button" id="configure-screener-credentials-btn">Configure Credentials</button>
-        </a>
-        {% if not screener_creds_exist %}
-            <div id="screener-creds-warning" style="margin-top:8px; color:#ff6347; font-weight:bold;">
-                Please configure screener credentials
-            </div>
-        {% endif %}
-    </div>
-    <p><b>Status:</b> <span id="status-msg">{{ status_msg }}</span></p>
-    <p><b>Cache File:</b> {{ cache_path }}</p>
-    <p>
-        <b>Unfiltered count:</b> <span id="unfiltered-count">{{ unfiltered_symbols|length }}</span> |
-        <b>Partial (filtered) count:</b> <span id="partial-count">{{ partial_symbols|length }}</span> |
-        <b>Final (universe) count:</b> <span id="final-count">{{ final_symbols|length }}</span> |
-        <b>Blocklist count:</b> <span id="blocklist-count">{{ blocklist_entries|length if blocklist_entries else 0 }}</span>
-    </p>
-    <p><b>Data Source:</b> {{ data_source_label }}</p>
-    <form method="get" action="{{ url_for('universe.universe_status') }}" class="searchbox">
-        <input type="text" id="search-symbol" name="search" placeholder="Search symbol..." value="{{ search }}">
-        <button type="submit">Search</button>
-        <a href="{{ url_for('universe.universe_status') }}">Clear</a>
-    </form>
-    <form action="{{ url_for('universe.universe_rebuild') }}" method="post" style="display:inline;">
-        <button type="submit" {% if not screener_creds_exist %}disabled{% endif %}>Force Rebuild</button>
-    </form>
-    <form action="{{ url_for('universe.universe_refilter') }}" method="post" style="display:inline; margin-left: 10px;">
-        <button type="submit" {% if not screener_creds_exist %}disabled{% endif %}>Re-filter</button>
-    </form>
-    <form action="{{ url_for('universe.universe_blocklist') }}" method="get" style="display:inline; margin-left: 10px;">
-        <button type="submit">Blocklist Manager</button>
-    </form>
-    <span style="margin-left:20px;">
-        <a href="{{ url_for('universe.universe_export', fmt='csv') }}"
-           {% if not screener_creds_exist %}class="disabled-link" style="pointer-events:none;opacity:0.5;"{% endif %}>Export CSV</a> |
-        <a href="{{ url_for('universe.universe_export', fmt='json') }}"
-           {% if not screener_creds_exist %}class="disabled-link" style="pointer-events:none;opacity:0.5;"{% endif %}>Export JSON</a> |
-        <a href="{{ url_for('universe.universe_export', fmt='blocklist') }}"
-           {% if not screener_creds_exist %}class="disabled-link" style="pointer-events:none;opacity:0.5;"{% endif %}>Export Blocklist</a>
-    </span>
-    <div style="margin-top:16px; margin-bottom:16px; padding:8px; border:1px solid #999; background:#333;">
-        <b>Universe Build Progress:</b>
-        <pre id="build-log">Loading build log...</pre>
-    </div>
-    <div>
-        <div class="universe-table-label">Unfiltered Universe (symbol_universe.unfiltered.json):</div>
-        <div id="unfiltered-table-scroll" class="universe-table-window">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Exchange</th>
-                        <th>Last Close</th>
-                        <th>Market Cap</th>
-                        <th>Company Name</th>
-                        <th>Sector</th>
-                    </tr>
-                </thead>
-                <tbody id="unfiltered-table-body">
-                    {% for s in unfiltered_symbols %}
-                    <tr>
-                        <td>{{ s.symbol }}</td>
-                        <td>{{ s.exchange }}</td>
-                        <td>{{ s.lastClose }}</td>
-                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
-                        <td>{{ s.companyName if s.companyName else "" }}</td>
-                        <td>{{ s.sector if s.sector else "" }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <div>
-        <div class="universe-table-label">Partial (Filtered, symbol_universe.partial.json):</div>
-        <div id="partial-table-scroll" class="universe-table-window partial">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Exchange</th>
-                        <th>Last Close</th>
-                        <th>Market Cap</th>
-                        <th>Company Name</th>
-                        <th>Sector</th>
-                    </tr>
-                </thead>
-                <tbody id="partial-table-body">
-                    {% for s in partial_symbols %}
-                    <tr>
-                        <td>{{ s.symbol }}</td>
-                        <td>{{ s.exchange }}</td>
-                        <td>{{ s.lastClose }}</td>
-                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
-                        <td>{{ s.companyName if s.companyName else "" }}</td>
-                        <td>{{ s.sector if s.sector else "" }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <div>
-        <div class="universe-table-label">Final Universe (symbol_universe.json):</div>
-        <div id="final-table-scroll" class="universe-table-window final">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Exchange</th>
-                        <th>Last Close</th>
-                        <th>Market Cap</th>
-                        <th>Company Name</th>
-                        <th>Sector</th>
-                    </tr>
-                </thead>
-                <tbody id="final-table-body">
-                    {% for s in final_symbols %}
-                    <tr>
-                        <td>{{ s.symbol }}</td>
-                        <td>{{ s.exchange }}</td>
-                        <td>{{ s.lastClose }}</td>
-                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
-                        <td>{{ s.companyName if s.companyName else "" }}</td>
-                        <td>{{ s.sector if s.sector else "" }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <div>
-        <div class="universe-table-label">Blocklist (screener_blocklist.txt):</div>
-        <div id="blocklist-table-scroll" class="universe-table-window blocklist">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for s in blocklist_entries %}
-                    <tr>
-                        <td>{{ s }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</body>
-</html>
+// /static/js/universe.js
+function fetchBuildLog() {
+    fetch("/static/output/screeners/universe_ops.log")
+        .then(response => {
+            if (!response.ok) { throw new Error("Log not found"); }
+            return response.text();
+        })
+        .then(text => {
+            const lines = text.trim().split("\n");
+            const lastLines = lines.slice(-10).join("\n");
+            document.getElementById('build-log').textContent = lastLines || "No build progress yet.";
+        })
+        .catch(err => {
+            document.getElementById('build-log').textContent = "Log unavailable.";
+        });
+}
+
+function fetchStatusMessage() {
+    fetch("/universe/status_message")
+        .then(response => {
+            if (!response.ok) { throw new Error("Status message not found"); }
+            return response.text();
+        })
+        .then(text => {
+            document.getElementById('status-msg').textContent = text || "No status message available.";
+        })
+        .catch(err => {
+            document.getElementById('status-msg').textContent = "Status unavailable.";
+        });
+}
+
+// Infinite scroll and async table reload for universe tables
+function fetchAndRenderTable(type, bodyId, countId, limit=100) {
+    const search = document.getElementById("search-symbol").value || "";
+    fetch(`/universe/table/${type}?search=${encodeURIComponent(search)}&offset=0&limit=${limit}`)
+        .then(r => r.json()).then(rows => {
+            let tbody = document.getElementById(bodyId);
+            if (tbody) {
+                tbody.innerHTML = rows.map(renderRow).join("");
+            }
+            if (countId && document.getElementById(countId)) {
+                document.getElementById(countId).textContent = rows.length;
+            }
+        });
+}
+
+function renderRow(s) {
+    return "<tr>" +
+        `<td>${s.symbol || ""}</td>` +
+        `<td>${s.exchange || ""}</td>` +
+        `<td>${typeof s.lastClose === "number" ? s.lastClose.toLocaleString() : (s.lastClose || "")}</td>` +
+        `<td>${typeof s.marketCap === "number" ? s.marketCap.toLocaleString() : (s.marketCap || "")}</td>` +
+        `<td>${s.companyName || s.name || ""}</td>` +
+        `<td>${s.sector || ""}</td>` +
+    "</tr>";
+}
+
+function refreshTables() {
+    fetchAndRenderTable("unfiltered", "unfiltered-table-body", "unfiltered-count");
+    fetchAndRenderTable("partial", "partial-table-body", "partial-count");
+    fetchAndRenderTable("final", "final-table-body", "final-count", 400);
+}
+
+function fetchCounts() {
+    fetch("/universe/counts").then(r => r.json()).then(obj => {
+        if (document.getElementById("unfiltered-count")) document.getElementById("unfiltered-count").textContent = obj.unfiltered;
+        if (document.getElementById("partial-count")) document.getElementById("partial-count").textContent = obj.partial;
+        if (document.getElementById("final-count")) document.getElementById("final-count").textContent = obj.filtered;
+    });
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    fetchBuildLog();
+    fetchStatusMessage();
+    refreshTables();
+    fetchCounts();
+
+    setInterval(fetchBuildLog, 15000);
+    setInterval(fetchStatusMessage, 15000);
+
+    const searchBox = document.getElementById("search-symbol");
+    if (searchBox) {
+        searchBox.addEventListener('keyup', function(e) {
+            if (e.key === "Enter") refreshTables();
+        });
+    }
+});

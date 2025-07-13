@@ -72,8 +72,17 @@
                         <th>Sector</th>
                     </tr>
                 </thead>
-                <tbody id="unfiltered-table-body">
-                    <!-- Populated by JS -->
+                <tbody>
+                    {% for s in unfiltered_symbols %}
+                    <tr>
+                        <td>{{ s.symbol }}</td>
+                        <td>{{ s.exchange }}</td>
+                        <td>{{ s.lastClose }}</td>
+                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
+                        <td>{{ s.companyName if s.companyName else "" }}</td>
+                        <td>{{ s.sector if s.sector else "" }}</td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -92,8 +101,17 @@
                         <th>Sector</th>
                     </tr>
                 </thead>
-                <tbody id="partial-table-body">
-                    <!-- Populated by JS -->
+                <tbody>
+                    {% for s in partial_symbols %}
+                    <tr>
+                        <td>{{ s.symbol }}</td>
+                        <td>{{ s.exchange }}</td>
+                        <td>{{ s.lastClose }}</td>
+                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
+                        <td>{{ s.companyName if s.companyName else "" }}</td>
+                        <td>{{ s.sector if s.sector else "" }}</td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -112,8 +130,17 @@
                         <th>Sector</th>
                     </tr>
                 </thead>
-                <tbody id="final-table-body">
-                    <!-- Populated by JS -->
+                <tbody>
+                    {% for s in final_symbols %}
+                    <tr>
+                        <td>{{ s.symbol }}</td>
+                        <td>{{ s.exchange }}</td>
+                        <td>{{ s.lastClose }}</td>
+                        <td>{{ "{:,}".format(s.marketCap) if s.marketCap else "" }}</td>
+                        <td>{{ s.companyName if s.companyName else "" }}</td>
+                        <td>{{ s.sector if s.sector else "" }}</td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
