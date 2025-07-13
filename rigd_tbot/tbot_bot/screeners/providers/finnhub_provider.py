@@ -30,7 +30,7 @@ class FinnhubProvider(ProviderBase):
         self.username = self.config.get("SCREENER_USERNAME", "")
         self.password = self.config.get("SCREENER_PASSWORD", "")
         self.timeout = int(self.config.get("API_TIMEOUT", 30))
-        self.sleep = 2.0
+        self.sleep = float(self.config.get("UNIVERSE_SLEEP_TIME", 0.5))  # Now pulls from config/env, default 0.5s
         self.log_level = str(self.config.get("LOG_LEVEL", "silent")).lower()
 
     def log(self, msg):

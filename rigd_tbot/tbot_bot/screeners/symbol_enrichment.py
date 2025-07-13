@@ -5,7 +5,6 @@
 import os
 import sys
 import json
-import time
 from datetime import datetime, timezone
 from tbot_bot.screeners.screener_utils import (
     atomic_append_json, load_blocklist, atomic_append_text, atomic_copy_file
@@ -68,7 +67,6 @@ def load_raw_symbols():
 def main():
     print("[DEBUG] symbol_enrichment.py main() starting", flush=True)
     env = load_env_bot_config()
-    sleep_time = float(env.get("UNIVERSE_SLEEP_TIME", 2.0))
     bot_identity = env.get("BOT_IDENTITY_STRING", None)
     try:
         screener_secrets = get_enrichment_provider_creds()
@@ -172,7 +170,6 @@ def main():
         if enriched_count >= max_size:
             log_progress("Reached max universe size, stopping enrichment.", {"max_size": max_size})
             break
-        time.sleep(sleep_time)
 
     atomic_copy_file(PARTIAL_PATH, FINAL_PATH)
 

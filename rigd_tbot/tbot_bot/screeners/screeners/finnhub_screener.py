@@ -18,7 +18,7 @@ def get_trading_screener_creds():
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").upper() == "true"
            and all_creds.get(k, "").strip().upper() == "FINNHUB"
     ]
     if not provider_indices:
@@ -90,6 +90,7 @@ class FinnhubScreener(ScreenerBase):
                 continue
             if idx % 50 == 0 and idx > 0:
                 log(f"Fetched {idx} quotes...")
+            time.sleep(STRATEGY_SLEEP_TIME)
         return quotes
 
     def filter_candidates(self, quotes):
