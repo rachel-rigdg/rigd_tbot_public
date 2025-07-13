@@ -1,6 +1,6 @@
 # tbot_bot/screeners/symbol_enrichment.py
-# Stage 2: Builds symbol universe directly from API provider. Enriches and filters symbols from provider.fetch_symbols().
-# Fails gracefully, applies blocklist overlay, persists results. No nasdaqlisted.txt dependency.
+# Stage 2: Enriches and filters symbols from raw symbols file.
+# Reads from symbol_universe.symbols_raw.json; no direct API fetch for symbol list.
 
 import os
 import sys
@@ -13,7 +13,7 @@ from tbot_bot.screeners.screener_utils import (
 from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter
 from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path, resolve_universe_cache_path, resolve_screener_blocklist_path,
-    resolve_universe_log_path, resolve_universe_unfiltered_path
+    resolve_universe_log_path, resolve_universe_unfiltered_path, resolve_universe_raw_path
 )
 from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.config.env_bot import load_env_bot_config
@@ -24,6 +24,7 @@ FINAL_PATH = resolve_universe_cache_path()
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
 LOG_PATH = resolve_universe_log_path()
 UNFILTERED_PATH = resolve_universe_unfiltered_path()
+RAW_PATH = resolve_universe_raw_path()
 
 def log_progress(msg, details=None):
     now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
@@ -51,6 +52,18 @@ def get_enrichment_provider_creds():
         for key, v in all_creds.items()
         if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
     }
+
+def load_raw_symbols():
+    if not os.path.exists(RAW_PATH):
+        raise RuntimeError(f"Raw symbol universe not found: {RAW_PATH}")
+    syms = []
+    with open(RAW_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                syms.append(json.loads(line))
+            except Exception:
+                continue
+    return syms
 
 def main():
     print("[DEBUG] symbol_enrichment.py main() starting", flush=True)
@@ -80,16 +93,16 @@ def main():
     provider = ProviderClass(merged_config)
 
     try:
-        raw_symbols = provider.fetch_symbols()
-        print(f"[DEBUG] provider.fetch_symbols() returned {len(raw_symbols)} symbols", flush=True)
+        raw_symbols = load_raw_symbols()
+        print(f"[DEBUG] loaded {len(raw_symbols)} raw symbols from {RAW_PATH}", flush=True)
     except Exception as e:
-        log_progress("Provider fetch_symbols() failed, aborting.", {"error": str(e)})
-        print(f"ERROR: fetch_symbols failed: {e}", flush=True)
+        log_progress("Failed to load raw symbols.", {"error": str(e)})
+        print(f"ERROR: failed to load raw symbols: {e}", flush=True)
         sys.exit(2)
 
     if not raw_symbols:
-        print("[DEBUG] Provider returned no symbols.", flush=True)
-        log_progress("Provider returned no symbols.")
+        print("[DEBUG] No raw symbols found.", flush=True)
+        log_progress("No raw symbols found.")
         sys.exit(1)
     exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
@@ -161,7 +174,6 @@ def main():
             break
         time.sleep(sleep_time)
 
-    # Atomically copy partial to final universe file at end of build
     atomic_copy_file(PARTIAL_PATH, FINAL_PATH)
 
     log_progress("Enrichment complete", {

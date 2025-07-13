@@ -1,6 +1,7 @@
 # tbot_bot/screeners/universe_orchestrator.py
 # Orchestrates the full nightly universe build process:
-# Runs symbol_enrichment.py (API/adapters only), no TXT or file-based symbol sources.
+# 1) Runs symbol_universe_raw_builder.py to create symbol_universe.symbols_raw.json (single API call)
+# 2) Runs symbol_enrichment.py to enrich, filter, blocklist, and build universe files from API adapters
 # Logs progress and errors. No legacy TXT/CSV steps.
 
 import subprocess
@@ -22,7 +23,9 @@ def run_module(module_path):
     log(f"{module_path} completed successfully.")
 
 def main():
-    # Step 1: Run symbol_enrichment to enrich, filter, blocklist, and build universe files from API adapters
+    # Step 1: Build raw symbols file from provider API (single API call, e.g. Finnhub)
+    run_module("tbot_bot.screeners.symbol_universe_raw_builder")
+    # Step 2: Enrich, filter, blocklist, and build universe files from API adapters
     run_module("tbot_bot.screeners.symbol_enrichment")
     log("Universe orchestration completed successfully.")
 
