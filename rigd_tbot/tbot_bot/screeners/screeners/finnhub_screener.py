@@ -90,7 +90,6 @@ class FinnhubScreener(ScreenerBase):
                 continue
             if idx % 50 == 0 and idx > 0:
                 log(f"Fetched {idx} quotes...")
-            time.sleep(STRATEGY_SLEEP_TIME)
         return quotes
 
     def filter_candidates(self, quotes):
