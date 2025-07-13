@@ -32,13 +32,18 @@ def screener_creds_exist():
 
 def load_json_file(path):
     try:
+        # Newline-delimited JSON file
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and "symbols" in data:
-            return data["symbols"]
-        elif isinstance(data, list):
-            return data
-        return []
+            items = []
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    items.append(json.loads(line))
+                except Exception:
+                    continue
+            return items
     except Exception:
         return []
 
@@ -50,9 +55,7 @@ def get_symbols_and_source():
     partial_mtime = os.path.getmtime(partial_path) if os.path.exists(partial_path) else 0
     try:
         if partial_mtime > main_mtime:
-            with open(partial_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            symbols = data.get("symbols", [])
+            symbols = load_json_file(partial_path)
             use_partial = True
         else:
             symbols = load_universe_cache()
@@ -231,11 +234,8 @@ def universe_refilter():
             add_to_blocklist(low_price_symbols, reason=f"Refiltered: price < {min_price}")
         partial_path = resolve_universe_partial_path()
         with open(partial_path, "w", encoding="utf-8") as pf:
-            json.dump({
-                "schema_version": "1.0.0",
-                "build_timestamp_utc": "",
-                "symbols": filtered
-            }, pf, indent=2)
+            for symbol in filtered:
+                pf.write(json.dumps(symbol, ensure_ascii=False) + "\n")
         flash(f"Re-filtered universe. New partial count: {len(filtered)}", "success")
     except Exception as e:
         flash(f"Refilter failed: {e}", "error")

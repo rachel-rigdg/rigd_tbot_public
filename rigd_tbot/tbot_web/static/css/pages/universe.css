@@ -13,6 +13,14 @@ h2 {
   color: #999;
 }
 
+
+.universe-table-window th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #333;
+}
+
 .searchbox {
   margin-bottom: 20px;
 }
