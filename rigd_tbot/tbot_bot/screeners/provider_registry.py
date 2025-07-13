@@ -11,7 +11,6 @@ from tbot_bot.screeners.providers.ibkr_provider import IBKRProvider
 from tbot_bot.screeners.providers.nasdaq_provider import NasdaqProvider
 from tbot_bot.screeners.providers.nyse_provider import NyseProvider
 from tbot_bot.screeners.providers.yahoo_provider import YahooProvider
-from tbot_bot.screeners.providers.polygon_provider import PolygonProvider
 
 PROVIDER_REGISTRY: Dict[str, Type] = {
     "FINNHUB": FinnhubProvider,
@@ -19,7 +18,6 @@ PROVIDER_REGISTRY: Dict[str, Type] = {
     "NASDAQ": NasdaqProvider,
     "NYSE": NyseProvider,
     "YAHOO": YahooProvider,
-    "POLYGON": PolygonProvider,
 }
 
 PROVIDER_MODULE_PATHS: Dict[str, str] = {
@@ -28,7 +26,6 @@ PROVIDER_MODULE_PATHS: Dict[str, str] = {
     "NASDAQ": "tbot_bot.screeners.providers.nasdaq_provider",
     "NYSE": "tbot_bot.screeners.providers.nyse_provider",
     "YAHOO": "tbot_bot.screeners.providers.yahoo_provider",
-    "POLYGON": "tbot_bot.screeners.providers.polygon_provider",
 }
 
 PROVIDER_CLASS_NAMES: Dict[str, str] = {
@@ -37,7 +34,6 @@ PROVIDER_CLASS_NAMES: Dict[str, str] = {
     "NASDAQ": "NasdaqProvider",
     "NYSE": "NyseProvider",
     "YAHOO": "YahooProvider",
-    "POLYGON": "PolygonProvider",
 }
 
 def get_provider_class(provider_name: str) -> Optional[Type]:
