@@ -8,7 +8,23 @@ import json
 from typing import List, Set, Dict
 
 def load_json_symbols(path: str) -> List[Dict]:
+    # Handles both newline-delimited JSON (preferred) and JSON array/object legacy
     with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+        symbols = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+                symbols.append(rec)
+            except Exception:
+                continue
+        if symbols:
+            return symbols
+        # fallback for array/object legacy
+        f.seek(0)
         data = json.load(f)
         if isinstance(data, dict) and "symbols" in data:
             return data["symbols"]
@@ -23,7 +39,7 @@ def load_blocklist(path: str) -> Set[str]:
         for line in f:
             line = line.strip().upper()
             if line and not line.startswith("#"):
-                syms.add(line.split(",", 1)[0])
+                syms.add(line.split("|", 1)[0])
     return syms
 
 def diff_blocklists(bl1: Set[str], bl2: Set[str]):

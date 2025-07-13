@@ -1,11 +1,11 @@
 # tbot_bot/screeners/universe_logger.py
 # Dedicated logger for all universe cache, blocklist, and screener symbol universe operations.
 # Comprehensive, UTC timestamped, file+console output, audit-level per specification.
-# Used for /stock/symbol, /stock/profile2, /quote, blocklist events, staged builds, archiving, rechecks.
 # All logs written to tbot_bot/output/screeners/universe_ops.log
 
 import logging
 import sys
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,7 +41,6 @@ def get_universe_logger():
         return logger
 
     logger.setLevel(logging.INFO)
-    # Remove any old handlers first to avoid log duplication
     logger.handlers = []
 
     fh = logging.FileHandler(log_path)
@@ -67,7 +66,6 @@ def log_universe_event(event: str, details: dict = None, level: str = "info"):
     logger = get_universe_logger()
     msg = f"{event}"
     if details:
-        import json
         try:
             msg += " | " + json.dumps(details, default=str, ensure_ascii=False)
         except Exception as e:

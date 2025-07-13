@@ -8,7 +8,7 @@ import json
 import time
 from datetime import datetime, timezone
 from tbot_bot.screeners.screener_utils import (
-    atomic_append_json, load_blocklist, atomic_append_text
+    atomic_append_json, load_blocklist, atomic_append_text, atomic_copy_file
 )
 from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter
 from tbot_bot.support.path_resolver import (
@@ -72,7 +72,6 @@ def main():
         raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
     merged_config = env.copy()
     merged_config.update(screener_secrets)
-    print("DEBUG_CREDENTIALS:", json.dumps(merged_config, indent=2))
     provider = ProviderClass(merged_config)
 
     try:
@@ -99,30 +98,28 @@ def main():
     blocklisted_count = 0
 
     for i, sym in enumerate(symbol_ids):
-        print(f"[symbol_enrichment] Processing symbol {i+1} of {len(symbol_ids)}: {sym}", flush=True)
         log_progress("Processing symbol", {"symbol_num": i+1, "total": len(symbol_ids), "symbol": sym})
         try:
             quotes = provider.fetch_quotes([sym])
         except Exception as e:
             log_progress("Failed to fetch quote for symbol", {"error": str(e), "symbol": sym})
-            print(f"[symbol_enrichment] Fetch failed for symbol {sym}: {e}", flush=True)
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z\n")
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
         if not quotes or not any(q.get("symbol", "") == sym for q in quotes):
             log_progress("No quote data for symbol", {"symbol": sym})
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_data_from_api|{datetime.utcnow().isoformat()}Z\n")
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_data_from_api|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
         quote_map = {q["symbol"]: q for q in quotes if "symbol" in q}
         s = next((x for x in all_symbols if x.get("symbol") == sym), None)
         if not s:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_source|{datetime.utcnow().isoformat()}Z\n")
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_source|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
         q = quote_map.get(sym)
         if not q:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_quote|{datetime.utcnow().isoformat()}Z\n")
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_quote|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
         price = q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
@@ -132,7 +129,7 @@ def main():
             price = float(price)
             cap = float(cap) if cap is not None else None
         except Exception:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|invalid_fields|{datetime.utcnow().isoformat()}Z\n")
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|invalid_fields|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
         record = dict(s)
@@ -150,13 +147,15 @@ def main():
             atomic_append_json(PARTIAL_PATH, record)
             enriched_count += 1
         else:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|{reason}|{datetime.utcnow().isoformat()}Z\n")
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|{reason}|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
         if enriched_count >= max_size:
-            print(f"[symbol_enrichment] Reached max universe size {max_size}, stopping enrichment.", flush=True)
+            log_progress("Reached max universe size, stopping enrichment.", {"max_size": max_size})
             break
-        print(f"[symbol_enrichment] Symbol {i+1} complete. Total enriched so far: {enriched_count}", flush=True)
         time.sleep(sleep_time)
+
+    # Atomically copy partial to final universe file at end of build
+    atomic_copy_file(PARTIAL_PATH, FINAL_PATH)
 
     log_progress("Enrichment complete", {
         "enriched_count": enriched_count,

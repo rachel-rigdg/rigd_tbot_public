@@ -32,38 +32,27 @@ class UniverseCacheError(Exception):
 
 def atomic_append_json(path: str, obj: dict):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    if os.path.exists(path):
-        with open(path, "r+", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-                if isinstance(data, dict) and "symbols" in data:
-                    symbols = data["symbols"]
-                    base_data = data
-                elif isinstance(data, list):
-                    symbols = data
-                    base_data = None
-                else:
-                    symbols = []
-                    base_data = None
-            except Exception:
-                symbols = []
-                base_data = None
-            symbols.append(obj)
-            f.seek(0)
-            if base_data and isinstance(base_data, dict) and "symbols" in base_data:
-                base_data["symbols"] = symbols
-                json.dump(base_data, f, indent=2)
-            else:
-                json.dump({"schema_version": SCHEMA_VERSION, "build_timestamp_utc": utc_now().isoformat(), "symbols": symbols}, f, indent=2)
-            f.truncate()
-    else:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"schema_version": SCHEMA_VERSION, "build_timestamp_utc": utc_now().isoformat(), "symbols": [obj]}, f, indent=2)
+    # Write newline-delimited JSON object per spec
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
 def atomic_append_text(path: str, line: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(line if line.endswith("\n") else line + "\n")
+
+def atomic_copy_file(src_path: str, dest_path: str):
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    tmp_path = dest_path + ".tmp"
+    with open(src_path, "rb") as src, open(tmp_path, "wb") as dst:
+        while True:
+            chunk = src.read(1048576)
+            if not chunk:
+                break
+            dst.write(chunk)
+        dst.flush()
+        os.fsync(dst.fileno())
+    os.replace(tmp_path, dest_path)
 
 def screener_creds_exist() -> bool:
     creds_path = get_screener_credentials_path()
@@ -123,57 +112,24 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
         LOG.error(f"[screener_utils] Universe cache missing at path: {path}")
         raise UniverseCacheError(f"Universe cache file not found: {path}")
 
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        LOG.error(f"[screener_utils] Failed to load universe cache JSON: {e}")
-        raise UniverseCacheError(f"Failed to load universe cache JSON: {e}")
-
-    if isinstance(data, list):
-        if len(data) < 10:
-            raise UniverseCacheError("Universe cache is a placeholder/too small; trigger rebuild.")
-        data = {
-            "schema_version": SCHEMA_VERSION,
-            "build_timestamp_utc": utc_now().isoformat(),
-            "symbols": data
-        }
-
-    if not isinstance(data, dict):
-        raise UniverseCacheError("Universe cache JSON root is not an object")
-
-    for key in ("schema_version", "build_timestamp_utc", "symbols"):
-        if key not in data:
-            raise UniverseCacheError(f"Universe cache missing required key: {key}")
-
-    if data["schema_version"] != SCHEMA_VERSION:
-        raise UniverseCacheError(f"Universe cache schema version mismatch: expected {SCHEMA_VERSION}, found {data['schema_version']}")
-
-    try:
-        build_time_str = data["build_timestamp_utc"]
-        if build_time_str.endswith("Z"):
-            build_time_str = build_time_str.replace("Z", "+00:00")
-        build_time = datetime.fromisoformat(build_time_str)
-        if build_time.tzinfo is None:
-            build_time = build_time.replace(tzinfo=timezone.utc)
-    except Exception as e:
-        raise UniverseCacheError(f"Invalid build_timestamp_utc format: {e}")
-
-    env = load_env_bot_config()
-    max_age_days = int(env.get("SCREENER_UNIVERSE_MAX_AGE_DAYS", 3))
-    age = utc_now() - build_time
-    if age > timedelta(days=max_age_days):
-        raise UniverseCacheError(f"Universe cache too old: age {age}, max allowed {max_age_days} days")
-
-    symbols = data["symbols"]
-    if not isinstance(symbols, list):
-        raise UniverseCacheError("Universe cache 'symbols' is not a list")
-
+    # Read newline-delimited JSON, not single big array/object
+    with open(path, "r", encoding="utf-8") as f:
+        symbols = []
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+                symbols.append(record)
+            except Exception as e:
+                raise UniverseCacheError(f"Failed to parse line in universe cache: {e}")
+    if len(symbols) < 10:
+        raise UniverseCacheError("Universe cache is a placeholder/too small; trigger rebuild.")
     for s in symbols:
         if not all(k in s for k in ("symbol", "exchange", "lastClose", "marketCap")):
             raise UniverseCacheError(f"Symbol entry missing required fields: {s}")
-
-    LOG.info(f"[screener_utils] Loaded universe cache with {len(symbols)} symbols, built at {build_time.isoformat()}")
+    LOG.info(f"[screener_utils] Loaded universe cache with {len(symbols)} symbols from {path}")
     return symbols
 
 def load_partial_cache() -> List[Dict]:
@@ -182,8 +138,7 @@ def load_partial_cache() -> List[Dict]:
         return []
     try:
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("symbols", [])
+            return [json.loads(line) for line in f if line.strip()]
     except Exception:
         return []
 
@@ -193,22 +148,17 @@ def load_unfiltered_cache() -> List[Dict]:
         return []
     try:
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("symbols", [])
+            return [json.loads(line) for line in f if line.strip()]
     except Exception:
         return []
 
 def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None) -> None:
     path = resolve_universe_cache_path(bot_identity)
     tmp_path = f"{path}.tmp"
-    cache_obj = {
-        "schema_version": SCHEMA_VERSION,
-        "build_timestamp_utc": utc_now().isoformat(),
-        "symbols": symbols
-    }
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(cache_obj, f, indent=2)
+            for s in symbols:
+                f.write(json.dumps(s, ensure_ascii=False) + "\n")
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_path, path)
@@ -276,15 +226,7 @@ def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetim
     if not os.path.exists(path):
         return None
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        build_time_str = data["build_timestamp_utc"]
-        if build_time_str.endswith("Z"):
-            build_time_str = build_time_str.replace("Z", "+00:00")
-        build_time = datetime.fromisoformat(build_time_str)
-        if build_time.tzinfo is None:
-            build_time = build_time.replace(tzinfo=timezone.utc)
-        return build_time
+        return datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
     except Exception:
         return None
 

@@ -32,8 +32,6 @@ class FinnhubProvider(ProviderBase):
         self.timeout = int(self.config.get("API_TIMEOUT", 30))
         self.sleep = 2.0
         self.log_level = str(self.config.get("LOG_LEVEL", "silent")).lower()
-        print(f"[FinnhubProvider] Enforced sleep between all API calls: {self.sleep:.2f} seconds")
-        print(f"[FinnhubProvider] DEBUG Credentials: API_KEY={self.api_key[:6]}... URL={self.api_url}")
 
     def log(self, msg):
         if self.log_level == "verbose":
@@ -58,7 +56,7 @@ class FinnhubProvider(ProviderBase):
                     syms.append({
                         "symbol": symbol_val.strip().upper(),
                         "exchange": d.get("exchange", "US"),
-                        "name": d.get("description", "")
+                        "companyName": d.get("description", "")
                     })
                 except Exception:
                     continue
@@ -68,7 +66,6 @@ class FinnhubProvider(ProviderBase):
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
         quotes = []
         for idx, symbol in enumerate(symbols):
-            print(f"[FinnhubProvider][DEBUG] Fetching symbol: {symbol} (idx={idx}) using API_KEY={self.api_key[:6]}...")
             auth = (self.username, self.password) if self.username and self.password else None
             try:
                 # Retry mechanism for quote
@@ -85,7 +82,6 @@ class FinnhubProvider(ProviderBase):
                     else:
                         self.log(f"Error fetching quote for {symbol}: HTTP {resp_q.status_code}")
                         break
-                # If missing or bad data, skip
                 if not data_q or data_q.get("c") is None or data_q.get("c") == 0:
                     self.log(f"Skipping {symbol}: no valid quote data (not found or missing fields)")
                     continue
@@ -120,8 +116,6 @@ class FinnhubProvider(ProviderBase):
                     "vwap": vwap,
                     "marketCap": market_cap
                 })
-                if self.log_level == "verbose":
-                    print(f"QUOTE[{idx}]: {symbol} | Close: {c} Open: {o} VWAP: {vwap} MarketCap: {market_cap}")
             except Exception as e:
                 self.log(f"Exception fetching quote/profile2 for {symbol}: {e}")
                 continue

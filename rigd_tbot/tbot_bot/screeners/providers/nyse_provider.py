@@ -6,8 +6,7 @@ from tbot_bot.screeners.provider_base import ProviderBase
 
 class NyseProvider(ProviderBase):
     """
-    NYSE screener provider: implements fetch_symbols, fetch_quotes, fetch_universe_symbols.
-    (IBKR/Polygon-based implementations may be used under the hood.)
+    NYSE screener provider: implements fetch_symbols, fetch_quotes.
     """
 
     def __init__(self, config: Optional[Dict] = None, creds: Optional[Dict] = None):
@@ -37,21 +36,4 @@ class NyseProvider(ProviderBase):
         Returns empty list and logs warning.
         """
         self.log("fetch_quotes() not implemented for NyseProvider, returning empty list.")
-        return []
-
-    def fetch_universe_symbols(
-        self,
-        exchanges: List[str],
-        min_price: float,
-        max_price: float,
-        min_cap: float,
-        max_cap: float,
-        blocklist: Optional[List[str]] = None,
-        max_size: Optional[int] = None
-    ) -> List[Dict]:
-        """
-        Return filtered NYSE universe symbol dicts.
-        Returns empty list and logs warning.
-        """
-        self.log("fetch_universe_symbols() not implemented for NyseProvider, returning empty list.")
         return []

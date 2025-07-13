@@ -212,7 +212,7 @@ def universe_refilter():
         min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
         max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
         min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
-        max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
+        max_cap = float(env.get("SCREENER_UNIVERSE_MAX_CAP", 10_000_000_000))
         max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
         blocklist_path = env.get("SCREENER_UNIVERSE_BLOCKLIST_PATH", None)
         blocklist = load_blocklist(blocklist_path)
@@ -249,10 +249,10 @@ def universe_blocklist():
         reason = request.form.get("reason", "")
         if symbol:
             if action == "add":
-                add_to_blocklist([symbol], reason=reason or "Manual add from UI")
+                add_to_blocklist(symbol, reason=reason or "Manual add from UI")
                 flash(f"Added {symbol} to blocklist.", "success")
             elif action == "remove":
-                remove_from_blocklist([symbol], reason=reason or "Manual remove from UI")
+                remove_from_blocklist(symbol)
                 flash(f"Removed {symbol} from blocklist.", "success")
     blocklist = []
     try:

@@ -69,7 +69,7 @@ class IBKRProvider(ProviderBase):
                         syms.append({
                             "symbol": symbol.strip().upper(),
                             "exchange": exch,
-                            "name": name
+                            "companyName": name
                         })
                     except Exception:
                         continue

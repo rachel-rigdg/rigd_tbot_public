@@ -1,8 +1,7 @@
 # tbot_bot/screeners/universe_orchestrator.py
 # Orchestrates the full nightly universe build process:
-# 1) Runs nasdaq_txt_provider to update nasdaqlisted.txt (symbol source)
-# 2) Runs symbol_enrichment.py (enrich/filter/blocklist/write unfiltered and partial universe)
-# Logs progress and errors.
+# Runs symbol_enrichment.py (API/adapters only), no TXT or file-based symbol sources.
+# Logs progress and errors. No legacy TXT/CSV steps.
 
 import subprocess
 import sys
@@ -23,9 +22,7 @@ def run_module(module_path):
     log(f"{module_path} completed successfully.")
 
 def main():
-    # Step 1: Run nasdaq_txt_provider to fetch the latest nasdaqlisted.txt symbol list
-    run_module("tbot_bot.screeners.providers.nasdaq_txt_provider")
-    # Step 2: Run symbol_enrichment to enrich, filter, blocklist, and build universe files
+    # Step 1: Run symbol_enrichment to enrich, filter, blocklist, and build universe files from API adapters
     run_module("tbot_bot.screeners.symbol_enrichment")
     log("Universe orchestration completed successfully.")
 

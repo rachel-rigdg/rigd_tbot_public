@@ -1,6 +1,6 @@
 # tbot_bot/screeners/blocklist_manager.py
 # Centralized blocklist management for atomic symbol universe builds and daily maintenance.
-# Handles dynamic append of blocklisted symbols (per enrichment/filter step) with reason and timestamp.
+# Handles dynamic append of blocklisted symbols (per enrichment/filter step) with reason, timestamp, and provider.
 
 import os
 import json
@@ -34,7 +34,7 @@ def atomic_append_text(path: str, line: str):
 def load_blocklist(path: str = BLOCKLIST_PATH):
     """
     Returns blocklist as set of symbols.
-    Each line: symbol|reason|timestamp (pipe-delimited).
+    Each line: symbol|reason|timestamp|provider (pipe-delimited).
     """
     blockset = set()
     if not os.path.isfile(path):
@@ -44,14 +44,14 @@ def load_blocklist(path: str = BLOCKLIST_PATH):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            parts = line.split("|", 2)
+            parts = line.split("|", 1)
             if parts:
                 blockset.add(parts[0].upper())
     return blockset
 
 def get_blocklist_entries(path: str = BLOCKLIST_PATH):
     """
-    Returns list of blocklist dicts: [{"symbol": ..., "reason": ..., "timestamp": ...}]
+    Returns list of blocklist dicts: [{"symbol": ..., "reason": ..., "timestamp": ..., "provider": ...}]
     """
     entries = []
     if not os.path.isfile(path):
@@ -62,24 +62,19 @@ def get_blocklist_entries(path: str = BLOCKLIST_PATH):
             if not line or line.startswith("#"):
                 continue
             parts = line.split("|")
-            if len(parts) >= 3:
-                symbol, reason, timestamp = parts[:3]
-            elif len(parts) == 2:
-                symbol, reason = parts[:2]
-                timestamp = ""
-            elif len(parts) == 1:
-                symbol = parts[0]
-                reason = timestamp = ""
-            else:
-                continue
-            entries.append({"symbol": symbol, "reason": reason, "timestamp": timestamp})
+            # symbol|reason|timestamp|provider (at least symbol and reason present)
+            symbol = parts[0] if len(parts) > 0 else ""
+            reason = parts[1] if len(parts) > 1 else ""
+            timestamp = parts[2] if len(parts) > 2 else ""
+            provider = parts[3] if len(parts) > 3 else ""
+            entries.append({"symbol": symbol, "reason": reason, "timestamp": timestamp, "provider": provider})
     return entries
 
-def add_to_blocklist(symbol: str, reason: str = ""):
+def add_to_blocklist(symbol: str, reason: str = "", provider: str = ""):
     now = utc_now().isoformat() + "Z"
-    entry = f"{symbol.upper()}|{reason}|{now}"
+    entry = f"{symbol.upper()}|{reason}|{now}|{provider}"
     atomic_append_text(BLOCKLIST_PATH, entry)
-    log_blocklist_event("Added to blocklist", {"symbol": symbol.upper(), "reason": reason, "timestamp": now})
+    log_blocklist_event("Added to blocklist", {"symbol": symbol.upper(), "reason": reason, "timestamp": now, "provider": provider})
 
 def remove_from_blocklist(symbol: str):
     symbol = symbol.upper()
@@ -87,7 +82,7 @@ def remove_from_blocklist(symbol: str):
     updated = [e for e in entries if e["symbol"].upper() != symbol]
     with open(BLOCKLIST_PATH, "w", encoding="utf-8") as f:
         for e in updated:
-            f.write(f"{e['symbol']}|{e['reason']}|{e['timestamp']}\n")
+            f.write(f"{e['symbol']}|{e['reason']}|{e['timestamp']}|{e.get('provider','')}\n")
     log_blocklist_event("Removed from blocklist", {"symbol": symbol})
 
 def is_blocked(symbol: str) -> bool:
