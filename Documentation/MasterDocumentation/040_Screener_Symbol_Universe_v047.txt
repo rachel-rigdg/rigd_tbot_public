@@ -18,204 +18,305 @@ This document defines the unified, staged, and *fully free/low-cost data source*
 
 All screener modules must source their eligible symbol list exclusively from the pre-filtered, pre-built universe file (`symbol_universe.json`). No screener may fetch global lists or build real-time universes at runtime.
 
---------------------------------------------------------------------------------
-Section 1: Core Principles
---------------------------------------------------------------------------------
 
-1. **Single canonical symbol universe file** (`symbol_universe.json`) is generated per trading day and is the *only* source for all screeners and strategies.
-2. **Universe is built overnight** (after market close, before market open) using only NYSE/NASDAQ/NYSE Arca (excluding OTC/pink sheets), with filters applied for price, market cap, and exchange.
-3. **API quota minimization and staged calls:**
-   - *Only* free or low-cost API calls are made, using yfinance (Yahoo Finance API) as the default data source for both symbol lists and basic pricing/market cap/metadata.
-   - Expensive or quota-limited APIs (e.g., Finnhub, IBKR) are only called as enrichment/validation for eligible, non-blocklisted symbols or for real-time strategies if required.
-   - Blocklist is always built first to avoid wasteful repeated queries to ineligible symbols.
-   - API keys and credentials for all data providers are managed in a *dedicated, encrypted, indexed secrets file*, enabling secure rotation, audit logging, and modular per-provider use.
-4. **Staged blocklist and eligibility workflow:**
-   - Blocklist is auto-built/updated using yfinance price-only queries.
-   - Any symbol below `MIN_PRICE` (e.g. $1.00) is blocklisted and written to disk immediately (with UTC timestamp, provider, and reason).
-   - Blocklist is re-polled on weekends or on-demand; any symbol recovering above threshold is removed from the blocklist.
-5. **All strategies and brokers share the same universe per trading day.**
-6. **Standardized file paths:**
-   - `tbot_bot/output/screeners/symbol_universe.unfiltered.json` — Raw, unfiltered, deduplicated symbols (with all available metadata from yfinance or other configured source).
-   - `tbot_bot/output/screeners/symbol_universe.partial.json` — Inline-filtered, partial progress file.
-   - `tbot_bot/output/screeners/symbol_universe.json` — Final, validated, production universe.
-   - `tbot_bot/output/screeners/screener_blocklist.txt` — Master blocklist (auto-managed, UTC-stamped, with source and reason).
-7. **Universe build is disk-first, crash-resilient:** All symbol/blocklist writes are atomic and resumable. Build can resume from partial or unfiltered file after crash or quota hit.
-8. **Manual 'Force Rebuild', 'Re-filter', and 'Update Blocklist' always available in the Web UI.**
-9. **Web UI displays build status, blocklist status, record counts, and supports live search/comparison of universes and blocklist.**
-10. **No runtime fetching of global symbol lists:** Universe is fixed for each trading session and only updated by automated or manual triggers.
-11. **First boot may accept a placeholder, but a full rebuild is required before live trading is enabled.**
-12. **Long-term data stability:** Architecture is designed to run for years with only minimal maintenance, never relying on any one API, format, or data provider for core filtering or universe construction.
-13. **Data source credentials are centrally stored and managed:** All adapters (Finnhub, IBKR, yfinance, etc.) retrieve API keys and credentials exclusively from a single secure, indexed secrets file, ensuring modularity, security, and traceability.
+# ===========================
+# Section 1: Core Principles
+# ===========================
+1. **Single atomic universe file** (`symbol_universe.json`) is built per trading day and is the exclusive source for all screeners and strategies.
+2. **Universe is built nightly** (post-market close, pre-market open), strictly from exchange-approved symbols (e.g., NYSE, NASDAQ, NYSE Arca), with full API-based validation, filtering, and no dependency on TXT/CSV lists.
+3. **API quota minimization:**  
+   - All symbol fetching, enrichment, and filtering uses provider adapters (default: yfinance, Finnhub, IBKR, etc.).
+   - Free/delayed APIs (yfinance) are preferred for both the universe list and pricing. Paid/limited APIs (Finnhub/IBKR) are only used for enrichment or validation as needed.
+   - Blocklist is checked before every API call; blocklisted symbols are skipped for all providers.
+   - All provider credentials are loaded via a single, encrypted, indexed secrets file.
+4. **Blocklist-first, staged eligibility workflow:**  
+   - Blocklist checked before every fetch; if a symbol is blocklisted it is never fetched or enriched.
+   - Symbols failing API lookups, pricing, or validation are atomically written to the blocklist file (`screener_blocklist.txt`) with UTC timestamp, provider, and failure reason.
+   - All blocklist, unfiltered, partial, and final universe files are written atomically and support resumability after crash/interruption.
+5. **No real-time symbol fetching at runtime:**  
+   - All screeners use the atomic, validated universe file for every session.
+6. **Web UI actions ("Force Rebuild", "Re-filter", "Update Blocklist") can be triggered any time, and log progress/audit events.
+7. **Crash-resilient, disk-first design:**  
+   - All in-progress files are atomically updated. Universe build resumes from partial/unfiltered file as needed.
+8. **Credential usage and all mutations are fully audit-logged and require admin rights.
 
---------------------------------------------------------------------------------
-Section 2: Universe Construction & Blocklist Workflow (Staged, Free-First)
---------------------------------------------------------------------------------
 
-**Nightly Build (Multi-Pass Staged Process):**
+# ================================================
+# Section 2: Universe Construction & Blocklist Workflow
+# ================================================
+1. **Universe Build:**  
+   - Load all symbols from selected provider (default: yfinance API).  
+   - For each symbol:  
+      a. If symbol is on blocklist, skip.  
+      b. Fetch price/metadata via provider API.  
+      c. If not found, add to blocklist ("not found", UTC, provider).  
+      d. If price < MIN_PRICE, add to blocklist ("below price floor", UTC, provider).  
+      e. If OK, write symbol metadata to `symbol_universe.unfiltered.json`.  
+   - Apply all core filters inline (exchange, price, cap, data validity).  
+   - For each passing symbol, write immediately to both `symbol_universe.partial.json` and (on build completion) atomically replace `symbol_universe.json`.  
+   - After each batch/step, blocklist, unfiltered, and partial universes are atomically saved for crash recovery.
+2. **Blocklist Maintenance:**  
+   - Blocklist is automatically refreshed as part of every build using only free APIs.  
+   - Weekend or scheduled recovery polling for blocklisted tickers; on recovery, symbol is un-blocklisted for next build.
+3. **Atomic file policy:**  
+   - All symbol/blocklist writes are atomic.  
+   - At end-of-build, `.partial.json` is atomically moved to `symbol_universe.json`.  
+   - No real-time overwrites of existing universe/blocklist files on failure.
 
-1. **Source all possible equity symbols from yfinance:**  
-   - yfinance provider loads all tradable equities, prices, and minimal metadata in batch mode.  
-   - Additional provider adapters (Finnhub, IBKR) may be used only for enrichment or validation as needed.  
-   - All candidate symbols (symbol, exchange, name, price) written to candidate list.
 
-2. **For each candidate symbol:**  
-   a. **If on blocklist:** skip immediately.  
-   b. **If not blocklisted:** Use yfinance price (or fallback API if needed).  
-   c. **If price < MIN_PRICE:** Add symbol to blocklist with UTC timestamp, data source provider, and "below price floor" reason.  
-   d. **If price ≥ MIN_PRICE:** mark symbol as eligible.
-
-**The dedicated "price-only" pass and FTP/delayed file symbol loaders are no longer standard. All universe builds now use yfinance as primary symbol/price source, unless overridden in provider selection.**
-
-3. **Write blocklist to disk after every batch** for durability and crash resilience.
-
-4. **For eligible, non-blocklisted, price ≥ MIN_PRICE symbols:**  
-   a. Use yfinance (or enrichment provider, e.g. Finnhub, IBKR) for additional metadata (marketCap, sector, industry, etc.).  
-   b. Write each symbol’s full metadata immediately to `symbol_universe.unfiltered.json` with deduplication as processing proceeds.
-
-5. **Apply core filters to each symbol as fetched:**  
-   - Exchange must be allowed.  
-   - Price/market cap within bounds.  
-   - Fields valid, non-null.  
-   - All actions are logged for audit/debugging.
-
-6. **For symbols passing filter, immediately write to both `symbol_universe.partial.json` and `symbol_universe.json`** for real-time build progress tracking and crash resilience.
-
-7. **At end-of-build:**  
-   - Compare and merge `symbol_universe.partial.json` and `symbol_universe.json` to remove duplicates and missing entries, ensuring final file integrity.  
-   - Write comprehensive build audit/log entry covering all passes, batch sizes, errors, and durations.
-
-**Blocklist Maintenance (Recovery Passes):**  
-- Blocklist is automatically refreshed nightly as part of the universe build process using free/delayed price sources with credentials managed centrally.  
-- On weekends or scheduled intervals, **re-poll blocklisted tickers** using free price sources to check for price recovery above `MIN_PRICE`.  
-  - Symbols passing recovery criteria are immediately removed from the blocklist and queued for full metadata retrieval on next build.  
-- Blocklist may be manually updated by authorized users via the Web UI; all manual changes are audit-logged with user, timestamp, and reason, and flagged within the blocklist file.
 --------------------------------------------------------------------------------
 Section 3: File/Script Layout & Responsibilities
 --------------------------------------------------------------------------------
 
-- `symbol_universe.unfiltered.json`: All raw, deduped, fetched symbols with full metadata (no placeholders).
-- `symbol_universe.partial.json`: Inline-filtered, progress-tracking, filtered symbols.
-- `symbol_universe.json`: Final, validated, production-ready universe (only fully eligible symbols).
-- `screener_blocklist.txt`: Blocklisted tickers with UTC timestamp, source provider, reason, audit-logged.
-- `universe_ops.log`: UTC timestamped progress and audit log for all universe/blocklist build, update, and recovery events.
-- `tbot_bot/screeners/symbol_universe_refresh.py`: Orchestrates staged fetch, blocklist management, filtering, and atomic file writes. Implements multi-pass, multi-provider staged workflow, crash recovery, and audit logging.
-- `tbot_bot/screeners/screener_utils.py`: Loads, validates universes and blocklist; performs filtering, merging, deduplication, drift detection, and utility helpers.
-- `tbot_bot/screeners/blocklist_manager.py`: Encapsulates blocklist CRUD, archival, audit-logging, and periodic recovery polling logic with multi-provider awareness.
-- `tbot_bot/screeners/universe_logger.py`: Dedicated UTC, structured logger for all staged universe/build/blocklist events and user actions.
-- `tbot_web/py/universe_web.py`: Web UI API endpoints for universe/blocklist display, rebuild, blocklist management, export, status, manual un/blocklisting, and audit log access.
-- `tbot_bot/screeners/symbol_source_loader.py`: Modular orchestrator loading all symbol sources using provider-specific credentials and error handling.
-- `tbot_bot/screeners/symbol_sources/`: Modular provider adapters implementing symbol loading with central credential usage.
-- `tbot_bot/support/secrets_manager.py`: Central encrypted credential loader used by all screeners and symbol sources, ensures secure key/token management and audit.
+- `symbol_universe.unfiltered.json`:  All fetched symbols with full metadata from the selected provider(s); includes every processed symbol, whether passing or failing filters, written as newline-delimited JSON objects. No placeholders, no missing fields; each entry represents one fetch attempt.
+- `symbol_universe.partial.json`:   Inline-progress filtered universe. Every symbol passing all universe filters (exchange, price, market cap, required fields) is appended immediately as fetched. This file reflects the build's real-time eligible state and supports crash-resume.
+- `symbol_universe.json`:    FINAL atomic production symbol universe. Upon build completion, symbol_universe.partial.json is atomically renamed or copied to symbol_universe.json. This is the only file used by all screeners, strategies, and runtime operations for the trading day. Only contains fully eligible, validated symbols.
+- `screener_blocklist.txt`:    Master blocklist file (TXT, one line per entry, pipe-delimited): SYMBOL|reason|UTC timestamp|provider. Any symbol rejected (e.g., missing from provider, failed fetch, failed filter, quota error, API error, missing fields) is written here immediately. Blocklist is always checked before any API call, ensuring no wasted requests. All blocklist actions are audit-logged, including reason and provider.
+- `universe_ops.log`:    Audit log (UTF-8, line-oriented, JSON or plaintext) with a UTC timestamp for every significant action: start/end of build, each provider fetch, symbol processed, symbol rejected, blocklist addition, error, resume event, completion, file rotation. Used for detailed auditing, debugging, and crash diagnostics.
+---
+- `tbot_bot/screeners/universe_orchestrator.py`:    **Main entry-point orchestration script.**    Runs and coordinates the full symbol universe build process, including initialization, provider adapter setup, build progress tracking, and triggering `symbol_enrichment.py`. Ensures correct execution order and crash-safe orchestration.
+- `tbot_bot/screeners/symbol_source_loader.py`:    **Symbol candidate loader and source selector.**    Loads all symbol candidates directly from configured provider adapters (not from txt or CSV). Handles provider selection logic, credential loading, error handling, normalization, and batch/stream interface to enrichment step.
+- `tbot_bot/screeners/provider_registry.py`:    **Provider registry/dispatcher.**    Maps provider string (e.g., FINNHUB, IBKR, YAHOO) to the correct Python provider adapter class. Handles dynamic dispatch and supports multi-provider or fallback operation.
+- `tbot_bot/screeners/symbol_enrichment.py`:    **Universe enrichment and build module.**  
+  For each provider symbol (from source loader):  
+    - Checks blocklist before every fetch  
+    - Fetches full symbol metadata  
+    - Writes every attempt (good or bad) to unfiltered  
+    - Applies universe filters (exchange, price, cap, required fields)  
+    - Writes passing symbols to partial.json  
+    - Writes rejected symbols to screener_blocklist.txt (with UTC timestamp, provider, and reason)  
+    - All file writes are atomic  
+    - Fully resumable: picks up from the last processed symbol if restarted/crashed
+
+- `tbot_bot/screeners/screener_utils.py`:    **Utility module.**    Provides atomic file operations (append/merge), blocklist load/save helpers, deduplication logic, schema validation, audit drift detection, and universal JSON/text file helpers. Used by all build and runtime modules to guarantee file integrity and spec compliance.
+- `tbot_bot/screeners/blocklist_manager.py`:    **Blocklist management and audit.**    Manages all blocklist CRUD operations (add/remove/update), batch archival/rotation, audit logging, and scheduled or manual blocklist recovery/rechecks. Integrates with all provider adapters for multi-source awareness, and maintains blocklist consistency across rebuilds.
+- `tbot_bot/screeners/universe_logger.py`:    **Dedicated UTC logger.**    Responsible for writing structured logs for every build/enrichment/blocklist/file operation, user action, and error. All actions, errors, and user ops are logged for full audit and compliance support.
+- `tbot_bot/screeners/universe_archiver.py`:    Automated archival, retention, restore, and rollback utilities for all universes/blocklists. Implements policy-driven file aging, backups, and recoveries.
+- `tbot_bot/screeners/universe_diff.py`:    Diff/compare utility for any two universe or blocklist files, supporting drift detection, audit, rollback, and UI/API integration.
+- `tbot_bot/screeners/universe_rebuild_cli.py`:    CLI tool to trigger universe or blocklist rebuild, validation, archival, manual recovery, and force-rebuild operations. Supports sysadmin/ops and automated CI/CD workflows.
+- `tbot_bot/screeners/universe_validation.py`:    Comprehensive validation and QA utility. Performs schema validation, field presence checks, deduplication, drift detection, and required credential/field presence. Ensures universe and blocklist integrity before live use.
+
+**PROVIDER INTERFACES AND ADAPTERS:**
+- `tbot_bot/screeners/provider_base.py`:    **Abstract base/interface for all provider adapters.**    Defines the standard interface: all adapters must implement `fetch_symbols` and `fetch_quotes` (blocklist- and error-aware), and support credential injection. Ensures statelessness and compatibility.
+- `tbot_bot/screeners/provider_registry.py`:    **Provider registry.**    Maps provider strings to adapter classes. Used by build orchestration and loader logic to select/instantiate providers on demand.
+- `tbot_bot/screeners/symbol_sources/`:    **Directory for all modular provider adapters.**  
+  Each adapter implements fetch_symbols/fetch_quotes via provider API, not files.  
+  - `finnhub_provider.py`: Finnhub adapter—fetches symbols/quotes, handles provider-specific errors, rate limits, missing data, credential checks.
+  - `ibkr_provider.py`: Interactive Brokers (IBKR) adapter—fetches symbols/quotes via IBKR API.
+  - `yahoo_provider.py`: Yahoo (yfinance) adapter—fetches free US equity symbol list, price, market cap, etc.
+  - `polygon_provider.py`: Polygon.io adapter—fetches US equities data via Polygon API.
+  - `nasdaq_provider.py`: NASDAQ direct API adapter (where available).
+  - `nyse_provider.py`: NYSE direct API adapter (where available).
+  - *(Additional provider adapters can be added as needed for new data sources or regions.)*
+ 
+**CREDENTIALS AND SECRETS MANAGEMENT:**
+- `tbot_bot/support/secrets_manager.py`:  
+  **Central, encrypted credential management.**  
+  Handles atomic keyfile management, secure credential load/save, and full audit logging for every credential event (add/edit/delete/rotate).  
+  No environment variable or hardcoded secret access—*all* providers/adapters, screeners, and build modules use only the secure credential loader.
+ 
+**WEB INTERFACE MODULES:**
+- `tbot_web/py/universe_web.py`:    **Web UI API endpoints/routes:**    Displays universe and blocklist status, force rebuild, re-filter, manual blocklist update, audit log access, and progress. Supports authorized manual symbol block/unblock with audit.
+
+**FILE LOCATIONS/POLICY:**
+- All universe, blocklist, and ops files:    `tbot_bot/output/screeners/`
+- All provider, loader, and build modules:    `tbot_bot/screeners/`    `tbot_bot/screeners/symbol_sources/`
+- All credentials:    `tbot_bot/storage/secrets/screener_api.json.enc`    (Encrypted, never plaintext, never in environment.)
+- All logs and audit:    `tbot_bot/output/logs/universe_ops.log`    `tbot_bot/output/logs/screener_credentials_audit.log`
+
 
 --------------------------------------------------------------------------------
 Section 4: Web UI and User Actions
 --------------------------------------------------------------------------------
 
 1. **Web UI `/universe` displays:**
-   - Real-time counts and status for all universe and blocklist files.
-   - Four side-by-side, infinitely scrollable tables for unfiltered, partial, final universes, and blocklist.
-   - Global search/filter box applying across all tables simultaneously.
-   - At-a-glance checksum/hash and record counts for file integrity verification.
-   - Buttons for “Force Rebuild”, “Re-filter”, and “Update Blocklist” actions with real-time progress feedback.
-   - Live progress/heartbeat logs displayed as they occur.
-   - Export options for all tables/files in CSV and JSON formats.
+   - Live, real-time counts and build status for all universe and blocklist files (`symbol_universe.unfiltered.json`, `symbol_universe.partial.json`, `symbol_universe.json`, `screener_blocklist.txt`).
+   - Four side-by-side, infinitely scrollable, sortable tables: 
+     - Unfiltered Universe (all fetched metadata),
+     - Partial Universe (currently eligible, passing filter, real-time build state),
+     - Final Universe (production universe for next trading day),
+     - Blocklist (symbols blocked, with reason, UTC timestamp, and provider).
+   - Global search/filter box that instantly searches across all tables and highlights matches.
+   - Inline at-a-glance display of checksums/hashes and record counts for every file, providing immediate integrity verification.
+   - Prominently displayed “Force Rebuild Universe”, “Re-filter”, and “Update Blocklist” buttons; each triggers a backend process with real-time progress and error feedback (including step-by-step log output in the UI).
+   - Live heartbeat/progress logs appear as enrichment/filter steps proceed (log lines from `universe_ops.log`), with auto-scroll and pause.
+   - Status banners/warnings for stale, incomplete, or corrupt files, with diagnostic suggestions and audit log links.
+   - Dedicated modal dialogs for error review, progress, and manual action confirmation.
+   - File drag-and-drop or file-upload (admin only) for manual offline override/import with full audit trail.
 
-2. **Manual 'Re-filter':**
-   - Re-applies filtering logic from the current unfiltered universe file.
-   - Writes updated partial and final universe files with deduplication and audit logging.
+2. **Manual 'Re-filter' Action:**
+   - Runs the filter logic against the current `symbol_universe.unfiltered.json` file using all current filter parameters (exchange, price, cap, blocklist).
+   - Produces new `symbol_universe.partial.json` and atomically replaces `symbol_universe.json` upon completion, with full deduplication and validation.
+   - Each re-filter action is logged (user, UTC timestamp, parameters, file hashes before/after, number of symbols added/removed).
 
-3. **Manual 'Update Blocklist':**
-   - Triggers a recovery pass to re-poll blocklisted symbols using free sources.
-   - Unblocks symbols that have recovered above threshold.
-   - All changes audit-logged with user, timestamp, and reason.
+3. **Manual 'Update Blocklist' Action:**
+   - Initiates a blocklist recovery pass that re-checks every blocklisted symbol using the primary free data provider (e.g., yfinance).
+   - If a symbol now passes recovery criteria (e.g., price rises above threshold), it is automatically unblocked and added to the next universe build.
+   - All removals, additions, and changes are logged with user identity, UTC timestamp, previous/new status, and triggering action.
+   - Supports “dry-run” and full update modes; dry-run previews all actions without applying changes.
 
-4. **Manual un/blocklisting via UI:**
-   - Authorized users can add or remove tickers from blocklist.
-   - Each manual change is logged with user identity, timestamp, and justification.
-   - Changes persist atomically and update blocklist file with audit flags.
+4. **Manual Add/Remove to Blocklist via UI:**
+   - Any admin user can blocklist or unblock a symbol from the UI, with an enforced reason/comment for compliance.
+   - Each manual blocklist change triggers an atomic write, immediate update to the live blocklist, and audit log entry including: user identity, UTC timestamp, symbol, action (add/remove), justification, and source IP.
+   - UI visually marks manually blocklisted/unblocklisted symbols with a badge and links to the audit log entry.
 
-5. **All universe and blocklist files are exportable** as CSV and JSON formats for offline review or backup.
+5. **All universe and blocklist files are exportable:**
+   - Exported files include hash/checksum and file generation UTC timestamp in metadata.
+   - Export events are logged for audit purposes, with user identity and destination (download, email, etc).
+
 
 --------------------------------------------------------------------------------
 Section 5: Validation & Maintenance
 --------------------------------------------------------------------------------
 
 1. **Validation of all universe and blocklist files prior to use:**
-   - Each entry must include required fields: symbol, exchange, lastClose, marketCap.
-   - Strict deduplication enforced at every file save.
-   - Files must be valid UTF-8 encoded JSON, with no placeholders or nulls.
-   - Blocklist entries must include timestamp, data source/provider, and audit flags.
-   - All validation errors and anomalies are logged with UTC timestamps and detailed context for diagnostics.
+   - Every entry in `symbol_universe.unfiltered.json`, `symbol_universe.partial.json`, and `symbol_universe.json` must include all required fields: `symbol`, `exchange`, `lastClose`, and `marketCap`. No entry may be missing or have a null/empty required field.
+   - Strict deduplication is enforced at every save/write operation; no symbol may appear more than once per file.
+   - All universe and blocklist files must be valid, well-formed UTF-8 encoded JSON (for universe files) or plain UTF-8 text (for blocklist), with no placeholders, empty stubs, or null values.
+   - Blocklist entries (in `screener_blocklist.txt`) must include: symbol, UTC timestamp, data source/provider, reason for blocklisting, and audit/action flags indicating automated/manual/blocklist recovery source.
+   - Every file is validated before use; all validation errors, missing fields, bad encodings, deduplication failures, or anomalies are logged in `universe_ops.log` with full UTC timestamp, file path, error details, and recommended recovery steps.
 
-2. **Automated test and QA utility scripts** validate schema compliance, data integrity, filtering logic correctness, and credential completeness.  
-   - These run on-demand or as part of CI/CD pipelines.
-   - Any missing or broken configuration or credential flags failure.
+2. **Automated test and QA utility scripts:**
+   - Scripts and utilities validate schema compliance, record-level data integrity, filter correctness, deduplication, and credential completeness before any universe is used for trading.
+   - Validation/test scripts run on-demand via CLI or as required preflight steps in all CI/CD and deployment pipelines.
+   - Universe build fails immediately with clear logs if any required credential, data field, or configuration is missing, malformed, or does not meet the spec.
 
 3. **Atomic save policy:**
-   - No universe or blocklist file is overwritten or deleted on failure.
-   - Temporary files and atomic rename used to guarantee disk integrity.
+   - All writes to `symbol_universe.unfiltered.json`, `symbol_universe.partial.json`, `symbol_universe.json`, and `screener_blocklist.txt` are atomic:
+      - New/updated files are written to a temporary file first.
+      - Upon successful write and validation, the temporary file is atomically renamed into place, replacing the old version.
+      - No universe or blocklist file is ever overwritten or deleted on a failed write or validation.
+      - All atomic file replace events are logged in `universe_ops.log` with timestamp, action, user (if via UI), and file hashes before/after.
 
-4. **Update cadence:**
-   - Universe and blocklist files are updated only after market close or via manual triggers.
-   - Runtime systems never perform real-time or dynamic global symbol fetching or universe rebuilding during active trading sessions.
+4. **Update cadence and runtime immutability:**
+   - Universe and blocklist files are only updated after market close, during designated maintenance windows, or via explicit manual triggers in the Web UI by authorized users.
+   - Once trading has begun for the day, all runtime systems and strategies use only the fixed, validated `symbol_universe.json` for the session; **no runtime fetching or universe rebuilding is allowed** until the next scheduled overnight update or manual action.
+   - Any attempt to update or rebuild the universe during active trading hours is blocked, logged, and raises an explicit alert in the Web UI.
+   - All universe and blocklist file update events, including manual or automated triggers, are recorded in the audit log with timestamp, user/action, and before/after file stats.
 
 --------------------------------------------------------------------------------
 Section 6: API, Quota, and Performance Considerations
 --------------------------------------------------------------------------------
 
-1. **API keys are securely sourced exclusively from the central encrypted credentials store** (`screener_api.json.enc`); never hardcoded or stored in plaintext.  
-2. **All blocklist management and initial universe screening utilize yfinance as primary free/delayed API,** minimizing quota and cost, with Finnhub/IBKR reserved for enrichment or fallback.  
-3. **Paid or limited quota APIs (e.g., Finnhub, IBKR) are only called for additional enrichment or secondary validation.**  
-4. **API calls are staged and throttled with provider-specific sleep intervals (`UNIVERSE_SLEEP_TIME`) and batched where supported to comply with rate limits.**  
-5. **Universe build supports atomic batch persistence, resumability, and incremental writes.**
-6. **Blocklist recovery polling is strictly performed using free or delayed data sources to avoid consuming paid API quotas.**  
-7. **All API errors, quota limits, throttling events, and recoveries are logged with detailed batch and ticker context for diagnostics and audit.**  
-8. **Data source priority and order is modular and dynamically configurable via user settings or UI control, enabling easy source updates or swaps.**  
-9. **If all free data sources fail or become unavailable, the system falls back to the last successful universe build or pauses build with logged alerts.**  
-10. **Credential loading failures must fail fast, aborting the build step, and must log sanitized error events without exposing secrets.**  
-11. **All credential access is centralized through the secure credential loader, ensuring consistency and minimizing risk of hardcoded or environment variable leaks.**
+1. **API keys, tokens, and secrets are always loaded exclusively from the central, encrypted credentials store (`tbot_bot/storage/secrets/screener_api.json.enc`).**
+   - No API key, secret, or credential may ever be hardcoded, committed to source control, stored in environment variables, or written to plaintext disk at any time.
+   - All credential access is logged with timestamp, user, and operation (never including secret values).
+
+2. **All blocklist management and universe symbol fetching and enrichment prioritize free or low-cost APIs, with yfinance (Yahoo Finance) as the primary default source.**
+   - Paid or quota-limited APIs such as Finnhub and IBKR are reserved strictly for enrichment or fallback passes on eligible, non-blocklisted symbols only.
+   - No paid API may be used for global/bulk universe symbol list or for blocklist recovery unless explicitly allowed by user configuration.
+
+3. **API calls for all providers are staged, throttled, and modular:**
+   - Each provider specifies its own `UNIVERSE_SLEEP_TIME` or throttle interval to comply with published rate limits.
+   - Batch calls are supported where available, otherwise looped, with full error handling for 429/503 and transient failures.
+   - The entire universe build process is resumable: interrupted batches, incomplete files, or in-progress writes can safely resume without wasted quota or duplicate records.
+
+4. **Atomic and incremental disk writes:**
+   - All writes to universe and blocklist files are done incrementally, atomically, and in small batches to minimize data loss on crash or quota hit.
+   - Resume on next build is always possible from any valid partial/unfiltered file, with no loss of previous progress.
+
+5. **Blocklist recovery polling and routine refresh:**
+   - Recovery of blocklisted tickers (checking if price is now above the threshold) is only performed with free, delayed, or low-cost APIs (never paid quota APIs), ensuring daily/weekly maintenance does not impact quota or cost.
+   - All recovery actions are audit-logged, and recovered symbols are immediately queued for universe enrichment.
+
+6. **Comprehensive error, quota, and performance logging:**
+   - All API call failures, rate limit hits, quota exhaustions, unexpected provider responses, and recovery events are logged in detail to `universe_ops.log` with UTC timestamps, ticker context, batch, and error codes/messages.
+   - Logs are used for audit, recovery, and QA validation.
+
+7. **Modular and user-configurable provider/data source priority:**
+   - The priority/order of providers is dynamically user-configurable via secure UI, admin settings, or deployment config.
+   - Users can swap, disable, or reorder symbol sources and enrichment providers without code changes or redeployment.
+   - Any source or provider can be hot-swapped or deprecated as market/API conditions change.
+
+8. **Build interruption, recovery, and fallback:**
+   - If all free data sources fail or become unavailable, the system will immediately fallback to the last fully validated universe build and halt further writes until recovery, logging detailed alerts and error context.
+   - All failures are logged and surfaced in the Web UI, with explicit error messages and diagnostic info for admin review.
+
+9. **Credential loading failures and fail-fast policy:**
+   - Any failure to load or validate required credentials will abort the build step immediately.
+   - All credential errors are logged as sanitized error events with no secret data, including file path, provider, and timestamp.
+   - Only authorized users may resolve/fix credential issues via the Web UI.
+
+10. **Centralized credential access and audit:**
+    - All universe, screener, and symbol source modules must use the single credential loader function for all access.
+    - No module, utility, or script may read credentials from environment variables, external files, or alternate storage.
+    - Credential loader functions enforce access control, logging, and atomic backup/rotation on every change or access.
+    - All credential access, changes, and rotation events are audit-logged with timestamp, user, provider, and action (never secret values).
+
+11. **Performance best practices:**
+    - Universe build must optimize for minimum API usage and lowest cost, using free/delayed sources for all initial and blocklist passes.
+    - Incremental progress, resumption, and batch error recovery must minimize risk of rate limit lockout or lost build progress.
+    - All tuning and throttle values are set per-provider and may be dynamically adjusted in the UI or config as needed.
+
 
 --------------------------------------------------------------------------------
 Section 7: Error Handling, Logging, and Recovery
 --------------------------------------------------------------------------------
 
-1. **All failures, API errors, quota exceptions, and build anomalies are logged in detail to `universe_ops.log` using UTC timestamps in structured JSON Lines or equivalent format.**  
-2. **No failed or partial universe or blocklist build will overwrite existing valid files; atomic renames ensure integrity and crash recovery.**  
-3. **Full manual review, audit, and export of all universe, blocklist, and operational logs are supported via Web UI interfaces.**  
-4. **Planned future enhancements include alerting and notification on critical build failures or quota exhaustion events.**  
-5. **All critical actions including universe build, blocklist update, and manual un/blocklisting via UI are audit logged with user identity, timestamps, and reasons (without storing secrets).**  
-6. **All Web UI operations that mutate universe or blocklist files must perform atomic writes and record user and action context for compliance and traceability.**  
-7. **Credential changes and access events are also audit logged with user and timestamp metadata, ensuring traceability of all sensitive operations.**  
-8. **Failure or misconfiguration in credentials triggers build aborts with sanitized logs, preventing corrupted or insecure universe states.**
+1. **All failures, API errors, provider exceptions, data anomalies, and quota issues are logged in full detail to `tbot_bot/output/screeners/universe_ops.log`.**
+   - Every log entry is UTC timestamped and written as structured JSON Lines or equivalent for machine and human readability.
+   - Each event log includes: timestamp, operation, symbol (if applicable), provider, error type/message, and action taken (e.g., skipped, blocklisted, retried).
+
+2. **No failed, partial, or incomplete universe or blocklist build ever overwrites existing valid files.**
+   - All new writes are made to temporary files and atomically renamed only on success.
+   - In case of failure, previous universe and blocklist files remain unchanged, preserving the last known good state for live trading and review.
+   - Crash recovery is built-in: the build process always resumes from last valid partial/unfiltered files and never restarts from scratch unless explicitly forced.
+
+3. **Manual and automated review, audit, and export of all universe, blocklist, and operational logs are fully supported through the Web UI.**
+   - UI displays all logs with infinite scroll, search/filter, audit, and backup.
+   - All log and file export actions are audit-logged.
+
+4. **Automated and planned notifications:**
+   - Future enhancements will include real-time alerts, email, or webhook notifications on critical build failures, credential or quota errors, or repeated anomalies.
+   - All notification events are logged with timestamp, event type, and escalation channel.
+
+5. **Audit logging of all critical and user actions:**
+   - Every universe build, blocklist update, and manual un/blocklisting via UI is audit-logged with user identity, UTC timestamp, reason, operation, and affected files/symbols.
+   - Audit logs are written to both `universe_ops.log` and `tbot_bot/output/logs/screener_credentials_audit.log` for compliance.
+
+6. **All mutating operations from the Web UI (rebuild, re-filter, blocklist management, manual edit) must perform atomic file writes and record user/action context.**
+   - Every file mutation or change records: user, timestamp, action type, file(s) affected, and summary of change (never secrets).
+   - Partial/incomplete operations are rolled back and never overwrite valid files.
+
+7. **Credential changes and credential access events are always audit-logged with user identity, timestamp, action (add, edit, rotate, delete, read), and affected provider.**
+   - No secret value is ever written to a log or output.
+
+8. **Any failure to load, validate, or decrypt required credentials results in immediate, fail-fast build abort with sanitized error logging.**
+   - Logs include: file path, provider, reason, UTC timestamp, and remedial steps.
+   - The build process halts until credential issues are resolved and validated, preventing any risk of corrupted or insecure universe or blocklist state.
 
 
 --------------------------------------------------------------------------------
 Section 8: Extensibility and Future-Proofing
 --------------------------------------------------------------------------------
 
-1. **The architecture supports:**
-   - Multiple brokers operating simultaneously, each with independent universe and blocklist files.
-   - User-supplied symbol lists and the ability to integrate alternate data sources (CSV, API, or direct input).
-   - Plug-and-play symbol feed adapters for free, paid, delayed, or broker-native data feeds, with yfinance as the default for US equities.
-   - Dynamic broker API integration to determine tradability, fractional share eligibility, or real-time quote validation, supporting both IBKR and Finnhub.
-   - Comprehensive audit history with exportable logs and change tracking for all symbol, blocklist, and credential operations.
-   - Modular codebase and configuration to add new exchanges, asset classes, or geographic regions easily, using the ProviderBase adapter pattern.
-   - Versioned universe and blocklist schemas with migration utilities for seamless upgrades or recovery.
-   - Fully modular, user-configurable data source priority, filtering, and credential management via secure UI.
-   - Rapid integration of new adapters for alternate data sources or backup APIs as market conditions change.
-   - Future integration pathways for AI-driven filtering, advanced analytics, or expansion to other asset classes.
-   - Deprecation/removal of legacy FTP/TXT/CSV symbol sources for core builds; all core builds now default to yfinance, with enrichment via Finnhub/IBKR or other APIs as needed.
+1. **The architecture supports and enforces:**
+   - Multiple brokers operating simultaneously, each maintaining independent, daily-refreshed universe and blocklist files under a standardized directory layout.
+   - Plug-and-play, adapter-driven symbol feed modules for all supported sources, including free, paid, delayed, or broker-native data feeds. yfinance is always the default for core US equities universe construction, with Finnhub/IBKR/Polygon adapters used only for enrichment or alternate market support.
+   - Dynamic broker and market API integration to determine symbol tradability, exchange eligibility, fractional share support, and live quote validation, with direct support for IBKR, Finnhub, and additional providers.
+   - Comprehensive, append-only audit log history, exportable for all symbol, blocklist, and credential operations, with fine-grained change tracking.
+   - A fully modular codebase and config system to enable easy addition of new exchanges, asset classes (ETFs, options, non-US), or geographies, implemented by dropping new ProviderBase adapters and schema files.
+   - Explicit versioned schemas for all universe and blocklist files, with built-in migration and validation utilities to ensure seamless upgrades or data recovery.
+   - User-configurable, per-entity or per-bot data source priority, filter rules, and credential management, all exposed via secure UI controls.
+   - Rapid, no-code/low-code integration of new or backup data providers as needed, with UI toggles and config options.
+   - Ready-to-use extension points for future AI/ML-driven filtering, risk analytics, and cross-asset expansion, all built on the same modular universe/blocklist pipeline.
+   - Complete removal of legacy FTP, TXT, or static CSV symbol source dependencies; all core builds must use dynamic, API-driven symbol/price sources (typically yfinance first), with optional enrichment.
+   - Entity and jurisdiction-aware universe handling: the system can deploy and maintain multiple universes for different regulatory or market contexts without code changes.
 
-2. **Deployment considerations:**
-   - Universe and blocklist files can be pre-built, snapshotted, or exported for new entities or rapid redeployment.
-   - Changes in entity, jurisdiction, or data source require only a single rebuild to bring new bot instances online while maintaining data integrity.
-   - All data files remain human- and machine-readable to facilitate audit, backup, recovery, and CI/CD workflows.
-   - Encrypted, versioned credential management and schema evolution allow for secure, low-maintenance scaling across teams and environments.
+2. **Deployment, portability, and upgrade considerations:**
+   - Universe and blocklist files can be pre-built, snapshotted, and exported for rapid bootstrapping of new entities, jurisdictions, or deployment environments.
+   - Any changes in entity, jurisdiction, or selected data source require only a single “Force Rebuild” to bring new or restored bot instances online, ensuring clean separation and integrity.
+   - All output data files (universes, blocklists, logs) are always stored as plain UTF-8 JSON or line-delimited text, human- and machine-readable for backup, audit, or CI/CD review.
+   - Encrypted, versioned credential management and schema evolution enable secure scaling, backup, and recovery across multiple teams, hosts, or environments.
+   - Validation tools and migration scripts are always available to test and upgrade schema versions, credentials, or core filter logic.
 
-3. **Long-term stability:**
-   - The staged, yfinance-first (free/low-cost API-first) data architecture is designed to operate reliably for years with no vendor lock-in or interruption from single-API failure, quota exhaustion, or pricing changes.
-   - Data provider adapters can be hot-swapped or added without breaking universe build logic or requiring major code changes.
-   - System is resilient to external API changes, supporting automatic failover to backup providers or locally cached data if needed.
+3. **Long-term stability and future-proofing:**
+   - The staged, disk-first, yfinance-primary data architecture is designed for at least 5+ years of uninterrupted operation, regardless of vendor, API, or market changes.
+   - Provider adapters for new, replacement, or backup data feeds can be added, enabled, or hot-swapped at runtime or via UI without any core code changes or downtime.
+   - Failover is fully supported: if any data source fails or quota is exhausted, the build falls back to cached or backup providers automatically, and will never overwrite last-known-good universe or blocklist files.
+   - Universe and blocklist files, as well as credential stores, remain fully versioned, auditable, and human-auditable, supporting reliable disaster recovery, entity migration, or long-term offline archiving.
+   - The entire system is built to be resilient to upstream API changes (breaking schema, field, or endpoints) and includes UI and CLI controls for switching sources or restoring backups instantly.
+   - Future enhancements (AI/ML-driven filters, advanced risk analytics, integration with new markets or asset classes) are fully supported by the provider adapter and audit-log-first architecture.
 
 
 --------------------------------------------------------------------------------
@@ -223,185 +324,111 @@ Section 9: Dedicated Screener Source Credential Management
 --------------------------------------------------------------------------------
 
 **Purpose:**  
-Centralize all API keys, tokens, usernames, and passwords for universe/screener symbol sources (Finnhub, IBKR, Polygon, Yahoo, etc.) in a *dedicated, auditable, secure UI and encrypted secrets file.*
+Centralize and strictly control all API keys, tokens, usernames, and passwords required for universe and screener symbol source providers (Finnhub, IBKR, Polygon, Yahoo, etc.) using a *dedicated, auditable, secure admin UI* and a single, encrypted secrets file.  
+All provider credentials and usage flags are managed here—no credentials are allowed in environment variables, .env files, or plaintext anywhere in the system.  
+Credential management is tightly integrated with atomic updates, complete audit trails, strict role-based access, and real-time compliance validation.
 
-**Requirements:**
+**Specification:**
 
-1. **All screener and universe modules must load credentials exclusively from a single, centralized encrypted secrets file:**  
-   - Path: `tbot_bot/storage/secrets/screener_api.json.enc`  
-   - Contains all API keys, tokens, usernames, and passwords for all supported symbol sources, indexed by provider.
+1. **Centralized Encrypted Credential File**  
+   - Path: `tbot_bot/storage/secrets/screener_api.json.enc`
+   - Contains all API keys, tokens, usernames, passwords, and provider usage flags for *all* symbol data sources, indexed using generic, incrementing keys (e.g. `PROVIDER_01`, `SCREENER_API_KEY_01`, ...), plus per-provider usage flags (`UNIVERSE_ENABLED_01`, `ENRICHMENT_ENABLED_01`, `TRADING_ENABLED_01`).
+   - File must be present and valid before any universe build, screener operation, or provider API call.  
+   - No module, adapter, or loader may fetch credentials from environment, .env, or main config.
 
-2. **Dedicated credential management UI:**  
-   - Accessible at `/screener_credentials` route (admin only).  
-   - Supports adding, editing, rotating, and removing screener source credentials in a unified interface.  
-   - Enforces field validation (minimum length, format, and required labels).  
-   - Logs all changes (user identity, timestamp, action, and changed fields).  
-   - Never logs sensitive secret values in plaintext; logs only metadata.
+2. **Credential Management Admin UI**  
+   - Route: `/screener_credentials` (admin only; strict RBAC enforced)
+   - Allows authorized admin users to add, edit, rotate, and remove credentials for all providers in a unified UI.
+   - All fields (provider name, API key, secret, username, password, etc.) must be validated (format, length, requiredness) per schema.
+   - All credentials are masked by default, with explicit show/hide toggle.
+   - Usage flags for each provider (Universe, Enrichment, Trading) managed as checkboxes in the UI.
+   - All actions (add, edit, delete, rotate, reveal) must be audit-logged with user, timestamp, action, provider, and fields changed—never the secret value.
+   - Visible warnings/status indicators for missing, invalid, or expired credentials.
 
-3. **Backend API endpoints:**  
-   - `GET /api/screener_credentials` — Returns decrypted credentials for authorized admin users only.  
-   - `POST /api/screener_credentials` — Creates or updates credentials for a given provider.  
-   - `DELETE /api/screener_credentials/<provider>` — Removes credentials for specified provider.  
-   - All endpoints require proper authentication and authorization.
+3. **Atomic Persistence, Encryption, and Backup**  
+   - All changes (add/edit/rotate/delete) are atomically written to `screener_api.json.enc` using modern encryption (Fernet or equivalent).
+   - On every change, the previous credential file is archived to a timestamped, encrypted backup for rollback and audit (`screener_api.json.enc.bak-YYYYMMDDTHHMMSSZ`).
+   - *No secret is ever written or transmitted unencrypted, at rest or in transit.*  
+   - Example schema/template file provided as `screener_api.json.enc.example` for onboarding and QA.
 
-4. **Atomic encrypted persistence:**  
-   - All changes are atomically written to `screener_api.json.enc` using strong encryption (e.g., Fernet).  
-   - Previous versions rotated to timestamped backup files for audit and rollback.  
-   - Secrets are never stored or transmitted unencrypted at rest or in transit.
+4. **Backend & Frontend Implementation**  
+   - **Backend:**
+     - `tbot_web/py/screener_credentials_web.py`: Flask blueprint for all credential UI/API endpoints, enforcing strict RBAC and logging all modifications.
+     - `tbot_bot/support/secrets_manager.py`: Central encryption/decryption, atomic file ops, audit logging, validation, and CRUD logic.
+     - Audit log: `tbot_bot/output/logs/screener_credentials_audit.log` (append-only, UTC-stamped, user, provider, action, never secrets)
+     - Credential access is *strictly* via the loader: `from tbot_bot.support.secrets_manager import get_screener_credentials`
+   - **Frontend:**
+     - `tbot_web/templates/screener_credentials.html`: Credential admin UI template, displaying all providers, credential fields, usage flags, and edit/rotate/delete controls.
+     - `tbot_web/static/js/screener_credentials.js`: JS logic for form handling, field validation, masking/unmasking, and REST API calls.
+     - `tbot_web/static/css/pages/screener_credentials.css`: UI styling for all credential management actions.
 
-5. **UI/UX details:**  
-   - Credential management integrated into admin sidebar or navigation menu.  
-   - Modal dialogs for adding or editing credentials, including fields for provider, API key, secret, username/password, etc.  
-   - Credentials display with masked values and show/hide toggle.  
-   - Warnings displayed for missing, incomplete, or expired credentials.
+5. **API Endpoints (Strict RBAC, Audit, and Security)**  
+   - `GET /api/screener_credentials`: Return decrypted, masked credentials to authorized admin users only.
+   - `POST /api/screener_credentials`: Add or update credentials for a given provider index, including all usage flags and field validation.
+   - `DELETE /api/screener_credentials/<provider>`: Delete all indexed credentials for specified provider, with audit-logging.
+   - All endpoints strictly require authentication, RBAC, and write actions are audit-logged.
 
-6. **Frontend components:**  
-   - `tbot_web/templates/screener_credentials.html`: Credential management page template.  
-   - `tbot_web/static/js/screener_credentials.js`: JavaScript logic for form handling, API calls, masking, and validation.  
-   - `tbot_web/static/css/pages/screener_credentials.css`: Styling specific to the credential management UI.
+6. **Integration/Usage in Universe Build & Providers**  
+   - *All* universe builders, symbol enrichment, screeners, and provider adapters must load API credentials and usage flags exclusively from the secure credential loader (never config/.env).
+   - Any credential loading failure must immediately abort the build, log a sanitized error, and never leak secrets.
+   - Universe build/test/QA utilities must validate credentials (presence, format, completeness, usage flags) before any build step, and fail fast if missing or invalid.
 
-7. **Backend components:**  
-   - `tbot_web/py/screener_credentials_web.py`: Flask blueprint managing UI and API routes for credential management.  
-   - Integrates with the existing encryption/decryption utilities in `secrets_manager.py`.  
-   - Enforces strict access control allowing only admins to view or modify credentials.
+7. **Audit Logging, Compliance, and Recovery**  
+   - All credential add, edit, delete, rotate, and access actions are strictly audit-logged with user, UTC timestamp, provider, and action (never secret value), in `tbot_bot/output/logs/screener_credentials_audit.log`.
+   - Backups of all previous credential files are kept encrypted for full rollback, disaster recovery, and compliance.
+   - Audit logs are append-only, human-readable, and accessible via the admin UI.
 
-8. **Usage in universe builds and source loaders:**  
-   - All screener modules and symbol source adapters must load all API credentials exclusively via the centralized credential loader function (e.g., `get_screener_credentials`).  
-   - Must never read secrets from environment variables or main bot configuration.  
-   - Credential loading failures must fail fast and generate sanitized error logs.  
-   - Test and QA utilities must validate credential completeness and correctness before any universe build.
+8. **Deployment, Migration, and Onboarding**  
+   - Credential file (`screener_api.json.enc`) must be deployed with every bot or entity instance—never committed to version control.
+   - Example file (`screener_api.json.enc.example`) is provided for onboarding, backup, and disaster recovery.
+   - All migration, backup, and restore workflows must only write/restore encrypted credential files and require validation before use.
 
-9. **Audit and logging:**  
-   - All add/edit/delete/rotate operations on credentials are audit logged with user, timestamp, provider, and action (never including secret contents).  
-   - Audit logs are stored at `tbot_bot/output/logs/screener_credentials_audit.log`.
+9. **Robustness and Security Best Practices**  
+   - No plaintext or environment secrets at any point—*all* access, mutation, or recovery of credentials is only through the secured loader and atomic update system.
+   - Only RBAC-admin users may access or change credentials, with all actions confirmed in the UI and audit log.
+   - All credential rotation, update, and backup/restore actions use atomic file writes and maintain a complete audit and backup chain for compliance and operational robustness.
+   - Expiration dates and warnings are managed for all credentials, ensuring proactive rotation and uninterrupted API access.
+   - Any credential error, missing value, or suspected leak results in immediate abort, full audit log, and visible alert in the UI.
 
-10. **Deployment and migration:**  
-    - Credential secrets file (`screener_api.json.enc`) must always be included during deployment and entity onboarding; never committed to source control.  
-    - A schema-only example file (`screener_api.json.enc.example`) is provided for reference.  
-    - Backup and restore processes must re-encrypt credentials and never leave secrets in plaintext.  
-    - Universe validation utilities must verify credential presence and integrity before any build attempt.
+10. **No Deviation Policy**  
+    - *No screener, provider, adapter, or script may use credentials from any source except the secure loader and UI.*  
+    - *All code and UI must comply with these credential handling and audit requirements. Any deviation is a critical violation.*
 
-
-
---------------------------------------------------------------------------------
-Section 10: New/Updated File List for Screener Credential Management
---------------------------------------------------------------------------------
-
-**Backend:**
-- `tbot_web/py/screener_credentials_web.py`       # Flask blueprint: UI and API for managing screener credentials
-- `tbot_bot/support/secrets_manager.py`           # Core encryption/decryption and credential management utilities
-- `tbot_bot/storage/secrets/screener_api.json.enc`   # Encrypted screener credentials (production)
-- `tbot_bot/storage/secrets/screener_api.json.enc.example`  # Schema-only example credentials file
-
-**Frontend/UI:**
-- `tbot_web/templates/screener_credentials.html`  # Credential management page template
-- `tbot_web/static/js/screener_credentials.js`    # JS form logic and API integration
-- `tbot_web/static/css/pages/screener_credentials.css`  # Page-specific CSS styling
-
-**Audit/Logging:**
-- `tbot_bot/output/logs/screener_credentials_audit.log`   # Audit log for all credential change events
-
-**Integration/Usage:**
-- All screener modules, symbol source loader, and universe build process must exclusively load credentials via:  
-  `from tbot_bot.support.secrets_manager import get_screener_credentials`  
-  Never use bot config or environment variables for API secrets.
-
-**Migration/QA:**
-- Migration and backup/restore workflows must re-encrypt credentials properly.  
-- Universe validation utilities enforce credential integrity and flag missing or broken secrets prior to build.
 
 --------------------------------------------------------------------------------
-Section 9: Dedicated Screener Source Credential Management
---------------------------------------------------------------------------------
-
-**Purpose:**  
-Centralize all API keys, tokens, usernames, and passwords for universe/screener symbol sources (Finnhub, IBKR, Polygon, Yahoo, etc.) in a *dedicated, auditable, secure UI and encrypted secrets file.*
-
-**Requirements:**
-
-1. **All screener and universe modules must load credentials exclusively from a single, centralized encrypted secrets file:**  
-   - Path: `tbot_bot/storage/secrets/screener_api.json.enc`  
-   - Contains all API keys, tokens, usernames, and passwords for all supported symbol sources, indexed by provider.
-
-2. **Dedicated credential management UI:**  
-   - Accessible at `/screener_credentials` route (admin only).  
-   - Supports adding, editing, rotating, and removing screener source credentials in a unified interface.  
-   - Enforces field validation (minimum length, format, and required labels).  
-   - Logs all changes (user identity, timestamp, action, and changed fields).  
-   - Never logs sensitive secret values in plaintext; logs only metadata.
-
-3. **Backend API endpoints:**  
-   - `GET /api/screener_credentials` — Returns decrypted credentials for authorized admin users only.  
-   - `POST /api/screener_credentials` — Creates or updates credentials for a given provider.  
-   - `DELETE /api/screener_credentials/<provider>` — Removes credentials for specified provider.  
-   - All endpoints require proper authentication and authorization.
-
-4. **Atomic encrypted persistence:**  
-   - All changes are atomically written to `screener_api.json.enc` using strong encryption (e.g., Fernet).  
-   - Previous versions rotated to timestamped backup files for audit and rollback.  
-   - Secrets are never stored or transmitted unencrypted at rest or in transit.
-
-5. **UI/UX details:**  
-   - Credential management integrated into admin sidebar or navigation menu.  
-   - Modal dialogs for adding or editing credentials, including fields for provider, API key, secret, username/password, etc.  
-   - Credentials display with masked values and show/hide toggle.  
-   - Warnings displayed for missing, incomplete, or expired credentials.
-
-6. **Frontend components:**  
-   - `tbot_web/templates/screener_credentials.html`: Credential management page template.  
-   - `tbot_web/static/js/screener_credentials.js`: JavaScript logic for form handling, API calls, masking, and validation.  
-   - `tbot_web/static/css/pages/screener_credentials.css`: Styling specific to the credential management UI.
-
-7. **Backend components:**  
-   - `tbot_web/py/screener_credentials_web.py`: Flask blueprint managing UI and API routes for credential management.  
-   - Integrates with the existing encryption/decryption utilities in `secrets_manager.py`.  
-   - Enforces strict access control allowing only admins to view or modify credentials.
-
-8. **Usage in universe builds and source loaders:**  
-   - All screener modules and symbol source adapters must load all API credentials exclusively via the centralized credential loader function (e.g., `get_screener_credentials`).  
-   - Must never read secrets from environment variables or main bot configuration.  
-   - Credential loading failures must fail fast and generate sanitized error logs.  
-   - Test and QA utilities must validate credential completeness and correctness before any universe build.
-
-9. **Audit and logging:**  
-   - All add/edit/delete/rotate operations on credentials are audit logged with user, timestamp, provider, and action (never including secret contents).  
-   - Audit logs are stored at `tbot_bot/output/logs/screener_credentials_audit.log`.
-
-10. **Deployment and migration:**  
-    - Credential secrets file (`screener_api.json.enc`) must always be included during deployment and entity onboarding; never committed to source control.  
-    - A schema-only example file (`screener_api.json.enc.example`) is provided for reference.  
-    - Backup and restore processes must re-encrypt credentials and never leave secrets in plaintext.  
-    - Universe validation utilities must verify credential presence and integrity before any build attempt.
-
---------------------------------------------------------------------------------
-Section 11: Credential Usage Best Practices, Security, and Maintenance
+Section 10: Credential Usage Best Practices, Security, and Maintenance
 --------------------------------------------------------------------------------
 
 1. **Fail-Fast and Sanitized Error Handling:**  
-   - All screener modules must immediately fail and log sanitized error events if required credentials are missing, invalid, or expired, to prevent silent failures during universe builds.
+   - All screener, universe build, and provider modules must immediately abort operation and log a sanitized error message (never revealing secret values) if required credentials are missing, invalid, incomplete, or expired, to prevent silent failures or partial/corrupted universe builds.
+   - Any credential loading or validation failure results in a hard stop and audit log entry with context, reason, and sanitized error.
 
 2. **Testing and QA Integration:**  
-   - Universe validation and screener test utilities must verify credential presence, validity, and completeness prior to initiating any build or API calls, minimizing runtime errors and build failures.
+   - Universe validation scripts and screener test utilities must verify the presence, validity, and completeness of all required credentials prior to any build, API call, or universe processing step.
+   - Automated CI/CD tests must enforce credential completeness for all configured providers and usage flags, and must fail with clear, sanitized errors if any credential is missing or malformed.
 
 3. **Credential Rotation and Expiration:**  
-   - Credential rotation is supported via the UI with automatic backup of old credentials stamped by UTC timestamp.  
-   - Expiration tracking and rotation reminders are recommended to maintain uninterrupted API access.
+   - The credential management UI allows credential rotation for any provider and key, with automatic backup and archival of old credentials stamped with UTC timestamp for compliance and rollback.
+   - Expiration dates and reminders should be tracked in the UI and audit log for each credential, and warnings displayed for credentials approaching or past expiration, minimizing risk of API downtime.
 
 4. **Role-Based Access Control (RBAC):**  
-   - Only authorized admin users may access or modify screener credentials through the web UI or API.  
-   - All endpoints enforce strict authentication and authorization controls.
+   - Only users with explicit admin role (RBAC enforced) may access, add, edit, rotate, or delete screener credentials via the UI or API endpoints.
+   - All credential management endpoints require strict authentication and RBAC authorization, with all user actions recorded in the audit log.
 
 5. **Versioning and Schema Evolution:**  
-   - Credential file format is versioned and designed for backward compatibility to allow seamless upgrades and schema migrations without disruption.
+   - The encrypted credential file is versioned, and schema migrations are supported to allow seamless upgrades, new provider fields, or format changes with zero data loss or downtime.
+   - Schema-only example and migration utilities are maintained for onboarding, upgrades, and compliance.
 
 6. **Automated Encrypted Backups and Recovery:**  
-   - Every credential change triggers an automatic encrypted backup to support recovery from accidental corruption or deletion.  
-   - Backups are stored securely with UTC timestamp metadata for audit and rollback purposes.
+   - Every credential add/edit/delete/rotate operation triggers an automatic, encrypted backup of the previous credential file, stored with UTC timestamp and never exposing plaintext secrets.
+   - Backups are stored in a secure location (`tbot_bot/storage/secrets/` or designated backup path) for audit, compliance, and full rollback capability in case of corruption, deletion, or credential loss.
 
 7. **Audit Trail and Operational Transparency:**  
-   - All credential operations (add, edit, delete, rotate) are fully audit logged without exposing secret values, ensuring traceability and security compliance.
+   - All credential operations (add, edit, delete, rotate, read, or failure) are fully audit logged with user, UTC timestamp, provider name, action type, and relevant context (never including the secret value itself).
+   - The audit log is append-only and tamper-evident, stored at `tbot_bot/output/logs/screener_credentials_audit.log` and accessible for compliance and review by authorized personnel.
 
 8. **Security Compliance and Best Practices:**  
-   - Secrets must never be stored or transmitted in plaintext at any stage.  
-   - Credential management aligns with organizational security policies and regulatory requirements.
+   - API keys, secrets, passwords, and other sensitive data are never stored, transmitted, or logged in plaintext at any stage of the system, including during backups, exports, or validation.
+   - All credential management processes and workflows strictly comply with organizational security policy, industry best practices, and all relevant regulatory requirements (such as GDPR, SOC2, etc.).
+   - No credential may be committed to source control or exported unencrypted; all deployments require secure credential onboarding and validation before operation.
 

@@ -186,6 +186,13 @@ rigd_tbot/
 │   │   │   ├── init_user_activity_monitoring.log                    # Bootstrap-only: initial user activity DB setup (not shown in logs.html)
 │   │   │   ├── init_password_reset_tokens.log                       # Bootstrap-only: initial password reset DB setup (not shown in logs.html)
 │   │   │   └── password_reset_tokens.log                            # Runtime password reset events (optional; may be shown in logs.html if present)
+│   │   │ 
+│   │   ├── screeners/
+│   │   │   ├──screener_blocklist.txt		                        # Blocklisted symbols (one per line: SYMBOL|reason|timestamp), updated atomically on enrichment/fetch failure
+│   │   │   ├──symbol_universe.json		                            # FINAL atomic symbol universe; filtered, ready for screeners; always produced by atomic replace of .partial.json on completion
+│   │   │   ├──symbol_universe.partial.json		                    # In-progress/filtered universe; eligible symbols passing all filters but before final atomic replace
+│   │   │   ├──symbol_universe.unfiltered.json	                    # All enriched symbols fetched (one per line, JSON dict), includes both passing and rejected (filtered out)
+│   │   │   └── universe_ops.log	                                # UTC log of all enrichment/build progress, errors, and symbol operations; single source for pipeline auditing
 │   │   │
 │   │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/       # ← Scoped per bot ID - Entire directory mirrored to Accounting system
 │   │       ├── logs/                                					    # Unified strategy logs (one per phase or failure mode)
@@ -198,9 +205,6 @@ rigd_tbot/
 │   │       ├── ledgers/  										                                    # created during the provisioning process
 │   │       │   ├── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA_v1.0.0.db    	# Chart of Accounts (COA) for bot ledger, schema version v1.0.0
 │   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db        	# OFX-compliant ledger for live trading data per broker
-│   │       │
-│   │       ├── screeners/
-│   │       │   └── symbol_universe.json		    # Stores filtered symbol metadata for next-day screeners.
 │   │       │
 │   │       ├── summaries/
 │   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_daily_summary.json  	# JSON performance summary for session (PnL, latency, counts, risk triggers)
@@ -231,14 +235,13 @@ rigd_tbot/
 │   │   ├── tbot_supervisor.py                      # CENTRAL SUPERVISOR. Manages all bot phase/state transitions, persistent monitoring, and all subprocess lifecycle. Only one instance allowed; always launched by main.py if present. Handles/waits for and may restart monitor, runtime, or other persistent bot subprocesses. Never runs strategy code directly.
 │   │   └── watchdog_bot.py                         # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
 │   │
-│   ├── screeners/			            	# Screener & Symbol Selection: staged universe build (nasdaqlisted.txt + yfinance enrichment), atomic batch writes, blocklist, spec-compliant, quota-efficient, modular providers
-│   │   ├── providers/                              	# Pure data fetch/enrichment adapters, stateless, config-injected only
-│   │   │   ├── finnhub_provider.py                 	# Finnhub provider adapter: fetches symbols/quotes via injected API keys/config
-│   │   │   ├── ibkr_provider.py                    	# IBKR provider adapter: fetches symbols/quotes via injected API keys/config
-│   │   │   ├── nasdaq_provider.py                   # NASDAQ provider adapter: fetches symbols/quotes via injected API keys/config
-│   │   │   ├── nasdaq_txt_provider.py               # Nasdaqlisted.txt provider adapter: downloads/parses official NASDAQ symbol list (no credentials needed); used for universe seed
-│   │   │   ├── nyse_provider.py                     # NYSE provider adapter: fetches symbols/quotes via injected API keys/config
-│   │   │   └── yahoo_provider.py                    # Yahoo (yfinance) provider adapter: enriches symbols with price, market cap, and volume data for universe enrichment
+│   ├── screeners/			            	# Screener & Symbol Selection: direct provider-API universe build (no txt), atomic per-symbol writes, blocklist-first, quota-efficient, modular providers, resumable
+│   │   ├── providers/                              	# Pure data fetch/enrichment adapters, stateless, config-injected only, fetch from provider API universe
+│   │   │   ├── finnhub_provider.py                 	# Finnhub provider adapter: fetches full universe and quotes via API keys/config, skips/blocklists symbols on error or missing fields
+│   │   │   ├── ibkr_provider.py                    	# IBKR provider adapter: fetches full universe and quotes via API keys/config, skips/blocklists symbols on error or missing fields
+│   │   │   ├── nasdaq_provider.py                   # NASDAQ provider adapter: fetches full universe and quotes via API keys/config, skips/blocklists symbols on error or missing fields
+│   │   │   ├── nyse_provider.py                     # NYSE provider adapter: fetches full universe and quotes via API keys/config, skips/blocklists symbols on error or missing fields
+│   │   │   └── yahoo_provider.py                    # Yahoo (yfinance) provider adapter: fetches full universe and quotes, skips/blocklists symbols on error or missing fields
 │   │   │
 │   │   ├── screeners/                             	# Runtime filter modules using providers' data (for screening, not universe build)
 │   │   │   ├── alpaca_screener.py                  # Alpaca screener: runtime quote filtering; delegates symbol/quote fetch to provider adapters
@@ -248,14 +251,13 @@ rigd_tbot/
 │   │   │
 │   │   ├── blocklist_manager.py                    # Blocklist manager: add/remove/update symbols, reasons, timestamps; atomic writes; used in universe filter pipeline and daily ops
 │   │   ├── provider_base.py                        # Abstract base class/interface for all provider adapters: requires fetch_symbols and fetch_quotes interface
-│   │   ├── provider_registry.py                    # Maps provider strings to adapter classes (including nasdaq_txt_provider); single source for dynamic provider loading
+│   │   ├── provider_registry.py                    # Maps provider strings to adapter classes; single source for dynamic provider loading
 │   │   ├── screener_base.py                        # Abstract screener base: core interface, loads universe, wires modules, calls providers, credential loader
-│   │   ├── screener_filter.py                      # Symbol normalization/filtering: blocklist-first, spec-compliant, dedupe logic, universe batch filter
+│   │   ├── screener_filter.py                      # Symbol normalization/filtering: blocklist-first, spec-compliant, dedupe logic, universe filter
 │   │   ├── screener_utils.py                       # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
-│   │   ├── symbol_enrichment.py                    # Stage 2: Enrichment—reads nasdaqlisted.txt, enriches each symbol via yfinance, atomically appends enriched symbol to unfiltered.json, writes blocklist for failures, partial.json for filtered
-│   │   ├── symbol_source_loader.py                 # Loads all symbol sources (CSV, API, txt) using provider adapters, normalizes and merges for universe build
-│   │   ├── symbol_universe_refresh.py              # Orchestrates staged, batchwise universe build: reads nasdaqlisted.txt, enriches each batch with yfinance, atomically updates unfiltered.json/partial.json/final.json, blocklists rejects
-│   │   ├── universe_orchestrator.py                # Main entry: runs symbol_universe_refresh.py (fetch/enrich/filter/write), atomic/batch, logs progress; triggers full nightly build
+│   │   ├── symbol_enrichment.py                    # Universe build: for each provider symbol not blocklisted, fetch/enrich; write to unfiltered/partial/blocklist per filter; atomic per-symbol write, resumable
+│   │   ├── symbol_source_loader.py                 # Loads all symbol sources (API-only now), normalizes for universe build
+│   │   ├── universe_orchestrator.py                # Main entry: runs symbol_enrichment.py (fetch/enrich/filter/write), atomic per-symbol, logs progress, triggers full nightly build, resumable
 │   │   ├── universe_archiver.py                    # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
 │   │   ├── universe_diff.py                        # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
 │   │   ├── universe_logger.py                      # Dedicated UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions
