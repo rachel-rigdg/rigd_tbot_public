@@ -165,6 +165,14 @@ def resolve_universe_cache_path(bot_identity: str = None) -> str:
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "symbol_universe.json")
 
+def resolve_universe_raw_path():
+    """
+    Returns the canonical path for the raw symbols universe (symbol_universe.symbols_raw.json).
+    """
+    return os.path.abspath(os.path.join(
+        os.path.dirname(__file__), '..', 'output', 'screeners', 'symbol_universe.symbols_raw.json'
+    ))
+
 def resolve_universe_unfiltered_path() -> str:
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
@@ -295,6 +303,7 @@ __all__ = [
     "resolve_ledger_schema_path",
     "resolve_coa_schema_path",
     "resolve_universe_cache_path",
+    "resolve_universe_raw_path",
     "resolve_universe_unfiltered_path",
     "resolve_universe_partial_path",
     "resolve_universe_log_path",
