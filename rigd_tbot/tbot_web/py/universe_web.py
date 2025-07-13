@@ -32,18 +32,18 @@ def screener_creds_exist():
 
 def load_json_file(path):
     try:
-        # Newline-delimited JSON file
         with open(path, "r", encoding="utf-8") as f:
-            items = []
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    items.append(json.loads(line))
-                except Exception:
-                    continue
-            return items
+            # Try array first, else fallback to NDJSON (newline-delimited)
+            try:
+                data = json.load(f)
+                if isinstance(data, dict) and "symbols" in data:
+                    return data["symbols"]
+                elif isinstance(data, list):
+                    return data
+            except Exception:
+                f.seek(0)
+                return [json.loads(line) for line in f if line.strip()]
+        return []
     except Exception:
         return []
 
@@ -214,7 +214,7 @@ def universe_refilter():
         exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
         min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
         max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
-        min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 2_000_000_000))
+        min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 300_000_000))
         max_cap = float(env.get("SCREENER_UNIVERSE_MAX_CAP", 10_000_000_000))
         max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
         blocklist_path = env.get("SCREENER_UNIVERSE_BLOCKLIST_PATH", None)
