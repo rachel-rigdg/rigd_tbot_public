@@ -188,10 +188,11 @@ rigd_tbot/
 │   │   │   └── password_reset_tokens.log                            # Runtime password reset events (optional; may be shown in logs.html if present)
 │   │   │ 
 │   │   ├── screeners/
-│   │   │   ├──screener_blocklist.txt		                        # Blocklisted symbols (one per line: SYMBOL|reason|timestamp), updated atomically on enrichment/fetch failure
-│   │   │   ├──symbol_universe.json		                            # FINAL atomic symbol universe; filtered, ready for screeners; always produced by atomic replace of .partial.json on completion
-│   │   │   ├──symbol_universe.partial.json		                    # In-progress/filtered universe; eligible symbols passing all filters but before final atomic replace
-│   │   │   ├──symbol_universe.unfiltered.json	                    # All enriched symbols fetched (one per line, JSON dict), includes both passing and rejected (filtered out)
+│   │   │   ├── screener_blocklist.txt		                        # Blocklisted symbols (one per line: SYMBOL|reason|timestamp), updated atomically on enrichment/fetch failure
+│   │   │   ├── symbol_universe.json		                        # FINAL atomic symbol universe; filtered, ready for screeners; always produced by atomic replace of .partial.json on completion
+│   │   │   ├── symbol_universe.partial.json		                # In-progress/filtered universe; eligible symbols passing all filters but before final atomic replace
+│   │   │   ├── symbol_universe.symbols_raw.json                    # Raw symbol list directly from provider API (metadata only), persistent, resumable input for enrichment
+│   │   │   ├── symbol_universe.unfiltered.json	                    # All enriched symbols fetched (one per line, JSON dict), includes both passing and rejected (filtered out)
 │   │   │   └── universe_ops.log	                                # UTC log of all enrichment/build progress, errors, and symbol operations; single source for pipeline auditing
 │   │   │
 │   │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/       # ← Scoped per bot ID - Entire directory mirrored to Accounting system

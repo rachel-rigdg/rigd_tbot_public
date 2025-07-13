@@ -48,18 +48,16 @@ class FinnhubProvider(ProviderBase):
             return []
         syms = []
         for d in data:
-            t = d.get("type")
-            t_str = t.upper() if isinstance(t, str) else ""
             symbol_val = d.get("symbol")
-            if symbol_val and t_str == "EQS":
-                try:
-                    syms.append({
-                        "symbol": symbol_val.strip().upper(),
-                        "exchange": d.get("exchange", "US"),
-                        "companyName": d.get("description", "")
-                    })
-                except Exception:
-                    continue
+            exch = d.get("mic", "")  # Use 'mic' for exchange
+            name = d.get("description", "")
+            # Only filter out symbols if they are clearly broken/missing
+            if symbol_val and exch and name:
+                syms.append({
+                    "symbol": symbol_val.strip().upper(),
+                    "exchange": exch.strip().upper(),
+                    "companyName": name
+                })
         self.log(f"Fetched {len(syms)} Finnhub equity symbols.")
         return syms
 
