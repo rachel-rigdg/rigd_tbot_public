@@ -1,6 +1,6 @@
 # tbot_bot/screeners/screener_filter.py
 # Centralized, screener-agnostic symbol normalization and atomic filter for TradeBot v1.0.0+
-# Filtering logic ignores all exchange fields; exchange data is passthrough only for info/reference.
+# Filtering logic now supports exchange whitelist via SCREENER_UNIVERSE_EXCHANGES.
 
 import re
 from decimal import Decimal
@@ -12,6 +12,7 @@ MKTCAP_KEYS         = ("marketCap", "market_cap", "mktcap", "market_capitalizati
 NAME_KEYS           = ("name", "description", "companyName")
 SECTOR_KEYS         = ("sector", "industry", "finnhubIndustry")
 VOLUME_KEYS         = ("volume", "vol", "v")
+EXCHANGE_KEYS       = ("exchange", "mic")
 
 def tofloat(val):
     try:
@@ -58,7 +59,12 @@ def normalize_symbol(raw: Dict) -> Dict:
             except Exception:
                 norm["volume"] = 0
             break
-    # Copy all other unknown fields (keep exchange/mic for info, not filtering)
+    for k in EXCHANGE_KEYS:
+        v = raw.get(k)
+        if v not in (None, "", "None"):
+            norm["exchange"] = str(v).upper().strip()
+            break
+    # Copy all other unknown fields (keep extra fields for info)
     for k in raw:
         if k not in norm:
             norm[k] = raw[k]
@@ -73,12 +79,13 @@ def passes_filter(
     max_price: float,
     min_market_cap: float,
     max_market_cap: float,
-    blockset: Optional[set] = None,
+    allowed_exchanges: Optional[List[str]] = None,
     broker_obj=None
 ) -> Tuple[bool, str]:
     sym = s.get("symbol", "")
     lc  = s.get("lastClose", None)
     mc  = s.get("marketCap", None)
+    exch = s.get("exchange", "").upper()
     if not sym:
         return False, "missing_symbol"
     if lc is None or mc is None:
@@ -87,6 +94,11 @@ def passes_filter(
         return False, "price"
     if not (min_market_cap <= mc <= max_market_cap):
         return False, "market_cap"
+    if allowed_exchanges is not None and len(allowed_exchanges) > 0:
+        # allow "*" for all
+        if "*" not in allowed_exchanges:
+            if exch not in allowed_exchanges:
+                return False, "exchange"
     if broker_obj and hasattr(broker_obj, "is_symbol_tradable"):
         if not broker_obj.is_symbol_tradable(sym):
             return False, "not_tradable"
@@ -98,7 +110,7 @@ def filter_symbols(
     max_price: float,
     min_market_cap: float,
     max_market_cap: float,
-    blocklist: Optional[List[str]] = None,
+    allowed_exchanges: Optional[List[str]] = None,
     max_size: Optional[int] = None,
     broker_obj=None
 ) -> List[Dict]:
@@ -111,7 +123,7 @@ def filter_symbols(
             max_price,
             min_market_cap,
             max_market_cap,
-            None,  # blockset always None for filtering
+            allowed_exchanges,
             broker_obj
         )
         if passed:
