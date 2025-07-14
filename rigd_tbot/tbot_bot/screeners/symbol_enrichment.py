@@ -134,15 +134,16 @@ def main():
             blocklisted_count += 1
             continue
 
-        # Robust price/cap normalization
-        price = q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
+        # Only use previous close (c) and previous close volume if available; never real-time
+        price = q.get("pc") or q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
         cap = q.get("marketCap") or q.get("market_cap")
-        volume = q.get("v") or q.get("volume")
+        volume = q.get("volume") or q.get("v")
+
         price = tofloat(price)
         cap = tofloat(cap)
         # Log if values could not be parsed
         if price is None or cap is None or price <= 0 or cap <= 0:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|missing_financials|{datetime.utcnow().isoformat()}Z|{name}|raw_price={q.get('c')},{q.get('close')},{q.get('lastClose')},{q.get('price')}|raw_cap={q.get('marketCap')},{q.get('market_cap')}\n")
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|missing_financials|{datetime.utcnow().isoformat()}Z|{name}|raw_price={q.get('c')},{q.get('pc')},{q.get('close')},{q.get('lastClose')},{q.get('price')}|raw_cap={q.get('marketCap')},{q.get('market_cap')}\n")
             skipped_missing_financials += 1
             continue
 
