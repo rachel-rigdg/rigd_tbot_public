@@ -116,8 +116,8 @@ def main():
 
     blocklist = set(load_blocklist(BLOCKLIST_PATH))
     print(f"[DEBUG] Blocklist loaded with {len(blocklist)} symbols", flush=True)
-    all_symbols = [s for s in normalize_symbols(raw_symbols) if s.get("symbol") not in blocklist]
-    print(f"[DEBUG] Symbols after blocklist filtering: {len(all_symbols)}", flush=True)
+    all_symbols = normalize_symbols(raw_symbols)
+    print(f"[DEBUG] All symbols normalized: {len(all_symbols)}", flush=True)
     symbol_ids = [s["symbol"] for s in all_symbols if "symbol" in s]
 
     enriched_count = 0
@@ -197,10 +197,6 @@ def main():
             print(f"[DEBUG] Passed filter: {sym}", flush=True)
             atomic_append_json(PARTIAL_PATH, record)
             enriched_count += 1
-        else:
-            print(f"[DEBUG] Blocklisted {sym}: {reason}", flush=True)
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|{reason}|{datetime.utcnow().isoformat()}Z|{name}\n")
-            blocklisted_count += 1
 
         if enriched_count >= max_size:
             print(f"[DEBUG] Reached max universe size {max_size}, stopping enrichment.", flush=True)
