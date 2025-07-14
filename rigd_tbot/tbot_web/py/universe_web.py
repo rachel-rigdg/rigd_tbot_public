@@ -3,7 +3,7 @@
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app, jsonify
 import subprocess
-from tbot_bot.screeners.screener_utils import load_universe_cache, filter_symbols, load_blocklist, UniverseCacheError, get_screener_secrets
+from tbot_bot.screeners.screener_utils import load_universe_cache, load_blocklist, UniverseCacheError, get_screener_secrets
 from tbot_bot.screeners.blocklist_manager import (
     add_to_blocklist,
     remove_from_blocklist,
@@ -33,7 +33,6 @@ def screener_creds_exist():
 
 def load_json_file(path):
     try:
-        # Newline-delimited JSON file
         with open(path, "r", encoding="utf-8") as f:
             items = []
             for line in f:
@@ -209,35 +208,9 @@ def universe_refilter():
         flash("Screener credentials not configured. Please configure screener credentials before filtering the universe.", "error")
         return redirect(url_for("universe.universe_status"))
     try:
-        unfiltered = load_json_file(UNFILTERED_PATH)
-        from tbot_bot.config.env_bot import load_env_bot_config
-        env = load_env_bot_config()
-        exchanges = [e.strip() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NYSE,NASDAQ").split(",")]
-        min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 5))
-        max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
-        min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 300_000_000))
-        max_cap = float(env.get("SCREENER_UNIVERSE_MAX_CAP", 10_000_000_000))
-        max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
-        blocklist_path = env.get("SCREENER_UNIVERSE_BLOCKLIST_PATH", None)
-        blocklist = load_blocklist(blocklist_path)
-        filtered = filter_symbols(
-            symbols=unfiltered,
-            exchanges=exchanges,
-            min_price=min_price,
-            max_price=max_price,
-            min_market_cap=min_cap,
-            max_market_cap=max_cap,
-            blocklist=blocklist,
-            max_size=max_size
-        )
-        low_price_symbols = [s["symbol"] for s in unfiltered if "lastClose" in s and s["lastClose"] is not None and s["lastClose"] < min_price]
-        if low_price_symbols:
-            add_to_blocklist(low_price_symbols, reason=f"Refiltered: price < {min_price}")
-        partial_path = resolve_universe_partial_path()
-        with open(partial_path, "w", encoding="utf-8") as pf:
-            for symbol in filtered:
-                pf.write(json.dumps(symbol, ensure_ascii=False) + "\n")
-        flash(f"Re-filtered universe. New partial count: {len(filtered)}", "success")
+        from tbot_bot.screeners.universe_refilter import main as refilter_main
+        refilter_main()
+        flash("Universe re-filtered (partial and final cache updated).", "success")
     except Exception as e:
         flash(f"Refilter failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))

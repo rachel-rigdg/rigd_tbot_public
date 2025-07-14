@@ -84,4 +84,25 @@ document.addEventListener("DOMContentLoaded", function() {
             if (e.key === "Enter") refreshTables();
         });
     }
+
+    // Add handler for Re-filter button (POST to /universe/refilter, reload on completion)
+    const refilterBtn = document.getElementById("universe-refilter-btn");
+    if (refilterBtn) {
+        refilterBtn.addEventListener("click", function(e) {
+            e.preventDefault();
+            refilterBtn.disabled = true;
+            fetch("/universe/refilter", { method: "POST" })
+                .then(resp => resp.json())
+                .then(data => {
+                    alert(data.status || "Re-filtering complete.");
+                    refreshTables();
+                    fetchCounts();
+                    refilterBtn.disabled = false;
+                })
+                .catch(() => {
+                    alert("Failed to re-filter.");
+                    refilterBtn.disabled = false;
+                });
+        });
+    }
 });

@@ -41,7 +41,7 @@
         <button type="submit" {% if not screener_creds_exist %}disabled{% endif %}>Force Rebuild</button>
     </form>
     <form action="{{ url_for('universe.universe_refilter') }}" method="post" style="display:inline; margin-left: 10px;">
-        <button type="submit" {% if not screener_creds_exist %}disabled{% endif %}>Re-filter</button>
+        <button type="submit" {% if not screener_creds_exist %}disabled{% endif %} id="universe-refilter-btn">Re-filter</button>
     </form>
     <form action="{{ url_for('universe.universe_blocklist') }}" method="get" style="display:inline; margin-left: 10px;">
         <button type="submit">Blocklist Manager</button>
