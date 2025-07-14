@@ -124,6 +124,9 @@ def main():
     blocklisted_count = 0
 
     for i, sym in enumerate(symbol_ids):
+        if sym in blocklist:
+            print(f"[DEBUG] Skipping symbol {sym} (in blocklist)", flush=True)
+            continue
         print(f"[DEBUG] Processing symbol {i+1}/{len(symbol_ids)}: {sym}", flush=True)
         log_progress("Processing symbol", {"symbol_num": i+1, "total": len(symbol_ids), "symbol": sym})
         try:

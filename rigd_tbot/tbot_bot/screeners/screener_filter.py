@@ -86,10 +86,6 @@ def passes_filter(
     lc  = s.get("lastClose", None)
     mc  = s.get("marketCap", None)
     print(f"[DEBUG] passes_filter inputs - sym: {sym}, lastClose: {lc}, marketCap: {mc}")
-    # Blocklist-first check
-    if blockset and sym.upper() in blockset:
-        print(f"[DEBUG] Symbol {sym} blocked: blocklisted")
-        return False, "blocklisted"
     if not sym:
         print(f"[DEBUG] Symbol blocked: missing symbol")
         return False, "missing_symbol"
@@ -120,7 +116,6 @@ def filter_symbols(
     broker_obj=None
 ) -> List[Dict]:
     print(f"[DEBUG] filter_symbols called with {len(symbols)} symbols")
-    blockset = set(b.upper() for b in blocklist) if blocklist else set()
     normalized = normalize_symbols(symbols)
     filtered = []
     for s in normalized:
@@ -130,7 +125,7 @@ def filter_symbols(
             max_price,
             min_market_cap,
             max_market_cap,
-            blockset,
+            None,  # blockset always None for filtering
             broker_obj
         )
         print(f"[DEBUG] Symbol {s.get('symbol')} filter result: {passed}, reason: {reason}")
