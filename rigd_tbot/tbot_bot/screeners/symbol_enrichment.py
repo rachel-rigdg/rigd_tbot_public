@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from tbot_bot.screeners.screener_utils import (
     atomic_append_json, load_blocklist, atomic_append_text
 )
-from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter
+from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter, tofloat
 from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path, resolve_universe_cache_path, resolve_screener_blocklist_path,
     resolve_universe_log_path, resolve_universe_unfiltered_path, resolve_universe_raw_path
@@ -134,20 +134,15 @@ def main():
             blocklisted_count += 1
             continue
 
+        # Robust price/cap normalization
         price = q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
         cap = q.get("marketCap") or q.get("market_cap")
         volume = q.get("v") or q.get("volume")
-        try:
-            price = float(price)
-            cap = float(cap) if cap is not None else None
-        except Exception:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|invalid_fields|{datetime.utcnow().isoformat()}Z|{name}\n")
-            blocklisted_count += 1
-            continue
-
-        # NEW: skip writing to unfiltered if missing/invalid financials, log/blocklist for troubleshooting
+        price = tofloat(price)
+        cap = tofloat(cap)
+        # Log if values could not be parsed
         if price is None or cap is None or price <= 0 or cap <= 0:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|missing_financials|{datetime.utcnow().isoformat()}Z|{name}\n")
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|missing_financials|{datetime.utcnow().isoformat()}Z|{name}|raw_price={q.get('c')},{q.get('close')},{q.get('lastClose')},{q.get('price')}|raw_cap={q.get('marketCap')},{q.get('market_cap')}\n")
             skipped_missing_financials += 1
             continue
 
@@ -163,13 +158,15 @@ def main():
 
         atomic_append_json(UNFILTERED_PATH, record)
 
-        filter_result, _ = passes_filter(
+        filter_result, skip_reason = passes_filter(
             record,
             min_price,
             max_price,
             min_cap,
             max_cap,
         )
+        if not filter_result:
+            log_progress("Skipped symbol during filtering", {"symbol": sym, "reason": skip_reason, "record": record})
         if filter_result:
             atomic_append_json(PARTIAL_PATH, record)
             enriched_count += 1

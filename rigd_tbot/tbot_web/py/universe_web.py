@@ -124,11 +124,14 @@ def universe_rebuild():
         flash("Screener credentials not configured. Please configure screener credentials before building the universe.", "error")
         return redirect(url_for("universe.universe_status"))
     try:
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'screeners'))
+        script_path = os.path.join(base_dir, 'universe_orchestrator.py')
         proc = subprocess.run(
-            ["python3", "tbot_bot/screeners/universe_orchestrator.py"],
+            ["python3", script_path],
             capture_output=True,
             text=True
         )
+        current_app.logger.debug(f"[universe_rebuild] stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
         if proc.returncode != 0:
             flash(f"Universe cache rebuild failed: {proc.stderr}", "error")
         else:
