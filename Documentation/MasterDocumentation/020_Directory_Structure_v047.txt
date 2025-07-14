@@ -254,15 +254,16 @@ rigd_tbot/
 │   │   ├── provider_base.py                        # Abstract base class/interface for all provider adapters: requires fetch_symbols and fetch_quotes interface
 │   │   ├── provider_registry.py                    # Maps provider strings to adapter classes; single source for dynamic provider loading
 │   │   ├── screener_base.py                        # Abstract screener base: core interface, loads universe, wires modules, calls providers, credential loader
-│   │   ├── screener_filter.py                      # Symbol normalization/filtering: blocklist-first, spec-compliant, dedupe logic, universe filter
+│   │   ├── screener_filter.py                      # Centralized filter/normalization logic: contains ALL filter helpers, normalization, dedupe, NO I/O, NO main, never duplicated
 │   │   ├── screener_utils.py                       # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
-│   │   ├── symbol_enrichment.py                    # Universe build: for each provider symbol not blocklisted, fetch/enrich; write to unfiltered/partial/blocklist per filter; atomic per-symbol write, resumable
+│   │   ├── symbol_enrichment.py                    # Universe enrichment/build: for each non-blocklisted symbol from symbols_raw.json, fetch/enrich from provider API; write all results to unfiltered.json, apply filter (from screener_filter.py), write passing to partial.json, failures/invalids to blocklist.txt; NO direct writes to final.json, atomic per-symbol, fully resumable
 │   │   ├── symbol_source_loader.py                 # Loads all symbol sources (API-only now), normalizes for universe build
-│   │   ├── universe_orchestrator.py                # Main entry: runs symbol_enrichment.py (fetch/enrich/filter/write), atomic per-symbol, logs progress, triggers full nightly build, resumable
+│   │   ├── universe_orchestrator.py                # Main entrypoint: orchestrates nightly build; triggers symbol_enrichment.py, handles status/logging, NO filtering logic, atomic per-symbol process
 │   │   ├── universe_archiver.py                    # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
 │   │   ├── universe_diff.py                        # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
 │   │   ├── universe_logger.py                      # Dedicated UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions
 │   │   ├── universe_rebuild_cli.py                 # CLI to trigger universe/blocklist rebuild, validation, archival, manual recovery/force rebuild
+│   │   ├── universe_refilter.py                    # Re-filter step: reads only unfiltered.json, applies screener_filter.py logic, writes partial.json and final.json, NO blocklist, NO API calls
 │   │   └── universe_validation.py                  # Full validation/QA/drift/field/spec checks for universes/blocklists, dedupe, schema, credential/field presence
 │   │
 │   ├── storage/				                    # Persistent runtime data: encrypted secrets, keys, backups, and exports
@@ -354,7 +355,7 @@ rigd_tbot/
     │   │   ├── configuration.js            # Handles configuration form logic, validation, and AJAX submits on configuration.html
     │   │   ├── main_ui.js         		    # Handles live dashboard behavior, state polling, and controls config overlay in main.html
     │   │   ├── wait.js            		    # Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
-    │   │   ├── universe.js                 # updates and serves status components to Universe.html
+    │   │   ├── universe.js                 # JS for universe.html: updates status fields, fetches/refreshes universe tables, triggers log/status updates; NO filtering logic or direct file writes
     │   │   ├── screener_credentials.js     # JS: Screener credential management UI logic, API calls, masking, field validation
     │   │   └── shared_utils.js    		    # Provides shared API helpers and utility functions for frontend JavaScript modules        
     │   │
@@ -411,7 +412,7 @@ rigd_tbot/
     │   ├── start_stop_web.py                   # API/UI for bot control lifecycle (start/stop); writes control files (flags) for main.py. Never launches any worker/watcher.
     │   ├── status_web.py                       # Serves live bot/system status; reports active session/metrics from status sources. Never launches any worker/watcher.
     │   ├── test_web.py				            # Dedicated backend blueprint handling TEST_MODE control flag creation, test start sequencing, real-time log streaming, and test completion flag reset. Never launches any worker/watcher; writes test_mode.flag only. Reads test_mode.log for UI.
-    │   ├── universe_web.py                     # Endpoints for viewing, rebuilding, and exporting the symbol universe cache.
+    │   ├── universe_web.py                     # Web endpoints for viewing, rebuilding, exporting symbol universes/blocklist; triggers enrichment/refilter scripts via subprocess; NO filtering or blocklist logic in web code, only reflects file state.
     │   └── users_web.py                        # User list, create, edit, delete, and RBAC assignment endpoints (admin only).
     │
     ├── robots.txt                              # Blocks bots and search engine indexing (security)

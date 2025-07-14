@@ -45,84 +45,160 @@ All screener modules must source their eligible symbol list exclusively from the
 # Section 2: Universe Construction & Blocklist Workflow
 # ================================================
 1. **Universe Build:**  
-   - Load all symbols from selected provider (default: yfinance API).  
-   - For each symbol:  
-      a. If symbol is on blocklist, skip.  
-      b. Fetch price/metadata via provider API.  
-      c. If not found, add to blocklist ("not found", UTC, provider).  
-      d. If price < MIN_PRICE, add to blocklist ("below price floor", UTC, provider).  
-      e. If OK, write symbol metadata to `symbol_universe.unfiltered.json`.  
-   - Apply all core filters inline (exchange, price, cap, data validity).  
-   - For each passing symbol, write immediately to both `symbol_universe.partial.json` and (on build completion) atomically replace `symbol_universe.json`.  
-   - After each batch/step, blocklist, unfiltered, and partial universes are atomically saved for crash recovery.
-2. **Blocklist Maintenance:**  
-   - Blocklist is automatically refreshed as part of every build using only free APIs.  
-   - Weekend or scheduled recovery polling for blocklisted tickers; on recovery, symbol is un-blocklisted for next build.
-3. **Atomic file policy:**  
-   - All symbol/blocklist writes are atomic.  
-   - At end-of-build, `.partial.json` is atomically moved to `symbol_universe.json`.  
-   - No real-time overwrites of existing universe/blocklist files on failure.
+   - Load all candidate symbols from the selected provider (default: yfinance API) into `symbol_universe.symbols_raw.json` (NDJSON).
+   - For each symbol in `symbol_universe.symbols_raw.json`:
+     a. If symbol is present in `screener_blocklist.txt`, skip all processing for that symbol (no API call, no write).
+     b. Attempt to fetch all required and up-to-date data for the symbol via provider API(s).
+     c. If fetch fails or required data is missing or invalid:
+        - Write symbol, with failure reason, UTC timestamp, and provider, to `screener_blocklist.txt`.
+        - Do NOT write this symbol to any universe file.
+        - Continue to next symbol.
+     d. If all required data present:
+        - Write symbol (with all fields, including passthrough such as exchange, sector, volume, etc.) to `symbol_universe.unfiltered.json` (NDJSON).
+        - Immediately apply all filter criteria using ONLY the centralized helpers in `screener_filter.py`:
+           - If the symbol passes the filter: write to `symbol_universe.partial.json`.
+           - If the symbol fails the filter: do NOT write to `partial.json` (but always write to `unfiltered.json`).
+   - After all symbols processed, atomically copy `symbol_universe.partial.json` to `symbol_universe.json`.
+   - At all steps, use atomic file writes to prevent corruption; never overwrite previous files until new file is valid.
 
+2. **Blocklist Maintenance:**  
+   - Blocklist (`screener_blocklist.txt`) is updated ONLY during the above nightly build step, and ONLY when a symbol is missing required data or fetch fails.
+   - Blocklist is not used or updated in the manual re-filter step.
+   - Scheduled recovery polling (e.g., weekends) may re-check blocklisted symbols; recovered symbols may be unblocked for the next build.
+
+3. **Atomic file policy:**  
+   - All writes to universe and blocklist files are atomic.
+   - At the end of each build, `symbol_universe.partial.json` is atomically copied or renamed to `symbol_universe.json`.
+   - No failed, partial, or incomplete universe or blocklist build ever overwrites an existing valid file.
 
 --------------------------------------------------------------------------------
 Section 3: File/Script Layout & Responsibilities
 --------------------------------------------------------------------------------
 
-- `symbol_universe.unfiltered.json`:  All fetched symbols with full metadata from the selected provider(s); includes every processed symbol, whether passing or failing filters, written as newline-delimited JSON objects. No placeholders, no missing fields; each entry represents one fetch attempt.
-- `symbol_universe.partial.json`:   Inline-progress filtered universe. Every symbol passing all universe filters (exchange, price, market cap, required fields) is appended immediately as fetched. This file reflects the build's real-time eligible state and supports crash-resume.
-- `symbol_universe.json`:    FINAL atomic production symbol universe. Upon build completion, symbol_universe.partial.json is atomically renamed or copied to symbol_universe.json. This is the only file used by all screeners, strategies, and runtime operations for the trading day. Only contains fully eligible, validated symbols.
-- `screener_blocklist.txt`:    Master blocklist file (TXT, one line per entry, pipe-delimited): SYMBOL|reason|UTC timestamp|provider. Any symbol rejected (e.g., missing from provider, failed fetch, failed filter, quota error, API error, missing fields) is written here immediately. Blocklist is always checked before any API call, ensuring no wasted requests. All blocklist actions are audit-logged, including reason and provider.
-- `universe_ops.log`:    Audit log (UTF-8, line-oriented, JSON or plaintext) with a UTC timestamp for every significant action: start/end of build, each provider fetch, symbol processed, symbol rejected, blocklist addition, error, resume event, completion, file rotation. Used for detailed auditing, debugging, and crash diagnostics.
+- `symbol_universe.unfiltered.json`:  
+  All fetched symbols with full metadata from the selected provider(s); includes every processed symbol with *valid, non-missing data*, whether passing or failing filters, written as newline-delimited JSON objects. No placeholders; each entry represents one successful fetch attempt.  
+  **Never contains symbols with missing/invalid data.**  
+  **Always written before filtering; blocklist is checked before fetch and excluded symbols are NOT present.**
+
+- `symbol_universe.partial.json`:  
+  The filtered universe file.  
+  Every symbol that passes all filter criteria (symbol present, last close and market cap present and within config bounds; all other fields are passthrough) is appended here immediately after filtering.  
+  No exchange filtering; deduplication is enforced.
+
+- `symbol_universe.json`:  
+  FINAL atomic production symbol universe.  
+  Upon build/re-filter completion, `symbol_universe.partial.json` is atomically copied or renamed to `symbol_universe.json`.  
+  This file is the *only* source for all screeners, strategies, and runtime operations for the trading day.  
+  Only contains fully eligible, validated symbols.
+
+- `screener_blocklist.txt`:  
+  Master blocklist file (TXT, one line per entry, pipe-delimited):  
+  `SYMBOL|reason|UTC timestamp|provider`.  
+  Any symbol rejected (due to missing data, failed API fetch, parse error, invalid field, etc.) is written here immediately.  
+  Blocklist is **checked before any provider fetch** during nightly universe build; symbols present are skipped entirely.  
+  Blocklist is *not* checked or updated during re-filter.
+
+- `universe_ops.log`:  
+  Audit log (UTF-8, line-oriented, JSON or plaintext) with a UTC timestamp for every significant action:  
+  start/end of build, each provider fetch, symbol processed, symbol rejected, blocklist addition, error, resume event, completion, file rotation.  
+  Used for detailed auditing, debugging, and crash diagnostics.
+
 ---
-- `tbot_bot/screeners/universe_orchestrator.py`:    **Main entry-point orchestration script.**    Runs and coordinates the full symbol universe build process, including initialization, provider adapter setup, build progress tracking, and triggering `symbol_enrichment.py`. Ensures correct execution order and crash-safe orchestration.
-- `tbot_bot/screeners/symbol_source_loader.py`:    **Symbol candidate loader and source selector.**    Loads all symbol candidates directly from configured provider adapters (not from txt or CSV). Handles provider selection logic, credential loading, error handling, normalization, and batch/stream interface to enrichment step.
-- `tbot_bot/screeners/provider_registry.py`:    **Provider registry/dispatcher.**    Maps provider string (e.g., FINNHUB, IBKR, YAHOO) to the correct Python provider adapter class. Handles dynamic dispatch and supports multi-provider or fallback operation.
-- `tbot_bot/screeners/symbol_enrichment.py`:    **Universe enrichment and build module.**  
+
+- `tbot_bot/screeners/universe_orchestrator.py`:  
+  **Main entry-point orchestration script.**  
+  Runs and coordinates the full symbol universe build process, including initialization, provider adapter setup, build progress tracking, and triggering `symbol_enrichment.py`.  
+  Ensures correct execution order and crash-safe orchestration.
+
+- `tbot_bot/screeners/symbol_source_loader.py`:  
+  **Symbol candidate loader and source selector.**  
+  Loads all symbol candidates directly from configured provider adapters (never from TXT/CSV).  
+  Handles provider selection logic, credential loading, error handling, normalization, and batch/stream interface to enrichment step.
+
+- `tbot_bot/screeners/provider_registry.py`:  
+  **Provider registry/dispatcher.**  
+  Maps provider string (e.g., FINNHUB, IBKR, YAHOO) to the correct Python provider adapter class.  
+  Handles dynamic dispatch and supports multi-provider/fallback operation.
+
+- `tbot_bot/screeners/symbol_enrichment.py`:  
+  **Universe enrichment and build module.**  
   For each provider symbol (from source loader):  
-    - Checks blocklist before every fetch  
-    - Fetches full symbol metadata  
-    - Writes every attempt (good or bad) to unfiltered  
-    - Applies universe filters (exchange, price, cap, required fields)  
-    - Writes passing symbols to partial.json  
-    - Writes rejected symbols to screener_blocklist.txt (with UTC timestamp, provider, and reason)  
-    - All file writes are atomic  
-    - Fully resumable: picks up from the last processed symbol if restarted/crashed
+    - Checks blocklist before every fetch.  
+    - Fetches full symbol metadata via provider API(s).  
+    - On success, writes full symbol data to `unfiltered.json`.  
+    - Immediately applies centralized filter logic (from `screener_filter.py`):  
+      - If symbol passes, writes to `partial.json`.  
+      - If fails, skips writing to `partial.json`.  
+    - On data/fetch failure, writes symbol with reason/timestamp to `screener_blocklist.txt`.  
+    - All file writes are atomic.  
+    - Fully resumable.
 
-- `tbot_bot/screeners/screener_utils.py`:    **Utility module.**    Provides atomic file operations (append/merge), blocklist load/save helpers, deduplication logic, schema validation, audit drift detection, and universal JSON/text file helpers. Used by all build and runtime modules to guarantee file integrity and spec compliance.
-- `tbot_bot/screeners/blocklist_manager.py`:    **Blocklist management and audit.**    Manages all blocklist CRUD operations (add/remove/update), batch archival/rotation, audit logging, and scheduled or manual blocklist recovery/rechecks. Integrates with all provider adapters for multi-source awareness, and maintains blocklist consistency across rebuilds.
-- `tbot_bot/screeners/universe_logger.py`:    **Dedicated UTC logger.**    Responsible for writing structured logs for every build/enrichment/blocklist/file operation, user action, and error. All actions, errors, and user ops are logged for full audit and compliance support.
-- `tbot_bot/screeners/universe_archiver.py`:    Automated archival, retention, restore, and rollback utilities for all universes/blocklists. Implements policy-driven file aging, backups, and recoveries.
-- `tbot_bot/screeners/universe_diff.py`:    Diff/compare utility for any two universe or blocklist files, supporting drift detection, audit, rollback, and UI/API integration.
-- `tbot_bot/screeners/universe_rebuild_cli.py`:    CLI tool to trigger universe or blocklist rebuild, validation, archival, manual recovery, and force-rebuild operations. Supports sysadmin/ops and automated CI/CD workflows.
-- `tbot_bot/screeners/universe_validation.py`:    Comprehensive validation and QA utility. Performs schema validation, field presence checks, deduplication, drift detection, and required credential/field presence. Ensures universe and blocklist integrity before live use.
+- `tbot_bot/screeners/universe_refilter.py`:  
+  **Universe re-filter script.**  
+  - Reads ONLY from `symbol_universe.unfiltered.json`.  
+  - NO API calls; NO blocklist usage.  
+  - Applies *identical* filtering logic (from `screener_filter.py`), writing passing symbols to `partial.json`.  
+  - At end, atomically copies `partial.json` to `symbol_universe.json`.  
+  - No other files updated.
 
-**PROVIDER INTERFACES AND ADAPTERS:**
-- `tbot_bot/screeners/provider_base.py`:    **Abstract base/interface for all provider adapters.**    Defines the standard interface: all adapters must implement `fetch_symbols` and `fetch_quotes` (blocklist- and error-aware), and support credential injection. Ensures statelessness and compatibility.
-- `tbot_bot/screeners/provider_registry.py`:    **Provider registry.**    Maps provider strings to adapter classes. Used by build orchestration and loader logic to select/instantiate providers on demand.
-- `tbot_bot/screeners/symbol_sources/`:    **Directory for all modular provider adapters.**  
-  Each adapter implements fetch_symbols/fetch_quotes via provider API, not files.  
-  - `finnhub_provider.py`: Finnhub adapter—fetches symbols/quotes, handles provider-specific errors, rate limits, missing data, credential checks.
-  - `ibkr_provider.py`: Interactive Brokers (IBKR) adapter—fetches symbols/quotes via IBKR API.
-  - `yahoo_provider.py`: Yahoo (yfinance) adapter—fetches free US equity symbol list, price, market cap, etc.
-  - `polygon_provider.py`: Polygon.io adapter—fetches US equities data via Polygon API.
-  - `nasdaq_provider.py`: NASDAQ direct API adapter (where available).
-  - `nyse_provider.py`: NYSE direct API adapter (where available).
-  - *(Additional provider adapters can be added as needed for new data sources or regions.)*
- 
-**CREDENTIALS AND SECRETS MANAGEMENT:**
+- `tbot_bot/screeners/screener_filter.py`:  
+  **All filter/normalization logic.**  
+  - Provides the ONLY source for symbol normalization and filtering.  
+  - NO I/O, NO script entrypoint.  
+  - Used by both build and re-filter scripts (always imported).
+
+- `tbot_bot/screeners/screener_utils.py`:  
+  **Utility module.**  
+  Provides atomic file operations (append/merge), blocklist load/save helpers, deduplication, schema validation, drift detection, and JSON/text helpers.  
+  Used by all build/runtime modules to guarantee file integrity/spec compliance.
+
+- `tbot_bot/screeners/blocklist_manager.py`:  
+  **Blocklist management and audit.**  
+  Manages all blocklist CRUD operations (add/remove/update), archival/rotation, audit logging, and scheduled/manual blocklist recovery.  
+  Maintains blocklist consistency across rebuilds.
+
+- `tbot_bot/screeners/universe_logger.py`:  
+  **Dedicated UTC logger.**  
+  Writes structured logs for all build/enrichment/blocklist/file ops, user actions, and errors.
+
+- `tbot_bot/screeners/universe_archiver.py`:  
+  Automated archival, retention, restore, and rollback for all universes/blocklists.
+
+- `tbot_bot/screeners/universe_diff.py`:  
+  Diff/compare utility for any two universe/blocklist files (drift, audit, rollback, UI/API).
+
+- `tbot_bot/screeners/universe_rebuild_cli.py`:  
+  CLI tool to trigger universe/blocklist rebuild, validation, archival, manual recovery.
+
+- `tbot_bot/screeners/universe_validation.py`:  
+  Comprehensive validation/QA utility for schema, deduplication, field presence, and file integrity.
+
+**PROVIDER INTERFACES AND ADAPTERS:**  
+- `tbot_bot/screeners/provider_base.py`:  
+  **Abstract base for all provider adapters:**  
+  All adapters must implement `fetch_symbols` and `fetch_quotes`, be blocklist- and error-aware, and support credential injection.
+- `tbot_bot/screeners/provider_registry.py`:  
+  **Provider registry.**  
+  Maps provider strings to adapter classes for dynamic selection.
+- `tbot_bot/screeners/symbol_sources/`:  
+  **All modular provider adapters.**  
+  Each adapter implements required fetch methods via API only.
+
+**CREDENTIALS AND SECRETS MANAGEMENT:**  
 - `tbot_bot/support/secrets_manager.py`:  
   **Central, encrypted credential management.**  
-  Handles atomic keyfile management, secure credential load/save, and full audit logging for every credential event (add/edit/delete/rotate).  
-  No environment variable or hardcoded secret access—*all* providers/adapters, screeners, and build modules use only the secure credential loader.
- 
-**WEB INTERFACE MODULES:**
-- `tbot_web/py/universe_web.py`:    **Web UI API endpoints/routes:**    Displays universe and blocklist status, force rebuild, re-filter, manual blocklist update, audit log access, and progress. Supports authorized manual symbol block/unblock with audit.
+  Handles atomic, audit-logged, secure credential load/save.
 
-**FILE LOCATIONS/POLICY:**
+**WEB INTERFACE MODULES:**  
+- `tbot_web/py/universe_web.py`:  
+  **Web UI API endpoints/routes:**  
+  Displays universe/blocklist status, triggers force rebuild and re-filter (by script only, never inline logic), manual blocklist update, audit log, and progress UI.
+
+**FILE LOCATIONS/POLICY:**  
 - All universe, blocklist, and ops files:    `tbot_bot/output/screeners/`
-- All provider, loader, and build modules:    `tbot_bot/screeners/`    `tbot_bot/screeners/symbol_sources/`
-- All credentials:    `tbot_bot/storage/secrets/screener_api.json.enc`    (Encrypted, never plaintext, never in environment.)
-- All logs and audit:    `tbot_bot/output/logs/universe_ops.log`    `tbot_bot/output/logs/screener_credentials_audit.log`
+- All provider, loader, and build modules:    `tbot_bot/screeners/` and `tbot_bot/screeners/symbol_sources/`
+- All credentials:    `tbot_bot/storage/secrets/screener_api.json.enc` (encrypted)
+- All logs and audit:    `tbot_bot/output/logs/universe_ops.log` and `tbot_bot/output/logs/screener_credentials_audit.log`
 
 
 --------------------------------------------------------------------------------
@@ -130,39 +206,50 @@ Section 4: Web UI and User Actions
 --------------------------------------------------------------------------------
 
 1. **Web UI `/universe` displays:**
-   - Live, real-time counts and build status for all universe and blocklist files (`symbol_universe.unfiltered.json`, `symbol_universe.partial.json`, `symbol_universe.json`, `screener_blocklist.txt`).
-   - Four side-by-side, infinitely scrollable, sortable tables: 
-     - Unfiltered Universe (all fetched metadata),
-     - Partial Universe (currently eligible, passing filter, real-time build state),
-     - Final Universe (production universe for next trading day),
-     - Blocklist (symbols blocked, with reason, UTC timestamp, and provider).
-   - Global search/filter box that instantly searches across all tables and highlights matches.
-   - Inline at-a-glance display of checksums/hashes and record counts for every file, providing immediate integrity verification.
-   - Prominently displayed “Force Rebuild Universe”, “Re-filter”, and “Update Blocklist” buttons; each triggers a backend process with real-time progress and error feedback (including step-by-step log output in the UI).
-   - Live heartbeat/progress logs appear as enrichment/filter steps proceed (log lines from `universe_ops.log`), with auto-scroll and pause.
-   - Status banners/warnings for stale, incomplete, or corrupt files, with diagnostic suggestions and audit log links.
-   - Dedicated modal dialogs for error review, progress, and manual action confirmation.
-   - File drag-and-drop or file-upload (admin only) for manual offline override/import with full audit trail.
+   - Live, real-time counts and build status for all universe and blocklist files:  
+     - `symbol_universe.unfiltered.json`
+     - `symbol_universe.partial.json`
+     - `symbol_universe.json`
+     - `screener_blocklist.txt`
+   - Four side-by-side, infinitely scrollable, sortable tables:  
+     - **Unfiltered Universe**: all successfully fetched symbols with full metadata (before filtering)
+     - **Partial Universe**: all symbols currently passing filter (real-time build state)
+     - **Final Universe**: the production universe for next trading day (atomic copy of partial)
+     - **Blocklist**: all symbols excluded, with reason, UTC timestamp, and provider
+   - Global search/filter box instantly searches across all tables and highlights matches
+   - Inline display of checksums/hashes and record counts for every file for integrity verification
+   - Prominent “Force Rebuild Universe”, “Re-filter”, and “Update Blocklist” buttons;  
+     - **Force Rebuild**: triggers the backend universe build process (`symbol_enrichment.py`)  
+     - **Re-filter**: triggers the backend re-filter process (`universe_refilter.py`) (NO inline filtering logic in UI or routes)  
+     - **Update Blocklist**: triggers backend blocklist recovery/check
+   - Each button shows real-time progress and error feedback (step-by-step log output from `universe_ops.log`)
+   - Live heartbeat/progress logs (from `universe_ops.log`) auto-scroll in the UI, with pause/scroll features
+   - Status banners/warnings for stale, incomplete, or corrupt files, with diagnostic links to audit logs
+   - Modal dialogs for error review, progress, and confirmation of manual actions
+   - File drag-and-drop/upload (admin only) for manual offline override/import with full audit trail
 
 2. **Manual 'Re-filter' Action:**
-   - Runs the filter logic against the current `symbol_universe.unfiltered.json` file using all current filter parameters (exchange, price, cap, blocklist).
-   - Produces new `symbol_universe.partial.json` and atomically replaces `symbol_universe.json` upon completion, with full deduplication and validation.
-   - Each re-filter action is logged (user, UTC timestamp, parameters, file hashes before/after, number of symbols added/removed).
+   - When the “Re-filter” button is clicked, it triggers ONLY the backend script `tbot_bot/screeners/universe_refilter.py`
+   - **No filtering logic is executed in the UI, Flask route, or blueprint**
+   - The script reads `symbol_universe.unfiltered.json`, applies current filter parameters (via imported `screener_filter.py`), and produces a new `symbol_universe.partial.json`, then atomically replaces `symbol_universe.json`
+   - Deduplication and field validation are enforced by the filtering helpers
+   - Each re-filter action is audit-logged: user, UTC timestamp, parameters used, before/after file hashes, and symbol counts
 
 3. **Manual 'Update Blocklist' Action:**
-   - Initiates a blocklist recovery pass that re-checks every blocklisted symbol using the primary free data provider (e.g., yfinance).
-   - If a symbol now passes recovery criteria (e.g., price rises above threshold), it is automatically unblocked and added to the next universe build.
-   - All removals, additions, and changes are logged with user identity, UTC timestamp, previous/new status, and triggering action.
-   - Supports “dry-run” and full update modes; dry-run previews all actions without applying changes.
+   - Initiates a blocklist recovery pass: re-checks every blocklisted symbol using the primary free data provider (never paid APIs)
+   - If a symbol now passes criteria, it is removed from the blocklist and eligible for next build
+   - All blocklist changes are audit-logged: user, UTC timestamp, old/new status, and action source
+   - Supports “dry-run” and “full update” modes; dry-run previews actions without changing files
 
 4. **Manual Add/Remove to Blocklist via UI:**
-   - Any admin user can blocklist or unblock a symbol from the UI, with an enforced reason/comment for compliance.
-   - Each manual blocklist change triggers an atomic write, immediate update to the live blocklist, and audit log entry including: user identity, UTC timestamp, symbol, action (add/remove), justification, and source IP.
-   - UI visually marks manually blocklisted/unblocklisted symbols with a badge and links to the audit log entry.
+   - Admin users may add/remove symbols to/from the blocklist via the UI with an enforced reason/comment
+   - Each manual change triggers atomic write, immediate blocklist update, and full audit log entry: user, UTC timestamp, symbol, action, justification, and source IP
+   - UI visually marks manually blocklisted/unblocklisted symbols with a badge and audit log link
 
-5. **All universe and blocklist files are exportable:**
-   - Exported files include hash/checksum and file generation UTC timestamp in metadata.
-   - Export events are logged for audit purposes, with user identity and destination (download, email, etc).
+5. **Exporting Universe and Blocklist Files:**
+   - All universe and blocklist files are exportable from the UI (CSV, JSON, TXT as appropriate)
+   - Exported files include hash/checksum and file generation UTC timestamp in metadata
+   - All export/download events are audit-logged: user, UTC timestamp, and destination (download, email, etc)
 
 
 --------------------------------------------------------------------------------

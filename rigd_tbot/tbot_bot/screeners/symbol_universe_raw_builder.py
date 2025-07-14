@@ -57,7 +57,9 @@ def main():
         sys.exit(2)
     ProviderClass = get_provider_class(name)
     if ProviderClass is None:
-        raise RuntimeError(f"No provider class mapping found for SCREENER_NAME '{name}'")
+        log_progress(f"No provider class mapping found for SCREENER_NAME '{name}'", {"provider": name})
+        print(f"ERROR: No provider class mapping found for SCREENER_NAME '{name}'", flush=True)
+        sys.exit(2)
     provider = ProviderClass(screener_secrets)
     try:
         raw_symbols = provider.fetch_symbols()

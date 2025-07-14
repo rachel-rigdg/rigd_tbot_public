@@ -7,7 +7,7 @@ import sys
 import json
 from datetime import datetime, timezone
 from tbot_bot.screeners.screener_utils import (
-    atomic_append_json, load_blocklist, atomic_append_text, atomic_copy_file
+    atomic_append_json, load_blocklist, atomic_append_text
 )
 from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter
 from tbot_bot.support.path_resolver import (
@@ -61,47 +61,34 @@ def load_raw_symbols():
             try:
                 syms.append(json.loads(line))
             except Exception as e:
-                print(f"[DEBUG] Failed to parse raw symbol line: {e}", flush=True)
                 continue
-    print(f"[DEBUG] Total raw symbols loaded: {len(syms)}", flush=True)
     return syms
 
 def main():
-    print("[DEBUG] symbol_enrichment.py main() starting", flush=True)
     env = load_env_bot_config()
-    bot_identity = env.get("BOT_IDENTITY_STRING", None)
     try:
         screener_secrets = get_enrichment_provider_creds()
     except Exception as e:
         log_progress("No valid enrichment provider enabled. Aborting enrichment.", {"error": str(e)})
-        print(f"[ERROR] No valid enrichment provider enabled: {e}", flush=True)
         sys.exit(2)
     name = (screener_secrets.get("SCREENER_NAME") or "").strip().upper()
-    print(f"[DEBUG] SCREENER_NAME: {name}", flush=True)
     if name.endswith("_TXT"):
         log_progress("TXT provider selected as enrichment provider, aborting enrichment.", {"provider": name})
-        print(f"[ERROR] TXT providers (like {name}) cannot be used for enrichment.", flush=True)
         sys.exit(2)
     ProviderClass = get_provider_class(name)
     if ProviderClass is None:
-        print(f"[ERROR] No provider class mapping found for SCREENER_NAME '{name}'", flush=True)
         log_progress("Provider class not found for enrichment.", {"provider": name})
         sys.exit(2)
     merged_config = env.copy()
     merged_config.update(screener_secrets)
-    print("[DEBUG_CREDENTIALS]", json.dumps(merged_config, indent=2), flush=True)
     provider = ProviderClass(merged_config)
 
     try:
         raw_symbols = load_raw_symbols()
-        print(f"[DEBUG] loaded {len(raw_symbols)} raw symbols from {RAW_PATH}", flush=True)
     except Exception as e:
         log_progress("Failed to load raw symbols.", {"error": str(e)})
-        print(f"[ERROR] Failed to load raw symbols: {e}", flush=True)
         sys.exit(2)
-
     if not raw_symbols:
-        print("[DEBUG] No raw symbols found.", flush=True)
         log_progress("No raw symbols found.")
         sys.exit(1)
 
@@ -110,38 +97,25 @@ def main():
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 300_000_000))
     max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
     max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
-    print(f"[DEBUG] Price filter: min_price={min_price}, max_price={max_price}", flush=True)
-    print(f"[DEBUG] Market cap filter: min_cap={min_cap}, max_cap={max_cap}", flush=True)
-    print(f"[DEBUG] Max universe size: {max_size}", flush=True)
 
     blocklist = set(load_blocklist(BLOCKLIST_PATH))
-    print(f"[DEBUG] Blocklist loaded with {len(blocklist)} symbols", flush=True)
     all_symbols = normalize_symbols(raw_symbols)
-    print(f"[DEBUG] All symbols normalized: {len(all_symbols)}", flush=True)
     symbol_ids = [s["symbol"] for s in all_symbols if "symbol" in s]
 
     enriched_count = 0
     blocklisted_count = 0
 
-    for i, sym in enumerate(symbol_ids):
+    for sym in symbol_ids:
         if sym in blocklist:
-            print(f"[DEBUG] Skipping symbol {sym} (in blocklist)", flush=True)
             continue
-        print(f"[DEBUG] Processing symbol {i+1}/{len(symbol_ids)}: {sym}", flush=True)
-        log_progress("Processing symbol", {"symbol_num": i+1, "total": len(symbol_ids), "symbol": sym})
         try:
             quotes = provider.fetch_quotes([sym])
-            print(f"[DEBUG] Quotes fetched for {sym}: {quotes}", flush=True)
-        except Exception as e:
-            print(f"[ERROR] Failed to fetch quote for {sym}: {e}", flush=True)
-            log_progress("Failed to fetch quote for symbol", {"error": str(e), "symbol": sym})
+        except Exception:
             atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
 
         if not quotes or not any(q.get("symbol", "") == sym for q in quotes):
-            print(f"[DEBUG] No quote data returned for symbol {sym}", flush=True)
-            log_progress("No quote data for symbol", {"symbol": sym})
             atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_data_from_api|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
@@ -149,14 +123,12 @@ def main():
         quote_map = {q["symbol"]: q for q in quotes if "symbol" in q}
         s = next((x for x in all_symbols if x.get("symbol") == sym), None)
         if not s:
-            print(f"[DEBUG] No source data found for symbol {sym}", flush=True)
             atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_source|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
 
         q = quote_map.get(sym)
         if not q:
-            print(f"[DEBUG] No quote found in quotes for symbol {sym}", flush=True)
             atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_quote|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
@@ -164,13 +136,10 @@ def main():
         price = q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
         cap = q.get("marketCap") or q.get("market_cap")
         volume = q.get("v") or q.get("volume")
-        print(f"[DEBUG] Raw price: {price}, cap: {cap}, volume: {volume}", flush=True)
         try:
             price = float(price)
             cap = float(cap) if cap is not None else None
-            print(f"[DEBUG] Converted price: {price}, cap: {cap}", flush=True)
-        except Exception as e:
-            print(f"[ERROR] Invalid price or cap for {sym}: {e}", flush=True)
+        except Exception:
             atomic_append_text(BLOCKLIST_PATH, f"{sym}|invalid_fields|{datetime.utcnow().isoformat()}Z|{name}\n")
             blocklisted_count += 1
             continue
@@ -185,43 +154,34 @@ def main():
             if k not in record:
                 record[k] = q[k]
 
-        print(f"[DEBUG] Record before filtering: {json.dumps(record)}", flush=True)
         atomic_append_json(UNFILTERED_PATH, record)
 
-        filter_result, reason = passes_filter(
+        filter_result, _ = passes_filter(
             record,
             min_price,
             max_price,
             min_cap,
             max_cap,
         )
-        print(f"[DEBUG] Filter result for {sym}: {filter_result}, reason: {reason}", flush=True)
         if filter_result:
-            print(f"[DEBUG] Passed filter: {sym}", flush=True)
             atomic_append_json(PARTIAL_PATH, record)
             enriched_count += 1
 
         if enriched_count >= max_size:
-            print(f"[DEBUG] Reached max universe size {max_size}, stopping enrichment.", flush=True)
-            log_progress("Reached max universe size, stopping enrichment.", {"max_size": max_size})
             break
 
-    atomic_copy_file(PARTIAL_PATH, FINAL_PATH)
+    # Do not touch/copy partial to final here: that must be orchestrated externally.
 
     log_progress("Enrichment complete", {
         "enriched_count": enriched_count,
         "blocklisted": blocklisted_count,
         "partial_path": PARTIAL_PATH,
-        "unfiltered_path": UNFILTERED_PATH,
-        "final_path": FINAL_PATH
+        "unfiltered_path": UNFILTERED_PATH
     })
-
-    print(f"[DEBUG] Enrichment complete. Enriched: {enriched_count}, Blocklisted: {blocklisted_count}", flush=True)
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         log_progress("Enrichment failed and raised exception", {"error": str(e)})
-        print(f"[ERROR] Enrichment failed: {e}", flush=True)
         sys.exit(1)

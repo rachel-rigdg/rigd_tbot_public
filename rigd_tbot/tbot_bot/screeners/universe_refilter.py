@@ -3,7 +3,6 @@
 import os
 import sys
 import json
-from tbot_bot.screeners.screener_utils import atomic_copy_file
 from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter
 from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path, resolve_universe_cache_path, resolve_universe_unfiltered_path
@@ -51,6 +50,8 @@ def main():
     with open(PARTIAL_PATH, "w", encoding="utf-8") as f:
         for s in filtered:
             f.write(json.dumps(s) + "\n")
+    # Finalize with atomic copy
+    from tbot_bot.screeners.screener_utils import atomic_copy_file
     atomic_copy_file(PARTIAL_PATH, FINAL_PATH)
     print(f"Filtered {len(filtered)} symbols to {PARTIAL_PATH}")
 

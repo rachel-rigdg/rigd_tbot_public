@@ -4,7 +4,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
 from tbot_bot.support.path_resolver import (
@@ -15,9 +15,8 @@ from tbot_bot.support.path_resolver import (
 )
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.secrets_manager import get_screener_credentials_path, load_screener_credentials
-from tbot_bot.config.env_bot import load_env_bot_config
 from tbot_bot.screeners.screener_filter import (
-    normalize_symbols, filter_symbols as core_filter_symbols, dedupe_symbols
+    normalize_symbols, dedupe_symbols
 )
 from tbot_bot.screeners.blocklist_manager import load_blocklist as load_blocklist_full
 
@@ -67,40 +66,6 @@ def get_screener_secrets() -> dict:
         LOG.error(f"[screener_utils] Failed to load screener secrets: {e}")
         return {}
 
-def get_universe_screener_secrets() -> dict:
-    all_creds = load_screener_credentials()
-    provider_indices = [
-        k.split("_")[-1]
-        for k, v in all_creds.items()
-        if k.startswith("PROVIDER_")
-           and all_creds.get(f"UNIVERSE_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
-    ]
-    if not provider_indices:
-        raise UniverseCacheError("No screener providers enabled for universe build. Please enable at least one in the credential admin.")
-    idx = provider_indices[0]
-    return {
-        key.replace(f"_{idx}", ""): v
-        for key, v in all_creds.items()
-        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
-    }
-
-def get_enrichment_provider_secrets() -> dict:
-    all_creds = load_screener_credentials()
-    provider_indices = [
-        k.split("_")[-1]
-        for k, v in all_creds.items()
-        if k.startswith("PROVIDER_")
-           and all_creds.get(f"ENRICHMENT_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
-    ]
-    if not provider_indices:
-        raise UniverseCacheError("No screener providers enabled for enrichment. Please enable at least one with ENRICHMENT_ENABLED in the credential admin.")
-    idx = provider_indices[0]
-    return {
-        key.replace(f"_{idx}", ""): v
-        for key, v in all_creds.items()
-        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
-    }
-
 def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)
 
@@ -112,7 +77,6 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
         LOG.error(f"[screener_utils] Universe cache missing at path: {path}")
         raise UniverseCacheError(f"Universe cache file not found: {path}")
 
-    # Read newline-delimited JSON, not single big array/object
     with open(path, "r", encoding="utf-8") as f:
         symbols = []
         for line in f:
@@ -168,29 +132,6 @@ def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None)
             os.remove(tmp_path)
         raise
     LOG.info(f"[screener_utils] Universe cache saved with {len(symbols)} symbols at {path}")
-
-def filter_symbols(
-    symbols: List[Dict],
-    exchanges: List[str],
-    min_price: float,
-    max_price: float,
-    min_market_cap: float,
-    max_market_cap: float,
-    blocklist: Optional[List[str]] = None,
-    max_size: Optional[int] = None,
-    broker_obj=None
-) -> List[Dict]:
-    return core_filter_symbols(
-        symbols,
-        exchanges,
-        min_price,
-        max_price,
-        min_market_cap,
-        max_market_cap,
-        blocklist,
-        max_size,
-        broker_obj=None
-    )
 
 def load_blocklist(path: Optional[str] = None) -> List[str]:
     if not path:
