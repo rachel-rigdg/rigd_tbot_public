@@ -1,4 +1,6 @@
-// /static/js/universe.js
+# tbot_web/static/js/universe.js
+// Fix Force Rebuild button to use fetch POST and handle redirect properly
+
 function fetchBuildLog() {
     fetch("/static/output/screeners/universe_ops.log")
         .then(response => {
@@ -85,6 +87,31 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
+    // Updated handler for Force Rebuild button (POST to /universe/rebuild, reload on completion)
+    const rebuildBtn = document.querySelector("form[action='/universe/rebuild'] button[type='submit']");
+    if (rebuildBtn) {
+        rebuildBtn.addEventListener("click", function(e) {
+            e.preventDefault();
+            rebuildBtn.disabled = true;
+            fetch("/universe/rebuild", { method: "POST" })
+                .then(resp => {
+                    if (resp.redirected) {
+                        window.location.href = resp.url;
+                    } else {
+                        alert("Rebuild complete.");
+                        refreshTables();
+                        fetchCounts();
+                    }
+                })
+                .catch(() => {
+                    alert("Failed to rebuild.");
+                })
+                .finally(() => {
+                    rebuildBtn.disabled = false;
+                });
+        });
+    }
+
     // Add handler for Re-filter button (POST to /universe/refilter, reload on completion)
     const refilterBtn = document.getElementById("universe-refilter-btn");
     if (refilterBtn) {
@@ -92,15 +119,19 @@ document.addEventListener("DOMContentLoaded", function() {
             e.preventDefault();
             refilterBtn.disabled = true;
             fetch("/universe/refilter", { method: "POST" })
-                .then(resp => resp.json())
-                .then(data => {
-                    alert(data.status || "Re-filtering complete.");
-                    refreshTables();
-                    fetchCounts();
-                    refilterBtn.disabled = false;
+                .then(resp => {
+                    if (resp.redirected) {
+                        window.location.href = resp.url;
+                    } else {
+                        alert("Re-filtering complete.");
+                        refreshTables();
+                        fetchCounts();
+                    }
                 })
                 .catch(() => {
                     alert("Failed to re-filter.");
+                })
+                .finally(() => {
                     refilterBtn.disabled = false;
                 });
         });
