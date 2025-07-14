@@ -131,7 +131,7 @@ def universe_rebuild():
             capture_output=True,
             text=True
         )
-        current_app.logger.debug(f"[universe_rebuild] stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
+        current_app.logger.info(f"[universe_rebuild] universe_orchestrator.py exit={proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
         if proc.returncode != 0:
             flash(f"Universe cache rebuild failed: {proc.stderr}", "error")
         else:
