@@ -1,36 +1,17 @@
 # tbot_bot/screeners/screener_filter.py
 # Centralized, screener-agnostic symbol normalization and atomic filter for TradeBot v1.0.0+
-# Implements robust field handling, blocklist-first, and returns (bool, reason) for atomic append logic.
+# Filtering logic ignores all exchange fields; exchange data is passthrough only for info/reference.
 
 import re
 from decimal import Decimal
 from typing import List, Dict, Optional, Tuple
 
-MIC_TO_EXCHANGE = {
-    "XNAS": "NASDAQ",
-    "XNYS": "NYSE",
-    "ARCX": "NYSE",
-    "XASE": "AMEX",
-    "OOTC": "OTC",
-    "XNGS": "NASDAQ",
-    "XBOS": "NASDAQ",
-    "BATS": "BATS",
-    "EDGA": "BATS",
-    "EDGX": "BATS",
-    "XPHL": "NASDAQ",
-}
-
 SYMBOL_KEYS         = ("symbol", "ticker", "displaySymbol")
-EXCHANGE_KEYS       = ("exchange", "exch", "mic", "exchCode")
 LASTCLOSE_KEYS      = ("lastClose", "close", "last_price", "price", "c", "pc")
 MKTCAP_KEYS         = ("marketCap", "market_cap", "mktcap", "market_capitalization", "marketCapitalization")
 NAME_KEYS           = ("name", "description", "companyName")
 SECTOR_KEYS         = ("sector", "industry", "finnhubIndustry")
 VOLUME_KEYS         = ("volume", "vol", "v")
-
-def mic_to_exchange(mic: Optional[str]) -> Optional[str]:
-    mic = str(mic).upper().strip() if mic else ""
-    return MIC_TO_EXCHANGE.get(mic, mic) if mic else None
 
 def tofloat(val):
     try:
@@ -50,13 +31,6 @@ def normalize_symbol(raw: Dict) -> Dict:
         if k in raw and raw[k] not in (None, "", "None"):
             norm["symbol"] = str(raw[k]).upper().strip()
             break
-    mic_val = None
-    for k in EXCHANGE_KEYS:
-        v = raw.get(k)
-        if v not in (None, "", "None"):
-            mic_val = v
-            break
-    norm["exchange"] = mic_to_exchange(mic_val)
     for k in LASTCLOSE_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
@@ -85,7 +59,7 @@ def normalize_symbol(raw: Dict) -> Dict:
             except Exception:
                 norm["volume"] = 0
             break
-    # Copy all other unknown fields (but do not overwrite normalized keys)
+    # Copy all other unknown fields (keep exchange/mic for info, not filtering)
     for k in raw:
         if k not in norm:
             norm[k] = raw[k]
@@ -100,7 +74,6 @@ def normalize_symbols(symbols: List[Dict]) -> List[Dict]:
 
 def passes_filter(
     s: Dict,
-    exchanges: List[str],
     min_price: float,
     max_price: float,
     min_market_cap: float,
@@ -109,23 +82,17 @@ def passes_filter(
     broker_obj=None
 ) -> Tuple[bool, str]:
     print(f"[DEBUG] passes_filter called for symbol: {s.get('symbol', '')}")
-    exch = s.get("exchange", "")
     sym = s.get("symbol", "")
     lc  = s.get("lastClose", None)
     mc  = s.get("marketCap", None)
-    print(f"[DEBUG] passes_filter inputs - exch: {exch}, sym: {sym}, lastClose: {lc}, marketCap: {mc}")
+    print(f"[DEBUG] passes_filter inputs - sym: {sym}, lastClose: {lc}, marketCap: {mc}")
     # Blocklist-first check
     if blockset and sym.upper() in blockset:
         print(f"[DEBUG] Symbol {sym} blocked: blocklisted")
         return False, "blocklisted"
-    # Exchange compliance
-    if "US" in [e.upper() for e in exchanges]:
-        valid_exchange = exch.upper() in ("NASDAQ", "NYSE", "AMEX", "BATS", "OTC")
-    else:
-        valid_exchange = exch and exch.upper() in [e.upper() for e in exchanges]
-    if not (valid_exchange and sym):
-        print(f"[DEBUG] Symbol {sym} blocked: invalid exchange or missing symbol")
-        return False, "exchange"
+    if not sym:
+        print(f"[DEBUG] Symbol blocked: missing symbol")
+        return False, "missing_symbol"
     if lc is None or mc is None:
         print(f"[DEBUG] Symbol {sym} blocked: missing lastClose or marketCap")
         return False, "missing_fields"
@@ -144,7 +111,6 @@ def passes_filter(
 
 def filter_symbols(
     symbols: List[Dict],
-    exchanges: List[str],
     min_price: float,
     max_price: float,
     min_market_cap: float,
@@ -160,7 +126,6 @@ def filter_symbols(
     for s in normalized:
         passed, reason = passes_filter(
             s,
-            exchanges,
             min_price,
             max_price,
             min_market_cap,
