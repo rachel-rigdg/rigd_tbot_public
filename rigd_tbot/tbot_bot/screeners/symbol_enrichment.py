@@ -104,6 +104,7 @@ def main():
 
     enriched_count = 0
     blocklisted_count = 0
+    skipped_missing_financials = 0
 
     for sym in symbol_ids:
         if sym in blocklist:
@@ -144,6 +145,12 @@ def main():
             blocklisted_count += 1
             continue
 
+        # NEW: skip writing to unfiltered if missing/invalid financials, log/blocklist for troubleshooting
+        if price is None or cap is None or price <= 0 or cap <= 0:
+            atomic_append_text(BLOCKLIST_PATH, f"{sym}|missing_financials|{datetime.utcnow().isoformat()}Z|{name}\n")
+            skipped_missing_financials += 1
+            continue
+
         record = dict(s)
         record["lastClose"] = price
         if cap is not None:
@@ -175,6 +182,7 @@ def main():
     log_progress("Enrichment complete", {
         "enriched_count": enriched_count,
         "blocklisted": blocklisted_count,
+        "skipped_missing_financials": skipped_missing_financials,
         "partial_path": PARTIAL_PATH,
         "unfiltered_path": UNFILTERED_PATH
     })
