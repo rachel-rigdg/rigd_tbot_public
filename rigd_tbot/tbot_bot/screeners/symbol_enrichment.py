@@ -105,8 +105,6 @@ def main():
         log_progress("No raw symbols found.")
         sys.exit(1)
 
-    exchanges = [e.strip().upper() for e in env.get("SCREENER_UNIVERSE_EXCHANGES", "NASDAQ,NYSE").split(",")]
-    print(f"[DEBUG] Exchanges filter: {exchanges}", flush=True)
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
     max_price = float(env.get("SCREENER_UNIVERSE_MAX_PRICE", 10000))
     min_cap = float(env.get("SCREENER_UNIVERSE_MIN_MARKET_CAP", 300_000_000))
@@ -187,7 +185,13 @@ def main():
         print(f"[DEBUG] Record before filtering: {json.dumps(record)}", flush=True)
         atomic_append_json(UNFILTERED_PATH, record)
 
-        filter_result, reason = passes_filter(record, exchanges, min_price, max_price, min_cap, max_cap)
+        filter_result, reason = passes_filter(
+            record,
+            min_price,
+            max_price,
+            min_cap,
+            max_cap,
+        )
         print(f"[DEBUG] Filter result for {sym}: {filter_result}, reason: {reason}", flush=True)
         if filter_result:
             print(f"[DEBUG] Passed filter: {sym}", flush=True)
