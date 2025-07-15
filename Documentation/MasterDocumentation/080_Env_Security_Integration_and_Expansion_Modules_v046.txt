@@ -163,6 +163,9 @@ TOTAL_ALLOCATION=0.02
 # Max number of trades allowed per strategy window
 MAX_TRADES=4
 
+# Number of fallback symbols based on max trades * Candidate Multiplier
+CANDIDATE_MULTIPLIER=5
+
 # Trade weight percentages based on number of triggered trades
 WEIGHTS=0.4,0.2,0.2,0.2
 
@@ -185,13 +188,13 @@ MAX_OPEN_POSITIONS=5
 SCREENER_UNIVERSE_MAX_AGE_DAYS=3
 
 # Universe filters: Exchanges allowed (comma-separated, case-sensitive)
-SCREENER_UNIVERSE_EXCHANGES=US
+SCREENER_UNIVERSE_EXCHANGES=NYSE,NASDAQ
 
 # Universe filters: Minimum price (last close)
-SCREENER_UNIVERSE_MIN_PRICE=2
+SCREENER_UNIVERSE_MIN_PRICE=5
 
 # Universe filters: Maximum price (last close)
-SCREENER_UNIVERSE_MAX_PRICE=10000
+SCREENER_UNIVERSE_MAX_PRICE=100
 
 # Universe filters: Minimum market cap (USD)
 SCREENER_UNIVERSE_MIN_MARKET_CAP=300000000
@@ -286,7 +289,7 @@ MARKET_CLOSE_UTC=21:00
 TRADING_DAYS=mon,tue,wed,thu,fri
 
 # Interval between polling cycles for runtime monitoring (seconds)
-UNIVERSE_SLEEP_TIME=0.3
+UNIVERSE_SLEEP_TIME=.5
 STRATEGY_SLEEP_TIME=0.03
 
 # -----------------------------------------
@@ -472,10 +475,6 @@ MAX_BSM_DEVIATION=0.15
 RISK_FREE_RATE=0.045               
 # Options: static, dynamic — dynamic adjusts by JURISDICTION_CODE via bot_identity
 RISK_FREE_RATE_SOURCE=dynamic       
-
-
-
-
 
 
 =============================================================================================================================================

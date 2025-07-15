@@ -238,6 +238,82 @@ InverseETF Integration Specification (Final v1.0)
 - *All ETF eligibility, logic, and lists are maintained and edited only via internal config and Web UI—never by external system or CLI utility.*
 - No accounting system may inject, provision, or control ETF eligibility or strategy logic.
 
----
+
+================================================================================
+ Ranked Symbol Fallback and Fractional Trading Logic (v1.0)
+================================================================================
+
+**Overview:**
+This section formalizes the unified, ranked fallback symbol selection and broker eligibility enforcement for all TradeBot strategies.  
+ALL symbol eligibility, fallback, and fractional support logic must comply with this specification—no hardcoded or strategy-specific short-circuiting allowed.
+
+--------------------------------------------------------------------------------
+Ranked Candidate Pool and Fallback Logic (ALL STRATEGIES)
+--------------------------------------------------------------------------------
+
+- **Ranked Pool Sourcing:**
+  - Each strategy (open/mid/close) requests a *ranked* candidate pool from its screener module.
+  - **Pool size = MAX_TRADES × CANDIDATE_MULTIPLIER** (see `.env_bot`).
+  - Ranking is by strategy fitness (momentum, volatility, filter score, etc.), *not* by broker eligibility or tradability.
+  - Screeners do **not** check broker support or tradability; they only rank and return the full candidate pool.
+
+- **Eligibility/Execution Filtering:**
+  - Strategy or central router must query the broker module for each candidate (in ranked order):
+    - Is the symbol tradable right now?
+    - Does broker support fractional for this symbol (if FRACTIONAL=true)?
+    - Is minimum order size met given the session’s capital and weight?
+    - Any other broker/account restriction?
+  - Select top N eligible candidates (`N = MAX_TRADES`).
+  - If fewer than `MAX_TRADES` are eligible, skip, log the cause, and do not substitute lower-ranked symbols from outside the pool.
+
+- **Fallback Cycling:**
+  - If any selected symbol fails a runtime eligibility check (e.g., no fractional support, insufficient capital, rejected order), the next-ranked eligible symbol from the pool is automatically used as fallback for that slot.
+  - Rejection causes must be logged with timestamp, rejected symbol, and reason.
+  - UI and logs must indicate which fallback level was used for each trade.
+
+- **Strategy/Router Enforcement:**
+  - **No strategy module may pre-filter or short-circuit the pool by broker eligibility.**
+  - All runtime checks must be after ranking and prior to order submission.
+  - All final selection, fallback, and eligibility filtering must be broker-agnostic until the broker module is queried.
+
+- **Broker Module Requirements:**
+  - Must implement `supports_fractional(symbol)` and `get_min_order_size(symbol)`.
+  - Must return true/false for fractional and minimum size eligibility (per symbol, per broker).
+
+- **Order Handling:**
+  - All trade orders must pass runtime broker eligibility and capital checks.
+  - If a symbol is rejected at order stage (e.g., due to sudden broker restriction), cycle to next eligible fallback immediately.
+
+--------------------------------------------------------------------------------
+Parameters and Config (All in `.env_bot` Only)
+--------------------------------------------------------------------------------
+
+- `MAX_TRADES`: Number of trades per strategy session
+- `CANDIDATE_MULTIPLIER`: How many fallback candidates to include (pool size = MAX_TRADES × CANDIDATE_MULTIPLIER)
+- `FRACTIONAL`: Enable/disable fractional trade logic (if true, check per symbol)
+- All other trade, capital, and eligibility limits as already documented.
+
+--------------------------------------------------------------------------------
+Logging and UI
+--------------------------------------------------------------------------------
+
+- All fallback selection, eligibility rejections, and trade status changes must be logged with full context (symbol, reason, pool rank, timestamp).
+- Web UI must display the current ranked pool, fallback level in use, and rejection reasons for each trade attempt.
+
+--------------------------------------------------------------------------------
+Testing and Validation
+--------------------------------------------------------------------------------
+
+- Automated tests must fully cover: fallback cycling, fractional checks, minimum order size, and all capital constraints per strategy and broker module.
+- Simulate all failure/rejection modes for fallback validation.
+
+--------------------------------------------------------------------------------
+NO EXCEPTIONS:
+- No broker/capital/fractional logic in screener modules.
+- No duplicate ranking, filtering, or fallback logic in multiple modules.
+- All risk and eligibility logic is single-source-of-truth as above.
+
+================================================================================
+
 
 
