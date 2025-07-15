@@ -1998,3 +1998,7 @@
 {"symbol": "OGN", "lastClose": 9.94, "marketCap": 2583963301.674651, "companyName": "ORGANON & CO", "exchange": "NYSE", "c": 9.94, "o": 9.83, "vwap": 9.94}
 {"symbol": "HSAI", "lastClose": 23.9, "marketCap": 2980663576.0, "companyName": "HESAI GROUP", "exchange": "NASDAQ", "c": 23.9, "o": 21.925, "vwap": 23.9}
 {"symbol": "ANGI", "lastClose": 15.97, "marketCap": 766351668.7436202, "companyName": "ANGI INC", "exchange": "NASDAQ", "c": 15.97, "o": 16.65, "vwap": 15.97}
+{"symbol": "PPERY", "companyName": "BANK MANDIRI TBK-UNSPON ADR", "exchange": "OOTC", "lastClose": 12.07, "marketCap": 459052069.770595, "c": 12.07, "o": 11.99, "vwap": 12.07}
+{"symbol": "PTCAY", "companyName": "CHANDRA ASRI PACIFI-UNSP ADR", "exchange": "OOTC", "lastClose": 56.0, "marketCap": 847813159.375, "c": 56.0, "o": 56.0, "vwap": 56.0}
+{"symbol": "PBCRY", "companyName": "BANK CENTRAL ASIA-UNSPON ADR", "exchange": "OOTC", "lastClose": 13.36, "marketCap": 1063247279.296875, "c": 13.36, "o": 13.02, "vwap": 13.36}
+{"symbol": "BKRKY", "companyName": "BANK RAKYAT INDONESIA-UN ADR", "exchange": "OOTC", "lastClose": 11.94, "marketCap": 586336809.37888, "c": 11.94, "o": 12.08, "vwap": 11.94}

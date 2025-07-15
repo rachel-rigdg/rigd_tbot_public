@@ -1,8 +1,8 @@
-# tbot_web/static/js/universe.js
-// Fix Force Rebuild button to use fetch POST and handle redirect properly
+// tbot_web/static/js/universe.js
+// Fix Force Rebuild button and tables to always update table body IDs and fetch log correctly
 
 function fetchBuildLog() {
-    fetch("/static/output/screeners/universe_ops.log")
+    fetch("/universe/log")
         .then(response => {
             if (!response.ok) { throw new Error("Log not found"); }
             return response.text();

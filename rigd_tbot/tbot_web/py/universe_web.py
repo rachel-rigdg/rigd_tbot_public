@@ -15,6 +15,7 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path,
     resolve_screener_blocklist_path,
     resolve_universe_unfiltered_path,
+    resolve_universe_log_path,
 )
 from tbot_bot.support.secrets_manager import get_screener_credentials_path
 import csv
@@ -26,6 +27,7 @@ universe_bp = Blueprint("universe", __name__, template_folder="../templates")
 
 UNFILTERED_PATH = resolve_universe_unfiltered_path()
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
+LOG_PATH = resolve_universe_log_path()
 
 def screener_creds_exist():
     creds_path = get_screener_credentials_path()
@@ -126,8 +128,9 @@ def universe_rebuild():
     try:
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'screeners'))
         script_path = os.path.join(base_dir, 'universe_orchestrator.py')
+        current_app.logger.info(f"Running universe_orchestrator at {script_path}")
         proc = subprocess.run(
-            ["python3", script_path],
+            ["python3", "-m", "tbot_bot.screeners.universe_orchestrator"],
             capture_output=True,
             text=True
         )
@@ -139,6 +142,15 @@ def universe_rebuild():
     except Exception as e:
         flash(f"Universe cache rebuild failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))
+
+@universe_bp.route("/log")
+def universe_log():
+    try:
+        with open(LOG_PATH, "r", encoding="utf-8") as logf:
+            lines = logf.readlines()
+        return Response("".join(lines), mimetype="text/plain")
+    except Exception:
+        return Response("Log file not found.", mimetype="text/plain")
 
 @universe_bp.route("/export/<fmt>", methods=["GET"])
 def universe_export(fmt):
