@@ -7,7 +7,7 @@
     border-radius: 50%;
     display: inline-block;
     border: 6px solid transparent;
-    border-top-color: #41c7b2;
+    border-top-color: #e7ba4a;
     animation: spin 1s linear infinite;
 }
 
@@ -25,6 +25,6 @@
 }
 
 .msg {
-    color: #8ab4f8;
+    color:#e7ba4a;;
     margin-bottom: 12px;
 }

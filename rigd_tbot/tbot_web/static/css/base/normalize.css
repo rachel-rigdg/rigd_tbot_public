@@ -15,6 +15,11 @@ h1 {
     margin: 0.67em 0;
     color:#e7ba4a;
 }
+h2 {
+    margin-bottom: 20px;
+    text-align: center;
+    color: #e7ba4a;
+  }
 hr {
     box-sizing: content-box;
     height: 0;
