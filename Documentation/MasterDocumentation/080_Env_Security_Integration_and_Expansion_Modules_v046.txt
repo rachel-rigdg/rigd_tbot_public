@@ -109,10 +109,6 @@ LOGIN_ATTEMPT_LIMIT=10
 LOGIN_LOCKOUT_MINUTES=15
 SESSION_TIMEOUT_MINUTES=120
 
-================================================================================
- .env_bot / env_bot.enc – Trading Bot Configuration File
-================================================================================
-
 # .env_bot – TradeBot Configuration 
 # All strategy logic, broker routing, and runtime behavior are driven by this file.
 # Time values are specified in UTC. Comments indicate usage and system impact.
@@ -140,6 +136,29 @@ ENABLE_LOGGING=true
 
 # json (structured) or csv (flat) log output format
 LOG_FORMAT=json
+
+
+
+# -----------------------------------------
+# Holdings Management (Updated)
+# -----------------------------------------
+
+
+# Target % of total account value to keep as trading float (e.g. 10%)
+HOLDINGS_FLOAT_TARGET_PCT=10
+
+# % of realized gains to reserve for taxes (e.g. 20%)
+HOLDINGS_TAX_RESERVE_PCT=20
+
+# % of post-tax gains to pay as operator payroll (e.g. 10%)
+HOLDINGS_PAYROLL_PCT=10
+
+# Interval for portfolio rebalancing in months (choices: 3, 6, 12)
+HOLDINGS_REBALANCE_INTERVAL=6
+
+# List of ETFs and target allocation percentages (comma-separated, e.g. "SCHD:50,SCHY:50")
+HOLDINGS_ETF_LIST=SCHD:50,SCHY:50
+
 
 # -----------------------------------------
 # Trade Execution & Risk Controls

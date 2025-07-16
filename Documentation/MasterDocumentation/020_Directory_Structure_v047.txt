@@ -213,6 +213,7 @@ rigd_tbot/
 │   │           └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.json  	# Structured trade records for ingestion, reconciliation, and audit
 │   │
 │   ├── reporting/
+│   │   ├── audit_logger.py 			# WORKER. Support structured logs for holdings management actions		(new or extend existing utils_log.py)
 │   │   ├── auto_backup.py                      # WORKER. Compresses and archives output/ after session ends. Only launched by main.py.
 │   │   ├── daily_summary.py                    # WORKER. Builds daily trade summary stats and outcomes. Only launched by main.py.
 │   │   ├── log_rotation.py                     # WORKER. Cleans output folder after N days (log file retention). Only launched by main.py.
@@ -322,6 +323,8 @@ rigd_tbot/
 │   │   ├── test_broker_trade_stub.py               # DEV/CI TEST. Sends randomized test trades to broker adapters, checks order flow and logging. Never launched in production.
 │   │   ├── test_coa_consistency.py                 # DEV/CI TEST. Confirms COA JSON/schema matches, validates COA integration with utils_coa.py. Never launched in production.
 │   │   ├── test_coa_web_endpoints.py               # DEV/CI TEST. End-to-end API/UI tests for COA web endpoints (/coa, /coa/api, /coa/export). Never launched in production.
+│   │   ├── test_holdings_manager.py       		# Unit/integration tests for holdings logic.
+│   │   ├── test_holdings_web_endpoints.py 		# Tests for new Flask blueprint.
 │   │   ├── test_env_bot.py                         # DEV/CI TEST. Verifies .env_bot config, required variables, and structure. Never launched in production.
 │   │   ├── test_ledger_schema.py                   # DEV/CI TEST. Ensures all ledgers match schema, enforce double-entry and compliance. Never launched in production.
 │   │   ├── test_logging_format.py                  # DEV/CI TEST. Validates structure, content, and completeness of all bot log files. Never launched in production.
@@ -334,6 +337,8 @@ rigd_tbot/
 │   │   └── test_universe_cache.py                  # DEV/CI TEST. Verifies universe cache schema, age, and content. Never launched in production.
 │   │
 │   └── trading/			                    # Trade Execution
+│       ├── holdings_manager.py          	# Core logic for ETF purchases, sales, rebalancing, cash top-up, tax and payroll allocations.
+│       ├── holdings_utils.py            	# Helper functions for allocation calculations, broker integration, audit logging.
 │       ├── instruments.py
 │       ├── kill_switch.py                      # Triggers shutdown on DAILY_LOSS_LIMIT or catastrophic loss violation.
 │       ├── logs_bot.py                         # Runtime logging of trade operations to output/logs.
@@ -374,6 +379,7 @@ rigd_tbot/
     │       │   ├── account.css                     # Account page styles: profile and settings forms
     │       │   ├── configuration.css               # Configuration page (forms, blocks, horizontal wrapping)
     │       │   ├── edit_user.css                   # Edit user page: user edit form layout and alignment
+    │       │   ├── holdings.css                  # Stylesheet for holdings management page.
     │       │   ├── ledger.css                      # Ledger page: table formatting and alignment
     │       │   ├── logs.css                        # Logs page: log view container, filter bar, color
     │       │   ├── main.css                        # Main container, alignment, and page structure styles
@@ -397,6 +403,7 @@ rigd_tbot/
     │   ├── account_web.py                      # User account/profile endpoints (view/update account details)
     │   ├── coa_web.py                          # COA endpoints: view, edit, export; calls utils_coa_web.py, config_encryption.py. Never launches any worker/watcher.
     │   ├── configuration_web.py                # Handles configuration route: displays, saves, and provisions config; calls config_encryption, key_manager, security_users. Never launches any worker/watcher.
+    │   ├── holdings_web.py              # Flask blueprint: UI endpoints for holdings management, config, and status.
     │   ├── ledger_web.py		                # Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs. Only admin users can perform edits or reconciliations. Never launches any worker/watcher.
     │   ├── login_web.py                        # User login/logout/session; calls auth_web.py, security_users.py, session_manager.py. Never launches any worker/watcher.
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state. Never launches any worker/watcher.
@@ -433,6 +440,7 @@ rigd_tbot/
         ├── coa.html                            # Human-readable web form/table for COA viewing and editing (editable if RBAC allows)
         ├── configuration.html                  # Web form for updating email, API, and broker credential configuration via web UI 
         ├── edit_user.html                      # Edit individual user details (admin only)
+        ├── holdings.html                 # Jinja2 page for managing ETFs, float %, tax %, payroll %, rebalance interval, current status, manual controls.
         ├── index.html                          # Login page
         ├── ledger.html			                # Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
         ├── logs.html                           # Log viewer (view bot/system logs)
