@@ -8,17 +8,24 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import get_output_path, resolve_control_path, get_project_root
 from tbot_bot.strategy.strategy_router import route_strategy
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.runtime.status_bot import bot_status
 from tbot_bot.support.utils_identity import get_bot_identity
 import subprocess
+import os
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
+load_dotenv(dotenv_path=str(get_project_root() / ".env"))
 
 BOT_IDENTITY = get_bot_identity()
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
+CONTROL_DIR = resolve_control_path()
+PROJECT_ROOT = get_project_root()
+
+def set_cwd_and_syspath():
+    os.chdir(PROJECT_ROOT)
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
 
 def check_output_artifacts():
     files = [
@@ -87,18 +94,23 @@ def run_single_test_module(flag):
         "coa_consistency": "tbot_bot.test.test_coa_consistency",
         "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
         "backtest_engine": "tbot_bot.test.test_backtest_engine",
-        "logging_format": "tbot_bot.test.test_logging_format"
+        "logging_format": "tbot_bot.test.test_logging_format",
+        "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic"
     }
     module = test_map.get(test_name)
     if module:
         print(f"[integration_test_runner] Detected individual test flag: {flag}. Running {module}")
-        subprocess.run(["python3", "-m", module])
+        subprocess.run(
+            ["python3", "-u", "-m", module],
+            cwd=PROJECT_ROOT,
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+        )
     else:
         print(f"[integration_test_runner] Unknown test flag or test module: {flag}")
     _clear_flag(flag)
 
 def run_integration_test():
-    # Individual test flag: run only that test, then exit
+    set_cwd_and_syspath()
     flag = detect_individual_test_flag()
     if flag and flag.name != "test_mode.flag":
         run_single_test_module(flag)

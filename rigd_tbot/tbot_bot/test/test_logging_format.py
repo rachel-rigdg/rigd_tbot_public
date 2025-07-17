@@ -9,12 +9,18 @@ import re
 from pathlib import Path
 from tbot_bot.support.path_resolver import get_output_path
 
-TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_logging_format.flag"
-RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
+TEST_FLAG_PATH = get_output_path("control", "test_mode_logging_format.flag")
+RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
-    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
-        print("[test_logging_format.py] Individual test flag not present. Exiting.")
+    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
+        safe_print("[test_logging_format.py] Individual test flag not present. Exiting.")
         sys.exit(1)
 
 LOG_DIR = get_output_path("logs")
@@ -53,9 +59,13 @@ class TestLoggingFormat(unittest.TestCase):
 
 def run_test():
     import unittest as _unittest
-    _unittest.main([__file__])
-    if TEST_FLAG_PATH.exists():
-        TEST_FLAG_PATH.unlink()
+    ret = _unittest.main([__file__])
+    if Path(TEST_FLAG_PATH).exists():
+        Path(TEST_FLAG_PATH).unlink()
+    if ret == 0:
+        safe_print("[test_logging_format.py] TEST PASSED")
+    else:
+        safe_print(f"[test_logging_format.py] TEST FAILED (code={ret})")
 
 if __name__ == "__main__":
     run_test()

@@ -10,6 +10,7 @@ import json
 from unittest import mock
 from tbot_bot.screeners import symbol_universe_refresh
 from tbot_bot.support import secrets_manager
+from tbot_bot.support.path_resolver import get_output_path
 
 @pytest.fixture(scope="function")
 def temp_universe_env(monkeypatch):
@@ -23,6 +24,7 @@ def temp_universe_env(monkeypatch):
     monkeypatch.setattr(symbol_universe_refresh, "UNFILTERED_PATH", os.path.join(output_dir, "symbol_universe.unfiltered.json"))
     monkeypatch.setattr(symbol_universe_refresh, "BLOCKLIST_PATH", os.path.join(output_dir, "blocklist.txt"))
     monkeypatch.setattr(secrets_manager, "get_screener_credentials_path", lambda: os.path.join(secrets_dir, "screener_api.json.enc"))
+    monkeypatch.setattr(symbol_universe_refresh, "get_output_path", lambda *a: os.path.join(output_dir, *a[1:]) if a[0] == "screeners" else get_output_path(*a))
     yield tmpdir
     shutil.rmtree(tmpdir)
 

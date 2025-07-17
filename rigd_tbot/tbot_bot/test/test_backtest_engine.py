@@ -4,9 +4,10 @@
 
 import sys
 from pathlib import Path
+from tbot_bot.support.path_resolver import get_output_path
 
-TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_backtest_engine.flag"
-RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
+TEST_FLAG_PATH = get_output_path("control", "test_mode_backtest_engine.flag")
+RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
 
 def safe_print(msg):
     try:
@@ -15,7 +16,7 @@ def safe_print(msg):
         pass
 
 if __name__ == "__main__":
-    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         safe_print("[test_backtest_engine.py] Individual test flag not present. Exiting.")
         sys.exit(0)
 
@@ -82,8 +83,8 @@ def test_invalid_strategy(backtest_config):
 def run_test():
     import pytest as _pytest
     ret = _pytest.main([__file__])
-    if TEST_FLAG_PATH.exists():
-        TEST_FLAG_PATH.unlink()
+    if Path(TEST_FLAG_PATH).exists():
+        Path(TEST_FLAG_PATH).unlink()
     if ret == 0:
         safe_print("[test_backtest_engine.py] ALL TESTS PASSED")
     else:

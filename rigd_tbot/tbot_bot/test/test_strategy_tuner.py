@@ -6,33 +6,35 @@ import sys
 import unittest
 from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.path_resolver import get_output_path
 
-TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_strategy_selfcheck.flag"
-RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
+TEST_FLAG_PATH = get_output_path("control", "test_mode_strategy_selfcheck.flag")
+RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
-    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
-        print("[test_strategy_selfcheck.py] Individual test flag not present. Exiting.")
+    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
+        safe_print("[test_strategy_selfcheck.py] Individual test flag not present. Exiting.")
         sys.exit(0)
 else:
-    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         raise RuntimeError("[test_strategy_selfcheck.py] Individual test flag not present.")
 
 class TestStrategySelfCheck(unittest.TestCase):
     def setUp(self):
-        if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+        if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
             self.skipTest("Individual test flag not present. Exiting.")
 
     def tearDown(self):
-        if TEST_FLAG_PATH.exists():
-            TEST_FLAG_PATH.unlink()
+        if Path(TEST_FLAG_PATH).exists():
+            Path(TEST_FLAG_PATH).unlink()
 
     def test_strategy_selfchecks(self):
-        """
-        Confirms that all enabled strategies pass their .self_check() method.
-        This is required before executing any session in production mode.
-        Does not launch, run, or supervise any persistent process.
-        """
         config = get_bot_config()
         failures = []
 

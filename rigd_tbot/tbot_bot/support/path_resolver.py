@@ -51,12 +51,13 @@ BOOTSTRAP_ONLY_LOGS = [
 ]
 
 def get_bot_identity(explicit_identity: str = None) -> str:
-    if 'is_first_bootstrap' in globals() and callable(is_first_bootstrap) and is_first_bootstrap():
-        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available (system is in bootstrap mode)")
+    if is_first_bootstrap():
+        return explicit_identity if explicit_identity else None
     identity = explicit_identity if explicit_identity else load_bot_identity(default=None)
     if not identity or not get_bot_identity_string_regex().match(identity):
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     return identity
+
 
 def validate_bot_identity(bot_identity: str) -> None:
     if not bot_identity or not re.match(IDENTITY_PATTERN, bot_identity):
@@ -65,12 +66,13 @@ def validate_bot_identity(bot_identity: str) -> None:
 def get_bot_identity_string_regex():
     return re.compile(IDENTITY_PATTERN)
 
-def get_output_path(bot_identity: str = None, category: str = None, filename: str = None, output_subdir: bool = False) -> str:
-    if category == "logs" and filename in SYSTEM_LOG_FILES + BOOTSTRAP_ONLY_LOGS:
-        # System/global or bootstrap logs: tbot_bot/output/logs/
+def get_output_path(category: str = None, filename: str = None, bot_identity: str = None, output_subdir: bool = False) -> str:
+    # Always allow system/bootstrap logs to resolve even in bootstrap mode.
+    if category == "logs" and (filename in SYSTEM_LOG_FILES + BOOTSTRAP_ONLY_LOGS or filename == "test_mode.log"):
         logs_dir = PROJECT_ROOT / "tbot_bot" / "output" / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         return str(logs_dir / filename) if filename else str(logs_dir)
+    # Normal bot-identity based output
     identity = get_bot_identity(bot_identity)
     if not identity:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
@@ -84,15 +86,22 @@ def get_output_path(bot_identity: str = None, category: str = None, filename: st
         return str(subdir)
     return str(subdir / filename) if filename else str(subdir)
 
+
+def resolve_control_path() -> Path:
+    return PROJECT_ROOT / "tbot_bot" / "control"
+
 def resolve_category_path(category: str, filename: str = None, bot_identity: str = None, output_subdir: bool = False) -> str:
-    return get_output_path(bot_identity=bot_identity, category=category, filename=filename, output_subdir=output_subdir)
+    return get_output_path(category=category, filename=filename, bot_identity=bot_identity, output_subdir=output_subdir)
 
 def file_exists_resolved(bot_identity: str = None, category: str = None, filename: str = None) -> bool:
     try:
-        path = get_output_path(bot_identity, category, filename)
+        path = get_output_path(category=category, filename=filename, bot_identity=bot_identity)
         return os.path.exists(path)
     except Exception:
         return False
+
+def get_project_root() -> Path:
+    return PROJECT_ROOT
 
 def get_secret_path(filename: str) -> str:
     return str(PROJECT_ROOT / "tbot_bot" / "storage" / "secrets" / filename)
@@ -114,15 +123,6 @@ def resolve_ledger_schema_path():
 
 def resolve_coa_schema_path():
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "coa_schema.sql")
-
-def resolve_coa_json_path() -> str:
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_template.json")
-
-def resolve_coa_metadata_path() -> str:
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_metadata.json")
-
-def resolve_coa_audit_log_path() -> str:
-    return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "tbot_ledger_coa_audit.log")
 
 def resolve_coa_json_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
@@ -166,9 +166,6 @@ def resolve_universe_cache_path(bot_identity: str = None) -> str:
     return str(screeners_dir / "symbol_universe.json")
 
 def resolve_universe_raw_path():
-    """
-    Returns the canonical path for the raw symbols universe (symbol_universe.symbols_raw.json).
-    """
     return os.path.abspath(os.path.join(
         os.path.dirname(__file__), '..', 'output', 'screeners', 'symbol_universe.symbols_raw.json'
     ))
@@ -287,6 +284,7 @@ __all__ = [
     "validate_bot_identity",
     "get_bot_identity_string_regex",
     "get_output_path",
+    "resolve_control_path",
     "resolve_category_path",
     "file_exists_resolved",
     "get_secret_path",
@@ -328,5 +326,6 @@ __all__ = [
     "resolve_status_logger_path",
     "resolve_symbol_universe_refresh_path",
     "resolve_integration_test_runner_path",
-    "resolve_nasdaqlisted_txt_path"
+    "resolve_nasdaqlisted_txt_path",
+    "get_project_root"
 ]

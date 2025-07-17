@@ -8,9 +8,15 @@ from flask import Blueprint, render_template, request, jsonify
 from tbot_web.support.utils_web import admin_required
 from pathlib import Path
 import subprocess
+from tbot_bot.support.path_resolver import (
+    resolve_control_path,
+    get_output_path,
+    get_project_root,
+)
 
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
-TEST_LOG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "test_mode.log"
+CONTROL_DIR = resolve_control_path()
+TEST_LOG_PATH = get_output_path("logs", "test_mode.log")
+PROJECT_ROOT = get_project_root()
 LOCK = threading.Lock()
 
 test_web = Blueprint("test_web", __name__, template_folder="../templates")
@@ -32,7 +38,7 @@ def any_test_active() -> bool:
     return False
 
 def read_test_logs():
-    if not TEST_LOG_PATH.exists():
+    if not os.path.exists(TEST_LOG_PATH):
         return ""
     with open(TEST_LOG_PATH, "r", encoding="utf-8") as f:
         return f.read()[-30000:]
@@ -40,7 +46,7 @@ def read_test_logs():
 def get_test_status():
     if not any_test_active():
         return "idle"
-    if TEST_LOG_PATH.exists():
+    if os.path.exists(TEST_LOG_PATH):
         with open(TEST_LOG_PATH, "r", encoding="utf-8") as f:
             lines = f.readlines()
             if lines:
@@ -83,7 +89,8 @@ def trigger_test_mode():
                 stderr=log_file,
                 bufsize=1,
                 close_fds=True,
-                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                cwd=str(PROJECT_ROOT),
+                env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
             )
     return jsonify({"result": "started"})
 
@@ -119,7 +126,8 @@ def run_individual_test(test_name):
                 stderr=log_file,
                 bufsize=1,
                 close_fds=True,
-                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                cwd=str(PROJECT_ROOT),
+                env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
             )
     return jsonify({"result": "started", "test": test_name})
 

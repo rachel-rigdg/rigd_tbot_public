@@ -13,8 +13,8 @@ from pathlib import Path
 import sys
 
 BOT_ID = get_bot_identity()
-TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_main_bot.flag"
-RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
+TEST_FLAG_PATH = get_output_path("control", "test_mode_main_bot.flag")
+RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
 
 LOG_FILES = [
     "open.log",
@@ -27,9 +27,15 @@ LOG_FILES = [
 TRADE_LOG_JSON = f"{BOT_ID}_BOT_trade_history.json"
 TRADE_LOG_CSV = f"{BOT_ID}_BOT_trade_history.csv"
 
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
+
 if __name__ == "__main__":
-    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
-        print("[test_main_bot.py] Individual test flag not present. Exiting.")
+    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
+        safe_print("[test_main_bot.py] Individual test flag not present. Exiting.")
         sys.exit(1)
 
 @pytest.mark.order(1)
@@ -82,8 +88,8 @@ def test_main_bot_trade_log_format():
 def run_test():
     import pytest as _pytest
     _pytest.main([__file__])
-    if TEST_FLAG_PATH.exists():
-        TEST_FLAG_PATH.unlink()
+    if Path(TEST_FLAG_PATH).exists():
+        Path(TEST_FLAG_PATH).unlink()
 
 if __name__ == "__main__":
     run_test()

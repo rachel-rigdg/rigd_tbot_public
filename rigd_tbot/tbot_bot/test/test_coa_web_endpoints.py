@@ -8,9 +8,10 @@ from flask import Flask
 from tbot_web.py.coa_web import coa_web
 from pathlib import Path
 import sys
+from tbot_bot.support.path_resolver import get_output_path
 
-TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_coa_web_endpoints.flag"
-RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
+TEST_FLAG_PATH = get_output_path("control", "test_mode_coa_web_endpoints.flag")
+RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
 
 def safe_print(msg):
     try:
@@ -19,13 +20,13 @@ def safe_print(msg):
         pass
 
 if __name__ == "__main__":
-    if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         print("[test_coa_web_endpoints.py] Individual test flag not present. Exiting.")
         sys.exit(1)
 
 class COAWebEndpointTestCase(unittest.TestCase):
     def setUp(self):
-        if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+        if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
             self.skipTest("Individual test flag not present. Exiting.")
         app = Flask(__name__)
         app.secret_key = "testkey"
@@ -39,8 +40,8 @@ class COAWebEndpointTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.ctx.pop()
-        if TEST_FLAG_PATH.exists():
-            TEST_FLAG_PATH.unlink()
+        if Path(TEST_FLAG_PATH).exists():
+            Path(TEST_FLAG_PATH).unlink()
 
     def test_coa_page_loads(self):
         safe_print("[test_coa_web_endpoints] Testing /coa page load...")

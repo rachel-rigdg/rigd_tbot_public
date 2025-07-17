@@ -26,14 +26,12 @@ LOG_FILES_TO_INCLUDE = [
     "start_log",
     "stop_log",
     "password_reset_tokens.log",
-    # Per-bot logs (add if you want to display these from identity folder)
     "open.log",
     "mid.log",
     "close.log",
     "unresolved_orders.log",
     "error_tracebacks.log",
     "daily_summary.json"
-    # Bootstrap-only logs NOT included: "init_system_logs.log", "init_system_users.log", "init_user_activity_monitoring.log", "init_password_reset_tokens.log"
 ]
 
 TIME_FORMATS = [
@@ -72,18 +70,17 @@ def find_log_file(selected_log, warn_list=None):
     try:
         bot_identity_string = load_bot_identity()
         validate_bot_identity(bot_identity_string)
-        identity_logs = Path(get_output_path(bot_identity_string, "logs"))
+        identity_logs = Path(get_output_path("logs", None, bot_identity=bot_identity_string))
         paths.append(identity_logs / selected_log)
     except Exception as e:
         bot_identity_error = str(e)
         if warn_list is not None:
             warn_list.append(f"Warning: Could not resolve active bot identity. Using fallback log locations. Reason: {bot_identity_error}")
-    # Always try fallback locations
     paths.append(Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / selected_log)
     paths.append(Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs" / selected_log)
     return next((p for p in paths if p.is_file()), None)
 
-@logs_blueprint.route("/")
+@logs_blueprint.route("/", methods=["GET"])
 def logs_page():
     selected_log = request.args.get("file", LOG_FILES_TO_INCLUDE[0])
     if selected_log not in LOG_FILES_TO_INCLUDE:

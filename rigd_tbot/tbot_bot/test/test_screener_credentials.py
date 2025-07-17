@@ -8,6 +8,7 @@ import shutil
 import pytest
 import json
 from tbot_bot.support import secrets_manager
+from tbot_bot.support.path_resolver import get_output_path
 
 # Patch locations for isolation
 ORIG_KEY_DIR = secrets_manager.KEY_DIR
@@ -15,7 +16,6 @@ ORIG_AUDIT_LOG_PATH = secrets_manager.AUDIT_LOG_PATH
 
 @pytest.fixture(scope="function")
 def temp_credential_env(monkeypatch):
-    # Use temp directory for secrets/keys/audit log
     tmpdir = tempfile.mkdtemp()
     secrets_dir = os.path.join(tmpdir, "secrets")
     keys_dir = os.path.join(tmpdir, "keys")
@@ -30,7 +30,6 @@ def temp_credential_env(monkeypatch):
     shutil.rmtree(tmpdir)
 
 def test_add_and_update_credentials(temp_credential_env):
-    # Add a provider
     provider1 = "FINNHUB"
     values1 = {
         "SCREENER_NAME": "FINNHUB",
@@ -45,11 +44,9 @@ def test_add_and_update_credentials(temp_credential_env):
     secrets_manager.update_provider_credentials(provider1, values1)
     creds = secrets_manager.load_screener_credentials()
     idx1 = [k.split("_")[-1] for k, v in creds.items() if k.startswith("PROVIDER_") and v == provider1][0]
-    # Confirm presence and flags
     for key, val in values1.items():
         assert creds.get(f"{key}_{idx1}") == val
     assert creds.get(f"PROVIDER_{idx1}") == provider1
-    # Add a second provider
     provider2 = "IBKR"
     values2 = {
         "SCREENER_NAME": "IBKR",
@@ -67,7 +64,6 @@ def test_add_and_update_credentials(temp_credential_env):
     for key, val in values2.items():
         assert creds.get(f"{key}_{idx2}") == val
     assert creds.get(f"PROVIDER_{idx2}") == provider2
-    # Update provider1's TRADING_ENABLED
     secrets_manager.update_provider_credentials(provider1, {**values1, "TRADING_ENABLED": "true"})
     creds = secrets_manager.load_screener_credentials()
     assert creds.get(f"TRADING_ENABLED_{idx1}") == "true"
@@ -116,7 +112,6 @@ def test_audit_log_written(temp_credential_env):
     assert "CREDENTIAL_DELETED" in content
 
 def test_flags_for_usage(temp_credential_env):
-    # Ensure flags are honored for UNIVERSE_ENABLED and TRADING_ENABLED
     secrets_manager.update_provider_credentials("FINNHUB", {
         "SCREENER_NAME": "FINNHUB",
         "UNIVERSE_ENABLED": "true",
@@ -127,8 +122,6 @@ def test_flags_for_usage(temp_credential_env):
         "UNIVERSE_ENABLED": "false",
         "TRADING_ENABLED": "true"
     })
-    # Simulate screener_utils access
     from tbot_bot.screeners import screener_utils
     uni = screener_utils.get_universe_screener_secrets()
     assert uni["SCREENER_NAME"] == "FINNHUB"
-    # The "trading" loader would find IBKR if using the analogous helper.

@@ -6,17 +6,16 @@ import unittest
 import json
 import os
 from pathlib import Path
-
 from tbot_bot.support.utils_coa_web import load_coa_metadata_and_accounts, validate_coa_json
 from tbot_bot.accounting.coa_utils_ledger import (
     load_coa_metadata,
     load_coa_accounts,
     validate_coa_structure
 )
-from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path
+from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path, get_output_path
 
-TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_coa_consistency.flag"
-RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
+TEST_FLAG_PATH = get_output_path("control", "test_mode_coa_consistency.flag")
+RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
 
 def safe_print(msg):
     try:
@@ -27,7 +26,7 @@ def safe_print(msg):
 class TestCOAConsistency(unittest.TestCase):
 
     def setUp(self):
-        if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+        if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
             self.skipTest("Individual test flag not present. Exiting.")
         self.coa_json_path = resolve_coa_json_path()
         self.coa_metadata_path = resolve_coa_metadata_path()
@@ -35,8 +34,8 @@ class TestCOAConsistency(unittest.TestCase):
         assert os.path.exists(self.coa_metadata_path)
 
     def tearDown(self):
-        if TEST_FLAG_PATH.exists():
-            TEST_FLAG_PATH.unlink()
+        if Path(TEST_FLAG_PATH).exists():
+            Path(TEST_FLAG_PATH).unlink()
 
     def test_json_structure_and_validation(self):
         safe_print("[test_coa_consistency] Checking JSON structure and validation...")
