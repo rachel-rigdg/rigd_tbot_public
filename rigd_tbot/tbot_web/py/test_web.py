@@ -62,14 +62,14 @@ def remove_test_flag(test_name: str = None):
     if flag_path.exists():
         flag_path.unlink()
 
-@test_web.route("/test/", methods=["GET"])
+@test_web.route("/", methods=["GET"])
 @admin_required
 def test_page():
     status = get_test_status()
     logs = read_test_logs()
     return render_template("test.html", test_active=any_test_active(), test_status=status, test_logs=logs)
 
-@test_web.route("/test/trigger", methods=["POST"])
+@test_web.route("/trigger", methods=["POST"])
 @admin_required
 def trigger_test_mode():
     with LOCK:
@@ -79,7 +79,7 @@ def trigger_test_mode():
         subprocess.Popen(["python3", "-m", "tbot_bot.test.integration_test_runner"])
     return jsonify({"result": "started"})
 
-@test_web.route("/test/run/<test_name>", methods=["POST"])
+@test_web.route("/run/<test_name>", methods=["POST"])
 @admin_required
 def run_individual_test(test_name):
     with LOCK:
@@ -97,7 +97,9 @@ def run_individual_test(test_name):
             "coa_consistency": "tbot_bot.test.test_coa_consistency",
             "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
             "backtest_engine": "tbot_bot.test.test_backtest_engine",
-            "logging_format": "tbot_bot.test.test_logging_format"
+            "logging_format": "tbot_bot.test.test_logging_format",
+            "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic"
+            # Add more test modules here as needed for full coverage.
         }
         module = test_map.get(test_name)
         if not module:
@@ -106,7 +108,7 @@ def run_individual_test(test_name):
         subprocess.Popen(["python3", "-m", module])
     return jsonify({"result": "started", "test": test_name})
 
-@test_web.route("/test/logs", methods=["GET"])
+@test_web.route("/logs", methods=["GET"])
 @admin_required
 def get_test_logs():
     logs = read_test_logs()

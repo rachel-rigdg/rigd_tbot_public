@@ -29,6 +29,11 @@
     cursor: not-allowed;
 }
 
+.test-btn{
+    padding: 5px;
+}
+
+
 .test-log-box {
     width: 100%;
     height: 350px;
