@@ -2,7 +2,7 @@
 # Unified broker interface and trade dispatch router (single-broker mode)
 
 from tbot_bot.support.decrypt_secrets import load_broker_credential
-from tbot_bot.broker.brokers.alpaca import AlpacaBroker
+from tbot_bot.broker.brokers.broker_alpaca import AlpacaBroker
 from tbot_bot.broker.brokers.ibkr import IBKRBroker
 from tbot_bot.broker.broker_tradier import TradierBroker
 from tbot_bot.trading.logs_bot import log_event
