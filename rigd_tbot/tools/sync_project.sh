@@ -1,6 +1,8 @@
 #!/bin/bash
 # tools/sync_project.sh – Smart two-way sync tool for TradeBot deployments
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/.. && pwd )"
+
 # === CONFIG ===
 LIVE_PATH="/Volumes/8TB_RAID_01/jobs/TradeBot/Tradebot-001-Live/rigd_tbot"
 REMOTE_USER="tbot"
@@ -39,15 +41,15 @@ echo ""
 read -rp "Enter profile [1–4]: " profile
 
 case "$profile" in
-  1) IGNORE_FILE=".scpignore_code" ;;
-  2) IGNORE_FILE=".scpignore_prod_archive" ;;
-  3) IGNORE_FILE=".scpignore_enc" ;;
-  4) IGNORE_FILE=".scpignore_dev" ;;
+  1) IGNORE_FILE="$SCRIPT_DIR/.scpignore_code" ;;
+  2) IGNORE_FILE="$SCRIPT_DIR/.scpignore_prod_archive" ;;
+  3) IGNORE_FILE="$SCRIPT_DIR/.scpignore_enc" ;;
+  4) IGNORE_FILE="$SCRIPT_DIR/.scpignore_dev" ;;
   *) echo "❌ Invalid profile."; exit 1 ;;
 esac
 
 if [ ! -f "$IGNORE_FILE" ]; then
-  echo "❌ Required ignore file '$IGNORE_FILE' not found in this directory."
+  echo "❌ Required ignore file '$IGNORE_FILE' not found at $IGNORE_FILE."
   exit 1
 fi
 
