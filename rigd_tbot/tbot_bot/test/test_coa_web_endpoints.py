@@ -12,6 +12,12 @@ import sys
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_coa_web_endpoints.flag"
 RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
+
 if __name__ == "__main__":
     if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
         print("[test_coa_web_endpoints.py] Individual test flag not present. Exiting.")
@@ -37,11 +43,14 @@ class COAWebEndpointTestCase(unittest.TestCase):
             TEST_FLAG_PATH.unlink()
 
     def test_coa_page_loads(self):
+        safe_print("[test_coa_web_endpoints] Testing /coa page load...")
         rv = self.app.get('/coa')
         self.assertIn(b'Chart of Accounts (COA) Management', rv.data)
         self.assertEqual(rv.status_code, 200)
+        safe_print("[test_coa_web_endpoints] /coa page load OK.")
 
     def test_coa_api_returns_json(self):
+        safe_print("[test_coa_web_endpoints] Testing /coa/api endpoint...")
         rv = self.app.get('/coa/api')
         self.assertEqual(rv.status_code, 200)
         self.assertIn('application/json', rv.content_type)
@@ -49,23 +58,30 @@ class COAWebEndpointTestCase(unittest.TestCase):
         self.assertIn("metadata", data)
         self.assertIn("accounts", data)
         self.assertIn("history", data)
+        safe_print("[test_coa_web_endpoints] /coa/api endpoint OK.")
 
     def test_export_markdown(self):
+        safe_print("[test_coa_web_endpoints] Testing /coa/export/markdown endpoint...")
         rv = self.app.get('/coa/export/markdown')
         self.assertEqual(rv.status_code, 200)
         self.assertIn('text/markdown', rv.content_type)
+        safe_print("[test_coa_web_endpoints] /coa/export/markdown endpoint OK.")
 
     def test_export_csv(self):
+        safe_print("[test_coa_web_endpoints] Testing /coa/export/csv endpoint...")
         rv = self.app.get('/coa/export/csv')
         self.assertEqual(rv.status_code, 200)
         self.assertIn('text/csv', rv.content_type)
+        safe_print("[test_coa_web_endpoints] /coa/export/csv endpoint OK.")
 
     def test_coa_rbac_api(self):
+        safe_print("[test_coa_web_endpoints] Testing /coa/rbac endpoint...")
         rv = self.app.get('/coa/rbac')
         self.assertEqual(rv.status_code, 200)
         self.assertIn('application/json', rv.content_type)
         data = rv.get_json()
         self.assertTrue(data['user_is_admin'])
+        safe_print("[test_coa_web_endpoints] /coa/rbac endpoint OK.")
 
 def run_test():
     unittest.main(module=__name__, exit=False)

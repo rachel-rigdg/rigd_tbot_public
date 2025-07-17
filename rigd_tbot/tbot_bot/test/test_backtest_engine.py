@@ -8,9 +8,15 @@ from pathlib import Path
 TEST_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode_backtest_engine.flag"
 RUN_ALL_FLAG = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "test_mode.flag"
 
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
+
 if __name__ == "__main__":
     if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
-        print("[test_backtest_engine.py] Individual test flag not present. Exiting.")
+        safe_print("[test_backtest_engine.py] Individual test flag not present. Exiting.")
         sys.exit(0)
 
 import pytest
@@ -23,6 +29,7 @@ def backtest_config(monkeypatch):
     return get_bot_config()
 
 def test_backtest_open(backtest_config):
+    safe_print("Running test_backtest_open...")
     result = run_backtest(
         strategy="open",
         start_date="2023-01-01",
@@ -32,8 +39,10 @@ def test_backtest_open(backtest_config):
     assert isinstance(result, list)
     assert all("entry_price" in trade for trade in result)
     assert all("symbol" in trade for trade in result)
+    safe_print("test_backtest_open PASSED")
 
 def test_backtest_mid(backtest_config):
+    safe_print("Running test_backtest_mid...")
     result = run_backtest(
         strategy="mid",
         start_date="2023-01-01",
@@ -42,8 +51,10 @@ def test_backtest_mid(backtest_config):
     )
     assert isinstance(result, list)
     assert all("PnL" in trade for trade in result)
+    safe_print("test_backtest_mid PASSED")
 
 def test_backtest_close(backtest_config):
+    safe_print("Running test_backtest_close...")
     result = run_backtest(
         strategy="close",
         start_date="2023-01-01",
@@ -52,21 +63,31 @@ def test_backtest_close(backtest_config):
     )
     assert isinstance(result, list)
     assert any(trade["side"] in ["long", "short"] for trade in result)
+    safe_print("test_backtest_close PASSED")
 
 def test_invalid_strategy(backtest_config):
-    with pytest.raises(Exception):
+    safe_print("Running test_invalid_strategy...")
+    try:
         run_backtest(
             strategy="invalid",
             start_date="2023-01-01",
             end_date="2023-01-31",
             data_source="tbot_bot/backtest/data/invalid.csv"
         )
+    except Exception:
+        safe_print("test_invalid_strategy PASSED")
+        return
+    assert False, "test_invalid_strategy FAILED (no exception raised)"
 
 def run_test():
     import pytest as _pytest
-    _pytest.main([__file__])
+    ret = _pytest.main([__file__])
     if TEST_FLAG_PATH.exists():
         TEST_FLAG_PATH.unlink()
+    if ret == 0:
+        safe_print("[test_backtest_engine.py] ALL TESTS PASSED")
+    else:
+        safe_print(f"[test_backtest_engine.py] ONE OR MORE TESTS FAILED (code={ret})")
 
 if __name__ == "__main__":
     run_test()

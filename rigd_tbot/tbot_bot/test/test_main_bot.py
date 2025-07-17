@@ -80,16 +80,10 @@ def test_main_bot_trade_log_format():
         assert "PnL" in entry
 
 def run_test():
-    import unittest
-    try:
-        unittest.main(module=__name__, exit=False)
-    finally:
-        if TEST_FLAG_PATH.exists():
-            TEST_FLAG_PATH.unlink()
+    import pytest as _pytest
+    _pytest.main([__file__])
+    if TEST_FLAG_PATH.exists():
+        TEST_FLAG_PATH.unlink()
 
 if __name__ == "__main__":
-    try:
-        run_test()
-    finally:
-        if TEST_FLAG_PATH.exists():
-            TEST_FLAG_PATH.unlink()
+    run_test()

@@ -76,7 +76,14 @@ def trigger_test_mode():
         if any_test_active():
             return jsonify({"result": "already_running"})
         create_test_flag()
-        subprocess.Popen(["python3", "-m", "tbot_bot.test.integration_test_runner"])
+        with open(TEST_LOG_PATH, "a") as log_file:
+            subprocess.Popen(
+                ["python3", "-m", "tbot_bot.test.integration_test_runner"],
+                stdout=log_file,
+                stderr=log_file,
+                bufsize=1,
+                close_fds=True
+            )
     return jsonify({"result": "started"})
 
 @test_web.route("/run/<test_name>", methods=["POST"])
@@ -105,7 +112,14 @@ def run_individual_test(test_name):
         if not module:
             return jsonify({"result": "unknown_test"})
         create_test_flag(test_name)
-        subprocess.Popen(["python3", "-m", module])
+        with open(TEST_LOG_PATH, "a") as log_file:
+            subprocess.Popen(
+                ["python3", "-m", module],
+                stdout=log_file,
+                stderr=log_file,
+                bufsize=1,
+                close_fds=True
+            )
     return jsonify({"result": "started", "test": test_name})
 
 @test_web.route("/logs", methods=["GET"])

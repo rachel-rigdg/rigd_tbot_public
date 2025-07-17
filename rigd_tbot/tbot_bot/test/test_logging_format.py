@@ -52,13 +52,10 @@ class TestLoggingFormat(unittest.TestCase):
                         )
 
 def run_test():
-    unittest.main(module=__name__, exit=False)
+    import unittest as _unittest
+    _unittest.main([__file__])
     if TEST_FLAG_PATH.exists():
         TEST_FLAG_PATH.unlink()
 
 if __name__ == "__main__":
-    try:
-        run_test()
-    finally:
-        if TEST_FLAG_PATH.exists():
-            TEST_FLAG_PATH.unlink()
+    run_test()

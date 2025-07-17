@@ -42,11 +42,9 @@ def mock_good_creds(universe_enabled="true", trading_enabled="false"):
     "SCREENER_URL": "https://finnhub.io/api/v1/"
 })
 def test_screener_creds_exist(mock_universe_creds, temp_universe_env):
-    # Should not raise with good creds
     assert symbol_universe_refresh.screener_creds_exist()
 
 def test_fail_no_creds(temp_universe_env):
-    # Should raise when creds file missing
     with pytest.raises(Exception):
         symbol_universe_refresh.fetch_broker_symbol_metadata_crash_resilient(
             env={}, blocklist=[], exchanges=["NASDAQ"], min_price=5, max_price=100, min_cap=2e9, max_cap=1e10, max_size=2000
@@ -68,7 +66,6 @@ def test_fail_unsupported_provider(mock_uni_creds, temp_universe_env):
 })
 @mock.patch("tbot_bot.screeners.symbol_universe_refresh.fetch_finnhub_symbols_staged")
 def test_universe_build_triggers_correct_fetch(mock_fetch, mock_uni_creds, temp_universe_env):
-    # Should call fetch_finnhub_symbols_staged if FINNHUB enabled
     env = {"UNIVERSE_SLEEP_TIME": 0}
     blocklist = []
     exchanges = ["NASDAQ"]
@@ -81,7 +78,6 @@ def test_universe_build_triggers_correct_fetch(mock_fetch, mock_uni_creds, temp_
     mock_fetch.assert_called_once()
 
 def test_write_partial_and_unfiltered(temp_universe_env):
-    # Should write both partial and unfiltered files with correct data
     syms = [{"symbol": "AAPL", "exchange": "NASDAQ", "lastClose": 100, "marketCap": 3e9}]
     symbol_universe_refresh.write_partial(syms)
     symbol_universe_refresh.write_unfiltered(syms)
@@ -96,4 +92,3 @@ def test_append_to_blocklist(temp_universe_env):
     with open(blocklist_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
     assert "AAPL,PRICE_BELOW_MIN" in lines[0]
-

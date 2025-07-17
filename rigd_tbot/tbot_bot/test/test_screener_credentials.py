@@ -132,4 +132,3 @@ def test_flags_for_usage(temp_credential_env):
     uni = screener_utils.get_universe_screener_secrets()
     assert uni["SCREENER_NAME"] == "FINNHUB"
     # The "trading" loader would find IBKR if using the analogous helper.
-

@@ -19,6 +19,14 @@ else:
         raise RuntimeError("[test_strategy_selfcheck.py] Individual test flag not present.")
 
 class TestStrategySelfCheck(unittest.TestCase):
+    def setUp(self):
+        if not (TEST_FLAG_PATH.exists() or RUN_ALL_FLAG.exists()):
+            self.skipTest("Individual test flag not present. Exiting.")
+
+    def tearDown(self):
+        if TEST_FLAG_PATH.exists():
+            TEST_FLAG_PATH.unlink()
+
     def test_strategy_selfchecks(self):
         """
         Confirms that all enabled strategies pass their .self_check() method.
@@ -56,8 +64,6 @@ class TestStrategySelfCheck(unittest.TestCase):
 
 def run_test():
     unittest.main(module=__name__, exit=False)
-    if TEST_FLAG_PATH.exists():
-        TEST_FLAG_PATH.unlink()
 
 if __name__ == "__main__":
     run_test()
