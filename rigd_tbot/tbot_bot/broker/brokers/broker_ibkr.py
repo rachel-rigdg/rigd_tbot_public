@@ -112,7 +112,12 @@ class IBKRBroker:
         except Exception:
             return False
 
-    def is_symbol_fractional(self, symbol):
+    # ========== SPEC ENFORCEMENT BELOW ==========
+
+    def supports_fractional(self, symbol):
+        """
+        Returns True if symbol is fractionable on IBKR.
+        """
         try:
             contract = Stock(symbol, "SMART", "USD")
             details = self.client.reqContractDetails(contract)
@@ -120,21 +125,28 @@ class IBKRBroker:
                 return False
             # Heuristic: IBKR US stocks supporting fractional trading
             for d in details:
-                if hasattr(d, "minTick") and d.minTick < 1.0:
+                # minTick < 1.0 is not a reliable IBKR check, so fallback to IBKR "isFractional" attribute if present
+                if hasattr(d, 'isFractional') and getattr(d, 'isFractional', False):
+                    return True
+                # fallback: allow for US stocks < 1 share
+                if hasattr(d, "minSize") and d.minSize and d.minSize < 1.0:
                     return True
             return False
         except Exception:
             return False
 
-    def get_symbol_min_order_size(self, symbol):
+    def get_min_order_size(self, symbol):
+        """
+        Returns the min order size (float) for symbol. Fallback to 1.0 if unavailable.
+        """
         try:
             contract = Stock(symbol, "SMART", "USD")
             details = self.client.reqContractDetails(contract)
-            if details and hasattr(details[0], "minSize"):
-                return details[0].minSize
-            return None
+            if details and hasattr(details[0], "minSize") and details[0].minSize is not None:
+                return float(details[0].minSize)
+            return 1.0
         except Exception:
-            return None
+            return 1.0
 
     def download_trade_ledger_csv(self, start_date=None, end_date=None, output_path=None):
         """

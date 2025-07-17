@@ -98,6 +98,13 @@
             <button type="submit" id="logout-btn" class="tab-button" style="width:100%;">Log Out</button>
         </form>
 
+        <hr>
+        <div class="candidate-pool-status">
+            <strong>Candidate Selection & Fallback Status</strong>
+            <iframe src="{{ url_for('status_web.candidate_status') }}" width="100%" height="360px" frameborder="0" name="candidateStatusFrame" id="candidateStatusFrame"></iframe>
+            <small>Displays every candidate attempted, rejected, or accepted by each strategy, including fallback and broker eligibility (fractional/min order) status.</small>
+        </div>
+
         <p><strong>RIGD Tbot</strong> <br>  &copy; 2025 RIGD Holdings</p>
     </nav>
     <script src="/static/js/status_live.js"></script>

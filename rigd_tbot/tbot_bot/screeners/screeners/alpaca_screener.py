@@ -98,10 +98,85 @@ class AlpacaScreener(ScreenerBase):
             time.sleep(0.2)
         return quotes
 
+    def run_screen(self, pool_size=15):
+        """
+        Returns the full, ranked pool of symbol candidates (not filtered by final cut).
+        pool_size: number of symbols to return (CANDIDATE_MULTIPLIER x MAX_TRADES from strategy).
+        """
+        universe = load_universe_cache()
+        all_symbols = [s["symbol"] for s in universe][:pool_size * 2]
+        quotes = self.fetch_live_quotes(all_symbols)
+        strategy = self.env.get("STRATEGY_NAME", "open")
+        gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
+        min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
+        max_cap_key = f"MAX_MARKET_CAP_{strategy.upper()}"
+        max_gap = float(self.env.get(gap_key, 0.1))
+        min_cap = float(self.env.get(min_cap_key, 2e9))
+        max_cap = float(self.env.get(max_cap_key, 1e10))
+
+        try:
+            universe_cache = {s["symbol"]: s for s in load_universe_cache()}
+        except Exception:
+            universe_cache = {}
+
+        price_candidates = []
+        for q in quotes:
+            symbol = q["symbol"]
+            current = float(q.get("c", 0))
+            open_ = float(q.get("o", 0))
+            vwap = float(q.get("vwap", 0))
+            if current <= 0 or open_ <= 0 or vwap <= 0:
+                continue
+            mc = universe_cache.get(symbol, {}).get("marketCap", 0)
+            exch = universe_cache.get(symbol, {}).get("exchange", "US")
+            is_fractional = universe_cache.get(symbol, {}).get("isFractional", None)
+            price_candidates.append({
+                "symbol": symbol,
+                "lastClose": current,
+                "marketCap": mc,
+                "exchange": exch,
+                "isFractional": is_fractional,
+                "price": current,
+                "vwap": vwap,
+                "open": open_
+            })
+
+        filtered = core_filter_symbols(
+            price_candidates,
+            exchanges=["US"],
+            min_price=MIN_PRICE,
+            max_price=MAX_PRICE,
+            min_market_cap=min_cap,
+            max_market_cap=max_cap,
+            blocklist=None,
+            max_size=pool_size * 2
+        )
+
+        results = []
+        for q in price_candidates:
+            if not any(f["symbol"] == q["symbol"] for f in filtered):
+                continue
+            symbol = q["symbol"]
+            current = q["price"]
+            open_ = q["open"]
+            vwap = q["vwap"]
+            gap = abs((current - open_) / open_) if open_ else 0
+            if gap > max_gap:
+                continue
+            momentum = abs(current - open_) / open_
+            results.append({
+                "symbol": symbol,
+                "price": current,
+                "vwap": vwap,
+                "momentum": momentum
+            })
+        results.sort(key=lambda x: x["momentum"], reverse=True)
+        return results[:pool_size]
+
+    # (Retain filter_candidates only for legacy support, but strategies must use run_screen.)
     def filter_candidates(self, quotes):
         """
-        Filters the list of quote dicts using price, gap, and other rules.
-        Returns eligible symbol dicts.
+        DEPRECATED: Returns a filtered, sorted candidate list for legacy modules.
         """
         strategy = self.env.get("STRATEGY_NAME", "open")
         gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
@@ -158,7 +233,7 @@ class AlpacaScreener(ScreenerBase):
             current = q["price"]
             open_ = q["open"]
             vwap = q["vwap"]
-            gap = abs((current - open_) / open_)
+            gap = abs((current - open_) / open_) if open_ else 0
             if gap > max_gap:
                 continue
             momentum = abs(current - open_) / open_

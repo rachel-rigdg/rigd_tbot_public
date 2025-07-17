@@ -138,16 +138,30 @@ class AlpacaBroker:
         except Exception:
             return False
 
-    def is_symbol_fractional(self, symbol):
+    # ========== SPEC ENFORCEMENT BELOW ==========
+
+    def supports_fractional(self, symbol):
+        """
+        Returns True if symbol is fractionable on Alpaca.
+        """
         try:
             resp = self._request("GET", f"/v2/assets/{symbol}")
             return resp.get("fractionable", False)
         except Exception:
             return False
 
-    def get_symbol_min_order_size(self, symbol):
+    def get_min_order_size(self, symbol):
+        """
+        Returns the min order size (float) for symbol. Fallback to 1.0 if unavailable.
+        """
         try:
             resp = self._request("GET", f"/v2/assets/{symbol}")
-            return resp.get("min_order_size", None)
+            min_size = resp.get("min_order_size", None)
+            if min_size is not None:
+                try:
+                    return float(min_size)
+                except Exception:
+                    return 1.0
+            return 1.0
         except Exception:
-            return None
+            return 1.0

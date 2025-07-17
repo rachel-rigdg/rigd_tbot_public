@@ -84,3 +84,24 @@ def full_status_api():
     status_data["state"] = bot_state_val
     status_data["bot_state"] = bot_state_val
     return jsonify(status_data)
+
+@status_blueprint.route("/candidate_status")
+@login_required
+def candidate_status():
+    """
+    Loads and displays per-strategy candidate pool, fallback, and eligibility/rejection reasons.
+    Reads session logs (SESSION_LOGS) or file at tbot_bot/output/logs/candidate_pool_status.json.
+    """
+    # This assumes strategy modules write all candidate attempts, reasons, etc. to a status log file.
+    status_file_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs" / "candidate_pool_status.json"
+    candidate_data = []
+    try:
+        with open(status_file_path, "r", encoding="utf-8") as f:
+            candidate_data = json.load(f)
+    except FileNotFoundError:
+        candidate_data = []
+    except Exception as e:
+        candidate_data = [{"error": f"Failed to load candidate pool log: {e}"}]
+
+    # Render as simple table or raw JSON
+    return render_template("candidate_status.html", candidate_status=candidate_data)

@@ -100,12 +100,18 @@ class TradierBroker:
         except Exception:
             return False
 
-    def is_symbol_fractional(self, symbol):
-        # Tradier does not support fractional trading for equities as of 2024, return False for all
+    # ========== SPEC ENFORCEMENT BELOW ==========
+
+    def supports_fractional(self, symbol):
+        """
+        Tradier does not support fractional trading for equities as of 2024, return False for all.
+        """
         return False
 
-    def get_symbol_min_order_size(self, symbol):
-        # Tradier equities: minimum size = 1 share, no fractional
+    def get_min_order_size(self, symbol):
+        """
+        Tradier equities: minimum size = 1 share, no fractional.
+        """
         return 1
 
     def download_trade_ledger_csv(self, start_date=None, end_date=None, output_path=None):

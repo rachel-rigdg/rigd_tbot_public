@@ -2,8 +2,9 @@
 # Unified broker interface and trade dispatch router (single-broker mode)
 
 from tbot_bot.support.decrypt_secrets import load_broker_credential
-from tbot_bot.broker.brokers.broker_alpaca import AlpacaBroker
-from tbot_bot.broker.brokers.broker_ibkr import IBKRBroker
+from tbot_bot.broker.brokers.alpaca import AlpacaBroker
+from tbot_bot.broker.brokers.ibkr import IBKRBroker
+from tbot_bot.broker.broker_tradier import TradierBroker
 from tbot_bot.trading.logs_bot import log_event
 from tbot_bot.config.env_bot import get_bot_config
 
@@ -29,6 +30,8 @@ def get_active_broker():
         return AlpacaBroker(broker_credentials)
     elif broker_code == "ibkr":
         return IBKRBroker(broker_credentials)
+    elif broker_code == "tradier":
+        return TradierBroker(broker_credentials)
     else:
         raise RuntimeError(f"[broker_api] Unsupported or missing BROKER_CODE: {broker_code}")
 
@@ -80,18 +83,26 @@ def is_symbol_tradable(symbol):
         log_event("broker_api", f"is_symbol_tradable error: {e}")
         return False
 
-def is_symbol_fractional(symbol):
+# ========== SPEC ENFORCEMENT BELOW ==========
+
+def supports_fractional(symbol):
+    """
+    Returns True if the current broker supports fractional for symbol.
+    """
     try:
         broker = get_active_broker()
-        return broker.is_symbol_fractional(symbol)
+        return broker.supports_fractional(symbol)
     except Exception as e:
-        log_event("broker_api", f"is_symbol_fractional error: {e}")
+        log_event("broker_api", f"supports_fractional error: {e}")
         return False
 
-def get_symbol_min_order_size(symbol):
+def get_min_order_size(symbol):
+    """
+    Returns the minimum order size for the symbol for the current broker.
+    """
     try:
         broker = get_active_broker()
-        return broker.get_symbol_min_order_size(symbol)
+        return broker.get_min_order_size(symbol)
     except Exception as e:
-        log_event("broker_api", f"get_symbol_min_order_size error: {e}")
-        return None
+        log_event("broker_api", f"get_min_order_size error: {e}")
+        return 1.0
