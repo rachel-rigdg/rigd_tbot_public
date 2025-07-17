@@ -2,6 +2,7 @@
 # tools/sync_project.sh – Smart two-way sync tool for TradeBot deployments
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/.. && pwd )"
+DEV_PATH="$SCRIPT_DIR"
 
 # === CONFIG ===
 LIVE_PATH="/Volumes/8TB_RAID_01/jobs/TradeBot/Tradebot-001-Live/rigd_tbot"
@@ -11,7 +12,6 @@ REMOTE_PATH="/home/tbot/rigd_tbot/"
 IBKR_INSTALLER_PATH="IBKR/ibgateway-stable-standalone-linux-x64.sh"
 REMOTE_IBKR_PATH="/home/tbot/IBKR/"
 SSH_KEY="$HOME/.ssh/id_ed25519"
-DEV_PATH="$(pwd)"
 SYSTEMD_PATH="systemd_units"
 RSYNC_OPTS="--timeout=10 --no-motd"
 # ==============
