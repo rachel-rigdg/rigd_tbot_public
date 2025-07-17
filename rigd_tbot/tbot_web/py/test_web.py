@@ -78,11 +78,12 @@ def trigger_test_mode():
         create_test_flag()
         with open(TEST_LOG_PATH, "a") as log_file:
             subprocess.Popen(
-                ["python3", "-m", "tbot_bot.test.integration_test_runner"],
+                ["python3", "-u", "-m", "tbot_bot.test.integration_test_runner"],
                 stdout=log_file,
                 stderr=log_file,
                 bufsize=1,
-                close_fds=True
+                close_fds=True,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
             )
     return jsonify({"result": "started"})
 
@@ -106,7 +107,6 @@ def run_individual_test(test_name):
             "backtest_engine": "tbot_bot.test.test_backtest_engine",
             "logging_format": "tbot_bot.test.test_logging_format",
             "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic"
-            # Add more test modules here as needed for full coverage.
         }
         module = test_map.get(test_name)
         if not module:
@@ -114,11 +114,12 @@ def run_individual_test(test_name):
         create_test_flag(test_name)
         with open(TEST_LOG_PATH, "a") as log_file:
             subprocess.Popen(
-                ["python3", "-m", module],
+                ["python3", "-u", "-m", module],
                 stdout=log_file,
                 stderr=log_file,
                 bufsize=1,
-                close_fds=True
+                close_fds=True,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
             )
     return jsonify({"result": "started", "test": test_name})
 
