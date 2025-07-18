@@ -10,30 +10,6 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 
 logs_blueprint = Blueprint("logs_web", __name__)
 
-LOG_FILES_TO_INCLUDE = [
-    "main_bot.log",
-    "system_logs.log",
-    "heartbeat.log",
-    "router.log",
-    "screener.log",
-    "kill_switch.log",
-    "provisioning.log",
-    "provisioning_status.json",
-    "auth_web.log",
-    "security_users.log",
-    "system_users.log",
-    "user_activity_monitoring.log",
-    "start_log",
-    "stop_log",
-    "password_reset_tokens.log",
-    "open.log",
-    "mid.log",
-    "close.log",
-    "unresolved_orders.log",
-    "error_tracebacks.log",
-    "daily_summary.json"
-]
-
 TIME_FORMATS = [
     "%Y-%m-%dT%H:%M:%S.%f%z",
     "%Y-%m-%dT%H:%M:%S.%fZ",
@@ -64,6 +40,20 @@ def parse_timestamp(line):
             pass
     return None
 
+def enumerate_log_files():
+    # List all .log and .json files in logs dir and add to dropdown (dedup, sorted)
+    logs_dirs = [
+        Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs",
+        Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs"
+    ]
+    file_set = set()
+    for log_dir in logs_dirs:
+        if log_dir.exists() and log_dir.is_dir():
+            for p in log_dir.iterdir():
+                if p.is_file() and (p.suffix in (".log", ".json") or "log" in p.name):
+                    file_set.add(p.name)
+    return sorted(file_set)
+
 def find_log_file(selected_log, warn_list=None):
     paths = []
     bot_identity_error = None
@@ -82,9 +72,12 @@ def find_log_file(selected_log, warn_list=None):
 
 @logs_blueprint.route("/", methods=["GET"])
 def logs_page():
-    selected_log = request.args.get("file", LOG_FILES_TO_INCLUDE[0])
-    if selected_log not in LOG_FILES_TO_INCLUDE:
-        selected_log = LOG_FILES_TO_INCLUDE[0]
+    log_files = enumerate_log_files()
+    if not log_files:
+        log_files = ["main_bot.log"]
+    selected_log = request.args.get("file", log_files[0])
+    if selected_log not in log_files:
+        selected_log = log_files[0]
 
     selected_hours = request.args.get("hours", "24")
     now = datetime.utcnow()
@@ -117,7 +110,7 @@ def logs_page():
         "logs.html",
         log_text=log_content,
         selected_log=selected_log,
-        log_files=LOG_FILES_TO_INCLUDE,
+        log_files=log_files,
         selected_hours=selected_hours,
         warnings=warnings
     )
