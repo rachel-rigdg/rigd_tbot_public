@@ -55,7 +55,10 @@ REQUIRED_KEYS = [
     "ENABLE_STRATEGY_OPTIMIZER", "OPTIMIZER_BACKTEST_LOOKBACK_DAYS", "OPTIMIZER_ALGORITHM", "OPTIMIZER_OUTPUT_DIR",
     "NOTIFY_ON_FAILURE", "CRITICAL_ALERT_CHANNEL", "ROUTINE_ALERT_CHANNEL",
     "ENABLE_SLIPPAGE_MODEL", "SLIPPAGE_SIMULATION_TYPE", "SLIPPAGE_MEAN_PCT", "SLIPPAGE_STDDEV_PCT", "SIMULATED_LATENCY_MS",
-    "ENABLE_BSM_FILTER", "MAX_BSM_DEVIATION", "RISK_FREE_RATE", "RISK_FREE_RATE_SOURCE"
+    "ENABLE_BSM_FILTER", "MAX_BSM_DEVIATION", "RISK_FREE_RATE", "RISK_FREE_RATE_SOURCE",
+    # Holdings Management
+    "HOLDINGS_FLOAT_TARGET_PCT", "HOLDINGS_TAX_RESERVE_PCT", "HOLDINGS_PAYROLL_PCT",
+    "HOLDINGS_REBALANCE_INTERVAL", "HOLDINGS_ETF_LIST"
 ]
 
 logger = logging.getLogger(__name__)
@@ -117,5 +120,23 @@ def get_bot_config() -> Dict[str, Any]:
     validate_bot_config(config)
     logger.debug("Bot config loaded and validated successfully")
     return config
+
+def load_env_var(key: str, fallback: Any = None) -> Any:
+    try:
+        config = get_bot_config()
+        return config.get(key, fallback)
+    except Exception:
+        return fallback
+
+def update_env_var(key: str, value: Any) -> None:
+    encryption_key = KEY_PATH.read_text(encoding="utf-8").strip()
+    with open(ENCRYPTED_CONFIG_PATH, "rb") as f:
+        encrypted_data = f.read()
+    decrypted = Fernet(encryption_key.encode()).decrypt(encrypted_data).decode()
+    config = json.loads(decrypted)
+    config[key] = value
+    updated_encrypted = Fernet(encryption_key.encode()).encrypt(json.dumps(config).encode())
+    with open(ENCRYPTED_CONFIG_PATH, "wb") as f:
+        f.write(updated_encrypted)
 
 load_env_bot_config = get_bot_config
