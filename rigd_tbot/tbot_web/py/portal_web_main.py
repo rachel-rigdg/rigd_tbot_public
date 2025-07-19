@@ -56,6 +56,7 @@ def create_unified_app():
     from tbot_web.py.users_web import users_blueprint
     from tbot_web.py.account_web import account_blueprint
     from tbot_web.py.screener_credentials_web import screener_credentials_bp
+    from tbot_web.py.holdings_web import holdings_web
 
     try:
         from tbot_web.py.provisioning_web import provisioning_blueprint
@@ -86,6 +87,7 @@ def create_unified_app():
     app.register_blueprint(users_blueprint, url_prefix="/users")
     app.register_blueprint(account_blueprint, url_prefix="/account")
     app.register_blueprint(screener_credentials_bp, url_prefix="/screener_credentials")
+    app.register_blueprint(holdings_web, url_prefix="/holdings")
 
     @app.before_request
     def enforce_bootstrap():

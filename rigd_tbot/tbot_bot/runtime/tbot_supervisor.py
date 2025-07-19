@@ -1,11 +1,11 @@
-import sys, os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-
 # tbot_bot/runtime/tbot_supervisor.py
 # Central phase/process supervisor for TradeBot.
 # Responsible for all phase transitions, persistent monitoring, and launching all watcher/worker/test runner processes.
 # Only launched by main.py after successful provisioning/bootstrapping and transition to operational state.
 # No watcher/worker/test runner is ever launched except by this supervisor.
+
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 import os
 import sys
@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 from tbot_bot.support import path_resolver
+from tbot_bot.trading.holdings_manager import run_holdings_maintenance
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
@@ -186,6 +187,12 @@ def main():
                 BOT_STATE_PATH.write_text("running", encoding="utf-8")
                 print("[tbot_supervisor] CONTROL_START_FLAG detected. Set bot state to 'running'.")
                 CONTROL_START_FLAG.unlink(missing_ok=True)
+                print("[tbot_supervisor] Running holdings maintenance...")
+                try:
+                    run_holdings_maintenance()
+                    print("[tbot_supervisor] Holdings maintenance completed.")
+                except Exception as e:
+                    print(f"[tbot_supervisor] Holdings maintenance error: {e}")
 
             if CONTROL_STOP_FLAG.exists():
                 BOT_STATE_PATH.write_text("idle", encoding="utf-8")

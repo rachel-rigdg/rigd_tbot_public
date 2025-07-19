@@ -279,6 +279,11 @@ def resolve_nasdaqlisted_txt_path() -> str:
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "nasdaqlisted.txt")
 
+def resolve_holdings_audit_log_path(bot_identity: str = None) -> str:
+    identity = get_bot_identity(bot_identity)
+    validate_bot_identity(identity)
+    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "logs" / "holdings_audit.log")
+
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -327,5 +332,6 @@ __all__ = [
     "resolve_symbol_universe_refresh_path",
     "resolve_integration_test_runner_path",
     "resolve_nasdaqlisted_txt_path",
-    "get_project_root"
+    "get_project_root",
+    "resolve_holdings_audit_log_path"
 ]

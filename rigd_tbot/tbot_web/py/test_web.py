@@ -113,7 +113,8 @@ def run_individual_test(test_name):
             "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
             "backtest_engine": "tbot_bot.test.test_backtest_engine",
             "logging_format": "tbot_bot.test.test_logging_format",
-            "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic"
+            "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic",
+            "holdings_manager": "tbot_bot.test.test_holdings_manager"
         }
         module = test_map.get(test_name)
         if not module:
