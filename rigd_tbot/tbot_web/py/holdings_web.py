@@ -1,11 +1,15 @@
 # tbot_web/py/holdings_web.py
 # Flask blueprint: UI endpoints for holdings management, config, and status.
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from tbot_bot.config.env_bot import load_env_var, update_env_var
 from tbot_bot.trading.holdings_utils import parse_etf_allocations, trigger_manual_rebalance
 
 holdings_web = Blueprint("holdings_web", __name__)
+
+@holdings_web.route("/", methods=["GET"])
+def holdings_ui():
+    return render_template("holdings.html")
 
 @holdings_web.route("/holdings/config", methods=["GET"])
 def get_holdings_config():

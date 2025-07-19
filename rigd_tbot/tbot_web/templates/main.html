@@ -72,14 +72,10 @@
             <button type="submit" class="tab-button" style="width:100%;">Configuration</button>
         </form>
 
-        <form action="{{ url_for('configuration_web.show_configuration') }}" method="get" target="viewFrame">
-            <button type="submit" class="tab-button" style="width:100%;">Configuration</button>
-        </form>
-
-        <form action="{{ url_for('holdings_web.get_holdings_config') }}" method="get" target="viewFrame">
+        <form action="{{ url_for('holdings_web.holdings_ui') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button" style="width:100%;">Holdings</button>
         </form>
-
+                
           <!-- TEST/LOGS -->
         <form action="{{ url_for('logs_web.logs_page') }}" method="get" target="viewFrame">
             <button type="submit" class="tab-button" style="width:100%;">Logs</button>

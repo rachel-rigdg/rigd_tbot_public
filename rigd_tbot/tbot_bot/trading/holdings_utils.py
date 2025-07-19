@@ -1,5 +1,5 @@
 # tbot_bot/trading/holdings_utils.py
- # Helper functions for allocation calculations, broker integration, audit logging.
+# Helper functions for allocation calculations, broker integration, audit logging.
 
 import os
 import math
@@ -58,3 +58,9 @@ def compute_rebalance_orders(current_holdings, etf_targets, account_value):
             'amount': abs(delta)
         })
     return rebalance_orders
+
+def trigger_manual_rebalance():
+    """Stub to be replaced with actual rebalance call trigger."""
+    log.info("Manual rebalance trigger requested")
+    return {"status": "manual rebalance triggered"}
+
