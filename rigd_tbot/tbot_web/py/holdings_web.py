@@ -3,7 +3,7 @@
 
 from flask import Blueprint, request, jsonify
 from tbot_bot.config.env_bot import load_env_var, update_env_var
-from tbot_bot.trading.holdings_utils import parse_etf_allocations
+from tbot_bot.trading.holdings_utils import parse_etf_allocations, trigger_manual_rebalance
 
 holdings_web = Blueprint("holdings_web", __name__)
 
@@ -29,7 +29,6 @@ def update_holdings_config():
 
 @holdings_web.route("/holdings/status", methods=["GET"])
 def get_holdings_status():
-    # Placeholder: returns stub status; real logic should call broker
     return jsonify({
         "account_value": 100000,
         "cash": 9500,
@@ -37,3 +36,8 @@ def get_holdings_status():
         "float_target": parse_etf_allocations(load_env_var("HOLDINGS_ETF_LIST", "")),
         "next_rebalance_due": "2025-12-31"
     })
+
+@holdings_web.route("/holdings/rebalance", methods=["POST"])
+def holdings_manual_rebalance():
+    trigger_manual_rebalance()
+    return jsonify({"status": "rebalance_triggered"})

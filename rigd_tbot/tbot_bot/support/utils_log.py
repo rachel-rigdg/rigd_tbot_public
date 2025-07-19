@@ -25,6 +25,20 @@ def get_log_settings():
     fmt = str(config.get("LOG_FORMAT", "json")).lower()
     return debug, enable, fmt
 
+def get_logger(module_name: str):
+    """
+    Returns a bound logger function for the given module.
+    Supports: .info(), .debug(), .error()
+    """
+    class BoundLogger:
+        def info(self, message, extra=None):
+            log_event(module_name, message, level="info", extra=extra)
+        def debug(self, message, extra=None):
+            log_event(module_name, message, level="debug", extra=extra)
+        def error(self, message, extra=None):
+            log_event(module_name, message, level="error", extra=extra)
+    return BoundLogger()
+
 def log_event(module: str, message: str, level: str = "info", extra: dict = None):
     """
     Logs runtime events to disk and prints to stdout.

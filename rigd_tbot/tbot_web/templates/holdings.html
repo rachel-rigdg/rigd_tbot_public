@@ -12,24 +12,24 @@
     <div class="holdings-container">
         <h2>Holdings Configuration</h2>
         <form id="holdings-config-form">
-            <label>Float Target %</label>
-            <input type="number" step="0.1" id="HOLDINGS_FLOAT_TARGET_PCT" required>
+            <label for="HOLDINGS_ETF_LIST">ETF List (format: SYMBOL:PCT,...)</label>
+            <input type="text" id="HOLDINGS_ETF_LIST" name="HOLDINGS_ETF_LIST" required>
 
-            <label>Tax Reserve %</label>
-            <input type="number" step="0.1" id="HOLDINGS_TAX_RESERVE_PCT" required>
+            <label for="HOLDINGS_FLOAT_TARGET_PCT">Float Target %</label>
+            <input type="number" step="0.1" id="HOLDINGS_FLOAT_TARGET_PCT" name="HOLDINGS_FLOAT_TARGET_PCT" required>
 
-            <label>Payroll %</label>
-            <input type="number" step="0.1" id="HOLDINGS_PAYROLL_PCT" required>
+            <label for="HOLDINGS_TAX_RESERVE_PCT">Tax Reserve %</label>
+            <input type="number" step="0.1" id="HOLDINGS_TAX_RESERVE_PCT" name="HOLDINGS_TAX_RESERVE_PCT" required>
 
-            <label>Rebalance Interval (months)</label>
-            <select id="HOLDINGS_REBALANCE_INTERVAL">
+            <label for="HOLDINGS_PAYROLL_PCT">Payroll %</label>
+            <input type="number" step="0.1" id="HOLDINGS_PAYROLL_PCT" name="HOLDINGS_PAYROLL_PCT" required>
+
+            <label for="HOLDINGS_REBALANCE_INTERVAL">Rebalance Interval (months)</label>
+            <select id="HOLDINGS_REBALANCE_INTERVAL" name="HOLDINGS_REBALANCE_INTERVAL">
                 <option value="3">3</option>
                 <option value="6">6</option>
                 <option value="12">12</option>
             </select>
-
-            <label>ETF List (format: SYMBOL:PCT,...)</label>
-            <input type="text" id="HOLDINGS_ETF_LIST" required>
 
             <button type="submit">Save Settings</button>
         </form>

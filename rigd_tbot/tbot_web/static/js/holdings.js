@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     document.getElementById("trigger-rebalance-btn").addEventListener("click", () => {
-        alert("Manual rebalance trigger not implemented yet.");
+        triggerManualRebalance();
     });
 });
 
@@ -53,4 +53,18 @@ function loadStatus() {
             document.getElementById("etf_holdings").textContent = JSON.stringify(data.etf_holdings, null, 2);
             document.getElementById("next_rebalance_due").textContent = data.next_rebalance_due;
         });
+}
+
+function triggerManualRebalance() {
+    fetch("/holdings/rebalance", {
+        method: "POST"
+    })
+    .then(res => {
+        if (res.ok) {
+            alert("Manual rebalance triggered.");
+            loadStatus();
+        } else {
+            alert("Rebalance failed.");
+        }
+    });
 }
