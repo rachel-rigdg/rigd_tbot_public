@@ -2,7 +2,7 @@
 Document: 020
 Directory_Structure
 Version: v047
-Date: UTC:2025-06-24 00:00:00
+Date: UTC:2025-07-19 00:00:00
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -85,7 +85,7 @@ rigd_tbot/
 │   │   ├── init_coa_db.py                       # Bootstrap script: initializes a new COA DB using tbot_ledger_coa_template.json as hierarchy/template (called only at provisioning/reset)
 │   │   ├── init_ledger_db.py                    # Bootstrap script: initializes a new bot ledger DB file using tbot_ledger_schema.sql (called only at provisioning/reset)
 │   │   ├── ledger_utils.py                      # Ledger DB utilities: create OFX-compliant ledger db, schema validation, audit helpers (no COA/metadata logic)
-│   │   ├── tbot_ledger_coa_template.json        # Editable COA hierarchy/template (codes/names/structure, referenced and modified via coa.html)
+│   │   ├── tbot_ledger_coa_template.json        # Editable COA hierarchy/template (codes/names/structure, referenced and modified via coa.html; includes all holdings, float, tax, payroll reserve, and audit log fields 
 │   │   ├── tbot_ledger_schema.sql               # SQL schema file for bot ledger DB (transactions, double-entry, audit, summary tables)
 │   │   └── README_COA.md                        # Documentation: COA/ledger schema update, UI editing instructions, compliance notes
 │   │
@@ -225,6 +225,7 @@ rigd_tbot/
 │   │
 │   ├── runtime/
 │   │   ├── __init__.py
+│   │   ├── holdings_maintenance.py                 # Schedules and invokes holdings_manager workflow post-open (daily, 10 min after open strategy finishes)
 │   │   ├── main.py                                 # ENTRY DISPATCHER. SINGLE SYSTEMD ENTRY for all bot operations.
 │   │   │                                           #  - Checks for bootstrap/init and launches portal_web_main.py (Web UI).
 │   │   │                                           #  - After successful configuration, provisioning, and bootstrapping, launches bot_supervisor.py (if present) for all persistent monitoring, phase management, and process orchestration.
@@ -310,9 +311,10 @@ rigd_tbot/
 │   │   ├── config_fetch.py                     # Loads, validates, and returns the latest live config for key/secret rotation; provides config dicts to provisioning and key_manager logic
 │   │   ├── decrypt_secrets.py                  # Loads/decrypts *.json.enc secrets using Fernet keys from storage/keys/; called by config/runtime modules
 │   │   ├── encrypt_secrets.py                  # Encrypts/rotates all secret/config JSONs in storage/secrets/ using Fernet keys from storage/keys/
+│   │   ├── holdings_secrets.py                 #  module for encrypted holdings config/secrets CRUD and atomic/rollback support
 │   │   ├── path_resolver.py                    # Resolves storage/output/config paths for all modules, based on BOT_IDENTITY and file category; called by all runtime modules for dynamic file routing
 │   │   ├── service_bot.py                      # (Optional) Systemd-compatible daemon: manages TradeBot process as a background service (not required for bootstrap)
-│   │   ├── utils_config.py                     # Loads/validates all bot/env config files (.env, .env_bot, runtime envs)
+│   │   ├── utils_config.py                     # Loads/validates all bot and environment configuration files (.env, .env_bot, runtime envs) 
 │   │   ├── utils_identity.py                   # Computes/parses BOT_IDENTITY_STRING; manages all identity metadata for file/output routing
 │   │   ├── utils_log.py                        # Provides structured logging for system/trade/web/app events
 │   │   └── utils_time.py                       # Time and scheduling utilities (UTC conversion, timestamps, session windows)
@@ -357,10 +359,12 @@ rigd_tbot/
     │   │
     │   ├── js/
     │   │   ├── configuration.js            # Handles configuration form logic, validation, and AJAX submits on configuration.html
+    │   │   ├── holdings.js                 # JS for holdings.html: handles management UI, grid logic, AJAX to holdings_web.py, live compliance validation, preview/simulation, and status updates.
     │   │   ├── main_ui.js         		    # Handles live dashboard behavior, state polling, and controls config overlay in main.html
     │   │   ├── wait.js            		    # Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
     │   │   ├── universe.js                 # JS for universe.html: updates status fields, fetches/refreshes universe tables, triggers log/status updates; NO filtering logic or direct file writes
     │   │   ├── screener_credentials.js     # JS: Screener credential management UI logic, API calls, masking, field validation
+    │   │   ├── test_ui.js                  # JS for test.html: - triggers tests, and displays test results to window on test.html page
     │   │   └── shared_utils.js    		    # Provides shared API helpers and utility functions for frontend JavaScript modules        
     │   │
     │   └── css/
