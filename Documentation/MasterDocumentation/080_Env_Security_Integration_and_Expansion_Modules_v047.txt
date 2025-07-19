@@ -2,9 +2,8 @@
 Document:080
 Env_Security_Integration_and_Expansion_Modules
 Version: v047
-Date: UTC:2025-07-15 00:00:00
+Date: UTC:2025-07-19 00:00:00
 ================================================================================
-
 
 ================================================================================
  Expansion_Modules
@@ -42,19 +41,25 @@ Modules Included:
 - Automated backup rotation and cloud sync scripts
 - Fine-grained alerting and escalation policies
 
+5. Automated Holdings, Float, and Reserve Management (Core, not optional)
+- Fully integrated holdings management system: automated float/top-up, tax and payroll reserve splits, persistent holdings allocations, and periodic/manual rebalancing.
+- Holdings config, allocations, symbol list, and all persistent settings are stored in a dedicated encrypted holdings secrets file (`holdings_secrets.json.enc`), with its own Fernet key (`holdings_secrets.key`), both managed in `tbot_bot/support/` and `storage/keys/`.
+- All config changes (allocations, symbol add/remove, interval, etc.) trigger full-system atomic key/secret rotation and backup, with append-only audit logging.
+- Holdings module is enforced as a system requirement (not "optional"); compliance, audit, and rotation policies apply exactly as for all other config/secret categories.
+- Web UI and API enforce real-time compliance and audit trail for all holdings operations and configuration updates.
+
 Implementation Notes:
 - All optional modules must NOT interfere with core runtime if disabled.
 - Modules must implement `.self_check()` to integrate with system health.
 - Any config toggles required must be clearly documented in `.env_bot` schema.
 - Use strict logging standards and audit trails.
-- **Expansion modules must use only system APIs for all key, secret, and config management—direct file writes or ad hoc key handling are forbidden.**
+- **Expansion modules and core holdings management must use only system APIs for all key, secret, and config management—direct file writes or ad hoc key handling are forbidden.**
 - **Key/secret rotation and encryption workflows must align with system core logic; all updates to sensitive data automatically invoke atomic key rotation and re-encryption for the affected category and all related secrets/configs.**
 
 Compliance:
 - Modules adhere strictly to {CURRENT_VERSION} build instructions and audit requirements.
 - No runtime config or credential leaks permitted.
 - Must operate independently of Web UI unless explicitly integrated.
-
 
 
 ================================================================================
@@ -93,6 +98,7 @@ SMTP_KEY_PATH=storage/keys/smtp.key
 SCREENER_API_KEY_PATH=storage/keys/screener_api.key
 ACCT_API_KEY_PATH=storage/keys/acct_api.key
 ALERT_KEY_PATH=storage/keys/alert.key
+HOLDINGS_SECRETS_KEY_PATH=storage/keys/holdings_secrets.key
 
 # Encrypted Secrets (Resolved at Runtime)
 BROKER_CREDENTIALS_PATH=storage/secrets/broker_credentials.json.enc
@@ -102,6 +108,7 @@ ACCT_API_CREDENTIALS_PATH=storage/secrets/acct_api_credentials.json.enc
 NETWORK_CONFIG_PATH=storage/secrets/network_config.json.enc
 ALERT_CHANNELS_PATH=storage/secrets/alert_channels.json.enc
 BOT_IDENTITY_PATH=storage/secrets/bot_identity.json.enc
+HOLDINGS_SECRETS_PATH=storage/secrets/holdings_secrets.json.enc
 
 # Session / Login Controls
 SESSION_TIMEOUT=3000
@@ -138,26 +145,6 @@ ENABLE_LOGGING=true
 LOG_FORMAT=json
 
 
-
-# -----------------------------------------
-# Holdings Management (Updated)
-# -----------------------------------------
-
-
-# Target % of total account value to keep as trading float (e.g. 10%)
-HOLDINGS_FLOAT_TARGET_PCT=10
-
-# % of realized gains to reserve for taxes (e.g. 20%)
-HOLDINGS_TAX_RESERVE_PCT=20
-
-# % of post-tax gains to pay as operator payroll (e.g. 10%)
-HOLDINGS_PAYROLL_PCT=10
-
-# Interval for portfolio rebalancing in months (choices: 3, 6, 12)
-HOLDINGS_REBALANCE_INTERVAL=6
-
-# List of ETFs and target allocation percentages (comma-separated, e.g. "SCHD:50,SCHY:50")
-HOLDINGS_ETF_LIST=SCHD:50,SCHY:50
 
 
 # -----------------------------------------
@@ -574,34 +561,48 @@ Compliance and Verification:
 
 **Summary Table:**
 
-| File                       | Type           | Storage Location           | Deployment State          | Encryption Key Location               |
-|----------------------------|----------------|----------------------------|--------------------------|---------------------------------------|
-| `.env`                     | Global config  | Project root               | Optional (plaintext)     | -                                     |
-| `.env.enc`                 | Global config  | Project root               | Recommended (encrypted)  | `storage/keys/env_enc.key`            |
-| `.env_bot`                 | Bot config     | Project root (temp only)   | Forbidden (prod)         | -                                     |
-| `.env_bot.enc`             | Bot config     | `tbot_bot/support/`        | Required (encrypted)     | `storage/keys/env_bot.key`            |
-| `bot_identity.json.enc`    | Bot identity   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/bot_identity.key`       |
-| `broker.json.enc`          | Broker creds   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/broker.key`             |
-| `smtp.json.enc`            | SMTP creds     | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/smtp.key`               |
-| `screener_api.json.enc`    | Screener API   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/screener_api.key`       |
-| `network_config.json.enc`  | Network config | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/network_config.key`     |
-| `alert_channels.json.enc`  | Alert channels | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/alert_channels.key`     |
-| `acct_api.json.enc`        | Acct API       | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/acct_api.key`           |
-| `broker_credentials.json.enc`| Broker API   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/broker_credentials.key` |
-| `smtp_credentials.json.enc`| SMTP API       | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/smtp_credentials.key`   |
-| `acct_api_credentials.json.enc`| Acct API   | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/acct_api_credentials.key`|
+| File                              | Type              | Storage Location           | Deployment State          | Encryption Key Location               |
+|------------------------------------|-------------------|----------------------------|--------------------------|---------------------------------------|
+| `.env`                            | Global config     | Project root               | Optional (plaintext)     | -                                     |
+| `.env.enc`                        | Global config     | Project root               | Recommended (encrypted)  | `storage/keys/env_enc.key`            |
+| `.env_bot`                        | Bot config        | Project root (temp only)   | Forbidden (prod)         | -                                     |
+| `.env_bot.enc`                    | Bot config        | `tbot_bot/support/`        | Required (encrypted)     | `storage/keys/env_bot.key`            |
+| `bot_identity.json.enc`           | Bot identity      | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/bot_identity.key`       |
+| `broker.json.enc`                 | Broker creds      | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/broker.key`             |
+| `smtp.json.enc`                   | SMTP creds        | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/smtp.key`               |
+| `screener_api.json.enc`           | Screener API      | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/screener_api.key`       |
+| `network_config.json.enc`         | Network config    | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/network_config.key`     |
+| `alert_channels.json.enc`         | Alert channels    | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/alert_channels.key`     |
+| `acct_api.json.enc`               | Acct API          | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/acct_api.key`           |
+| `broker_credentials.json.enc`     | Broker API        | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/broker_credentials.key` |
+| `smtp_credentials.json.enc`       | SMTP API          | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/smtp_credentials.key`   |
+| `acct_api_credentials.json.enc`   | Acct API          | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/acct_api_credentials.key`|
+| `holdings_secrets.json.enc`       | Holdings settings | `storage/secrets/`         | Created/rotated atomic   | `storage/keys/holdings_secrets.key`   |
 
 ---
 
 **NOTE:**
-- All encrypted secret category files under `tbot_bot/support/` are generated, rotated, and managed exclusively by the Web UI configuration/bootstrap process and the key/secret manager modules.
+- All encrypted secret category files, including `holdings_secrets.json.enc` under `storage/secrets/`, are generated, rotated, and managed exclusively by the Web UI configuration/bootstrap process and the key/secret manager modules.
 - **Whenever any secret or credential is created or modified, the system triggers full atomic rotation and re-encryption of all key/secret pairs, with versioned backup.**
 - No plaintext secrets should be stored outside the Web UI input or staging environment files.
-- The bot runtime relies exclusively on the encrypted `.env_bot.enc` and the category files to operate securely.
+- The bot runtime relies exclusively on the encrypted `.env_bot.enc`, `holdings_secrets.json.enc`, and other category files to operate securely.
 - Encrypted files and keys must never be committed to any version control system.
 - All prior keys/secrets are backed up under `tbot_bot/storage/backups/` upon rotation.
 
 ---
+
+
+--------------------------------------------------------------------------------
+Security Best Practices & Enforcement
+--------------------------------------------------------------------------------
+- The holdings secrets file is subject to the same audit, backup, recovery, and atomic rotation policies as all other credential/config secrets.
+- All changes to holdings secrets (create, update, delete) trigger full key/secret rotation and backup under `storage/backups/`.
+- Access, modification, and errors are logged with UTC timestamps and context.
+- No plaintext or unencrypted holdings config may persist outside the secure Web UI input flow.
+- Holdings secrets encryption, decryption, and rotation must use system APIs—no direct or ad hoc file handling permitted.
+- Recovery of holdings secrets is performed via backup restore using encrypted files and keys; no manual edits allowed.
+- All audit, compliance, and rollback requirements for other secrets apply identically to holdings management secrets.
+
 
 ================================================================================
 Broker_API_Integration Modules
@@ -672,6 +673,10 @@ Audit & Compliance:
 - All broker API requests and responses logged in structured format.
 - Sensitive info redacted in logs.
 - Compliance with broker TOS enforced.
+- All holdings, float, reserve, allocation, and rebalance actions are immutably logged in structured audit logs and posted to the ledger with full context.
+- All holdings management and reserve actions must post to their correct COA categories, with double-entry and OFX compliance enforced.
+- Ledger and audit logs are encrypted at rest, append-only, and included in all compliance exports.
+
 
 ================================================================================  
 Section: Symbol Universe & Screener Caching  

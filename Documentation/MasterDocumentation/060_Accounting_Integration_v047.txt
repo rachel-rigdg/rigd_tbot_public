@@ -1,8 +1,8 @@
 ================================================================================
 Document: 060
 Accounting_Integration
-Version: v046
-Date: UTC:2025-06-27 00:00:00
+Version: v047
+Date: UTC:2025-07-19 00:00:00
 ================================================================================
 
 This module mandates alignment of TradeBot with the internal, OFX-compliant accounting and ledger structure. *No external or shared ledger/accounting system may alter, inject, or provision data into the bot’s runtime, ledger, or COA files. All accounting integration is local, explicit, and compliance-locked.*
@@ -129,7 +129,7 @@ COA_METADATA:
     created_at_utc: "<UTC_TIMESTAMP>"
     last_updated_utc: "<UTC_TIMESTAMP>"
 
-# -- Account Structure (core nodes only) --
+# -- Account Structure (core nodes + holdings/tax/payroll/allocations) --
 
 1000 Bank and Cash Accounts [Cash & Equivalents]
 ├── 1010 Float Injection – From RIGD Group
@@ -145,6 +145,8 @@ COA_METADATA:
 │   ├── 1112 IBKR – Equities
 │   ├── 1113 Tradier – Equities
 │   └── 1114 Robinhood – Equities
+├── 1120 Tax Reserve (Brokerage)
+├── 1130 Payroll Reserve (Brokerage)
 
 2000 Liabilities [Operating Activities]
 ├── 2010 Broker Payables (Accrued Fees)
@@ -164,6 +166,8 @@ COA_METADATA:
 ├── 4050 Qualified Dividends
 ├── 4060 Short-Term Capital Gains
 ├── 4070 Long-Term Capital Gains
+├── 4080 Holdings Allocation Rebalancing Gain/Loss
+├── 4090 Float/Tax/Payroll Reserve Transfers
 
 5000 Expenses [Operating Activities]
 ├── 5010 Broker Fees – Alpaca
@@ -173,6 +177,8 @@ COA_METADATA:
 ├── 5050 Slippage / Execution Losses
 ├── 5060 API Timeout Penalties
 ├── 5070 Bot Infrastructure Costs
+├── 5080 Tax Payments (Realized/Withheld)
+├── 5090 Payroll Disbursements (Owner/Operator)
 
 9100 Exports [Control & Reporting]
 ├── 9110 Daily P&L Export – Manager.io Format
@@ -180,6 +186,7 @@ COA_METADATA:
 ├── 9130 SQLite Ledger Backup
 ├── 9140 Broker Confirm Archive (PDFs)
 ├── 9150 End-of-Day Snapshot (Holdings + Cash)
+├── 9160 Holdings Rebalance Audit Log Export
 
 9200 Logging / Execution References [Control]
 ├── 9210 Trade UUID
@@ -196,6 +203,7 @@ COA_METADATA:
 ├── 9340 Ledger Status: ACTIVE / DECOMMISSIONED
 ├── 9350 Final Entry Timestamp
 └── 9360 Debug / Strategy Tags
+
 
 ------------------------------------------------------------------------------------------
 COA Metadata & Versioning Notes
@@ -219,4 +227,68 @@ Export Constraints and Enforcement
 
 **Note:** Inverse ETF, leveraged, or synthetic trades are recorded as normal, with tags. No special COA accounts are required.
 
+
+=============================================================================================================================================
+Automated Holdings, Float, and Reserve Management – Accounting Integration
+=============================================================================================================================================
+
+**Purpose:**  
+Formalizes how all automated holdings, float, tax reserve, payroll reserve, and allocation/rebalancing activities are integrated into the bot's ledger, using the expanded COA.
+
+----------------------------------------------------------------------
+Automated Holdings/Reserves – Core Flows & Ledger Entry Points
+----------------------------------------------------------------------
+
+1. **Float Management**  
+   - All float injections/returns, and any cash-top up actions, are journaled under:
+     - *Bank and Cash Accounts*: 1000 series (e.g., 1030–1060)
+     - *Float Injection/Return*: 1010, 1020
+     - *Equity Float Ledger*: 3010, 3020
+   - Float adjustment and reconciliation events must be double-entry, tagged by trigger (bot, operator, auto-rebalance).
+
+2. **Tax Reserve**  
+   - On each profit realization (bot trade or holdings sale), tax reserve allocation is split from realized gain and posted as:
+     - *Assets*: 1120 (Tax Reserve)
+     - *Income*: 4090 (Float/Tax/Payroll Reserve Transfers)
+     - *Expense*: 5080 (Tax Payments), when cash outflow occurs
+   - All splits, transfers, and payments to tax are logged per event.
+
+3. **Payroll Reserve**  
+   - After tax, payroll split is posted to:
+     - *Assets*: 1130 (Payroll Reserve)
+     - *Income*: 4090 (Float/Tax/Payroll Reserve Transfers)
+     - *Expense*: 5090 (Payroll Disbursements), when cash outflow occurs
+   - Allocations logged as internal transfer at split, and as expense at disbursement.
+
+4. **Holdings Allocation/Rebalancing**  
+   - Every purchase/sale of long-term securities, as well as periodic/manual rebalance, is posted to:
+     - *Assets*: 1100 series (per-broker equities)
+     - *Income*: 4080 (Holdings Allocation Rebalancing Gain/Loss)
+     - *Exports*: 9160 (Holdings Rebalance Audit Log Export, for reporting/audit only)
+   - Audit log must include action context, symbols, allocation %, cash amounts, and resulting value.
+   - Unrealized and realized P/L must be reconciled to Income or Asset accounts as required.
+
+5. **General Enforcement**
+   - All above entries are double-entry compliant and OFX-aligned.
+   - Each automated or manual action (split, transfer, rebalance) must reference FITID, DTPOSTED, context/audit tag, and source trigger.
+   - No action may be posted outside of scheduled flows, manual UI action, or validated trigger.
+
+----------------------------------------------------------------------
+COA Accounts Used by Holdings Management
+----------------------------------------------------------------------
+
+- **Assets:**  
+    - 111x: Equities (per broker)
+    - 1120: Tax Reserve (Brokerage)
+    - 1130: Payroll Reserve (Brokerage)
+- **Income:**  
+    - 4080: Holdings Allocation Rebalancing Gain/Loss
+    - 4090: Float/Tax/Payroll Reserve Transfers
+- **Expenses:**  
+    - 5080: Tax Payments (Realized/Withheld)
+    - 5090: Payroll Disbursements (Owner/Operator)
+- **Exports:**  
+    - 9160: Holdings Rebalance Audit Log Export
+
+All flows, splits, and rebalancing actions must utilize these accounts, with strict double-entry and append-only audit.
 
