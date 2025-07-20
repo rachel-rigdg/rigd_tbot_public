@@ -1,11 +1,13 @@
 # tbot_bot/trading/holdings_utils.py
-# Helper functions for allocation calculations, broker integration, audit logging.
+# Helper functions for allocation calculations, broker integration, audit logging, and COA posting.
 
 import os
 import math
 from decimal import Decimal, ROUND_DOWN
 from tbot_bot.support.utils_log import get_logger
 from tbot_bot.config.env_bot import load_env_var
+from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
+from tbot_bot.accounting.coa_utils import post_reserve_split
 
 log = get_logger(__name__)
 
@@ -59,8 +61,31 @@ def compute_rebalance_orders(current_holdings, etf_targets, account_value):
         })
     return rebalance_orders
 
+def compute_etf_holdings(broker):
+    """
+    Fetches ETF holdings from the broker, returns {symbol: value}.
+    """
+    try:
+        holdings = broker.get_etf_holdings()
+        log.info(f"Computed ETF holdings: {holdings}")
+        return holdings
+    except Exception as e:
+        log.error(f"Error computing ETF holdings: {e}")
+        return {}
+
+def record_reserve_split(tax_cut, payroll_cut, user="system"):
+    """
+    Posts tax and payroll reserve splits to persistent holdings secrets and to the COA.
+    """
+    secrets = load_holdings_secrets()
+    secrets['last_tax_reserve'] = tax_cut
+    secrets['last_payroll_reserve'] = payroll_cut
+    save_holdings_secrets(secrets, user, reason="reserve_split")
+    # Post split to COA as per accounting/compliance spec
+    post_reserve_split(tax_cut=tax_cut, payroll_cut=payroll_cut, user=user)
+    log.info(f"Posted reserve split: Tax={tax_cut}, Payroll={payroll_cut}")
+
 def trigger_manual_rebalance():
     """Stub to be replaced with actual rebalance call trigger."""
     log.info("Manual rebalance trigger requested")
     return {"status": "manual rebalance triggered"}
-
