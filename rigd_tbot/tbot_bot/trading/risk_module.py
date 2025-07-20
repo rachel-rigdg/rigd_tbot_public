@@ -1,4 +1,4 @@
-# tbot_bot/trading/risk_bot.py
+# tbot_bot/trading/risk_module.py
 # Risk management enforcement (allocations, max trades)
 """
 Evaluates trade proposals against configured capital allocation, open position limits,

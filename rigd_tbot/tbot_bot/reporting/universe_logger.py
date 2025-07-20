@@ -1,4 +1,4 @@
-# tbot_bot/screeners/universe_logger.py
+# tbot_bot/reporting/universe_logger.py
 # Dedicated logger for all universe cache, blocklist, and screener symbol universe operations.
 # Comprehensive, UTC timestamped, file+console output, audit-level per specification.
 # All logs written to tbot_bot/output/screeners/universe_ops.log

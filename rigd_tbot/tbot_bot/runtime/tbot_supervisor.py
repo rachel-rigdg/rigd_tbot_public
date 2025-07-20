@@ -14,10 +14,6 @@ import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 from tbot_bot.support import path_resolver
-from tbot_bot.trading.holdings_manager import run_holdings_maintenance
-
-# === ADD: Broker wiring (supports single broker, spec locked) ===
-from tbot_bot.broker.broker_api import BrokerAdapter
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
@@ -42,10 +38,6 @@ INTEGRATION_TEST_RUNNER_PATH = path_resolver.resolve_runtime_script_path("integr
 
 UNIVERSE_TIMESTAMP_PATH = ROOT_DIR / "tbot_bot" / "output" / "screeners" / "symbol_universe.json"
 REBUILD_DELAY_HOURS = 4
-
-# === ADD: Holdings top-up trigger scheduling constants ===
-HOLDINGS_TOPUP_UTC = "14:45"  # 10:45 AM EST = 14:45 UTC
-LAST_TOPUP_FLAG = CONTROL_DIR / "holdings_topup.last"
 
 def read_env_var(key, default=None):
     from tbot_bot.config.env_bot import load_env_bot_config
@@ -105,28 +97,27 @@ def is_time_for_universe_rebuild():
     scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
     return now >= scheduled_time and build_time < scheduled_time
 
-# === ADD: Is it time for holdings manager top-up? (once per trading day, after open) ===
-def is_time_for_holdings_topup():
-    now = datetime.utcnow()
-    target_hour, target_minute = parse_utc_time(HOLDINGS_TOPUP_UTC)
-    topup_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
-    # Do not run before topup window
-    if now < topup_time:
+def is_bot_ready():
+    try:
+        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        return state not in ("initialize", "provisioning", "bootstrapping")
+    except Exception:
         return False
-    # Only run once per UTC day
-    if LAST_TOPUP_FLAG.exists():
-        last = LAST_TOPUP_FLAG.read_text().strip()
-        try:
-            last_date = datetime.fromisoformat(last).date()
-        except Exception:
-            last_date = None
-        if last_date == now.date():
-            return False
-    return True
 
-def mark_holdings_topup_run():
-    now = datetime.utcnow()
-    LAST_TOPUP_FLAG.write_text(now.isoformat())
+def safe_run_holdings_maintenance():
+    """
+    Only runs holdings manager if the bot is fully provisioned and bootstrapped.
+    Delays import until bot is ready; does nothing otherwise.
+    """
+    if is_bot_ready():
+        try:
+            from tbot_bot.trading.holdings_manager import run_holdings_maintenance
+            run_holdings_maintenance()
+            print("[tbot_supervisor] Holdings maintenance completed.")
+        except Exception as e:
+            print(f"[tbot_supervisor] Holdings maintenance error: {e}")
+    else:
+        print("[tbot_supervisor] Skipping holdings maintenance: bot not fully provisioned.")
 
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
@@ -183,9 +174,6 @@ def main():
         else:
             print(f"[tbot_supervisor] {script_name} already running.")
 
-    # === ADD: Instantiate broker adapter, once (locked spec: single broker instance only) ===
-    broker = BrokerAdapter()  # Assumes adapter pulls from config/secrets for active broker
-
     try:
         while True:
             state = read_bot_state()
@@ -220,22 +208,7 @@ def main():
                 print("[tbot_supervisor] CONTROL_START_FLAG detected. Set bot state to 'running'.")
                 CONTROL_START_FLAG.unlink(missing_ok=True)
                 print("[tbot_supervisor] Running holdings maintenance...")
-                try:
-                    run_holdings_maintenance(broker, realized_gains=0.0)
-                    print("[tbot_supervisor] Holdings maintenance completed.")
-                    mark_holdings_topup_run()
-                except Exception as e:
-                    print(f"[tbot_supervisor] Holdings maintenance error: {e}")
-
-            # === RUN HOLDINGS TOP-UP: 10:45 AM EST (14:45 UTC), once per trading day, after open strategy ===
-            if is_time_for_holdings_topup():
-                print("[tbot_supervisor] Triggering daily holdings top-up (post-open strategy)...")
-                try:
-                    run_holdings_maintenance(broker, realized_gains=0.0)
-                    print("[tbot_supervisor] Holdings maintenance completed.")
-                    mark_holdings_topup_run()
-                except Exception as e:
-                    print(f"[tbot_supervisor] Holdings maintenance error: {e}")
+                safe_run_holdings_maintenance()
 
             if CONTROL_STOP_FLAG.exists():
                 BOT_STATE_PATH.write_text("idle", encoding="utf-8")

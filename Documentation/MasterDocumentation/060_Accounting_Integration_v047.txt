@@ -299,3 +299,155 @@ COA Accounts Used by Holdings Management
 
 All flows, splits, and rebalancing actions must utilize these accounts, with strict double-entry and append-only audit.
 
+=================================================================================================================
+Bot–Accounting System Handshake & External Transfer Protocol
+=================================================================================================================
+
+**Purpose:**  
+Defines the mandatory process for all physical cash movement between the TradeBot brokerage account and the LLC/operating account, including tax reserve and payroll siphoning, capital contributions, and any required reconciliation.  
+This protocol *formally prohibits* any direct access, merging, or write-back between bot-side ledgers and the accounting system. All transfers must follow this handshake to ensure strict audit traceability and prevent double-booking or reconciliation loss.
+
+---------------------------------------------------------------------------------------------------------------
+I. Overview
+---------------------------------------------------------------------------------------------------------------
+The handshake protocol is the only permitted mechanism for initiating, proposing, and completing any movement of cash or allocation (float, tax, payroll, capital contribution) between the bot (broker) and the external accounting system.  
+All actions are logged, time-stamped, and must be double-entry compliant in both the bot’s ledger and the accounting system.  
+At no point does either system overwrite, merge, or directly write to the other’s ledger.  
+All proposals and acknowledgments are append-only, with permanent audit logs.
+No exceptions, operator overrides, or emergency actions may bypass this protocol for any cash, reserve, or capital movement between the bot and any external system. Any violation—manual or automated—will be flagged as a compliance breach and subject to immediate investigation.
+
+---------------------------------------------------------------------------------------------------------------
+II. Core Handshake Workflow
+---------------------------------------------------------------------------------------------------------------
+
+1. **Proposal Generation (by Bot)**
+    - When the bot determines that funds must be transferred (e.g., tax reserve siphoning, payroll transfer, float injection/return, capital contribution), it creates a *transfer proposal* entry, appends it to its outbound transfer queue, and writes a corresponding “pending” record in its ledger and audit log.
+    - The proposal includes:
+        - Unique proposal ID (UUID)
+        - Action type (tax_reserve_transfer, payroll_transfer, float_injection, capital_contribution, etc.)
+        - Amount (currency, value)
+        - Source account (bot-side)
+        - Destination account (LLC/operating or external)
+        - Required chart-of-accounts mapping (bot and accounting)
+        - Proposed date/time (UTC, ISO8601)
+        - Reference to triggering audit/log event
+        - Required double-entry splits (OFX/COA fields)
+        - Current state (pending)
+        - Full rationale/context (auto/manual, threshold, cycle, etc.)
+        - User/trigger origin (system/operator)
+
+2. **Export & Delivery**
+    - The transfer proposal is exported as a machine-readable file (JSON or CSV, as specified), or written to a designated export folder (`output/{BOT_IDENTITY}/transfers/`).
+    - The accounting system is responsible for polling or reading these proposals at defined intervals (e.g., nightly).
+
+3. **Accounting System Review & Execution**
+    - The accounting system ingests all *pending* proposals, verifies compliance (COA mapping, amounts, rationale, available funds, regulatory and tax logic), and—if approved—initiates the actual cash transfer via the designated bank/brokerage interface.
+    - No transfer is considered complete until acknowledged by the accounting system.
+    - If the proposal cannot be executed, the accounting system appends a “rejected” acknowledgment, with reason, to the bot's audit trail (never deletes the original proposal).
+
+4. **Acknowledgment (by Accounting)**
+    - Upon successful transfer, the accounting system writes an *acknowledgment record* (JSON/CSV or DB entry) into the bot’s inbound queue (`output/{BOT_IDENTITY}/transfers_ack/`), referencing the proposal ID.
+    - This acknowledgment includes:
+        - Proposal ID (must match bot’s original)
+        - Execution status (completed, rejected, needs_correction)
+        - Execution timestamp (UTC, ISO8601)
+        - Any deviations (e.g., partial fill, fee adjustment)
+        - Unique accounting system reference (for audit link)
+        - Optional signed hash/confirmation (for tamper-proofing)
+        - Operator/trigger ID (if manual)
+        - Comments or correction instructions (if needed)
+
+5. **Final Reconciliation (by Bot)**
+    - The bot ingests the acknowledgment file and matches it to the pending proposal.
+    - If “completed”: bot updates its ledger entry from “pending” to “executed”, links to the accounting system reference, and closes the audit record.
+    - If “rejected” or “needs_correction”: bot logs the result, marks the proposal as failed/invalid, and requires manual operator review. No automatic resubmission is permitted—only an explicit new proposal can be created.
+
+6. **Permanent Audit Trail**
+    - All proposals, acknowledgments, and resulting ledger entries remain append-only and are never overwritten or deleted.
+    - Every action is cross-referenced in the `logs/` table and the audit trail, with full timestamp, origin, and resulting status.
+    - Each proposal/acknowledgment is cryptographically hashed for tamper-evidence.
+
+---------------------------------------------------------------------------------------------------------------
+III. Prohibited Actions and Enforcement
+---------------------------------------------------------------------------------------------------------------
+
+- No system may merge, sync, or import ledger data directly from the other’s database or files.
+- No bot action may directly write to or reconcile the accounting system’s ledger; and vice versa.
+- No proposal or acknowledgment may be deleted after creation—only appended.
+- Any deviation, error, or manual correction must be audit-logged and traceable.
+
+---------------------------------------------------------------------------------------------------------------
+IV. Example Transfer Proposal (JSON)
+---------------------------------------------------------------------------------------------------------------
+
+```json
+{
+  "proposal_id": "26f67c87-cd88-42fc-9b7e-ef38b5cf001e",
+  "action_type": "tax_reserve_transfer",
+  "amount": {"currency": "USD", "value": 2500.00},
+  "source_account": "1030 Alpaca – Cash",
+  "destination_account": "2000 RIGD Group LLC – Tax Reserve Bank",
+  "coa_mapping": {
+    "bot_ledger": ["1120 Tax Reserve (Brokerage)", "4090 Float/Tax/Payroll Reserve Transfers"],
+    "accounting_ledger": ["1200 Tax Reserve", "4900 Transfers In"]
+  },
+  "proposed_datetime_utc": "2025-07-20T16:10:00Z",
+  "audit_reference": "log_1792",
+  "double_entry_splits": [
+    {"account": "1030", "type": "credit", "amount": 2500.00},
+    {"account": "1120", "type": "debit", "amount": 2500.00}
+  ],
+  "current_state": "pending",
+  "rationale": "Quarterly tax reserve sweep per reserve allocation threshold.",
+  "user_origin": "system"
+}
+
+---------------------------------------------------------------------------------------------------------------
+V. Example Transfer Acknowledgment (JSON)
+---------------------------------------------------------------------------------------------------------------
+
+{
+  "proposal_id": "26f67c87-cd88-42fc-9b7e-ef38b5cf001e",
+  "status": "completed",
+  "execution_datetime_utc": "2025-07-21T15:48:00Z",
+  "accounting_reference": "acct_txn_9923",
+  "operator_id": "user_admin",
+  "comments": "Funds received, confirmed by bank transfer.",
+  "hash": "ac2f98b7ab1f438e97b74e22d39e5c7a"
+}
+
+---------------------------------------------------------------------------------------------------------------
+VI. Timing, Backup, and Error Handling
+---------------------------------------------------------------------------------------------------------------
+
+Bot exports proposals on event/interval (immediate for threshold actions, nightly for regular sweeps).
+
+Accounting system imports proposals and returns acknowledgments at minimum daily intervals.
+
+All exports are atomic (write to temp file, move/rename on completion).
+
+Both systems automatically back up export/import folders before purging/archive.
+
+Any error, rejection, or missing acknowledgment blocks the next transfer of the same type and triggers an operator alert.
+
+---------------------------------------------------------------------------------------------------------------
+VII. Future-Proofing and Extensions
+---------------------------------------------------------------------------------------------------------------
+
+This protocol is mandatory for all external cash, tax, and payroll movements, even if new brokers, accounts, or legal entities are added.
+
+Any future automation (e.g., direct bank APIs, Wise, Mercury) must still go through proposal/ack/ledger handshake, never direct merge.
+
+Digital signature or secure messaging can be layered atop this protocol for higher trust and auditability.
+
+---------------------------------------------------------------------------------------------------------------
+VIII. Enforcement and Governance
+---------------------------------------------------------------------------------------------------------------
+
+The handshake protocol is required for regulatory audit, and any system or user bypassing this protocol will cause all subsequent exports and reconciliations to be marked noncompliant.
+
+Enforcement is built into the export, ledger, and audit modules.
+
+All supporting documentation (transfer logs, receipts, audit files) must be retained for a minimum of seven years or as required by law.
+
+Any violation or bypass of this protocol (manual or automated) will be flagged as a compliance breach and subject to immediate investigation.
