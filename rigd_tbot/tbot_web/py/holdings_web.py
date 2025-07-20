@@ -1,6 +1,6 @@
 # tbot_web/py/holdings_web.py
 # Flask blueprint: UI endpoints for holdings management, config, and status.
-# Fully compliant with v047 specs, with guards, RBAC, logging, and real-time broker data.
+# Fully compliant with v048 specs, with guards, RBAC, logging, and real-time broker data.
 
 from flask import Blueprint, request, jsonify, render_template, flash, redirect, url_for
 from tbot_bot.config.env_bot import load_env_var, update_env_var
@@ -12,6 +12,9 @@ from tbot_bot.trading.holdings_manager import (
 from tbot_bot.trading.holdings_utils import parse_etf_allocations
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
+from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 holdings_web = Blueprint("holdings_web", __name__)
 
@@ -71,7 +74,15 @@ def update_holdings_config():
         update_env_var("HOLDINGS_PAYROLL_PCT", data.get("HOLDINGS_PAYROLL_PCT"))
         update_env_var("HOLDINGS_REBALANCE_INTERVAL", data.get("HOLDINGS_REBALANCE_INTERVAL"))
         update_env_var("HOLDINGS_ETF_LIST", data.get("HOLDINGS_ETF_LIST"))
-        return jsonify({"status": "success", "updated_by": user.username})
+
+        # === Rebalance timer logic ===
+        interval = int(data.get("HOLDINGS_REBALANCE_INTERVAL", 3))
+        next_due = datetime.utcnow().date() + relativedelta(months=interval)
+        secrets = load_holdings_secrets()
+        secrets["NEXT_REBALANCE_DUE"] = next_due.isoformat()
+        save_holdings_secrets(secrets)
+
+        return jsonify({"status": "success", "next_rebalance_due": secrets["NEXT_REBALANCE_DUE"], "updated_by": user.username})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

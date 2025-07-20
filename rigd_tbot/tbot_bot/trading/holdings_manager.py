@@ -1,6 +1,9 @@
 # tbot_bot/trading/holdings_manager.py
 # Core logic for ETF purchases, sales, rebalancing, cash top-up, tax and payroll allocations
-# v047-compliant: loads all config from encrypted holdings secrets file, uses atomic writes and audit
+#  loads all config from encrypted holdings secrets file, uses atomic writes and audit
+
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 from tbot_bot.trading.holdings_utils import (
     parse_etf_allocations,
@@ -11,18 +14,13 @@ from tbot_bot.trading.holdings_utils import (
 )
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
 from tbot_bot.support.utils_log import get_logger, log_event
+from tbot_bot.broker.broker_api import get_broker_adapter  # <<== Standardized live broker loader
 
 log = get_logger(__name__)
 
-# Placeholder: replace with actual broker API interface
-class BrokerInterface:
-    def get_account_value(self): ...
-    def get_cash_balance(self): ...
-    def get_etf_holdings(self): ...
-    def place_order(self, symbol, side, amount): ...
-    def get_price(self, symbol): ...
+def run_holdings_maintenance(realized_gains: float, user: str = "system"):
+    broker = get_broker_adapter()
 
-def run_holdings_maintenance(broker: BrokerInterface, realized_gains: float, user: str = "system"):
     # === Load persistent holdings config from encrypted secrets ===
     holdings_cfg = load_holdings_secrets()
     float_pct = float(holdings_cfg.get("FLOAT_TARGET_PCT", 10))
@@ -30,6 +28,20 @@ def run_holdings_maintenance(broker: BrokerInterface, realized_gains: float, use
     payroll_pct = float(holdings_cfg.get("PAYROLL_PCT", 10))
     etf_cfg = holdings_cfg.get("ETF_ALLOC_LIST", "SCHD:50,SCHY:50")
     etf_targets = parse_etf_allocations(etf_cfg)
+
+    # === Step 0: Conditional rebalance if NEXT_REBALANCE_DUE reached ===
+    rebalance_interval = int(holdings_cfg.get("HOLDINGS_REBALANCE_INTERVAL", 3))
+    next_rebalance_due = holdings_cfg.get("NEXT_REBALANCE_DUE")
+    try:
+        if next_rebalance_due:
+            rebalance_due_date = datetime.fromisoformat(next_rebalance_due).date()
+            if datetime.utcnow().date() >= rebalance_due_date:
+                run_rebalance_cycle(user)
+                next_due = datetime.utcnow().date() + relativedelta(months=rebalance_interval)
+                holdings_cfg["NEXT_REBALANCE_DUE"] = next_due.isoformat()
+                save_holdings_secrets(holdings_cfg)
+    except Exception as e:
+        log.warning(f"Rebalance date check failed: {e}")
 
     account_value = broker.get_account_value()
     current_cash = broker.get_cash_balance()
@@ -72,7 +84,9 @@ def run_holdings_maintenance(broker: BrokerInterface, realized_gains: float, use
                 "symbol": symbol, "amount": alloc_amt, "reason": "reinvest"
             })
 
-def run_rebalance_cycle(broker: BrokerInterface, user: str = "system"):
+def run_rebalance_cycle(user: str = "system"):
+    broker = get_broker_adapter()
+
     # === Load persistent holdings config from encrypted secrets ===
     holdings_cfg = load_holdings_secrets()
     etf_cfg = holdings_cfg.get("ETF_ALLOC_LIST", "SCHD:50,SCHY:50")
