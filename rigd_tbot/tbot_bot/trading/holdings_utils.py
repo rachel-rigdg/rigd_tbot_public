@@ -7,7 +7,7 @@ from decimal import Decimal, ROUND_DOWN
 from tbot_bot.support.utils_log import get_logger
 from tbot_bot.config.env_bot import load_env_var
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
-from tbot_bot.accounting.coa_utils import post_reserve_split
+
 
 log = get_logger(__name__)
 
