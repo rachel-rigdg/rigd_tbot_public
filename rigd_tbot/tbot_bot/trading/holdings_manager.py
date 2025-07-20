@@ -20,8 +20,6 @@ log = get_logger(__name__)
 
 def run_holdings_maintenance(realized_gains: float, user: str = "system"):
     broker = get_broker_adapter()
-
-    # === Load persistent holdings config from encrypted secrets ===
     holdings_cfg = load_holdings_secrets()
     float_pct = float(holdings_cfg.get("FLOAT_TARGET_PCT", 10))
     tax_pct = float(holdings_cfg.get("TAX_RESERVE_PCT", 20))
