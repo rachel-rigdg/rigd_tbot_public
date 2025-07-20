@@ -245,6 +245,8 @@ Automated Holdings/Reserves – Core Flows & Ledger Entry Points
      - *Float Injection/Return*: 1010, 1020
      - *Equity Float Ledger*: 3010, 3020
    - Float adjustment and reconciliation events must be double-entry, tagged by trigger (bot, operator, auto-rebalance).
+   - **When float is restored by selling securities, any realized gain triggers a tax reserve allocation per tax reserve %, posted as below. No payroll allocation is ever triggered by float sales. Losses do not generate tax or payroll allocations.**
+   - **All float management actions are posted with audit trail: user, UTC timestamp, trigger, before/after values. Allocated reserves are immutable except by explicit, audited manual override.**
 
 2. **Tax Reserve**  
    - On each profit realization (bot trade or holdings sale), tax reserve allocation is split from realized gain and posted as:
@@ -252,6 +254,7 @@ Automated Holdings/Reserves – Core Flows & Ledger Entry Points
      - *Income*: 4090 (Float/Tax/Payroll Reserve Transfers)
      - *Expense*: 5080 (Tax Payments), when cash outflow occurs
    - All splits, transfers, and payments to tax are logged per event.
+   - **Once posted, tax reserves cannot be reduced or re-used for trading, float, or other flows except by explicit manual override, which is always audit-logged. No reserve is set aside for losses.**
 
 3. **Payroll Reserve**  
    - After tax, payroll split is posted to:
@@ -259,6 +262,7 @@ Automated Holdings/Reserves – Core Flows & Ledger Entry Points
      - *Income*: 4090 (Float/Tax/Payroll Reserve Transfers)
      - *Expense*: 5090 (Payroll Disbursements), when cash outflow occurs
    - Allocations logged as internal transfer at split, and as expense at disbursement.
+   - **Payroll allocation only occurs on positive post-tax gains from bot trading activities, never from float sales or realized losses. Payroll reserves, once posted, are never clawed back or reused for other flows.**
 
 4. **Holdings Allocation/Rebalancing**  
    - Every purchase/sale of long-term securities, as well as periodic/manual rebalance, is posted to:
@@ -267,11 +271,14 @@ Automated Holdings/Reserves – Core Flows & Ledger Entry Points
      - *Exports*: 9160 (Holdings Rebalance Audit Log Export, for reporting/audit only)
    - Audit log must include action context, symbols, allocation %, cash amounts, and resulting value.
    - Unrealized and realized P/L must be reconciled to Income or Asset accounts as required.
+   - **Every allocation and rebalance event must be logged to both the ledger and immutable audit trail with complete context, compliance, and rationale.**
 
 5. **General Enforcement**
    - All above entries are double-entry compliant and OFX-aligned.
    - Each automated or manual action (split, transfer, rebalance) must reference FITID, DTPOSTED, context/audit tag, and source trigger.
    - No action may be posted outside of scheduled flows, manual UI action, or validated trigger.
+   - **All config or allocation changes must trigger a backup of prior config/secrets, and generate an audit entry including user, UTC timestamp, and rationale. System must block any non-compliant or out-of-bounds action and notify the user.**
+
 
 ----------------------------------------------------------------------
 COA Accounts Used by Holdings Management

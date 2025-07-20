@@ -298,39 +298,49 @@ Functional Requirements:
      - Total $ gain/loss
      - All transaction audit logs
    - **Realtime compliance warning:** System must validate allocations and settings live, blocking save or rebalance if total allocations, float, or reserve settings are out of spec.
+   - **All holdings actions, trades, allocations, and configuration changes must be logged to both the audit trail and the ledger/COA, including user, timestamp (UTC), action, amount, and before/after values.**
 
 2. **Cash Float Management**
    - User sets **Float Target %** (e.g. 10% of total account value).
    - Bot monitors cash balance daily (10 minutes post-open strategy) or after each strategy session.
    - If cash < Float Target %, system sells securities (by value order) to restore float.
+   - If float is restored by selling securities and those sales result in realized gains, the system will **allocate a tax reserve from those gains** according to the configured tax reserve % (see section 3).
+   - No payroll allocation is ever made from float-top-up security sales.
    - If cash > Float Target %, system may (optionally) sweep excess into securities.
    - All float actions logged and posted to ledger/COA.
+   - **Float, tax, and payroll reserve allocations are immutable—once funds are reserved, they are never reduced, clawed back, or reused for other purposes except by explicit manual override with mandatory audit entry.**
 
 3. **Tax Reserve Management**
    - User sets **Tax Reserve %** (e.g. 20%).
-   - Applies to all **realized gains** from:
+   - Tax reserve applies to all **realized gains**, including:
      - Trading bot activities.
-     - Security sales (including cash top-ups).
+     - Security sales (including those performed to top up cash float).
+   - No tax reserve is allocated on realized losses.
    - Daily, the specified % of realized gains is moved into the Tax Reserve account.
    - Tax reserve may be held in cash or a user-specified low-risk vehicle.
-   - All tax reserve allocations logged to the ledger/COA.
+   - All tax reserve allocations logged to the ledger/COA and audit trail.
+   - **Once allocated, tax reserves are never reduced or reallocated in case of drawdowns or losses.**
 
 4. **Payroll Allocation**
    - User sets **Payroll %** (e.g. 10–20%).
-   - Applied to *post-tax* realized gains.
+   - Payroll allocation is applied only to *post-tax* realized gains from trading bot activities (not float-top-up sales).
+   - No payroll allocation is ever made from float-top-up security sales or realized losses.
    - Daily process moves this amount to the Payroll account.
-   - All payroll allocations logged to the ledger/COA.
+   - All payroll allocations logged to the ledger/COA and audit trail.
+   - **Once allocated, payroll reserves are never reduced or reallocated in case of drawdowns or losses.**
 
 5. **Reinvestment of Remaining Gains**
    - After Tax and Payroll splits, remaining profit is automatically reinvested in selected securities per allocation %.
    - Any blank allocation % symbols split the remainder equally.
    - Fractional buys supported.
-   - All actions logged and posted to ledger/COA.
+   - All actions logged and posted to ledger/COA and audit trail.
+   - **System must block any save, rebalance, or allocation action if it would violate float, reserve, or allocation compliance. User is notified and no action is performed.**
 
 6. **Persistent Configuration and Secrets**
    - All security list, allocation %, and holdings settings are stored in a dedicated encrypted holdings secrets file (not in .env_bot.enc).
    - Module must read, create, and update its own secrets file, handling missing files gracefully (creates file when first settings are saved).
    - All access is via atomic, encrypted read/write routines with audit/rollback support.
+   - **All config changes must trigger a backup of the previous secrets and generate a persistent audit entry including the user and timestamp. Environment variables may be used only as a runtime cache, not the source of truth.**
 
 7. **Automated and Manual Portfolio Rebalancing**
    - User sets **Rebalance Interval** (3, 6, or 12 months).
@@ -342,6 +352,8 @@ Functional Requirements:
      - Logs all rebalance transactions with full audit trail and updates the ledger/COA.
    - Rebalance logic respects any blank allocation % fields, dividing residual % across remaining symbols.
    - **Simulation/preview of rebalance:** UI must allow user to preview/“simulate” the rebalance showing exact orders and outcomes before confirming.
+   - **Automated tests and simulations must fully cover: normal operation, edge cases (0/negative gains, missing/invalid config), failure modes, and audit/compliance logging for all critical actions.**
+
 
 ------------------------------------------
 Web UI Management Page Requirements:

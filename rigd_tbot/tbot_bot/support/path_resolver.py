@@ -58,7 +58,6 @@ def get_bot_identity(explicit_identity: str = None) -> str:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     return identity
 
-
 def validate_bot_identity(bot_identity: str) -> None:
     if not bot_identity or not re.match(IDENTITY_PATTERN, bot_identity):
         raise ValueError(f"[path_resolver] Invalid BOT_IDENTITY_STRING: {bot_identity}")
@@ -85,7 +84,6 @@ def get_output_path(category: str = None, filename: str = None, bot_identity: st
     if output_subdir:
         return str(subdir)
     return str(subdir / filename) if filename else str(subdir)
-
 
 def resolve_control_path() -> Path:
     return PROJECT_ROOT / "tbot_bot" / "control"
@@ -284,6 +282,22 @@ def resolve_holdings_audit_log_path(bot_identity: str = None) -> str:
     validate_bot_identity(identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "logs" / "holdings_audit.log")
 
+# --- Holdings Management Paths (NEW) ---
+
+def resolve_holdings_secrets_path() -> Path:
+    """Returns path to holdings_secrets.json.enc (encrypted holdings config)."""
+    return PROJECT_ROOT / "tbot_bot" / "storage" / "secrets" / "holdings_secrets.json.enc"
+
+def resolve_holdings_secrets_key_path() -> Path:
+    """Returns path to Fernet key for holdings secrets."""
+    return PROJECT_ROOT / "tbot_bot" / "storage" / "keys" / "holdings_secrets.key"
+
+def resolve_holdings_secrets_backup_dir() -> Path:
+    """Returns path to the holdings secrets backup directory."""
+    backup_dir = PROJECT_ROOT / "tbot_bot" / "storage" / "backups" / "holdings_secrets"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    return backup_dir
+
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -333,5 +347,8 @@ __all__ = [
     "resolve_integration_test_runner_path",
     "resolve_nasdaqlisted_txt_path",
     "get_project_root",
-    "resolve_holdings_audit_log_path"
+    "resolve_holdings_audit_log_path",
+    "resolve_holdings_secrets_path",
+    "resolve_holdings_secrets_key_path",
+    "resolve_holdings_secrets_backup_dir"
 ]

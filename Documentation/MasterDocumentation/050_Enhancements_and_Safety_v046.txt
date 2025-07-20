@@ -12,9 +12,7 @@ Contents:
 - Centralized Error Management (Lossless Compression, Spec v1.1)
 - Atomic Key/Secret Rotation Compliance
 
-
 All modules require runtime self-check compliance and strict audit logging.
-
 
 =============================================================================================================================================
 Enhancement Module Activation 
@@ -85,6 +83,7 @@ All enhancements are independently testable and auto-invoked from `strategy_rout
 - **error_handler.py**: Centralized error capture/logging; triggers shutdown on fatal error.
 - **security_bot.py**: Validates decryption of `.env_bot.enc`; blocks plaintext config in prod.
 - **Atomic Key/Secret Rotation:** All Fernet keys and corresponding encrypted secrets are automatically regenerated and re-encrypted atomically when any config, credential, or sensitive secret is modified or a user is created/modified. Manual key rotation is not required. Backups of all affected files are created before overwrite. No old key/secret is reused.
+- **Holdings, Float, and Reserve Management:** All tax, payroll, float, and allocation actions in holdings management are fully automated and audit-logged. Allocated tax and payroll reserves are immutable and never reduced or repurposed for other uses, except by explicit manual override (with rationale and user tracking). Holdings module config and action changes trigger backup and audit entries.
 
 ---
 
@@ -105,7 +104,6 @@ All enhancements are independently testable and auto-invoked from `strategy_rout
 **Self-Check System:**
 - Every enhancement and safety module must implement `.self_check()` or equivalent on launch.  
 - Launch blocked and cause logged on any failure.
-
 
 =============================================================================================================================================
 Centralized Error Management 
@@ -150,4 +148,5 @@ Summary:
 - Fatal = immediate halt, full context for audit.
 - All audit artifacts preserved.
 - Backtest engine = CI-ready, safe, no ledger/OFX/web.
+
 

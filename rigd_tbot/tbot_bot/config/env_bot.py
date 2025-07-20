@@ -1,6 +1,7 @@
 # tbot_bot/config/env_bot.py
 # summary: Validates and parses .env_bot configuration (encrypted only, never auto-loads at module level).
 # All config access must be explicit and deferred—no module-level loading permitted.
+# NOTE: Holdings-related variables have been moved to the holdings secrets file and are NOT loaded here.
 
 import json
 import logging
@@ -55,10 +56,8 @@ REQUIRED_KEYS = [
     "ENABLE_STRATEGY_OPTIMIZER", "OPTIMIZER_BACKTEST_LOOKBACK_DAYS", "OPTIMIZER_ALGORITHM", "OPTIMIZER_OUTPUT_DIR",
     "NOTIFY_ON_FAILURE", "CRITICAL_ALERT_CHANNEL", "ROUTINE_ALERT_CHANNEL",
     "ENABLE_SLIPPAGE_MODEL", "SLIPPAGE_SIMULATION_TYPE", "SLIPPAGE_MEAN_PCT", "SLIPPAGE_STDDEV_PCT", "SIMULATED_LATENCY_MS",
-    "ENABLE_BSM_FILTER", "MAX_BSM_DEVIATION", "RISK_FREE_RATE", "RISK_FREE_RATE_SOURCE",
-    # Holdings Management
-    "HOLDINGS_FLOAT_TARGET_PCT", "HOLDINGS_TAX_RESERVE_PCT", "HOLDINGS_PAYROLL_PCT",
-    "HOLDINGS_REBALANCE_INTERVAL", "HOLDINGS_ETF_LIST"
+    "ENABLE_BSM_FILTER", "MAX_BSM_DEVIATION", "RISK_FREE_RATE", "RISK_FREE_RATE_SOURCE"
+    # All holdings-related config has been removed from REQUIRED_KEYS
 ]
 
 logger = logging.getLogger(__name__)

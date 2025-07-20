@@ -115,7 +115,6 @@ TradeBot enforces dynamic float allocation and strict per-session risk controls 
 - **No manual overrides** except via `.env_bot` (Web UI).
 
 
-
 ================================================================================
 Automated Holdings, Float, and Reserve Management
 ================================================================================
@@ -124,25 +123,33 @@ The RIGD Trading Bot now implements a fully automated, audit-compliant holdings 
 
 - **Scope:**  
   All cash float targets, tax reserve funding, payroll allocations, and periodic portfolio rebalancing are managed by the holdings management module. This system replaces all operator/manual float management, automating nightly (post-open) and scheduled (rebalance) adjustments.
+  - **All reserve, float, and allocation actions are strictly audit-logged with full double-entry COA and immutable audit trail, including user, timestamp (UTC), action, and before/after values.**
+  - **Once tax or payroll reserves are allocated, they can never be reduced or repurposed for trading or float, except by explicit manual override, which requires a mandatory audit rationale and user tracking.**
 
 - **Configuration and Persistence:**  
   - Allocation settings, securities list, and target percentages are configured exclusively via the Web UI and persisted in an encrypted holdings secrets file (`storage/secrets/holdings_config.json.enc`), not `.env_bot.enc`.
   - `.env_bot.enc` contains only the pointer and enablement flag for holdings management; it does not store allocation or securities data.
+  - **All changes to holdings config trigger a secrets file backup and persistent audit entry. Environment variables are never the primary source of truth.**
 
 - **Float, Tax, and Payroll Reserves:**  
   - Float Target %, Tax Reserve %, and Payroll % are enforced and maintained automatically.
-  - After each trading day’s open session, realized gains are split per configured percentages and posted to the correct COA/ledger accounts.
+  - After each trading day’s open session, realized gains are split per configured percentages and posted to the correct COA/ledger accounts and audit trail.
+  - Float top-ups (security sales to restore float) result in tax reserve allocations on any realized gain, but never payroll allocations. Losses result in no reserve.
+  - Payroll allocations are applied only to post-tax realized gains from trading bot activities (never float sales or losses).
+  - **Allocated tax and payroll reserves are never reduced or clawed back in drawdowns.**
   - All float/cash shortfalls or overages are resolved via automated security sales/purchases, with complete audit trail.
 
 - **Portfolio Rebalancing:**  
   - Long-term holdings are rebalanced according to user-defined intervals (3, 6, 12 months) or on manual trigger from the UI.
   - Rebalance logic supports explicit and blank allocation fields—any blank allocation symbols receive equal split of the remainder.
   - All buy/sell transactions are double-entry compliant and posted to the ledger with audit metadata.
+  - **System must block any config, split, or rebalance if it would violate compliance (float, reserve, or allocation). All actions are previewed and simulated before commit, and noncompliant actions are not performed.**
 
 - **Compliance, Audit, and UI:**  
   - The system blocks configuration or rebalance if any allocations, splits, or reserve settings are out of compliance.
   - “Preview”/simulation of all rebalance actions is available before commit, and every step is immutably logged and exportable.
   - The management UI presents live status, current allocations, and compliance warnings in real time.
+  - **Automated tests and simulations must cover normal, edge, and error states for float, reserve, allocation, and compliance logic, as well as audit logging.**
 
 - **Integration:**  
   - The holdings management module works alongside and independently of the trading strategy modules. It interfaces with broker APIs for order execution and posts all ledger entries using the updated chart of accounts.
@@ -152,6 +159,8 @@ The RIGD Trading Bot now implements a fully automated, audit-compliant holdings 
 - `Long-Term Holdings Management Module Specification` for complete logic, workflow, and configuration requirements.
 - `tbot_bot/trading/holdings_manager.py` and `tbot_bot/support/holdings_secrets.py` for implementation details.
 - `tbot_web/templates/holdings.html` for UI/UX structure and compliance features.
+
+
 
 
 

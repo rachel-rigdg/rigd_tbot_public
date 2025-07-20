@@ -279,6 +279,7 @@ rigd_tbot/
 │   │   │   ├── broker.key                          # Fernet key for encrypting/decrypting broker_credentials.json.enc
 │   │   │   ├── env.key                             # Fernet key for decrypting env.json.enc (general bot config)
 │   │   │   ├── env_bot.key                         # Fernet key for decrypting .env_bot.enc (runtime bot settings)
+│   │   │   ├── holdings_secrets.key                # Fernet key for holdings_secrets.json.enc
 │   │   │   ├── login.key                           # Fernet key for encrypting SYSTEM_USERS.db (login/auth)
 │   │   │   ├── runtime_config.key		            # Fernet key for encrypting/decrypting runtime_config.json.enc (persistent bot runtime config)
 │   │   │   ├── screener_api.key                    # Fernet key for decrypting screener_api.json.enc
@@ -289,6 +290,7 @@ rigd_tbot/
 │   │   │   ├── alert_channels.json.enc             # Encrypted alert channel configuration (email, Slack, etc.)
 │   │   │   ├── bot_identity.json.enc		        # Encrypted bot identity and entity/jurisdiction metadata
 │   │   │   ├── broker_credentials.json.enc         # Encrypted broker API credentials (ALPACA/IBKR, etc.)
+│   │   │   ├── holdings_secrets.json.enc           # Encrypted holdings config and allocation data (managed by holdings_secrets.py)
 │   │   │   ├── network_config.json.enc   		    # Encrypted network config (hostname, IP, port)
 │   │   │   ├── runtime_config.json.enc		        # Encrypted persistent runtime bot configuration settings
 │   │   │   ├── smtp_credentials.json.enc           # Encrypted SMTP credentials for notifications
@@ -407,7 +409,7 @@ rigd_tbot/
     │   ├── account_web.py                      # User account/profile endpoints (view/update account details)
     │   ├── coa_web.py                          # COA endpoints: view, edit, export; calls utils_coa_web.py, config_encryption.py. Never launches any worker/watcher.
     │   ├── configuration_web.py                # Handles configuration route: displays, saves, and provisions config; calls config_encryption, key_manager, security_users. Never launches any worker/watcher.
-    │   ├── holdings_web.py              # Flask blueprint: UI endpoints for holdings management, config, and status.
+    │   ├── holdings_web.py              # Flask blueprint: UI endpoints for holdings management, config, and status. -  All core audit, allocation, and compliance logic is enforced here.
     │   ├── ledger_web.py		                # Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs. Only admin users can perform edits or reconciliations. Never launches any worker/watcher.
     │   ├── login_web.py                        # User login/logout/session; calls auth_web.py, security_users.py, session_manager.py. Never launches any worker/watcher.
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state. Never launches any worker/watcher.
@@ -444,7 +446,7 @@ rigd_tbot/
         ├── coa.html                            # Human-readable web form/table for COA viewing and editing (editable if RBAC allows)
         ├── configuration.html                  # Web form for updating email, API, and broker credential configuration via web UI 
         ├── edit_user.html                      # Edit individual user details (admin only)
-        ├── holdings.html                 # Jinja2 page for managing ETFs, float %, tax %, payroll %, rebalance interval, current status, manual controls.
+        ├── holdings.html                 # Jinja2 page for managing ETFs, float %, tax %, payroll %, rebalance interval, current status, manual controls. - This is a required core page for compliance; never optional if holdings module is present.
         ├── index.html                          # Login page
         ├── ledger.html			                # Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
         ├── logs.html                           # Log viewer (view bot/system logs)

@@ -41,20 +41,24 @@ Modules Included:
 - Automated backup rotation and cloud sync scripts
 - Fine-grained alerting and escalation policies
 
-5. Automated Holdings, Float, and Reserve Management (Core, not optional)
-- Fully integrated holdings management system: automated float/top-up, tax and payroll reserve splits, persistent holdings allocations, and periodic/manual rebalancing.
-- Holdings config, allocations, symbol list, and all persistent settings are stored in a dedicated encrypted holdings secrets file (`holdings_secrets.json.enc`), with its own Fernet key (`holdings_secrets.key`), both managed in `tbot_bot/support/` and `storage/keys/`.
-- All config changes (allocations, symbol add/remove, interval, etc.) trigger full-system atomic key/secret rotation and backup, with append-only audit logging.
-- Holdings module is enforced as a system requirement (not "optional"); compliance, audit, and rotation policies apply exactly as for all other config/secret categories.
-- Web UI and API enforce real-time compliance and audit trail for all holdings operations and configuration updates.
+5. Automated Holdings, Float, and Reserve Management (Core, Non-Optional)
+
+- The holdings management system is a mandatory, fully integrated core component—**never optional**—responsible for all automated float/top-up actions, tax reserve splits, payroll allocations, persistent holdings allocations, and scheduled or manual portfolio rebalancing.
+- **All holdings configuration data**—including allocations, symbol list, target percentages, and interval settings—are stored exclusively in an encrypted holdings secrets file (`storage/secrets/holdings_secrets.json.enc`), protected by a unique Fernet key (`storage/keys/holdings_secrets.key`).
+- **Separation of concerns:** The holdings management module (`tbot_bot/holdings/holdings_manager.py` and `tbot_bot/support/holdings_secrets.py`) operates entirely independently from all trading strategy modules, broker adapters, or screener logic. No strategy or broker module may trigger, modify, or bypass holdings, float, or reserve logic.
+- **Config updates enforcement:** Every change to holdings allocations, symbol list, interval, or any persistent setting—whether via Web UI or API—**triggers an atomic rotation and re-encryption** of all related keys and secrets, with the previous versions backed up under `tbot_bot/storage/backups/`. This cannot be suppressed or bypassed.
+- **Audit and compliance:** All actions (settings changes, rebalances, float top-ups, splits) are immutably audit-logged with UTC timestamp, user/operator, context, and full change details. No holdings or float operation is ever performed without a corresponding audit trail entry.
+- **System enforcement:** The holdings module is enforced by runtime and build policy as a required subsystem. Its compliance, audit, and rotation rules are identical to all other secret/config categories; no manual, CLI, or external manipulation of float, reserve, or allocation is permitted.
+- **Web UI and API:** All holdings operations and configuration updates are managed through the Web UI or authenticated API, with real-time compliance validation and audit trail presentation enforced for all user/operator actions.
 
 Implementation Notes:
-- All optional modules must NOT interfere with core runtime if disabled.
-- Modules must implement `.self_check()` to integrate with system health.
-- Any config toggles required must be clearly documented in `.env_bot` schema.
-- Use strict logging standards and audit trails.
-- **Expansion modules and core holdings management must use only system APIs for all key, secret, and config management—direct file writes or ad hoc key handling are forbidden.**
-- **Key/secret rotation and encryption workflows must align with system core logic; all updates to sensitive data automatically invoke atomic key rotation and re-encryption for the affected category and all related secrets/configs.**
+- All optional modules must NOT interfere with or alter the execution, logic, or data of any core runtime module when disabled. Optional modules must be cleanly isolated and fully deactivated by their toggles in `.env_bot`.
+- Every module, whether core or optional, **must implement a `.self_check()` method** that performs a full health and compliance check at launch or on config reload. Launch is blocked and an error is logged if `.self_check()` fails.
+- **All configuration toggles, parameters, and options required by a module must be explicitly and thoroughly documented in the `.env_bot` schema and system configuration documentation.**  
+- Strict logging and audit trails are required: all critical actions, configuration changes, and failures must be UTC timestamped and logged to the designated output or audit log as per system policy.
+- **Expansion modules, the holdings management system, and all related processes must use ONLY system APIs for all key, secret, and configuration management—direct file access, raw file writes, or any ad hoc key handling are explicitly forbidden.**
+- **Key/secret rotation and encryption/decryption workflows must align with the system’s core logic and compliance policies. All updates to sensitive data (credentials, config, allocations, secrets) must automatically trigger atomic rotation and re-encryption of all relevant keys and secret files, with append-only backup and audit logging for every change event.**
+- All backups, old keys, and rotated secrets are archived in `storage/backups/` and can only be restored through system APIs and recovery procedures.
 
 Compliance:
 - Modules adhere strictly to {CURRENT_VERSION} build instructions and audit requirements.
@@ -580,14 +584,13 @@ Compliance and Verification:
 | `holdings_secrets.json.enc`       | Holdings settings | `storage/secrets/`         | Created/rotated atomic   | `storage/keys/holdings_secrets.key`   |
 
 ---
-
 **NOTE:**
-- All encrypted secret category files, including `holdings_secrets.json.enc` under `storage/secrets/`, are generated, rotated, and managed exclusively by the Web UI configuration/bootstrap process and the key/secret manager modules.
-- **Whenever any secret or credential is created or modified, the system triggers full atomic rotation and re-encryption of all key/secret pairs, with versioned backup.**
-- No plaintext secrets should be stored outside the Web UI input or staging environment files.
-- The bot runtime relies exclusively on the encrypted `.env_bot.enc`, `holdings_secrets.json.enc`, and other category files to operate securely.
-- Encrypted files and keys must never be committed to any version control system.
-- All prior keys/secrets are backed up under `tbot_bot/storage/backups/` upon rotation.
+- All encrypted secret category files—including `holdings_secrets.json.enc` under `storage/secrets/`—are created, rotated, and managed **exclusively** by the Web UI configuration/bootstrap process and the designated key/secret manager modules. **Manual file edits or CLI-driven changes are forbidden.**
+- **Any creation or modification of a secret or credential triggers a full atomic rotation and re-encryption of all relevant key/secret pairs, with versioned backup of previous states for audit and rollback.**
+- No plaintext secrets may persist outside the secure Web UI input flow or approved staging environment files. All persistent config/secrets must be encrypted at rest.
+- The bot runtime operates *exclusively* from the encrypted `.env_bot.enc`, `holdings_secrets.json.enc`, and other category-encrypted files. **Plaintext config files are never used in production.**
+- All encrypted files and their corresponding keys must **never** be committed to any version control system or shared via backup/archive exports.
+- All prior key and secret files are automatically backed up under `tbot_bot/storage/backups/` upon every rotation event.
 
 ---
 
@@ -595,13 +598,14 @@ Compliance and Verification:
 --------------------------------------------------------------------------------
 Security Best Practices & Enforcement
 --------------------------------------------------------------------------------
-- The holdings secrets file is subject to the same audit, backup, recovery, and atomic rotation policies as all other credential/config secrets.
-- All changes to holdings secrets (create, update, delete) trigger full key/secret rotation and backup under `storage/backups/`.
-- Access, modification, and errors are logged with UTC timestamps and context.
-- No plaintext or unencrypted holdings config may persist outside the secure Web UI input flow.
-- Holdings secrets encryption, decryption, and rotation must use system APIs—no direct or ad hoc file handling permitted.
-- Recovery of holdings secrets is performed via backup restore using encrypted files and keys; no manual edits allowed.
-- All audit, compliance, and rollback requirements for other secrets apply identically to holdings management secrets.
+- The holdings secrets file (`storage/secrets/holdings_secrets.json.enc`) is governed by the exact same audit, backup, recovery, and atomic rotation requirements as all other credential or configuration secrets in the system.
+- **Any change** to holdings secrets—including create, update, or delete—**automatically triggers a full atomic rotation** of the holdings Fernet key (`storage/keys/holdings_secrets.key`) and the encrypted file itself, with all prior versions securely backed up to `tbot_bot/storage/backups/`.
+- **All access, modifications, and errors** involving the holdings secrets file are immutably logged with UTC timestamp, user/operator, action context, and details of the change or error.
+- **No plaintext or unencrypted holdings configuration** is ever persisted or exported outside the secure Web UI input and in-memory flow. Any decrypted data is destroyed immediately after use.
+- **All encryption, decryption, backup, and key rotation operations** for holdings secrets must use only the system API modules (never direct file or ad hoc handling). No manual, CLI, or script-based editing is permitted.
+- **Recovery** of holdings secrets is performed only via the restore function, using encrypted backups and keys. Manual edits or key/file manipulation outside the system workflow are strictly forbidden and will trigger audit failures.
+- **All audit, compliance, and rollback requirements** enforced for other secrets/config categories are identically and strictly enforced for holdings management secrets, without exception or bypass.
+
 
 
 ================================================================================
@@ -670,12 +674,12 @@ Error Handling & Logging:
 - Order rejects recorded in `unresolved_orders.log`.
 
 Audit & Compliance:
-- All broker API requests and responses logged in structured format.
-- Sensitive info redacted in logs.
-- Compliance with broker TOS enforced.
-- All holdings, float, reserve, allocation, and rebalance actions are immutably logged in structured audit logs and posted to the ledger with full context.
-- All holdings management and reserve actions must post to their correct COA categories, with double-entry and OFX compliance enforced.
-- Ledger and audit logs are encrypted at rest, append-only, and included in all compliance exports.
+- All broker API requests and responses must be logged in a structured, append-only audit format, with all sensitive credentials, PII, and API keys redacted in the logs.
+- Strict enforcement of broker terms of service (TOS) and regulatory policies is required for all integration modules and automated actions.
+- **All holdings, float, tax reserve, payroll reserve, allocation, and rebalance actions are immutably logged in detailed, structured audit logs, including full transaction context (trigger, category, symbol, amount, timestamp, and operator).**
+- Every action performed by the holdings management system—including float management, reserve allocation, and periodic or manual rebalancing—**must post corresponding double-entry transactions to the ledger, using the correct COA categories as specified in the accounting integration docs.**
+- All ledger entries and audit logs are encrypted at rest, strictly append-only, and included in all compliance exports (e.g., OFX, CSV, JSON), ensuring that every automated or manual action is permanently auditable and ready for regulatory or internal review.
+- No holdings or reserve actions may bypass the COA, ledger, or audit log posting workflow under any circumstances; any failure to log or post is treated as a fatal compliance violation.
 
 
 ================================================================================  

@@ -87,11 +87,14 @@ Phase 1: System Boot Validation
 
 Phase 2: Session Initialization
 ↓
-- `float_bot.py` obtains current float from accounting system (bot never manages float/injections directly).
-- Loads runtime parameters from `.env_bot` (e.g. `MAX_TRADES`, `TOTAL_ALLOCATION`).
-- If `DEFENSE_MODE_ACTIVE=true`, apply stricter overrides.
+- `holdings_manager.py` manages all float, reserve, and long-term holdings logic, maintaining float target, tax reserve, payroll allocations, and persistent portfolio allocations per configuration.
+- Loads all holdings, float, tax, payroll, and allocation settings from the encrypted holdings secrets file (`holdings_config.json.enc`), not from `.env_bot`.
+- Runtime parameters for trading operations (e.g., `MAX_TRADES`, `TOTAL_ALLOCATION`) are loaded from `.env_bot` as before.
+- If `DEFENSE_MODE_ACTIVE=true`, apply stricter overrides to risk and allocation parameters.
+- All float, reserve, and allocation adjustments are posted to both the ledger and `holdings_audit.log` with full audit metadata.
 - `status_bot.py` writes initial bot state to `output/status.json`.
 - Begin strategy cycle.
+
 
 Phase 3: Strategy Cycle (Open → Mid → Close, UTC)
 For each enabled strategy:
@@ -126,10 +129,12 @@ Phase 5: Session Termination
 - Session complete.
 
 Phase 6: Manual Review / Rebalancing
-- Operator reviews logs and summary.
-- Float reconciliations managed exclusively by accounting.
-- `generate_ofx.py` used for OFX exports.
-- Manual reset of defense flags required after defense mode event.
+- Operator reviews all logs and session summary, including `holdings_audit.log` for float, reserve, and allocation events.
+- All float reconciliations, reserve adjustments, and rebalancing actions are performed exclusively via the Web UI holdings module; accounting is no longer responsible for direct float management.
+- `generate_ofx.py` is used for OFX exports, including all holdings and reserve actions as posted to the ledger.
+- Any manual override or rebalancing action triggers full audit logging and config/secret backup.
+- Manual reset of defense flags is required after any defense mode event.
+
 
 =============================================================================================================================================
 Bot State Definitions (bot_state.txt values)
