@@ -10,6 +10,7 @@ from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_sym
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.support.utils_log import log_event
+from tbot_bot.trading.risk_module import validate_trade
 
 def get_trading_screener_creds():
     """
@@ -149,16 +150,19 @@ class AlpacaScreener(ScreenerBase):
 
         filtered = core_filter_symbols(
             price_candidates,
-            exchanges=["US"],
             min_price=MIN_PRICE,
             max_price=MAX_PRICE,
             min_market_cap=min_cap,
             max_market_cap=max_cap,
-            blocklist=None,
             max_size=pool_size * 2
         )
 
         results = []
+        open_positions_count = 0  # Should be fetched from runtime if possible
+        account_balance = float(self.env.get("ACCOUNT_BALANCE", 0))
+        signal_index = 0
+        total_signals = pool_size
+
         for q in price_candidates:
             if not any(f["symbol"] == q["symbol"] for f in filtered):
                 continue
@@ -169,6 +173,16 @@ class AlpacaScreener(ScreenerBase):
             gap = abs((current - open_) / open_) if open_ else 0
             if gap > max_gap:
                 continue
+            valid, reason_or_alloc = validate_trade(
+                symbol=symbol,
+                side="long",
+                account_balance=account_balance,
+                open_positions_count=open_positions_count,
+                signal_index=signal_index,
+                total_signals=total_signals
+            )
+            if not valid:
+                continue
             momentum = abs(current - open_) / open_
             results.append({
                 "symbol": symbol,
@@ -177,6 +191,8 @@ class AlpacaScreener(ScreenerBase):
                 "momentum": momentum,
                 "is_fractional": q["isFractional"]
             })
+            signal_index += 1
+
         results.sort(key=lambda x: x["momentum"], reverse=True)
         log_event("alpaca_screener", f"run_screen returned {len(results[:pool_size])} candidates")
         return results[:pool_size]
@@ -223,16 +239,19 @@ class AlpacaScreener(ScreenerBase):
 
         filtered = core_filter_symbols(
             price_candidates,
-            exchanges=["US"],
             min_price=MIN_PRICE,
             max_price=MAX_PRICE,
             min_market_cap=min_cap,
             max_market_cap=max_cap,
-            blocklist=None,
             max_size=limit
         )
 
         results = []
+        open_positions_count = 0  # Should be fetched from runtime if possible
+        account_balance = float(self.env.get("ACCOUNT_BALANCE", 0))
+        signal_index = 0
+        total_signals = limit
+
         for q in price_candidates:
             if not any(f["symbol"] == q["symbol"] for f in filtered):
                 continue
@@ -240,8 +259,18 @@ class AlpacaScreener(ScreenerBase):
             current = q["price"]
             open_ = q["open"]
             vwap = q["vwap"]
-            gap = abs((current - open_) / open_) if open_ else 0
+            gap = abs(current - open_) / open_ if open_ else 0
             if gap > max_gap:
+                continue
+            valid, reason_or_alloc = validate_trade(
+                symbol=symbol,
+                side="long",
+                account_balance=account_balance,
+                open_positions_count=open_positions_count,
+                signal_index=signal_index,
+                total_signals=total_signals
+            )
+            if not valid:
                 continue
             momentum = abs(current - open_) / open_
             results.append({
@@ -251,6 +280,8 @@ class AlpacaScreener(ScreenerBase):
                 "momentum": momentum,
                 "is_fractional": q["isFractional"]
             })
+            signal_index += 1
+
         results.sort(key=lambda x: x["momentum"], reverse=True)
         log_event("alpaca_screener", f"filter_candidates returned {len(results)} candidates (legacy mode)")
         return results
