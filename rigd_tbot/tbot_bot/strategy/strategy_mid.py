@@ -10,8 +10,6 @@ from tbot_bot.trading.utils_puts import get_put_option
 from tbot_bot.trading.utils_shorts import get_short_instrument
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.strategy.strategy_meta import StrategyResult
-from tbot_bot.enhancements.adx_filter import adx_filter
-from tbot_bot.enhancements.bollinger_confluence import confirm_bollinger_touch
 from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
@@ -98,31 +96,6 @@ def analyze_vwap_signals(start_time, screener_class):
             continue
 
         direction = "buy" if deviation < 0 else "sell"
-
-        if not adx_filter(symbol):
-            candidate_status.append({
-                "symbol": symbol,
-                "rank": idx + 1,
-                "fractional": None,
-                "min_order_size": None,
-                "alloc": None,
-                "status": "rejected",
-                "reason": "ADX filter block",
-                "price": price
-            })
-            continue
-        if not confirm_bollinger_touch(symbol, direction=direction):
-            candidate_status.append({
-                "symbol": symbol,
-                "rank": idx + 1,
-                "fractional": None,
-                "min_order_size": None,
-                "alloc": None,
-                "status": "rejected",
-                "reason": "Bollinger band filter block",
-                "price": price
-            })
-            continue
 
         alloc = allocations[len(eligible_signals)]
         is_fractional = broker_api.supports_fractional(symbol)

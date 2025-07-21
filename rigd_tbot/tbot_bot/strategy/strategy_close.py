@@ -11,8 +11,6 @@ from tbot_bot.trading.utils_shorts import get_short_instrument
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.enhancements.vix_gatekeeper import is_vix_above_threshold
-from tbot_bot.enhancements.imbalance_scanner_ibkr import is_trade_blocked_by_imbalance
-from tbot_bot.enhancements.ticker_blocklist import is_ticker_blocked
 from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
@@ -98,18 +96,6 @@ def analyze_closing_signals(start_time, screener_class):
                 "alloc": None,
                 "status": "rejected",
                 "reason": "Invalid high/low/price",
-                "price": price
-            })
-            continue
-        if is_ticker_blocked(symbol):
-            candidate_status.append({
-                "symbol": symbol,
-                "rank": idx + 1,
-                "fractional": None,
-                "min_order_size": None,
-                "alloc": None,
-                "status": "rejected",
-                "reason": "Ticker is blocklisted",
                 "price": price
             })
             continue
