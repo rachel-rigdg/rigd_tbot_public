@@ -22,7 +22,7 @@ RIGD PHASE SUPERVISOR: USER-MODE SYSTEMD SPECIFICATION
 ================================================================================
 
 OBJECTIVE:
-Fully eliminate `sudo` and `visudo` from all bot orchestration. The phase supervisor and systemd units run entirely in *user mode*, allowing any `tbot`-like account to bootstrap a bot instance without elevated permissions.
+Fully eliminate `sudo` and `visudo` from all bot orchestration. The phase supervisor and systemd units run entirely in *user mode*, allowing any `tbot` -like account to bootstrap a bot instance without elevated permissions.
 
 --------------------------------------------------------------------------------
 CORE CHANGES TO IMPLEMENT 
@@ -81,7 +81,7 @@ Phase 1: System Boot Validation
 ↓
 - `security_bot.py` decrypts `.env_bot.enc` using key from `storage/keys/env.key`.
 - `env_bot.py` validates required env vars; missing/malformed values cause fatal error and halt.
-- Run `.self_check()` on critical modules (`risk_bot.py`, `kill_switch.py`, `watchdog_bot.py`, `error_handler.py`, `strategy_router.py`).
+- Run `.self_check()` on critical modules (`risk_module.py`, `kill_switch.py`, `watchdog_bot.py`, `error_handler.py`, `strategy_router.py`).
 - Failures abort session and log error in UTC to `output/logs/error_tracebacks.log`.
 - All checks pass proceed to session init.
 
@@ -112,7 +112,7 @@ Each strategy writes ONLY its assigned log (open/mid/close) via main.py and not 
 
 Phase 4: Risk/Fault Monitoring (Continuous)
 ↓
-- Enforce risk constraints (`risk_bot.py`).
+- Enforce risk constraints (`risk_module.py`).
 - Monitor PnL and daily loss limits (`kill_switch.py`).
 - Verify API health (`watchdog_bot.py`).
 - Log uncaught exceptions (`error_handler.py`).

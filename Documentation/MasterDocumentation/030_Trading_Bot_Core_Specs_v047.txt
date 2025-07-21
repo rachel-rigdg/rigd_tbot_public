@@ -106,7 +106,7 @@ TradeBot enforces dynamic float allocation and strict per-session risk controls 
 - Only adjustable via `.env_bot` (Web UI).
 
 **Enforcement Modules:**  
-- `risk_bot.py`: enforces all risk/session/trade limits from config
+- `risk_module.py`: enforces all risk/session/trade limits from config
 - `kill_switch.py`: enforces DAILY_LOSS_LIMIT
 - `watchdog_bot.py`: halts trading if API/system is unstable
 
@@ -185,7 +185,7 @@ TBot executes intraday breakout and mean-reversion strategies using a unified lo
 **Supported Brokers:**  
 - Alpaca: long equity, inverse ETFs
 - IBKR: long equity, inverse ETFs, long puts
-- Tradier: long equity, inverse ETFs
+- Tradier (depreciated): long equity, inverse ETFs - # currently depreciated and not in use
 
 **Execution Framework:**  
 - Strategy execution is sequenced via `STRATEGY_SEQUENCE` in `.env_bot`

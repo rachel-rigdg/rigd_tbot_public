@@ -1,5 +1,6 @@
 # tbot_bot/accounting/coa_utils.py
 # COA DB utilities: create/import/export/validate COA db (metadata + hierarchy), supports Web UI editing
+# This module manages ONLY Chart of Accounts structure/validation. It does NOT post cash or reserve transactions.
 
 import json
 import os
@@ -18,6 +19,7 @@ from tbot_bot.support.path_resolver import (
 
 # --- Load COA Metadata and Accounts (from JSON and SQLite) ---
 def load_coa_metadata() -> Dict[str, Any]:
+    """Load COA metadata from JSON file. No cash actions."""
     metadata_path = resolve_coa_metadata_path()
     if not os.path.exists(metadata_path):
         raise FileNotFoundError("COA metadata file not found.")
@@ -25,6 +27,7 @@ def load_coa_metadata() -> Dict[str, Any]:
         return json.load(mdf)
 
 def load_coa_accounts() -> List[Dict[str, Any]]:
+    """Load COA account list from JSON file. No cash actions."""
     coa_json_path = resolve_coa_json_path()
     if not os.path.exists(coa_json_path):
         raise FileNotFoundError("COA JSON file not found.")
@@ -43,6 +46,7 @@ def _get_identity_from_secret():
 
 # --- Import COA from SQLite COA DB ---
 def import_coa_from_db(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None) -> Dict[str, Any]:
+    """Import COA structure (not transactions) from SQLite DB."""
     if not all([entity_code, jurisdiction_code, broker_code, bot_id]):
         entity_code, jurisdiction_code, broker_code, bot_id = _get_identity_from_secret()
     db_path = resolve_coa_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
@@ -68,6 +72,7 @@ def import_coa_from_db(entity_code=None, jurisdiction_code=None, broker_code=Non
 
 # --- Export COA to Markdown (human-readable) ---
 def export_coa_markdown(metadata: Dict[str, Any], accounts: List[Dict[str, Any]]) -> str:
+    """Export COA hierarchy to markdown for human review."""
     out = []
     out.append(f"# Chart of Accounts — {metadata.get('entity_code','')}/{metadata.get('jurisdiction_code','')}")
     out.append(f"**Currency:** {metadata.get('currency_code','')}\n")
@@ -83,6 +88,7 @@ def export_coa_markdown(metadata: Dict[str, Any], accounts: List[Dict[str, Any]]
 
 # --- Export COA to CSV ---
 def export_coa_csv(accounts: List[Dict[str, Any]]) -> str:
+    """Export COA hierarchy to CSV for spreadsheet import."""
     rows = ["code,name,depth"]
     def walk(accs, depth=0):
         for acc in accs:
@@ -94,6 +100,7 @@ def export_coa_csv(accounts: List[Dict[str, Any]]) -> str:
 
 # --- Schema Check: Validate COA Table and Metadata in COA DB ---
 def validate_coa_db_schema(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None) -> bool:
+    """Validate COA DB schema for required tables/columns (not for posting actions)."""
     if not all([entity_code, jurisdiction_code, broker_code, bot_id]):
         entity_code, jurisdiction_code, broker_code, bot_id = _get_identity_from_secret()
     db_path = resolve_coa_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
@@ -120,6 +127,7 @@ def validate_coa_db_schema(entity_code=None, jurisdiction_code=None, broker_code
 
 # --- Save COA to JSON and Metadata (for UI export) ---
 def save_coa_json_and_metadata(accounts: List[Dict[str, Any]], metadata: Dict[str, Any]):
+    """Write COA and metadata to JSON for UI export or backup."""
     coa_json_path = resolve_coa_json_path()
     coa_metadata_path = resolve_coa_metadata_path()
     with open(coa_json_path, "w", encoding="utf-8") as cf:
@@ -133,6 +141,7 @@ def utc_now() -> str:
 
 # --- Validate COA Structure ---
 def validate_coa_structure(accounts: Any):
+    """Validates that COA accounts structure is a non-empty list, with 'code' and 'name'."""
     if not isinstance(accounts, list) or not accounts:
         raise ValueError("COA accounts must be a non-empty list.")
     def check(acc):

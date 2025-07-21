@@ -108,7 +108,7 @@ class IBKRScreener(ScreenerBase):
                 "lastClose": current,
                 "marketCap": mc,
                 "exchange": exch,
-                "isFractional": is_fractional,
+                "isFractional": is_fractional, # isFractional is informational only; not used for screening—checked in order logic.
                 "price": current,
                 "vwap": vwap,
                 "open": open_

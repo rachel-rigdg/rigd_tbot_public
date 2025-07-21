@@ -58,16 +58,7 @@ def create_unified_app():
     from tbot_web.py.screener_credentials_web import screener_credentials_bp
     from tbot_web.py.holdings_web import holdings_web
 
-    try:
-        from tbot_web.py.provisioning_web import provisioning_blueprint
-        app.register_blueprint(provisioning_blueprint, url_prefix="/provisioning")
-    except ImportError:
-        pass
-    try:
-        from tbot_web.py.bootstrap_web import bootstrap_blueprint
-        app.register_blueprint(bootstrap_blueprint, url_prefix="/bootstrapping")
-    except ImportError:
-        pass
+    
 
     # Always register required blueprints
     app.register_blueprint(register_web, url_prefix="/registration")

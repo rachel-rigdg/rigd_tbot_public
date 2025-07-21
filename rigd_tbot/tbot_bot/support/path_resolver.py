@@ -1,6 +1,7 @@
 # tbot_bot/support/path_resolver.py
 # Resolves dynamic paths for TradeBot modules based on identity and file category.
 # Fully supports staged universe/blocklist build, archival, and validation/diff ops per specification.
+# All ledger, reporting, and COA outputs are aligned to compliance and accounting spec.
 
 import os
 import re
@@ -52,6 +53,7 @@ BOOTSTRAP_ONLY_LOGS = [
 
 def get_bot_identity(explicit_identity: str = None) -> str:
     if is_first_bootstrap():
+        # If identity is not yet set, allow explicit_identity override only at config time
         return explicit_identity if explicit_identity else None
     identity = explicit_identity if explicit_identity else load_bot_identity(default=None)
     if not identity or not get_bot_identity_string_regex().match(identity):
@@ -147,6 +149,16 @@ def resolve_output_folder_path(bot_identity: str) -> str:
     validate_bot_identity(bot_identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / bot_identity)
 
+def resolve_output_path(rel_path):
+    """
+    Returns absolute path for any output file, creating parent directories as needed.
+    All logs/output go to tbot_bot/output/.
+    """
+    root = Path(__file__).resolve().parents[2]
+    out_path = root / "tbot_bot" / "output" / rel_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    return str(out_path)
+
 def resolve_ledger_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
@@ -181,10 +193,15 @@ def resolve_universe_partial_path() -> str:
     return str(screeners_dir / "symbol_universe.partial.json")
 
 def resolve_universe_log_path() -> str:
+    # === Reporting logger refactor: reporting/universe_logger.py ===
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
     screeners_dir.mkdir(parents=True, exist_ok=True)
     return str(screeners_dir / "universe_ops.log")
+
+def resolve_universe_logger_path() -> str:
+    # Path for reporting/universe_logger.py (for backward compatibility)
+    return str(PROJECT_ROOT / "tbot_bot" / "reporting" / "universe_logger.py")
 
 def resolve_screener_blocklist_path() -> str:
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
@@ -324,6 +341,7 @@ __all__ = [
     "resolve_universe_unfiltered_path",
     "resolve_universe_partial_path",
     "resolve_universe_log_path",
+    "resolve_universe_logger_path",  # NEW: reporting/universe_logger.py
     "resolve_screener_blocklist_path",
     "resolve_blocklist_archive_path",
     "resolve_universe_archive_path",

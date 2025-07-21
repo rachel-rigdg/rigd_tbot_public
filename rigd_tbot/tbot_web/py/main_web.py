@@ -21,6 +21,7 @@ def get_current_bot_state():
 
 @main_blueprint.route("/", methods=["GET"])
 def root_router():
+    # Phase 1: Bootstrap/Config/Registration
     if is_first_bootstrap():
         config = get_default_config()
         session.clear()
@@ -35,15 +36,19 @@ def root_router():
             return render_template("wait.html", bot_state=state)
         return render_template("wait.html", bot_state=state)
 
+    # Provisioning trigger flag (one-shot), then wait
     if session.get("trigger_provisioning"):
         return render_template("wait.html", bot_state=state)
 
+    # Error/shutdown lockout
     if state in ("error", "shutdown_triggered"):
         return render_template("wait.html", bot_state=state)
 
+    # Require at least one user registered
     if not user_exists():
         return redirect(url_for("register_web.register_page"))
 
+    # Normal operational state: serve main UI
     return render_template("main.html", bot_state=state)
 
 @main_blueprint.route("/provisioning", methods=["GET"])
@@ -73,7 +78,9 @@ def main_page():
         return render_template("wait.html", bot_state=state)
     if not user_exists():
         return redirect(url_for("register_web.register_page"))
-    return render_template("main.html", bot_state=state,
+    return render_template(
+        "main.html",
+        bot_state=state,
         account_url=url_for("account_web.account_page"),
         password_reset_url=url_for("password_reset_web.request_reset"),
         users_url=url_for("users_web.users_list")

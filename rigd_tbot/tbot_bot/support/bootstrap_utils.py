@@ -1,4 +1,6 @@
 # tbot_bot/support/bootstrap_utils.py
+# Bootstrap and config detection logic for TradeBot; governs initial phase and bootstrapping state transitions.
+# All subsequent provisioning is gated on this file.
 
 from pathlib import Path
 
@@ -15,15 +17,15 @@ CONFIG_REQUIRED_FILES = [
     SECRETS_DIR / "network_config.json.enc",
 ]
 
+# Allowed states for first-bootstrap/configuration
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping", "registration")
-
 
 def is_first_bootstrap(quiet_mode: bool = False) -> bool:
     """
-    Returns True only if bot_state.txt is missing or its stripped content matches any "initialize", "provisioning", "bootstrapping", "registration".
-    Prevents provisioning/redirect after initial bootstrap.
-    BOOTSTRAP_FLAG is deprecated and ignored; logic is now driven by bot_state.txt.
-    Debugs all checked paths and values to stdout for diagnostics unless quiet_mode is True.
+    True ONLY if bot_state.txt missing, or if content is one of 'initialize', 'provisioning', 'bootstrapping', 'registration',
+    or if a required config file is missing. Used to gate config and provisioning phases.
+    BOOTSTRAP_FLAG is deprecated and ignored; logic is now driven solely by bot_state.txt.
+    Prints debug output unless quiet_mode is True.
     """
     def debug_print(msg):
         if not quiet_mode:

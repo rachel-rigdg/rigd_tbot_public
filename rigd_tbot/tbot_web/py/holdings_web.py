@@ -15,16 +15,16 @@ from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identi
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from pathlib import Path
 
 holdings_web = Blueprint("holdings_web", __name__)
 
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
-BOT_STATE_PATH = __file__.replace("py/holdings_web.py", "control/bot_state.txt")
+BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
 def get_current_bot_state():
     try:
-        with open(BOT_STATE_PATH, "r", encoding="utf-8") as f:
-            return f.read().strip()
+        return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
     except Exception:
         return "unknown"
 
@@ -54,6 +54,7 @@ def holdings_ui():
 
 @holdings_web.route("/holdings/config", methods=["GET"])
 def get_holdings_config():
+    """Return all editable holdings configuration parameters."""
     return jsonify({
         "HOLDINGS_FLOAT_TARGET_PCT": load_env_var("HOLDINGS_FLOAT_TARGET_PCT", 10),
         "HOLDINGS_TAX_RESERVE_PCT": load_env_var("HOLDINGS_TAX_RESERVE_PCT", 20),
@@ -82,7 +83,11 @@ def update_holdings_config():
         secrets["NEXT_REBALANCE_DUE"] = next_due.isoformat()
         save_holdings_secrets(secrets)
 
-        return jsonify({"status": "success", "next_rebalance_due": secrets["NEXT_REBALANCE_DUE"], "updated_by": user.username})
+        return jsonify({
+            "status": "success",
+            "next_rebalance_due": secrets["NEXT_REBALANCE_DUE"],
+            "updated_by": getattr(user, "username", user if user else "system")
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -101,7 +106,7 @@ def holdings_manual_rebalance():
     if get_user_role(user) != "admin":
         return jsonify({"error": "Access denied"}), 403
     try:
-        result = manual_holdings_action("rebalance", user=user.username)
+        result = manual_holdings_action("rebalance", user=getattr(user, "username", user if user else "system"))
         return jsonify({"status": "rebalance_triggered", "details": result})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

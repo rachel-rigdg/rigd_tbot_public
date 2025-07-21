@@ -7,8 +7,6 @@
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-import os
-import sys
 import time
 import subprocess
 from pathlib import Path
@@ -33,11 +31,14 @@ KILL_SWITCH_PATH = path_resolver.resolve_runtime_script_path("kill_switch.py")
 LOG_ROTATION_PATH = path_resolver.resolve_runtime_script_path("log_rotation.py")
 TRADE_LOGGER_PATH = path_resolver.resolve_runtime_script_path("trade_logger.py")
 STATUS_LOGGER_PATH = path_resolver.resolve_runtime_script_path("status_logger.py")
-SYMBOL_UNIVERSE_REFRESH_PATH = path_resolver.resolve_runtime_script_path("symbol_universe_refresh.py")
+UNIVERSE_ORCHESTRATOR_PATH = path_resolver.resolve_runtime_script_path("universe_orchestrator.py")
 INTEGRATION_TEST_RUNNER_PATH = path_resolver.resolve_runtime_script_path("integration_test_runner.py")
+HOLDINGS_MANAGER_PATH = path_resolver.resolve_runtime_script_path("holdings_manager.py")
 
 UNIVERSE_TIMESTAMP_PATH = ROOT_DIR / "tbot_bot" / "output" / "screeners" / "symbol_universe.json"
 REBUILD_DELAY_HOURS = 4
+
+BOOT_PHASES = ("initialize", "provisioning", "bootstrapping", "registration")
 
 def read_env_var(key, default=None):
     from tbot_bot.config.env_bot import load_env_bot_config
@@ -97,28 +98,6 @@ def is_time_for_universe_rebuild():
     scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
     return now >= scheduled_time and build_time < scheduled_time
 
-def is_bot_ready():
-    try:
-        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        return state not in ("initialize", "provisioning", "bootstrapping")
-    except Exception:
-        return False
-
-def safe_run_holdings_maintenance():
-    """
-    Only runs holdings manager if the bot is fully provisioned and bootstrapped.
-    Delays import until bot is ready; does nothing otherwise.
-    """
-    if is_bot_ready():
-        try:
-            from tbot_bot.trading.holdings_manager import run_holdings_maintenance
-            run_holdings_maintenance()
-            print("[tbot_supervisor] Holdings maintenance completed.")
-        except Exception as e:
-            print(f"[tbot_supervisor] Holdings maintenance error: {e}")
-    else:
-        print("[tbot_supervisor] Skipping holdings maintenance: bot not fully provisioned.")
-
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
     processes = {}
@@ -134,7 +113,11 @@ def main():
         ("kill_switch", KILL_SWITCH_PATH),
         ("log_rotation", LOG_ROTATION_PATH),
         ("trade_logger", TRADE_LOGGER_PATH),
-        ("status_logger", STATUS_LOGGER_PATH)
+        ("status_logger", STATUS_LOGGER_PATH),
+    ]
+
+    persistent_ops = [
+        ("holdings_manager", HOLDINGS_MANAGER_PATH)
     ]
 
     last_universe_rebuild = None
@@ -181,6 +164,15 @@ def main():
                 print(f"[tbot_supervisor] Detected shutdown/error state: {state}. Terminating subprocesses and exiting.")
                 break
 
+            # Only launch holdings_manager AFTER provisioning/bootstrapping complete
+            if state not in BOOT_PHASES:
+                for name, path in persistent_ops:
+                    if not ensure_singleton(os.path.basename(str(path))):
+                        print(f"[tbot_supervisor] Launching {name} as persistent worker...")
+                        processes[name] = launch_subprocess(path)
+                    else:
+                        print(f"[tbot_supervisor] {name} already running.")
+
             if TEST_MODE_FLAG.exists():
                 print("[tbot_supervisor] Global TEST_MODE flag detected. Launching integration_test_runner.py...")
                 if not ensure_singleton("integration_test_runner.py"):
@@ -207,8 +199,6 @@ def main():
                 BOT_STATE_PATH.write_text("running", encoding="utf-8")
                 print("[tbot_supervisor] CONTROL_START_FLAG detected. Set bot state to 'running'.")
                 CONTROL_START_FLAG.unlink(missing_ok=True)
-                print("[tbot_supervisor] Running holdings maintenance...")
-                safe_run_holdings_maintenance()
 
             if CONTROL_STOP_FLAG.exists():
                 BOT_STATE_PATH.write_text("idle", encoding="utf-8")
@@ -216,9 +206,9 @@ def main():
                 CONTROL_STOP_FLAG.unlink(missing_ok=True)
 
             if is_time_for_universe_rebuild():
-                if not ensure_singleton("symbol_universe_refresh.py"):
-                    print("[tbot_supervisor] Triggering universe cache rebuild (symbol_universe_refresh.py)...")
-                    processes["symbol_universe_refresh"] = launch_subprocess(SYMBOL_UNIVERSE_REFRESH_PATH)
+                if not ensure_singleton("universe_orchestrator.py"):
+                    print("[tbot_supervisor] Triggering universe cache rebuild (universe_orchestrator.py)...")
+                    processes["universe_orchestrator"] = launch_subprocess(UNIVERSE_ORCHESTRATOR_PATH)
                     last_universe_rebuild = time.time()
                 else:
                     print("[tbot_supervisor] Universe cache rebuild already running.")
@@ -226,6 +216,19 @@ def main():
             if persistent_state == "running" and state != "running" and state == "idle":
                 BOT_STATE_PATH.write_text("running", encoding="utf-8")
                 print("[tbot_supervisor] Restored bot state to 'running' after restart.")
+
+            for name, proc in processes.items():
+                if proc.poll() is not None:
+                    print(f"[tbot_supervisor] {name} has died. Restarting...")
+                    # Find path for restart
+                    all_targets = launch_targets + persistent_ops
+                    restart_path = None
+                    for t_name, t_path in all_targets:
+                        if t_name == name:
+                            restart_path = t_path
+                            break
+                    if restart_path:
+                        processes[name] = launch_subprocess(restart_path)
 
             time.sleep(2)
 

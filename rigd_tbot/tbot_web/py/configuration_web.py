@@ -8,7 +8,6 @@ import json
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 import subprocess
 import logging
-import sys
 
 configuration_blueprint = Blueprint("configuration_web", __name__, url_prefix="/configuration")
 
@@ -23,6 +22,7 @@ from tbot_bot.config import config_encryption
 logger = logging.getLogger(__name__)
 
 def load_runtime_config():
+    """Load and decrypt the runtime config if available."""
     if RUNTIME_CONFIG_KEY_PATH.exists() and RUNTIME_CONFIG_PATH.exists():
         try:
             key = RUNTIME_CONFIG_KEY_PATH.read_bytes()
@@ -35,6 +35,7 @@ def load_runtime_config():
     return {}
 
 def load_defaults():
+    """Load the default config template from secrets_template.json."""
     try:
         with open(SECRETS_TEMPLATE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -43,6 +44,7 @@ def load_defaults():
     return {}
 
 def save_runtime_config(config: dict):
+    """Encrypt and write the runtime config to disk."""
     try:
         if not RUNTIME_CONFIG_KEY_PATH.exists():
             key = Fernet.generate_key()
@@ -60,6 +62,7 @@ def save_runtime_config(config: dict):
 
 @configuration_blueprint.route("/", methods=["GET"])
 def show_configuration():
+    """Render the configuration page on first launch or during explicit reconfiguration."""
     state = "initialize"
     if BOT_STATE_PATH.exists():
         try:
@@ -77,6 +80,7 @@ def show_configuration():
 
 @configuration_blueprint.route("/", methods=["POST"])
 def save_configuration():
+    """Save posted configuration form and trigger provisioning if required."""
     form = request.form
 
     bot_identity_data = {
@@ -127,6 +131,7 @@ def save_configuration():
 
     try:
         save_runtime_config(config)
+        # Only update encrypted secrets if this is not the first bootstrap
         if not is_first_bootstrap():
             try:
                 config_encryption.encrypt_and_write("bot_identity", bot_identity_data)

@@ -1,5 +1,7 @@
 # tbot_bot/accounting/ledger_utils.py
-# Ledger DB utilities: create OFX-compliant ledger db, schema validation, audit helpers (no COA/metadata logic)
+# Ledger DB utilities: create OFX-compliant ledger db, schema validation, audit helpers.
+# Handles ALL trade/cash event logging, querying, and audit logging.
+# No COA/metadata structure logic—COA is managed in coa_utils.py only.
 
 import os
 import sqlite3
@@ -35,7 +37,7 @@ ACCOUNT_MAP = {
 
 def get_account_path(key):
     """
-    Returns full ledger path for a logical account key.
+    Returns full ledger path for a logical account key (OFX-compliant).
     """
     return ACCOUNT_MAP.get(key, "")
 
@@ -211,6 +213,7 @@ def calculate_running_balances():
 def get_coa_accounts():
     """
     Returns a list of (code, name) tuples for all COA accounts, sorted by name.
+    Only for UI/account mapping; no transactional posting here.
     """
     if TEST_MODE_FLAG.exists():
         return []

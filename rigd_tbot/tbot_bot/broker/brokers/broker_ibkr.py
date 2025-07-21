@@ -2,7 +2,7 @@
 # Interactive Brokers implementation (single-broker only)
 
 from ib_insync import IB, Stock, MarketOrder
-from tbot_bot.trading.logs_bot import log_event
+from tbot_bot.support.utils_log import log_event  # FIXED: use correct logger
 import csv
 import io
 
@@ -28,7 +28,7 @@ class IBKRBroker:
             self.client.connect(self.host, self.port, clientId=self.client_id)
             self.connected = self.client.isConnected()
         except Exception as e:
-            log_event("broker_ibkr", f"Connection failed: {e}")
+            log_event("broker_ibkr", f"Connection failed: {e}", level="error")
             self.connected = False
 
     def self_check(self) -> bool:
@@ -38,14 +38,14 @@ class IBKRBroker:
         try:
             return self.client.accountSummary().df.to_dict()
         except Exception as e:
-            log_event("broker_ibkr", f"Account info error: {e}")
+            log_event("broker_ibkr", f"Account info error: {e}", level="error")
             return {"error": str(e)}
 
     def get_positions(self):
         try:
             return self.client.positions()
         except Exception as e:
-            log_event("broker_ibkr", f"Get positions failed: {e}")
+            log_event("broker_ibkr", f"Get positions failed: {e}", level="error")
             return []
 
     def get_position(self, symbol):
@@ -76,7 +76,7 @@ class IBKRBroker:
                 "order_id": trade.order.permId
             }
         except Exception as e:
-            log_event("broker_ibkr", f"Submit order failed: {e}")
+            log_event("broker_ibkr", f"Submit order failed: {e}", level="error")
             return {"error": str(e)}
 
     def close_position(self, symbol):
@@ -89,7 +89,7 @@ class IBKRBroker:
             self.client.placeOrder(pos.contract, order)
             return {"status": "close submitted", "symbol": symbol}
         except Exception as e:
-            log_event("broker_ibkr", f"Close position failed: {e}")
+            log_event("broker_ibkr", f"Close position failed: {e}", level="error")
             return {"error": str(e)}
 
     def cancel_order(self, order_id):
@@ -97,7 +97,7 @@ class IBKRBroker:
             self.client.cancelOrder(order_id)
             return {"status": f"Order {order_id} cancelled"}
         except Exception as e:
-            log_event("broker_ibkr", f"Cancel order error: {e}")
+            log_event("broker_ibkr", f"Cancel order error: {e}", level="error")
             return {"error": str(e)}
 
     def is_market_open(self):
@@ -185,5 +185,5 @@ class IBKRBroker:
                 writer.writerows(rows)
                 return output.getvalue()
         except Exception as e:
-            log_event("broker_ibkr", f"Download trade ledger failed: {e}")
+            log_event("broker_ibkr", f"Download trade ledger failed: {e}", level="error")
             raise

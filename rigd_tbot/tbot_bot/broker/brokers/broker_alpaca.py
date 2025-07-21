@@ -5,7 +5,7 @@ import requests
 import csv
 import io
 from tbot_bot.support.utils_time import utc_now
-from tbot_bot.trading.logs_bot import log_event
+from tbot_bot.support.utils_log import log_event  # FIXED: use correct logger
 
 class AlpacaBroker:
     def __init__(self, env):
@@ -36,7 +36,7 @@ class AlpacaBroker:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            log_event("broker_alpaca", f"Request failed: {e}")
+            log_event("broker_alpaca", f"Request failed: {e}", level="error")
             raise
 
     def get_account_info(self):

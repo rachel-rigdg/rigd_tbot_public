@@ -20,6 +20,7 @@ def get_vix_value():
     """
     Fetches the current VIX index value from Finnhub.
     Caches result for CACHE_DURATION to reduce API calls.
+    Returns float or None.
     """
     global _vix_cache
     current_time = time.time()
@@ -28,7 +29,7 @@ def get_vix_value():
         return _vix_cache["value"]
 
     if not SCREENER_API_KEY:
-        log_error("[vix_gatekeeper] SCREENER_API_KEY is missing from config.")
+        log_error("[vix_gatekeeper] SCREENER_API_KEY is missing from config.", module="vix_gatekeeper")
         return None
 
     try:
@@ -39,10 +40,10 @@ def get_vix_value():
         data = response.json()
         vix = float(data.get("c", 0))
         _vix_cache = {"value": vix, "timestamp": current_time}
-        log_debug(f"[vix_gatekeeper] Current VIX: {vix}")
+        log_debug(f"[vix_gatekeeper] Current VIX: {vix}", module="vix_gatekeeper")
         return vix
     except Exception as e:
-        log_error(f"[vix_gatekeeper] Failed to fetch VIX: {e}")
+        log_error(f"[vix_gatekeeper] Failed to fetch VIX: {e}", module="vix_gatekeeper")
         return None
 
 def is_vix_above_threshold(threshold: float) -> bool:
@@ -52,6 +53,6 @@ def is_vix_above_threshold(threshold: float) -> bool:
     """
     vix = get_vix_value()
     if vix is None:
-        log_debug("[vix_gatekeeper] Could not retrieve VIX, defaulting to allow trade.")
+        log_debug("[vix_gatekeeper] Could not retrieve VIX, defaulting to allow trade.", module="vix_gatekeeper")
         return True  # Fail open
     return vix >= threshold

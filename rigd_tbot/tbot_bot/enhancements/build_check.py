@@ -18,18 +18,30 @@ REQUIRED_FILES = [
 ]
 
 REQUIRED_FOLDERS = [
-    "backups/"
+    "backups"
 ]
 
 def build_required_log_files():
     bot_identity = get_bot_identity()
-    return [
-        get_output_path(bot_identity, "logs", "open.log"),
-        get_output_path(bot_identity, "logs", "mid.log"),
-        get_output_path(bot_identity, "logs", "close.log"),
-        get_output_path(bot_identity, "logs", "unresolved_orders.log"),
-        get_output_path(bot_identity, "logs", "error_tracebacks.log"),
-    ]
+    # Try to build logs with and without bot_identity fallback for legacy compatibility
+    try:
+        return [
+            get_output_path(bot_identity, "logs", "open.log"),
+            get_output_path(bot_identity, "logs", "mid.log"),
+            get_output_path(bot_identity, "logs", "close.log"),
+            get_output_path(bot_identity, "logs", "unresolved_orders.log"),
+            get_output_path(bot_identity, "logs", "error_tracebacks.log"),
+        ]
+    except Exception:
+        # Fallback: just create logs in output/logs
+        base_logs = [
+            "tbot_bot/output/logs/open.log",
+            "tbot_bot/output/logs/mid.log",
+            "tbot_bot/output/logs/close.log",
+            "tbot_bot/output/logs/unresolved_orders.log",
+            "tbot_bot/output/logs/error_tracebacks.log",
+        ]
+        return base_logs
 
 def check_file_exists(path):
     return Path(path).is_file()
@@ -45,8 +57,12 @@ def run_build_check():
             errors.append(f"Missing required file: {file}")
 
     for folder in REQUIRED_FOLDERS:
-        if not check_folder_exists(folder):
-            errors.append(f"Missing required folder: {folder}")
+        p = Path(folder)
+        if not check_folder_exists(p):
+            try:
+                p.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                errors.append(f"Missing required folder and failed to create: {folder} ({e})")
 
     for log_file in build_required_log_files():
         if not check_file_exists(log_file):
@@ -58,12 +74,13 @@ def run_build_check():
                 errors.append(f"Failed to create placeholder log: {log_file} ({e})")
 
     if errors:
-        print("BUILD CHECK FAILED:")
+        print("BUILD CHECK FAILED:", file=sys.stderr)
         for e in errors:
-            print("  -", e)
+            print("  -", e, file=sys.stderr)
         sys.exit(1)
     else:
         print("BUILD CHECK PASSED — all critical files and folders found.")
+        sys.exit(0)
 
 if __name__ == "__main__":
     run_build_check()

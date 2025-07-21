@@ -247,8 +247,7 @@ rigd_tbot/
 │   │   ├── screeners/                             	# Runtime filter modules using providers' data (for screening, not universe build)
 │   │   │   ├── alpaca_screener.py                  # Alpaca screener: runtime quote filtering; delegates symbol/quote fetch to provider adapters
 │   │   │   ├── finnhub_screener.py                 # Finnhub screener: runtime quote filtering; uses provider adapter for fetches
-│   │   │   ├── ibkr_screener.py                    # IBKR screener: runtime quote filtering; uses provider adapter for fetches
-│   │   │   └── tradier_screener.py                 # Tradier screener: runtime quote filtering; uses provider adapter for fetches
+│   │   │   └── ibkr_screener.py                    # IBKR screener: runtime quote filtering; uses provider adapter for fetches
 │   │   │
 │   │   ├── blocklist_manager.py                    # Blocklist manager: add/remove/update symbols, reasons, timestamps; atomic writes; used in universe filter pipeline and daily ops
 │   │   ├── provider_base.py                        # Abstract base class/interface for all provider adapters: requires fetch_symbols and fetch_quotes interface
@@ -343,7 +342,7 @@ rigd_tbot/
 │   └── trading/			                    # Trade Execution
 │       ├── holdings_manager.py          	# Core logic for ETF purchases, sales, rebalancing, cash top-up, tax and payroll allocations.
 │       ├── holdings_utils.py            	# Helper functions for allocation calculations, broker integration, audit logging.
-│       ├── instruments.py
+│       ├── instruments.py                    # Canonical instrument definitions (ETF, equity, put, etc.); includes formatting and validation.
 │       ├── kill_switch.py                      # Triggers shutdown on DAILY_LOSS_LIMIT or catastrophic loss violation.
 │       ├── logs_bot.py                         # Runtime logging of trade operations to output/logs.
 │       ├── notifier_bot.py                     # Sends alerts to configured channels (email/Slack/SMS/PagerDuty).

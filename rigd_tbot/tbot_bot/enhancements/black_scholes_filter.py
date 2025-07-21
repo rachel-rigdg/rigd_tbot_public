@@ -33,7 +33,6 @@ RISK_FREE_RATES = {
 
 RISK_FREE_RATE = RISK_FREE_RATES.get(JURISDICTION_CODE, 0.045)
 
-
 def calculate_bsm_price(option_type, S, K, T, r, sigma):
     """
     Black-Scholes-Merton formula for European options.
@@ -59,7 +58,6 @@ def calculate_bsm_price(option_type, S, K, T, r, sigma):
     else:
         raise ValueError("option_type must be 'call' or 'put'")
 
-
 def passes_bsm_filter(option_type, S, K, T_days, sigma, market_price, context=None):
     """
     Evaluate if market price is within acceptable deviation of theoretical BSM price.
@@ -78,7 +76,6 @@ def passes_bsm_filter(option_type, S, K, T_days, sigma, market_price, context=No
 
     T = T_days / 365.0
     theoretical_price = calculate_bsm_price(option_type, S, K, T, RISK_FREE_RATE, sigma)
-
     deviation = abs(theoretical_price - market_price) / theoretical_price if theoretical_price > 0 else 1.0
 
     if deviation > MAX_BSM_DEVIATION:
@@ -89,5 +86,30 @@ def passes_bsm_filter(option_type, S, K, T_days, sigma, market_price, context=No
             f"deviation={deviation:.2%} | context={context}"
         )
         return False
-
     return True
+
+def is_trade_blocked_by_bsm(option_type, S, K, T_days, sigma, market_price, context=None):
+    """
+    Richer interface: Returns (blocked:bool, reason:str|None)
+    Use in risk modules that want full diagnostics.
+    """
+    if not ENABLE_BSM_FILTER:
+        return (False, None)
+
+    T = T_days / 365.0
+    theoretical_price = calculate_bsm_price(option_type, S, K, T, RISK_FREE_RATE, sigma)
+    deviation = abs(theoretical_price - market_price) / theoretical_price if theoretical_price > 0 else 1.0
+
+    if deviation > MAX_BSM_DEVIATION:
+        reason = (
+            f"BSM deviation {deviation:.2%} exceeds threshold "
+            f"(market={market_price:.2f}, model={theoretical_price:.2f}, juris={JURISDICTION_CODE})"
+        )
+        log_event(
+            f"BSM_FILTER_REJECTED | JURIS={JURISDICTION_CODE} | {option_type.upper()} "
+            f"S={S} K={K} T={T_days}d σ={sigma:.2f} "
+            f"market={market_price:.2f} model={theoretical_price:.2f} "
+            f"deviation={deviation:.2%} | context={context}"
+        )
+        return (True, reason)
+    return (False, None)

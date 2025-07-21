@@ -130,7 +130,7 @@ class FinnhubScreener(ScreenerBase):
                 "lastClose": current,
                 "marketCap": mc,
                 "exchange": exch,
-                "isFractional": is_fractional,
+                "isFractional": is_fractional,  # Informational only, not used for screening
                 "price": current,
                 "vwap": vwap,
                 "open": open_

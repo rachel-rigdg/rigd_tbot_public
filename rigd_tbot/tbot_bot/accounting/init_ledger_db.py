@@ -1,5 +1,6 @@
 # tbot_bot/accounting/init_ledger_db.py
 # Bootstrap script: initializes a new bot ledger DB file using tbot_ledger_schema.sql (called only at provisioning/reset)
+# This ONLY initializes the ledger DB; no COA actions.
 
 import sys
 from pathlib import Path
@@ -10,9 +11,7 @@ import os
 import sqlite3
 import json
 from cryptography.fernet import Fernet
-from tbot_bot.support.path_resolver import (
-    resolve_ledger_db_path,
-)
+from tbot_bot.support.path_resolver import resolve_ledger_db_path
 
 def resolve_ledger_schema_path():
     """
@@ -48,6 +47,7 @@ def init_ledger_db(entity_code=None, jurisdiction_code=None, broker_code=None, b
     conn.executescript(schema_sql)
     conn.commit()
     conn.close()
+    print(f"[init_ledger_db] Ledger DB created: {ledger_db_path}")
 
 # CLI direct execution
 if __name__ == "__main__":

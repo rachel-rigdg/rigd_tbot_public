@@ -2,7 +2,7 @@
 # Tradier broker adapter (single-mode, single-broker architecture, spec compliant)
 
 import requests
-from tbot_bot.trading.logs_bot import log_event
+from tbot_bot.support.utils_log import log_event  # FIXED: use correct logger
 
 class TradierBroker:
     def __init__(self, env):
@@ -31,7 +31,7 @@ class TradierBroker:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            log_event("broker_tradier", f"Request failed: {e}")
+            log_event("broker_tradier", f"Request failed: {e}", level="error")
             raise
 
     def get_account_info(self):
@@ -154,8 +154,8 @@ class TradierBroker:
                 writer.writerows(rows)
         else:
             import io
-            output = io.StringIO()
             import csv
+            output = io.StringIO()
             writer = csv.DictWriter(output, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(rows)

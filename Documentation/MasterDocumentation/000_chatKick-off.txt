@@ -26,23 +26,15 @@ MANDATES:
 2. Completely analyze and then enforce the following master documents from the **Project Files section** (DO NOT summarize or re-interpret):
 
  - 000_chatKick-off.txt
- - 001_Master_Index_and_Summary_{CURRENT_VERSION}.txt
- - 005_Version_and_ChangeLog_{CURRENT_VERSION}.txt
- - 010_Objective_and_Overview_{CURRENT_VERSION}.txt
- - 015_Optional_Expansion_Modules_{CURRENT_VERSION}.txt
- - 020_Env_Config_and_Security_{CURRENT_VERSION}.txt
- - 025_Broker_API_Integration_{CURRENT_VERSION}.txt
- - 030_User Credential & Configuration Lifecycle Blueprint_{CURRENT_VERSION}.txt
- - 035_Encryption_and_Key_Management_{CURRENT_VERSION}.txt
- - 040_Directory_Structure_{CURRENT_VERSION}.txt
- - 050_Trading_Bot_Core_Specs_{CURRENT_VERSION}.txt
- - 060_Enhancements_and_Safety_{CURRENT_VERSION}.txt
- - 070_Accounting_Integration_{CURRENT_VERSION}.txt
- - 080_Logging_and_Reporting_{CURRENT_VERSION}.txt
- - 090_Runtime_and_Lifecycle_{CURRENT_VERSION}.txt
- - 100_Testing_and_Validation_{CURRENT_VERSION}.txt
- - 110_Web_Interface_and_Dashboard_{CURRENT_VERSION}.txt
- - 120_WebInterfaceStatus Design_{CURRENT_VERSION}.txt
+ - 010_Introduction_Objective_and_Overview_{CURRENT_VERSION}.txt
+ - 020_Directory_Structure_{CURRENT_VERSION}.txt
+ - 030_Trading_Bot_Core_Specs_{CURRENT_VERSION}.txt
+ - 040_Screener_Symbol_Universe_{CURRENT_VERSION}.txt
+ - 050_Enhancements_and_Safety_{CURRENT_VERSION}.txt
+ - 060_Accounting_Integration_{CURRENT_VERSION}.txt
+ - 070_Runtime_Lifecycle_Logging_Reporting_and_Testing_{CURRENT_VERSION}.txt
+ - 080_Env_Security_Integration_and_Expansion_Modules_{CURRENT_VERSION}.txt
+ - 090_Web_Interface_and_Dashboard_{CURRENT_VERSION}.txt
 
 
 3. Treat all modules, exports, backups, dashboards, tests, and lifecycle tools as *mandatory*. There is no such thing as “optional” in this system.

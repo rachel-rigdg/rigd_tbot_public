@@ -1,5 +1,6 @@
 # tbot_bot/support/utils_log.py
-# Provides event logging and structured output utilities
+# Provides event logging and structured output utilities.
+# All logs are disk-persistent, audit-compliant, and survive bootstrap/config errors.
 
 import json
 from pathlib import Path
@@ -18,16 +19,20 @@ def get_log_dir():
 def get_log_settings():
     """
     Returns (DEBUG_LOG_LEVEL, ENABLE_LOGGING, LOG_FORMAT) from bot config, safe fallback.
+    If config is missing or corrupt, defaults to 'info', True, 'json'.
     """
-    config = get_bot_config()
-    debug = str(config.get("DEBUG_LOG_LEVEL", "quiet")).lower()
-    enable = config.get("ENABLE_LOGGING", True)
-    fmt = str(config.get("LOG_FORMAT", "json")).lower()
-    return debug, enable, fmt
+    try:
+        config = get_bot_config()
+        debug = str(config.get("DEBUG_LOG_LEVEL", "quiet")).lower()
+        enable = config.get("ENABLE_LOGGING", True)
+        fmt = str(config.get("LOG_FORMAT", "json")).lower()
+        return debug, enable, fmt
+    except Exception:
+        return "info", True, "json"
 
 def get_logger(module_name: str):
     """
-    Returns a bound logger function for the given module.
+    Returns a bound logger object for the given module.
     Supports: .info(), .debug(), .error()
     """
     class BoundLogger:
@@ -49,7 +54,7 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
     if not ENABLE_LOGGING:
         return
 
-    level = level.lower()
+    level = (level or "info").lower()
     # QUIET: Only errors/critical allowed
     if DEBUG_LOG_LEVEL == "quiet" and level not in ("error", "critical"):
         return
@@ -75,11 +80,11 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
 
         if LOG_FORMAT == "json":
-            line = json.dumps(log_entry)
+            line = json.dumps(log_entry, ensure_ascii=False)
         else:
             line = f"[{log_entry['timestamp']}] {level.upper()} - {module}: {message}"
             if extra:
-                line += f" | {json.dumps(extra)}"
+                line += f" | {json.dumps(extra, ensure_ascii=False)}"
 
         # Only print to stdout if not quiet or is error/critical
         if not (DEBUG_LOG_LEVEL == "quiet" and level not in ("error", "critical")):
@@ -94,7 +99,15 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
         print(f"[utils_log] Original log attempt: {log_entry}")
 
 def log_debug(message: str, module: str = "debug"):
+    """
+    Shorthand for debug-level logging.
+    """
     log_event(module, message, level="debug")
 
 def log_error(message: str, module: str = "error"):
+    """
+    Shorthand for error-level logging.
+    """
     log_event(module, message, level="error")
+
+# [STUB] Future: Log rotation, archival, or remote log push (if/when needed)

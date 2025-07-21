@@ -1,12 +1,11 @@
 # tbot_bot/trading/holdings_manager.py
-# Core logic for ETF purchases, sales, rebalancing, cash top-up, tax and payroll allocations
-# loads all config from encrypted holdings secrets file, uses atomic writes and audit
-# Broker selection is fully dynamic using get_broker_adapter() from broker_api.py
-# NEVER loads or executes unless provisioning/bootstrapping are complete
+# Persistent process for all holdings ops: float top-up, rebalance, tax/payroll allocation.
+# Loads config from holdings_secrets, routes all trades via broker_api.
+# Writes to audit log and ledger. No business logic lives in the supervisor.
 
+import time
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-import time
 
 from tbot_bot.trading.holdings_utils import (
     parse_etf_allocations,
@@ -17,31 +16,34 @@ from tbot_bot.trading.holdings_utils import (
 )
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
 from tbot_bot.support.utils_log import get_logger, log_event
-from tbot_bot.broker.broker_api import get_broker_adapter
-from tbot_bot.support.path_resolver import resolve_bot_state_path
+from tbot_bot.broker.broker_api import get_active_broker
+from tbot_bot.support.path_resolver import get_bot_state_path
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
+from tbot_bot.reporting.audit_logger import audit_log_event
 
 log = get_logger(__name__)
+
+POLL_INTERVAL = 60  # seconds between checks, can be made configurable
 
 def _is_bot_initialized():
     """Return True only if bot is past config, provisioning, and bootstrapping."""
     if is_first_bootstrap(quiet_mode=True):
         return False
-    state_path = resolve_bot_state_path()
+    state_path = get_bot_state_path()
     try:
-        state = state_path.read_text(encoding="utf-8").strip()
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = f.read().strip()
         return state not in ("initialize", "provisioning", "bootstrapping")
     except Exception:
         return False
 
 def _is_broker_configured():
-    # Defensive check: Only proceed if a broker is actually configured and provisioned
     try:
-        broker = get_broker_adapter()
+        broker = get_active_broker()
         _ = broker.get_account_value()
         return True
     except Exception as e:
-        log.warning(f"Broker not configured or not provisioned: {e}")
+        log.error(f"Broker not configured or not provisioned: {e}")
         return False
 
 def _should_topup_float(account_value, float_pct, current_cash):
@@ -64,17 +66,17 @@ def _mark_rebalance_complete(holdings_cfg):
     rebalance_interval = int(holdings_cfg.get("HOLDINGS_REBALANCE_INTERVAL", 3))
     next_due = datetime.utcnow().date() + relativedelta(months=rebalance_interval)
     holdings_cfg["NEXT_REBALANCE_DUE"] = next_due.isoformat()
-    save_holdings_secrets(holdings_cfg)
+    save_holdings_secrets(holdings_cfg, user="holdings_manager", reason="rebalance_complete")
 
-def run_holdings_maintenance(realized_gains: float = 0.0, user: str = "system"):
+def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_manager"):
     if not _is_bot_initialized():
-        log.warning("Holdings maintenance blocked: Bot not initialized/provisioned/bootstrapped.")
+        log.warning("Holdings manager: Bot not initialized/provisioned/bootstrapped.")
         return
     if not _is_broker_configured():
-        log.warning("Holdings maintenance aborted: No broker is configured or provisioned yet.")
+        log.warning("Holdings manager: No broker is configured or provisioned yet.")
         return
 
-    broker = get_broker_adapter()
+    broker = get_active_broker()
     holdings_cfg = load_holdings_secrets()
     float_pct = float(holdings_cfg.get("FLOAT_TARGET_PCT", 10))
     tax_pct = float(holdings_cfg.get("TAX_RESERVE_PCT", 20))
@@ -87,7 +89,7 @@ def run_holdings_maintenance(realized_gains: float = 0.0, user: str = "system"):
 
     # === Step 0: Conditional rebalance if due ===
     if _should_rebalance(holdings_cfg):
-        run_rebalance_cycle(user)
+        perform_rebalance_cycle(user)
         _mark_rebalance_complete(holdings_cfg)
 
     # === Step 1: Top-up float (sell ETFs if needed) ===
@@ -96,7 +98,8 @@ def run_holdings_maintenance(realized_gains: float = 0.0, user: str = "system"):
         holdings = broker.get_etf_holdings()
         sorted_by_value = sorted(holdings.items(), key=lambda x: -x[1])
         for symbol, value in sorted_by_value:
-            if value < 1: continue
+            if value < 1:
+                continue
             sell_amt = min(deficit, value)
             broker.place_order(symbol, "sell", sell_amt)
             deficit -= sell_amt
@@ -104,7 +107,9 @@ def run_holdings_maintenance(realized_gains: float = 0.0, user: str = "system"):
             log_event("holdings_float_topup", user=user, details={
                 "symbol": symbol, "amount": sell_amt, "reason": "float_topup"
             })
-            if deficit <= 1: break
+            audit_log_event("holdings_float_topup", user=user, reference=symbol, details={"amount": sell_amt, "reason": "float_topup"})
+            if deficit <= 1:
+                break
 
     # === Step 2: Allocate tax + payroll reserve ===
     tax_cut = compute_realized_tax_cut(realized_gains, tax_pct)
@@ -113,6 +118,7 @@ def run_holdings_maintenance(realized_gains: float = 0.0, user: str = "system"):
     log_event("holdings_reserve_allocation", user=user, details={
         "tax_cut": tax_cut, "payroll_cut": payroll_cut
     })
+    audit_log_event("holdings_reserve_allocation", user=user, reference=None, details={"tax_cut": tax_cut, "payroll_cut": payroll_cut})
 
     # === Step 3: Reinvest post-reserve remainder into target ETFs ===
     remainder = realized_gains - tax_cut - payroll_cut
@@ -126,16 +132,17 @@ def run_holdings_maintenance(realized_gains: float = 0.0, user: str = "system"):
             log_event("holdings_reinvest", user=user, details={
                 "symbol": symbol, "amount": alloc_amt, "reason": "reinvest"
             })
+            audit_log_event("holdings_reinvest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "reinvest"})
 
-def run_rebalance_cycle(user: str = "system"):
+def perform_rebalance_cycle(user: str = "holdings_manager"):
     if not _is_bot_initialized():
-        log.warning("Rebalance cycle blocked: Bot not initialized/provisioned/bootstrapped.")
+        log.warning("Rebalance cycle: Bot not initialized/provisioned/bootstrapped.")
         return
     if not _is_broker_configured():
-        log.warning("Rebalance cycle aborted: No broker is configured or provisioned yet.")
+        log.warning("Rebalance cycle: No broker is configured or provisioned yet.")
         return
 
-    broker = get_broker_adapter()
+    broker = get_active_broker()
     holdings_cfg = load_holdings_secrets()
     etf_cfg = holdings_cfg.get("ETF_ALLOC_LIST", "SCHD:50,SCHY:50")
     etf_targets = parse_etf_allocations(etf_cfg)
@@ -148,16 +155,18 @@ def run_rebalance_cycle(user: str = "system"):
         broker.place_order(order['symbol'], order['action'], order['amount'])
         log.info(f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}")
         log_event("holdings_rebalance", user=user, details=order)
+        audit_log_event("holdings_rebalance", user=user, reference=order['symbol'], details=order)
 
-# All config changes and allocations must be persisted via support/holdings_secrets.py and not via .env_bot or any ad hoc source.
-# All changes are atomically written, rotated, and audit logged via the above module.
+def main():
+    log.info("Holdings manager started as persistent service.")
+    while True:
+        try:
+            perform_holdings_cycle()
+        except Exception as e:
+            log.error(f"Exception in holdings cycle: {e}")
+            log_event("holdings_manager_error", user="holdings_manager", details={"error": str(e)})
+            audit_log_event("holdings_manager_error", user="holdings_manager", reference=None, details={"error": str(e)})
+        time.sleep(POLL_INTERVAL)
 
-"""
-==============================================================================
-MODULE ARCHITECTURE:
-- All top-up, rebalancing, reserve, and allocation logic is encapsulated here.
-- Supervisor/process manager only triggers run_holdings_maintenance(); *all*
-  logic about "should I run X now" is inside this module.
-- This ensures audit safety, future-proofing, and no external double-booking.
-==============================================================================
-"""
+if __name__ == "__main__":
+    main()

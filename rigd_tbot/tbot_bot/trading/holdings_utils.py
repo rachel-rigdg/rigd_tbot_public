@@ -19,7 +19,6 @@ from tbot_bot.accounting.ledger import (
     post_rebalance_entry
 )
 from tbot_bot.reporting.audit_logger import audit_log_event
-from tbot_bot.trading.holdings_manager import run_rebalance_cycle
 
 log = get_logger(__name__)
 
@@ -98,10 +97,8 @@ def record_reserve_split(tax_cut, payroll_cut, user="system", audit_reference=No
     secrets['last_payroll_reserve'] = payroll_cut
     save_holdings_secrets(secrets, user, reason="reserve_split")
 
-    # --- Post to LEDGER, NOT COA ---
     post_tax_reserve_entry(amount=tax_cut, datetime_utc=now_utc, notes="Tax reserve split")
     post_payroll_reserve_entry(amount=payroll_cut, datetime_utc=now_utc, notes="Payroll reserve split")
-    # Audit log event
     audit_log_event(
         event_type="reserve_split",
         user=user,
@@ -138,18 +135,5 @@ def record_rebalance(symbol, amount, action, user="system", audit_reference=None
     )
     log.info(f"Posted rebalance: {action} {amount} of {symbol}, User={user}, AuditRef={audit_reference}")
 
-def trigger_manual_rebalance(user="system", audit_reference=None):
-    """
-    Triggers an immediate rebalance via holdings_manager.run_rebalance_cycle,
-    posts to LEDGER and audit log, and returns the result.
-    """
-    log.info("Manual rebalance trigger requested")
-    result = run_rebalance_cycle(user=user)
-    # Audit log
-    audit_log_event(
-        event_type="manual_rebalance",
-        user=user,
-        reference=audit_reference,
-        details={"status": "manual rebalance triggered", "result": result}
-    )
-    return {"status": "manual rebalance triggered", "result": result}
+# No direct triggering of rebalance cycles or orchestration should exist here.
+# Any orchestration must be performed via flag files, IPC, or through the persistent holdings_manager process ONLY.
