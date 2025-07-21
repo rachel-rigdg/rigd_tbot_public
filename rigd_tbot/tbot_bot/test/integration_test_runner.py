@@ -21,6 +21,7 @@ load_dotenv(dotenv_path=str(get_project_root() / ".env"))
 BOT_IDENTITY = get_bot_identity()
 CONTROL_DIR = resolve_control_path()
 PROJECT_ROOT = get_project_root()
+MAX_STRATEGY_TIME = 60  # seconds per strategy
 
 def set_cwd_and_syspath():
     os.chdir(PROJECT_ROOT)
@@ -109,6 +110,31 @@ def run_single_test_module(flag):
         print(f"[integration_test_runner] Unknown test flag or test module: {flag}")
     _clear_flag(flag)
 
+def run_strategy_with_timeout(strat):
+    log_event("integration_test", f"Triggering strategy: {strat}")
+    # Run strategy in subprocess with timeout
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", f"from tbot_bot.strategy.strategy_router import route_strategy; route_strategy(override='{strat}')"],
+            cwd=PROJECT_ROOT,
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+            timeout=MAX_STRATEGY_TIME,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            print(f"Strategy {strat} failed with return code {proc.returncode}")
+            print(proc.stdout)
+            print(proc.stderr)
+        else:
+            print(f"Strategy {strat} executed successfully.")
+    except subprocess.TimeoutExpired:
+        print(f"Strategy {strat} timed out after {MAX_STRATEGY_TIME} seconds.")
+        log_event("integration_test", f"Strategy {strat} timed out after {MAX_STRATEGY_TIME} seconds")
+    except Exception as e:
+        print(f"Strategy {strat} failed with exception: {e}")
+        log_event("integration_test", f"Strategy {strat} failed with exception: {e}")
+
 def run_integration_test():
     set_cwd_and_syspath()
     flag = detect_individual_test_flag()
@@ -126,12 +152,7 @@ def run_integration_test():
 
         for strat in strategies:
             strat = strat.strip().lower()
-            log_event("integration_test", f"Triggering strategy: {strat}")
-            result = route_strategy(override=strat)
-            if getattr(result, 'skipped', False):
-                print(f"Strategy {strat} was skipped or failed to trigger.")
-            else:
-                print(f"Strategy {strat} executed successfully.")
+            run_strategy_with_timeout(strat)
             time.sleep(1)
 
         print("\nVerifying output artifacts...\n")

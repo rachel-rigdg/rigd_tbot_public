@@ -7,15 +7,38 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.path_resolver import get_output_path
 from pathlib import Path
 import sys
+import subprocess
 
 TEST_FLAG_PATH = get_output_path("control", "test_mode_strategy_selfcheck.flag")
 RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+TIMEOUT_SECONDS = 30
 
 def safe_print(msg):
     try:
         print(msg, flush=True)
     except Exception:
         pass
+
+def run_self_check_subprocess(module_path: str) -> bool:
+    """
+    Runs the self_check function of the specified module in a subprocess,
+    enforcing a TIMEOUT_SECONDS limit.
+    Returns True if self_check() returns True, else False.
+    """
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", f"import {module_path}; exit(0) if {module_path}.self_check() else exit(1)"],
+            timeout=TIMEOUT_SECONDS,
+            capture_output=True,
+            text=True,
+        )
+        return proc.returncode == 0
+    except subprocess.TimeoutExpired:
+        safe_print(f"[test_strategy_selfcheck] Timeout: {module_path} self_check exceeded {TIMEOUT_SECONDS} seconds.")
+        return False
+    except Exception as e:
+        safe_print(f"[test_strategy_selfcheck] Error running {module_path}.self_check(): {e}")
+        return False
 
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
@@ -37,28 +60,16 @@ class TestStrategySelfCheck(unittest.TestCase):
         failures = []
 
         if config.get("STRAT_OPEN_ENABLED"):
-            try:
-                from tbot_bot.strategy.strategy_open import self_check as check_open
-                if not check_open():
-                    failures.append("strategy_open failed self_check()")
-            except Exception as e:
-                failures.append(f"strategy_open import/self_check error: {e}")
+            if not run_self_check_subprocess("tbot_bot.strategy.strategy_open"):
+                failures.append("strategy_open failed self_check() or timed out")
 
         if config.get("STRAT_MID_ENABLED"):
-            try:
-                from tbot_bot.strategy.strategy_mid import self_check as check_mid
-                if not check_mid():
-                    failures.append("strategy_mid failed self_check()")
-            except Exception as e:
-                failures.append(f"strategy_mid import/self_check error: {e}")
+            if not run_self_check_subprocess("tbot_bot.strategy.strategy_mid"):
+                failures.append("strategy_mid failed self_check() or timed out")
 
         if config.get("STRAT_CLOSE_ENABLED"):
-            try:
-                from tbot_bot.strategy.strategy_close import self_check as check_close
-                if not check_close():
-                    failures.append("strategy_close failed self_check()")
-            except Exception as e:
-                failures.append(f"strategy_close import/self_check error: {e}")
+            if not run_self_check_subprocess("tbot_bot.strategy.strategy_close"):
+                failures.append("strategy_close failed self_check() or timed out")
 
         self.assertFalse(failures, "Self-check errors:\n" + "\n".join(failures))
         safe_print("[test_strategy_selfcheck] PASSED.")
