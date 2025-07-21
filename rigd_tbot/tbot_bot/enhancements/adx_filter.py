@@ -6,13 +6,29 @@
 
 from typing import Optional, Tuple
 import requests
-from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.support.utils_log import log_debug
 
-config = get_bot_config()
-SCREENER_API_KEY = config.get("SCREENER_API_KEY", "") or config.get("FINNHUB_API_KEY", "")
-SCREENER_URL = config.get("SCREENER_URL", "https://finnhub.io/api/v1/")
 ADX_FILTER_THRESHOLD = 25  # Block trades if ADX > this
+
+def get_finnhub_api_params():
+    """
+    Loads the first enabled Finnhub screener API key and URL from encrypted credentials.
+    """
+    all_creds = load_screener_credentials()
+    provider_indices = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
+           and all_creds.get(k, "").strip().upper() == "FINNHUB"
+    ]
+    if not provider_indices:
+        return "", ""
+    idx = provider_indices[0]
+    api_key = all_creds.get(f"SCREENER_API_KEY_{idx}", "") or all_creds.get(f"SCREENER_TOKEN_{idx}", "")
+    api_url = all_creds.get(f"SCREENER_URL_{idx}", "https://finnhub.io/api/v1/")
+    return api_key, api_url
 
 def get_adx(symbol: str, resolution: str = "5", length: int = 14) -> Optional[float]:
     """
@@ -21,10 +37,14 @@ def get_adx(symbol: str, resolution: str = "5", length: int = 14) -> Optional[fl
     Never raises.
     """
     try:
+        api_key, api_url = get_finnhub_api_params()
+        if not api_key:
+            log_debug("[adx_filter] Finnhub API key missing.")
+            return None
         url = (
-            f"{SCREENER_URL.rstrip('/')}/indicator"
+            f"{api_url.rstrip('/')}/indicator"
             f"?symbol={symbol}&resolution={resolution}&indicator=adx"
-            f"&timeperiod={length}&token={SCREENER_API_KEY}"
+            f"&timeperiod={length}&token={api_key}"
         )
         resp = requests.get(url, timeout=5)
         data = resp.json()

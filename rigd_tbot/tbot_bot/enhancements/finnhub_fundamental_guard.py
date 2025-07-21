@@ -7,20 +7,31 @@ import json
 import datetime
 import requests
 from tbot_bot.support.utils_log import log_event  # UPDATED
-from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.decrypt_secrets import get_decrypted_json
+from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.support.path_resolver import get_cache_path  # <- Surgical update: path resolver used
+from tbot_bot.config.env_bot import get_bot_config
 
-# Load config and API key
+# Load config
 config = get_bot_config()
-SCREENER_API = get_decrypted_json("storage/secrets/screener_api.json.enc")
-SCREENER_API_KEY = (
-    SCREENER_API.get("SCREENER_API_KEY", "")
-    or SCREENER_API.get("FINNHUB_API_KEY", "")  # legacy compat
-)
-SCREENER_URL = SCREENER_API.get("SCREENER_URL", "https://finnhub.io/api/v1/")
-SCREENER_USERNAME = SCREENER_API.get("SCREENER_USERNAME", "")
-SCREENER_PASSWORD = SCREENER_API.get("SCREENER_PASSWORD", "")
+# Credential loader (never hardcode, always use secrets manager)
+def get_finnhub_api_params():
+    all_creds = load_screener_credentials()
+    provider_indices = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
+           and all_creds.get(k, "").strip().upper() == "FINNHUB"
+    ]
+    if not provider_indices:
+        return "", "", "", ""
+    idx = provider_indices[0]
+    api_key = all_creds.get(f"SCREENER_API_KEY_{idx}", "") or all_creds.get(f"SCREENER_TOKEN_{idx}", "")
+    api_url = all_creds.get(f"SCREENER_URL_{idx}", "https://finnhub.io/api/v1/")
+    username = all_creds.get(f"SCREENER_USERNAME_{idx}", "")
+    password = all_creds.get(f"SCREENER_PASSWORD_{idx}", "")
+    return api_key, api_url, username, password
+
 FUNDAMENTAL_CACHE = get_cache_path(f"fundamentals_{datetime.date.today()}.json")  # <- Surgical update: path resolver used
 
 # Runtime filter toggles
@@ -44,8 +55,12 @@ def save_cache(cache):
 
 
 def fetch_fundamentals(symbol: str) -> dict:
-    url = f"{SCREENER_URL.rstrip('/')}/stock/metric?symbol={symbol}&metric=all&token={SCREENER_API_KEY}"
-    auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
+    api_key, api_url, username, password = get_finnhub_api_params()
+    if not api_key:
+        log_event(f"FUNDAMENTAL_FETCH_ERROR: symbol={symbol} error=missing_api_key")
+        return {}
+    url = f"{api_url.rstrip('/')}/stock/metric?symbol={symbol}&metric=all&token={api_key}"
+    auth = (username, password) if username and password else None
     try:
         resp = requests.get(url, timeout=5, auth=auth)
         if resp.status_code == 200:
@@ -60,7 +75,8 @@ def passes_fundamental_guard(symbol: str, context: dict = None) -> bool:
     Validates symbol against PE ratio, D/E ratio, and market cap requirements.
     Rejects if any metric fails. Logs rejections.
     """
-    if not ENABLE_FUNDAMENTAL_GUARD or not SCREENER_API_KEY:
+    api_key, _, _, _ = get_finnhub_api_params()
+    if not ENABLE_FUNDAMENTAL_GUARD or not api_key:
         return True
 
     cache = load_cache()

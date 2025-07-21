@@ -131,10 +131,12 @@ class FinnhubScreener(ScreenerBase):
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
             is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
+            # PATCH: convert to millions for compatibility with screener_filter.py normalization
+            mc_millions = mc / 1_000_000 if mc else 0
             price_candidates.append({
                 "symbol": symbol,
                 "lastClose": current,
-                "marketCap": mc,
+                "marketCap": mc_millions,
                 "exchange": exch,
                 "isFractional": is_fractional,
                 "price": current,
@@ -220,10 +222,12 @@ class FinnhubScreener(ScreenerBase):
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
             is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
+            # PATCH: convert to millions for compatibility with screener_filter.py normalization
+            mc_millions = mc / 1_000_000 if mc else 0
             price_candidates.append({
                 "symbol": symbol,
                 "lastClose": current,
-                "marketCap": mc,
+                "marketCap": mc_millions,
                 "exchange": exch,
                 "isFractional": is_fractional,
                 "price": current,
