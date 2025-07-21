@@ -41,13 +41,23 @@ def parse_time_local(tstr):
     h, m = map(int, str(tstr).strip().split(":"))
     return dt_time(hour=h, minute=m)
 
+def ensure_time_obj(val):
+    """
+    Converts a string 'HH:MM' or dt_time to dt_time object.
+    Always returns dt_time for robust time comparisons.
+    """
+    if isinstance(val, dt_time):
+        return val
+    h, m = map(int, str(val).strip().split(":"))
+    return dt_time(hour=h, minute=m)
+
 def is_now_in_window(start: str, end: str):
     """
     Returns True if the current local time is within [start, end), where start/end are 'HH:MM' or dt_time.
     """
     now_t = time_local()
-    s = parse_time_local(start)
-    e = parse_time_local(end)
+    s = ensure_time_obj(start)
+    e = ensure_time_obj(end)
     if s <= e:
         return s <= now_t < e
     # Handles overnight windows (e.g., 23:00-02:00)
