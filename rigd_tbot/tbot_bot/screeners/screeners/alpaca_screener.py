@@ -75,7 +75,6 @@ class AlpacaScreener(ScreenerBase):
                 continue
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
-            # Fractional enforcement: always present in result
             is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
             price_candidates.append({
                 "symbol": symbol,
