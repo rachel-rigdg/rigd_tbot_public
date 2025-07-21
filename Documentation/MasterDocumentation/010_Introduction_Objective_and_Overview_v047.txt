@@ -243,24 +243,35 @@ Recovery:
 Time Zone Standards
 ================================================================================
 
-- All time variables, logs, strategy triggers, ledger entries, and alerts use **UTC (Coordinated Universal Time)**—this is enforced system-wide.
-- Strategy start times in `.env_bot` (e.g., `START_TIME_OPEN`, `START_TIME_MID`, `START_TIME_CLOSE`) must be specified in UTC.
+- All persistent time variables, logs, ledger entries, alerts, and OFX timestamps use **UTC (Coordinated Universal Time)**—this is enforced system-wide.
+- **Strategy start times** in `.env_bot` (e.g., `START_TIME_OPEN`, `START_TIME_MID`, `START_TIME_CLOSE`) are now specified in **local time** according to the configured `TIMEZONE` (e.g., `"US/Eastern"`, `"Europe/London"`).  
+  The system automatically converts local times to UTC for all scheduling and execution.
 - Ledger writes (e.g., `entities/{ENTITY}_{JURIS}_{BROKER}_{BOT_ID}_BOT_ledger.db`) **must set `DTPOSTED` and all OFX timestamps in UTC**.
 - All COA/ledger metadata tables (`coa_metadata`) include `created_at_utc` and `last_updated_utc` fields, set in UTC at creation/update.
-- Internal comparisons in `strategy_router.py`, `status_bot.py`, and time utilities must always convert or standardize to UTC before decision logic or log writes.
+- Internal logic and comparisons in `strategy_router.py`, `status_bot.py`, and all time utilities **must always standardize to UTC** before storing or logging.  
+  Local times may be displayed in the UI, but never stored as authoritative timestamps.
 - **Rationale:** UTC eliminates ambiguity from DST, local zones, or server environments; ensures OFX compliance, reliable cross-entity reconciliation, and robust scheduling for distributed deployments.
-- **Example mapping:**
-  - 14:30 UTC → 9:30 AM EST (Market Open)
-  - 15:30 UTC → 10:30 AM EST (Midday)
-  - 19:30 UTC → 2:30 PM EST (Close)
-- **Local debugging:** Always convert between UTC and {JURIS} zone before interpreting logs or DB entries.
-- **Best practice:** Implement and use in `utils_time.py` (not `utils_bot.py`):
+- **Example mapping (US/Eastern):**
+  - 09:30 (local) + `"US/Eastern"` → 14:30 UTC (Market Open)
+  - 10:30 (local) + `"US/Eastern"` → 15:30 UTC (Midday)
+  - 14:30 (local) + `"US/Eastern"` → 19:30 UTC (Close)
+- **Local debugging:** Convert between UTC and the configured `TIMEZONE` before interpreting logs or DB entries. Use `utils_time.py` helpers for safe conversion.
+- **Best practice:** Always use the centralized helpers in `utils_time.py` for all time parsing, conversion, and comparison.
 
 ```python
 from datetime import datetime, timezone
+import pytz
 
 def utc_now():
     return datetime.utcnow().replace(tzinfo=timezone.utc)
+
+def now_local():
+    # Returns local time according to config['TIMEZONE']
+    import pytz
+    from tbot_bot.config.env_bot import get_bot_config
+    config = get_bot_config()
+    tz = pytz.timezone(config.get("TIMEZONE", "UTC"))
+    return utc_now().astimezone(tz)
 
 
 ================================================================================
