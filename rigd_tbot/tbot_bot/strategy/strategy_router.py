@@ -12,6 +12,7 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import time_local, parse_time_local
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
+import datetime
 
 config = get_bot_config()
 
@@ -28,9 +29,14 @@ MID_SCREENER = config.get("MID_SCREENER", SCREENER_SOURCE).strip().upper()
 CLOSE_SCREENER = config.get("CLOSE_SCREENER", SCREENER_SOURCE).strip().upper()
 
 # Centralized start time parsing (local time zone aware)
-START_TIME_OPEN = parse_time_local(config.get("START_TIME_OPEN", "14:30"))
-START_TIME_MID = parse_time_local(config.get("START_TIME_MID", "15:30"))
-START_TIME_CLOSE = parse_time_local(config.get("START_TIME_CLOSE", "19:30"))
+def ensure_time(val):
+    if isinstance(val, datetime.time):
+        return val
+    return parse_time_local(val)
+
+START_TIME_OPEN = ensure_time(config.get("START_TIME_OPEN", "14:30"))
+START_TIME_MID = ensure_time(config.get("START_TIME_MID", "15:30"))
+START_TIME_CLOSE = ensure_time(config.get("START_TIME_CLOSE", "19:30"))
 
 # Check for TEST_MODE flag presence
 def is_test_mode_active() -> bool:
@@ -103,6 +109,11 @@ def route_strategy(current_local_time=None, override: str = None) -> StrategyRes
 
     now = current_local_time or time_local()
 
+    # Defensive: ensure all start times are datetime.time objects before comparison
+    open_time = ensure_time(START_TIME_OPEN)
+    mid_time = ensure_time(START_TIME_MID)
+    close_time = ensure_time(START_TIME_CLOSE)
+
     # Check for manual override (if provided)
     if override:
         strat_name = override.strip().lower()
@@ -116,11 +127,11 @@ def route_strategy(current_local_time=None, override: str = None) -> StrategyRes
 
     # Iterate through the strategy sequence and select the strategy to execute
     for s, screener_name in zip(STRATEGY_SEQUENCE, [OPEN_SCREENER, MID_SCREENER, CLOSE_SCREENER]):
-        if s == "open" and STRAT_OPEN_ENABLED and now >= START_TIME_OPEN:
+        if s == "open" and STRAT_OPEN_ENABLED and now >= open_time:
             return execute_strategy("open", screener_override=OPEN_SCREENER)
-        elif s == "mid" and STRAT_MID_ENABLED and now >= START_TIME_MID:
+        elif s == "mid" and STRAT_MID_ENABLED and now >= mid_time:
             return execute_strategy("mid", screener_override=MID_SCREENER)
-        elif s == "close" and STRAT_CLOSE_ENABLED and now >= START_TIME_CLOSE:
+        elif s == "close" and STRAT_CLOSE_ENABLED and now >= close_time:
             return execute_strategy("close", screener_override=CLOSE_SCREENER)
 
     return StrategyResult(skipped=True)
