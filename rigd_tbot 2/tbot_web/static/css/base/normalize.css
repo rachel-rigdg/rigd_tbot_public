@@ -1,0 +1,103 @@
+/* base/normalize.css - Standard CSS reset */
+
+html {
+    line-height: 1.15;
+    -webkit-text-size-adjust: 100%;
+}
+body {
+    margin: 0;
+}
+main {
+    display: block;
+}
+h1 {
+    font-size: 2em;
+    margin: 0.67em 0;
+    color:#e7ba4a;
+}
+h2 {
+    margin-bottom: 20px;
+    text-align: center;
+    color: #e7ba4a;
+  }
+hr {
+    box-sizing: content-box;
+    height: 0;
+    overflow: visible;
+}
+pre {
+    font-family: monospace, monospace;
+    font-size: 1em;
+}
+a {
+    background-color: transparent;
+    text-decoration: none;
+    color: inherit;
+}
+abbr[title] {
+    border-bottom: none;
+    text-decoration: underline dotted;
+    color:#e7ba4a;
+}
+b,
+strong {
+    font-weight: bolder;
+}
+code,
+kbd,
+samp {
+    font-family: monospace, monospace;
+    font-size: 1em;
+}
+small {
+    font-size: 80%;
+}
+sub,
+sup {
+    font-size: 75%;
+    line-height: 0;
+    position: relative;
+    vertical-align: baseline;
+}
+sup {
+    top: -0.5em;
+}
+sub {
+    bottom: -0.25em;
+}
+img {
+    border-style: none;
+    max-width: 100%;
+    height: auto;
+}
+input,
+optgroup,
+select,
+textarea {
+    background-color:#333;
+    font-family: inherit;
+    font-size: 100%;
+    line-height: 1.15;
+    margin: 0;
+    color:#999;
+}
+input {
+    overflow: visible;
+}
+select {
+    text-transform: none;
+}
+input::-moz-focus-inner {
+    border-style: none;
+    padding: 0;
+    background-color:#333;
+}
+input:-moz-focusring {
+    outline: 1px dotted ButtonText;
+}
+textarea {
+    overflow: auto;
+}
+[hidden] {
+    display: none;
+}

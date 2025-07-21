@@ -1,0 +1,185 @@
+/* static/css/pages/universe.css */
+/* Styles specific to Universe Cache Inspection page */
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 20px 40px;
+  background-color: #333;
+  color: #999;
+}
+
+h2 {
+  margin-bottom: 12px;
+  color: #e7ba4a;
+}
+
+
+.universe-table-window th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #333;
+}
+
+.searchbox {
+  margin-bottom: 20px;
+}
+
+.searchbox input[type="text"] {
+  padding: 6px 10px;
+  font-size: 14px;
+  width: 220px;
+  border: 1px solid #999;
+  border-radius: 4px;
+}
+
+.searchbox button {
+  padding: 6px 14px;
+  margin-left: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.searchbox a {
+  margin-left: 10px;
+  font-size: 14px;
+  text-decoration: none;
+  color: #999;
+}
+
+.searchbox a:hover {
+  text-decoration: underline;
+}
+
+form[method="post"] button {
+  background-color: #444;
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+form[method="post"] button:hover {
+  background-color: #222;
+}
+
+a {
+  color: #999;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+table th, table td {
+  border: 1px solid #999;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+table th {
+  background-color: #333;
+  font-weight: 600;
+}
+
+table tr:nth-child(even) {
+  background-color: #2d2d2d;
+}
+
+.pagination {
+  margin-top: 20px;
+  font-size: 14px;
+}
+
+.pagination a {
+  margin: 0 6px;
+  color: #999;
+  text-decoration: none;
+}
+
+.pagination a:hover {
+  text-decoration: underline;
+}
+
+#build-log {
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background-color: #333;
+  padding: 10px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+/* Symbol universe table windows */
+.universe-table-window {
+  display: block;
+  width: 100%;
+  height: 200px;
+  overflow-y: scroll;
+  border: 1px solid #999;
+  background: #23272e;
+  margin-bottom: 28px;
+  margin-top: 4px;
+  border-radius: 2px;
+  padding: 0;
+}
+
+.universe-table-window.partial {
+  background: #212127;
+}
+
+.universe-table-window.final {
+  background: #1a1c1e;
+}
+
+.universe-table-label {
+  font-weight: bold;
+  margin-bottom: 2px;
+  color: #ccc;
+}
+
+#configure-screener-credentials-btn {
+  background: #e7ba4a;
+  color: #222;
+  font-weight: 600;
+  border: none;
+  border-radius: 3px;
+  padding: 8px 16px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+#configure-screener-credentials-btn:hover {
+  background: #ffd560;
+  color: #111;
+}
+
+#screener-creds-warning {
+  color: #ff6347;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.disabled-link {
+  pointer-events: none !important;
+  opacity: 0.5 !important;
+  color: #aaa !important;
+}
+
+@media (max-width: 1100px) {
+  body {
+    margin: 6px;
+  }
+}

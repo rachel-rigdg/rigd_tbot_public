@@ -1,0 +1,30 @@
+/* components/spinner.css */
+.spinner {
+    margin: 40px auto;
+    width: 60px;
+    height: 60px;
+    position: relative;
+    border-radius: 50%;
+    display: inline-block;
+    border: 6px solid transparent;
+    border-top-color: #e7ba4a;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.wait-center {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.msg {
+    color:#e7ba4a;;
+    margin-bottom: 12px;
+}

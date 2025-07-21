@@ -1,0 +1,14 @@
+/* shared/responsive.css */
+@media (max-width: 900px) {
+    .tab-container, .startKillContainer {
+        flex-direction: column;
+        gap: 1em;
+        max-height:2em;
+    }
+    .tab-button, button {
+        width: 90vw;
+        font-size: 1em;
+        margin: 4px 0;
+        min-width: 0;
+    }
+}

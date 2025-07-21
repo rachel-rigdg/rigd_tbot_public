@@ -1,0 +1,17 @@
+[Unit]
+Description=RIGD TradeBot Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=your-linux-user
+WorkingDirectory=/path/to/your/project/root
+ExecStart=/usr/bin/python3 tbot_bot/support/service_bot.py
+Restart=always
+RestartSec=10
+Environment="PYTHONUNBUFFERED=1"
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

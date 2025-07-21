@@ -5,14 +5,11 @@
 from flask import Blueprint, request, jsonify, render_template, flash, redirect, url_for
 from tbot_bot.config.env_bot import load_env_var, update_env_var
 from tbot_web.support.auth_web import get_current_user, get_user_role
-from tbot_bot.trading.holdings_manager import (
-    get_holdings_status,
-    manual_holdings_action
-)
 from tbot_bot.trading.holdings_utils import parse_etf_allocations
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from pathlib import Path
@@ -29,7 +26,7 @@ def get_current_bot_state():
         return "unknown"
 
 def provisioning_guard():
-    return get_current_bot_state() in INITIALIZE_STATES
+    return get_current_bot_state() in INITIALIZE_STATES or is_first_bootstrap()
 
 def identity_guard():
     try:
@@ -96,6 +93,7 @@ def holdings_status():
     if provisioning_guard() or identity_guard():
         return jsonify({"error": "Holdings unavailable: provisioning or identity incomplete"}), 400
     try:
+        from tbot_bot.trading.holdings_manager import get_holdings_status
         return jsonify(get_holdings_status())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -106,6 +104,7 @@ def holdings_manual_rebalance():
     if get_user_role(user) != "admin":
         return jsonify({"error": "Access denied"}), 403
     try:
+        from tbot_bot.trading.holdings_manager import manual_holdings_action
         result = manual_holdings_action("rebalance", user=getattr(user, "username", user if user else "system"))
         return jsonify({"status": "rebalance_triggered", "details": result})
     except Exception as e:

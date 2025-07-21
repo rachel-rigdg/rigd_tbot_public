@@ -1,0 +1,246 @@
+<!-- tbot_web/templates/ledger.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ledger Reconciliation</title>
+        <link rel="stylesheet" href="/static/css/base/normalize.css">
+        <link rel="stylesheet" href="/static/css/base/layout.css">
+        <link rel="stylesheet" href="/static/css/shared/forms.css">
+        <link rel="stylesheet" href="/static/css/components/buttons.css">
+        <link rel="stylesheet" href="/static/css/pages/ledger.css">
+        <style>
+        .ledger-table td, .ledger-table th { padding: 4px 6px; }
+        .ledger-table .row-top { background: #f8f8fa; }
+        .ledger-table .row-bottom { background: #f3f3f5; }
+        .ledger-table .action-cell { white-space: nowrap; }
+        </style>
+        <script>
+        function autoCalcTotal(rowPrefix) {
+            var qty = parseFloat(document.querySelector(rowPrefix + ' input[name="quantity"]').value) || 0;
+            var price = parseFloat(document.querySelector(rowPrefix + ' input[name="price"]').value) || 0;
+            var fees = parseFloat(document.querySelector(rowPrefix + ' input[name="fees"]').value) || 0;
+            var total = (qty * price) - fees;
+            document.querySelector(rowPrefix + ' input[name="total_value"]').value = isNaN(total) ? '' : total.toFixed(2);
+        }
+        document.addEventListener("DOMContentLoaded", function() {
+            // Only apply to add-entry row (first add row)
+            var prefix = 'tr.row-top form[action$="add_ledger_entry_route"] ';
+            ['quantity', 'price', 'fees'].forEach(function(field) {
+                var el = document.querySelector(prefix + 'input[name="' + field + '"]');
+                if (el) {
+                    el.addEventListener('input', function() { autoCalcTotal(prefix); });
+                }
+            });
+        });
+        </script>
+    </head>
+<body>
+    <div class="header">
+        <h1>Ledger Reconciliation</h1>
+    </div>
+    <div class="main-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <ul class="flashes">
+            {% for category, message in messages %}
+              <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+        {% if error %}
+            <div class="error-message" style="color:#b30000; margin:1em 0 2em 0;">{{ error }}</div>
+        {% endif %}
+        <form id="syncLedgerForm" method="post" action="{{ url_for('ledger_web.ledger_sync') }}">
+            <button type="submit">Sync Broker Ledger</button>
+        </form>
+        <br>
+        <div class="reconcile-container">
+            <h2>Reconciliation Table</h2>
+            <table class="ledger-table">
+                <thead>
+                    <tr>
+                        <th>Date (UTC)</th>
+                        <th>Symbol</th>
+                        <th>Action</th>
+                        <th>Quantity</th>
+                        <th>Price</th>
+                        <th>Fees</th>
+                        <th>Total Value</th>
+                        <th>Status</th>
+                        <th>Running Balance</th>
+                    </tr>
+                    <tr>
+                        <th>Trade ID</th>
+                        <th>Account</th>
+                        <th>Strategy</th>
+                        <th>Tags</th>
+                        <th>Notes</th>
+                        <th>Action</th>
+                        <th>Add Entry Button</th>
+                        <th colspan="2"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for entry in entries %}
+                    <!-- Row 1 -->
+                    <tr class="row-top {{ entry.status }}">
+                        <form method="post" action="{{ url_for('ledger_web.edit_ledger_entry_route', entry_id=entry.id) }}">
+                        <td>
+                            <input type="text" name="datetime_utc" value="{{ entry.datetime_utc.split('T')[0] if entry.datetime_utc }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
+                        </td>
+                        <td><input type="text" name="symbol" value="{{ entry.symbol }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td>
+                            <select name="action" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %} required>
+                                <option value="long" {% if entry.action == "long" %}selected{% endif %}>long</option>
+                                <option value="short" {% if entry.action == "short" %}selected{% endif %}>short</option>
+                                <option value="put" {% if entry.action == "put" %}selected{% endif %}>put</option>
+                                <option value="inverse" {% if entry.action == "inverse" %}selected{% endif %}>inverse</option>
+                            </select>
+                        </td>
+                        <td><input type="text" name="quantity" value="{{ entry.quantity }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td><input type="text" name="price" value="{{ entry.price }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td><input type="text" name="fees" value="{{ entry.fees }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="total_value" value="{{ entry.total_value }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td>
+                            {% if entry.status == "mismatch" %}
+                                <span class="status-mismatch">Mismatch</span>
+                            {% elif entry.status == "resolved" %}
+                                <span class="resolved-tag">Resolved</span>
+                            {% else %}
+                                <span class="status-ok">OK</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ entry.running_balance if entry.running_balance is defined else "" }}
+                        </td>
+                    </tr>
+                    <!-- Row 2 -->
+                    <tr class="row-bottom {{ entry.status }}">
+                        <td><input type="text" name="trade_id" value="{{ entry.trade_id }}"></td>
+                        <td>
+                            <select name="account" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %} required>
+                                {% for code, name in coa_accounts %}
+                                    <option value="{{ code }}" {% if entry.account == code %}selected{% endif %}>{{ name }} ({{ code }})</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td>
+                            <select name="strategy" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %}>
+                                <option value="open" {% if entry.strategy == "open" %}selected{% endif %}>open</option>
+                                <option value="mid" {% if entry.strategy == "mid" %}selected{% endif %}>mid</option>
+                                <option value="close" {% if entry.strategy == "close" %}selected{% endif %}>close</option>
+                                <option value="other" {% if entry.strategy == "other" %}selected{% endif %}>other</option>
+                            </select>
+                        </td>
+                        <td><input type="text" name="tags" value="{{ entry.tags }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="notes" value="{{ entry.notes }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td class="action-cell">
+                            {% if entry.status == "mismatch" %}
+                                <button type="submit" class="edit-btn">Update</button>
+                        </form>
+                                <form method="post" action="{{ url_for('ledger_web.resolve_ledger_entry', entry_id=entry.id) }}" style="display:inline;">
+                                    <button type="submit" class="resolve-btn">Mark as Resolved</button>
+                                </form>
+                                <form method="post" action="{{ url_for('ledger_web.delete_ledger_entry_route', entry_id=entry.id) }}" style="display:inline;">
+                                    <button type="submit" class="delete-btn" onclick="return confirm('Delete this entry?')">Delete</button>
+                                </form>
+                            {% elif entry.status == "resolved" %}
+                        </form>
+                                <span class="resolved-tag">Resolved</span>
+                                <form method="post" action="{{ url_for('ledger_web.delete_ledger_entry_route', entry_id=entry.id) }}" style="display:inline;">
+                                    <button type="submit" class="delete-btn" onclick="return confirm('Delete this entry?')">Delete</button>
+                                </form>
+                            {% else %}
+                        </form>
+                                <span>—</span>
+                            {% endif %}
+                        </td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                {% endfor %}
+                <!-- Add-entry row (split in two lines) -->
+                <tr class="row-top">
+                    <form method="post" action="{{ url_for('ledger_web.add_ledger_entry_route') }}">
+                    <td><input type="text" name="datetime_utc" placeholder="YYYY-MM-DD" required></td>
+                    <td><input type="text" name="symbol" placeholder="Symbol" required></td>
+                    <td>
+                        <select name="action" required>
+                            <option value="">Select</option>
+                            <option value="long">long</option>
+                            <option value="short">short</option>
+                            <option value="put">put</option>
+                            <option value="inverse">inverse</option>
+                        </select>
+                    </td>
+                    <td><input type="text" name="quantity" placeholder="Qty" required></td>
+                    <td><input type="text" name="price" placeholder="Price" required></td>
+                    <td><input type="text" name="fees" placeholder="Fees"></td>
+                    <td><input type="text" name="total_value" placeholder="Total Value"></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr class="row-bottom">
+                    <td><input type="text" name="trade_id" placeholder="Trade ID"></td>
+                    <td>
+                        <select name="account" required>
+                            <option value="">Select Account</option>
+                            {% for code, name in coa_accounts %}
+                                <option value="{{ code }}">{{ name }} ({{ code }})</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    <td>
+                        <select name="strategy">
+                            <option value="">Select</option>
+                            <option value="open">open</option>
+                            <option value="mid">mid</option>
+                            <option value="close">close</option>
+                            <option value="other">other</option>
+                        </select>
+                    </td>
+                    <td><input type="text" name="tags" placeholder="Tags"></td>
+                    <td><input type="text" name="notes" placeholder="Notes"></td>
+                    <td colspan="2">
+                        <button type="submit" class="add-btn">Add Entry</button>
+                    </td>
+                    <td></td>
+                    <td></td>
+                    </form>
+                </tr>
+                </tbody>
+            </table>
+            <div class="ledger-balance-summary">
+                <h3>Account Balances</h3>
+                {% if balances %}
+                    <table class="balance-table">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for account, balance in balances.items() %}
+                                <tr>
+                                    <td>{{ account }}</td>
+                                    <td>{{ balance }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No balance data available.</p>
+                {% endif %}
+            </div>
+            <div class="audit-log-info">
+                <p>All edits, resolutions, and reconciliation actions are logged with UTC timestamp and user ID for compliance.</p>
+                <p>Only admin users can resolve or edit ledger entries.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

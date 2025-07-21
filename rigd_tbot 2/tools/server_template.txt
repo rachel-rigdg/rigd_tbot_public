@@ -1,0 +1,8 @@
+
+
+#tools/server_template.txt
+
+
+HOSTNAME=REMOTE
+HOST_IP=45.55.150.216                    
+PORT=6900             

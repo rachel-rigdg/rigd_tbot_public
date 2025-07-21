@@ -1,0 +1,88 @@
+/* pages/logs.css — log stream container and filter bar */
+
+.logs-page {
+    background: #1a1a1a;
+    color: #e0e0e0;
+    font-family: monospace;
+}
+
+.dashboard-header {
+    padding: 1.5em;
+    text-align: center;
+    border-bottom: 1px solid #444;
+}
+
+.log-stream-container {
+    max-height: 600px;
+    overflow-y: auto;
+    background: #191919;
+    border: 1px solid #444;
+    padding: 0;
+    margin: 0 auto;
+    width: 90%;
+}
+
+.log-stream pre {
+    margin: 0;
+    padding: 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.93em;
+    color: #ddd;
+    background: transparent;
+}
+
+.filter-bar {
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+.filter-bar label,
+.filter-bar select {
+    font-size: 1em;
+    margin: 0 0.5em;
+}
+
+.log-warning {
+    background: #633;
+    color: #fff;
+    padding: 10px 16px;
+    margin: 1em auto;
+    border-radius: 6px;
+    font-size: 1em;
+    max-width: 800px;
+}
+
+
+    .log-stream-container {
+            max-height: 600px;
+            overflow-y: auto;
+            background: #191919;
+            border: 1px solid #444;
+            padding: 0;
+            margin: 0;
+            top: 0;
+        }
+        .log-stream pre {
+            margin: 0;
+            padding: 16px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.93em;
+            color: #ddd;
+            background: transparent;
+        }
+        .filter-bar {
+            margin-bottom: 12px;
+        }
+        .filter-bar label, .filter-bar select {
+            font-size: 1em;
+        }
+        .log-warning {
+            background: #633;
+            color: #fff;
+            padding: 10px 16px;
+            margin-bottom: 14px;
+            border-radius: 6px;
+            font-size: 1em;
+        }

@@ -1,0 +1,76 @@
+/* components/buttons.css */
+
+
+
+
+
+button, .tab-button {
+  
+    
+    padding : 5px 10px;
+    background-color: #e7ba4a;
+    color: #222;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1.12em;
+    margin: 0 6px;
+    transition: background 0.2s, color 0.2s;
+    text-decoration: none;
+    text-align: center;
+    box-sizing: border-box;
+    max-width: 400px;
+
+}
+
+button:hover, button:focus, .tab-button:hover, .tab-button:focus {
+    background-color: #0a9900;
+    color: #dddddd;
+    outline: none;
+}
+
+.startKillContainer {
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    width: 100%;
+}
+.startKillContainer form {
+    flex: 1 1 0;
+    display: flex;
+    justify-content: center;
+}
+
+/* Exception: kill-bot button only */
+.startKillContainer button#kill-bot {
+    background: #a80000;
+    color: #fff;
+}
+.startKillContainer button#kill-bot:hover,
+.startKillContainer button#kill-bot:focus {
+    background: #ff3333;
+    color: #999;
+    outline: none;
+}
+
+button,
+[type="button"],
+[type="reset"],
+[type="submit"] {
+    -webkit-appearance: button;
+}
+button::-moz-focus-inner {
+    border-style: none;
+    background-color:#d9a011;
+}
+button:-moz-focusring {
+    outline: 1px dotted ButtonText;
+}
+
+a {
+    color: #dddddd;
+    text-decoration: none;
+}
+a:hover {
+    text-decoration: underline;
+}

@@ -1,0 +1,119 @@
+<!-- tbot_web/templates/status.html -->
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>TradeBot Status Dashboard</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/static/css/base/normalize.css">
+        <link rel="stylesheet" href="/static/css/base/layout.css">
+        <link rel="stylesheet" href="/static/css/shared/forms.css">
+        <link rel="stylesheet" href="/static/css/components/buttons.css">
+        <link rel="stylesheet" href="/static/css/pages/status.css">
+        <script src="/static/js/status_live.js" defer></script>
+    </head>
+<body>
+    <div class="main-container">
+        <div style="width:70%; margin-left:auto; margin-right:auto;">
+            <h1>TradeBot Status</h1>
+
+            {% if status.error %}
+                <p class="error">{{ status.error }}</p>
+            {% else %}
+                <div class="status-grid">
+                    <div><strong>Running State:</strong> 
+                        <span id="status-running-state">
+                        {% if status.state == "running" %}
+                            <span style="color:green;font-weight:bold;">RUNNING</span>
+                        {% elif status.state == "idle" %}
+                            <span style="color:orange;font-weight:bold;">IDLE</span>
+                        {% elif status.state == "analyzing" %}
+                            <span style="color:orange;font-weight:bold;">ANALYZING</span>
+                        {% elif status.state == "trading" %}
+                            <span style="color:green;font-weight:bold;">TRADING</span>
+                        {% elif status.state == "monitoring" %}
+                            <span style="color:orange;font-weight:bold;">MONITORING</span>
+                        {% elif status.state == "updating" %}
+                            <span style="color:orange;font-weight:bold;">UPDATING</span>
+                        {% elif status.state == "graceful_closing_positions" %}
+                            <span style="color:orange;font-weight:bold;">GRACEFUL CLOSING</span>
+                        {% elif status.state == "emergency_closing_positions" %}
+                            <span style="color:red;font-weight:bold;">EMERGENCY CLOSING</span>
+                        {% elif status.state == "stopped" %}
+                            <span style="color:gray;">STOPPED</span>
+                        {% elif status.state == "shutdown" %}
+                            <span style="color:red;font-weight:bold;">SHUTDOWN</span>
+                        {% elif status.state == "shutdown_triggered" %}
+                            <span style="color:red;font-weight:bold;">SHUTDOWN</span>
+                        {% elif status.state == "error" %}
+                            <span style="color:red;font-weight:bold;">ERROR</span>
+                        {% else %}
+                            <span style="color:gray;">{{ status.state }}</span>
+                        {% endif %}
+                        </span>
+                    </div>
+                    <div><strong>Timestamp:</strong> <span id="status-timestamp">{{ status.timestamp }}</span></div>
+                    <div><strong>Active Strategy:</strong> <span id="status-active-strategy">{{ status.active_strategy }}</span></div>
+                    <div><strong>Trade Count:</strong> <span id="status-trade-count">{{ status.trade_count }}</span></div>
+                    <div><strong>Win Trades:</strong> <span id="status-win-trades">{{ status.win_trades }}</span></div>
+                    <div><strong>Loss Trades:</strong> <span id="status-loss-trades">{{ status.loss_trades }}</span></div>
+                    <div><strong>Win Rate:</strong> <span id="status-win-rate">{{ status.win_rate }}</span>%</div>
+                    <div><strong>PnL:</strong> <span id="status-pnl">{{ status.pnl }}</span></div>
+                    <div><strong>Error Count:</strong> <span id="status-error-count">{{ status.error_count }}</span></div>
+                    <div><strong>Version:</strong> <span id="status-version">{{ status.version }}</span></div>
+                </div>
+
+                <hr>
+
+                <h2>Strategy Toggles</h2>
+                <div class="status-grid">
+                    <div><strong>Open:</strong> <span id="status-strat-open">{{ status.enabled_strategies.open }}</span></div>
+                    <div><strong>Mid:</strong> <span id="status-strat-mid">{{ status.enabled_strategies.mid }}</span></div>
+                    <div><strong>Close:</strong> <span id="status-strat-close">{{ status.enabled_strategies.close }}</span></div>
+                </div>
+
+                <hr>
+
+                <h2>Risk Controls</h2>
+                <div class="status-grid">
+                    <div><strong>Max Risk per Trade:</strong> <span id="status-max-risk">{{ status.max_risk_per_trade }}</span></div>
+                    <div><strong>Daily Loss Limit:</strong> <span id="status-daily-loss">{{ status.daily_loss_limit }}</span></div>
+                </div>
+
+                <hr>
+
+                <h2>Candidate Selection & Fallback Status</h2>
+                {% if candidate_status %}
+                    <table class="status-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Strategy</th>
+                                <th>Status</th>
+                                <th>Fallback Used</th>
+                                <th>Broker Eligibility</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for candidate in candidate_status %}
+                                <tr>
+                                    <td>{{ candidate.symbol }}</td>
+                                    <td>{{ candidate.strategy }}</td>
+                                    <td>{{ candidate.status }}</td>
+                                    <td>{{ candidate.fallback }}</td>
+                                    <td>{{ candidate.broker_eligibility }}</td>
+                                    <td>{{ candidate.reason }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No candidate data available.</p>
+                {% endif %}
+
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

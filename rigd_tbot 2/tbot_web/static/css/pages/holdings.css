@@ -1,0 +1,51 @@
+/* /static/css/pages/holdings.css */
+
+.holdings-container {
+  max-width: 700px;
+  margin: 40px auto;
+  padding: 20px;
+  background: #1e1e1e;
+  color: #eee;
+  border-radius: 8px;
+  font-family: Arial, sans-serif;
+}
+
+.holdings-container h2 {
+  margin-top: 0;
+  color: #00e0ff;
+}
+
+.holdings-container label {
+  display: block;
+  margin: 12px 0 4px;
+  font-weight: bold;
+}
+
+.holdings-container input,
+.holdings-container select {
+  width: 100%;
+  padding: 8px;
+  background: #2b2b2b;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+}
+
+.holdings-container button {
+  margin-top: 16px;
+  padding: 10px 20px;
+  background: #00b7ff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.holdings-container button:hover {
+  background: #008ecf;
+}
+
+#holdings-status p,
+#holdings-status pre {
+  margin: 6px 0;
+}

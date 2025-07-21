@@ -1,0 +1,35 @@
+/* pages/ledger.css */
+.ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 2em;
+    font-size: 1em;
+}
+.ledger-table th, .ledger-table td {
+    border: 1px solid #444;
+    padding: 0.3em;
+    text-align: center;
+}
+.ledger-table th {
+    background: #333333;
+    color: #999;
+}
+.ledger-table tr.ok {
+    background: #333;
+    color: #aaffaa;
+}
+.ledger-table tr.mismatch {
+    background: #444;
+    color: #ffaaaa;
+}
+.ledger-table tr.pending {
+    background: #222244;
+    color: #999;
+}
+.reconcile-container {
+    width: 80%;
+    left:.2em;
+    max-width: 900px;
+    margin: .2em;
+    padding: 0em 0;
+}
