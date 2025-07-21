@@ -4,7 +4,7 @@
 import time
 from datetime import timedelta
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_time import utc_now, now_local
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.trading.utils_etf import get_inverse_etf
 from tbot_bot.trading.utils_puts import get_put_option
@@ -60,7 +60,8 @@ def analyze_opening_range(start_time, screener_class):
     screener = screener_class(strategy="open")
     global range_data
     range_data = {}
-    while utc_now() < deadline:
+    # Use local time for window
+    while now_local() < deadline:
         try:
             candidates = screener.run_screen(pool_size=MAX_TRADES * CANDIDATE_MULTIPLIER)
         except Exception as e:
@@ -95,7 +96,7 @@ def detect_breakouts(start_time, screener_class):
     candidates_ranked = []
     candidate_status = []
     attempted_symbols = set()
-    # Request candidate pool
+    # Use local time for window
     try:
         candidates_ranked = screener.run_screen(pool_size=MAX_TRADES * CANDIDATE_MULTIPLIER)
     except Exception as e:
@@ -245,7 +246,8 @@ def run_open_strategy(screener_class):
         log_event("strategy_open", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)
 
-    start_time = utc_now()
+    # Use local time for window logic
+    start_time = now_local()
     analyze_opening_range(start_time, screener_class)
     trades = detect_breakouts(start_time, screener_class)
     log_event("strategy_open", f"Open strategy completed: {len(trades)} trades placed")

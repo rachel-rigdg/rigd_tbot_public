@@ -103,6 +103,10 @@ def provision_keys_and_secrets(config: dict = None) -> None:
         # --- PATCH: ENSURE BOT_IDENTITY SECRET IS ALWAYS FRESH FROM CONFIG ---
         write_encrypted_bot_identity_secret(config.get("bot_identity", {}))
 
+        # ----- TIMEZONE: ENSURE TIMEZONE IS INCLUDED IN CONFIG -----
+        if "TIMEZONE" not in config or not config["TIMEZONE"]:
+            config["TIMEZONE"] = "UTC"
+
         rotate_all_keys_and_secrets(config)
         print("[provisioning_helper] All keys written and all secrets re-encrypted.")
 

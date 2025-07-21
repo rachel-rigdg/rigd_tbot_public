@@ -118,6 +118,9 @@ def save_configuration():
     alert_channels = form.get("alert_channels", "").strip() or "email"
     debug_log_level = form.get("debug_log_level", "").strip() or "quiet"
 
+    # --- TIMEZONE support (add to config if present) ---
+    timezone_val = form.get("timezone", "").strip() or "UTC"
+
     config = {
         "bot_identity":    bot_identity_data,
         "broker":          broker_data,
@@ -127,6 +130,7 @@ def save_configuration():
         "language_code":   language_code,
         "alert_channels":  alert_channels,
         "DEBUG_LOG_LEVEL": debug_log_level,
+        "TIMEZONE":        timezone_val,
     }
 
     try:

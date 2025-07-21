@@ -3,7 +3,7 @@
 
 from datetime import timedelta
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_time import utc_now, now_local
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.trading.utils_etf import get_inverse_etf
 from tbot_bot.trading.utils_puts import get_put_option
@@ -57,84 +57,87 @@ def analyze_vwap_signals(start_time, screener_class):
     screener = screener_class(strategy="mid")
     broker_api = get_broker_api()
     candidate_status = []
-    try:
-        screener_data = screener.run_screen(pool_size=MAX_TRADES * CANDIDATE_MULTIPLIER)
-    except Exception as e:
-        handle_error("strategy_mid", "LogicError", e)
-        screener_data = []
+    # Use local time for window
+    while now_local() < deadline:
+        try:
+            screener_data = screener.run_screen(pool_size=MAX_TRADES * CANDIDATE_MULTIPLIER)
+        except Exception as e:
+            handle_error("strategy_mid", "LogicError", e)
+            screener_data = []
 
-    if not screener_data:
-        log_event("strategy_mid", "No screener results found — triggering kill switch.")
-        trigger_shutdown("No candidates returned from screener")
-        return []
+        if not screener_data:
+            log_event("strategy_mid", "No screener results found — triggering kill switch.")
+            trigger_shutdown("No candidates returned from screener")
+            return []
 
-    allocations = []
-    for i in range(MAX_TRADES):
-        alloc = ACCOUNT_BALANCE * (WEIGHTS[i] if i < len(WEIGHTS) else MAX_RISK_PER_TRADE)
-        allocations.append(alloc)
+        allocations = []
+        for i in range(MAX_TRADES):
+            alloc = ACCOUNT_BALANCE * (WEIGHTS[i] if i < len(WEIGHTS) else MAX_RISK_PER_TRADE)
+            allocations.append(alloc)
 
-    eligible_signals = []
-    for idx, stock in enumerate(screener_data):
-        if len(eligible_signals) >= MAX_TRADES:
-            break
-        symbol = stock["symbol"]
-        price = float(stock["price"])
-        vwap = float(stock.get("vwap", price))
-        deviation = (price - vwap) / vwap if vwap > 0 else 0.0
+        eligible_signals = []
+        for idx, stock in enumerate(screener_data):
+            if len(eligible_signals) >= MAX_TRADES:
+                break
+            symbol = stock["symbol"]
+            price = float(stock["price"])
+            vwap = float(stock.get("vwap", price))
+            deviation = (price - vwap) / vwap if vwap > 0 else 0.0
 
-        if abs(deviation) < VWAP_THRESHOLD:
-            candidate_status.append({
+            if abs(deviation) < VWAP_THRESHOLD:
+                candidate_status.append({
+                    "symbol": symbol,
+                    "rank": idx + 1,
+                    "fractional": None,
+                    "min_order_size": None,
+                    "alloc": None,
+                    "status": "rejected",
+                    "reason": "VWAP deviation below threshold",
+                    "price": price
+                })
+                continue
+
+            direction = "buy" if deviation < 0 else "sell"
+
+            alloc = allocations[len(eligible_signals)]
+            is_fractional = broker_api.supports_fractional(symbol)
+            min_order_size = broker_api.get_min_order_size(symbol)
+            reason = None
+            if FRACTIONAL and not is_fractional:
+                reason = "Fractional shares not supported"
+            elif alloc < min_order_size:
+                reason = f"Order size {alloc} below minimum {min_order_size}"
+
+            status_entry = {
                 "symbol": symbol,
                 "rank": idx + 1,
-                "fractional": None,
-                "min_order_size": None,
-                "alloc": None,
-                "status": "rejected",
-                "reason": "VWAP deviation below threshold",
+                "fractional": is_fractional,
+                "min_order_size": min_order_size,
+                "alloc": alloc,
+                "status": "eligible" if not reason else "rejected",
+                "reason": reason or "",
                 "price": price
+            }
+            candidate_status.append(status_entry)
+
+            if reason:
+                log_event("strategy_mid", f"REJECT: {symbol} - {reason}")
+                continue
+
+            eligible_signals.append({
+                "symbol": symbol,
+                "price": price,
+                "vwap": round(vwap, 2),
+                "side": direction,
+                "deviation": round(deviation, 4),
+                "alloc": alloc
             })
-            continue
 
-        direction = "buy" if deviation < 0 else "sell"
-
-        alloc = allocations[len(eligible_signals)]
-        is_fractional = broker_api.supports_fractional(symbol)
-        min_order_size = broker_api.get_min_order_size(symbol)
-        reason = None
-        if FRACTIONAL and not is_fractional:
-            reason = "Fractional shares not supported"
-        elif alloc < min_order_size:
-            reason = f"Order size {alloc} below minimum {min_order_size}"
-
-        status_entry = {
-            "symbol": symbol,
-            "rank": idx + 1,
-            "fractional": is_fractional,
-            "min_order_size": min_order_size,
-            "alloc": alloc,
-            "status": "eligible" if not reason else "rejected",
-            "reason": reason or "",
-            "price": price
-        }
-        candidate_status.append(status_entry)
-
-        if reason:
-            log_event("strategy_mid", f"REJECT: {symbol} - {reason}")
-            continue
-
-        eligible_signals.append({
-            "symbol": symbol,
-            "price": price,
-            "vwap": round(vwap, 2),
-            "side": direction,
-            "deviation": round(deviation, 4),
-            "alloc": alloc
-        })
-
-    SESSION_LOGS.clear()
-    SESSION_LOGS.extend(candidate_status)
-    log_event("strategy_mid", f"VWAP eligible signals: {eligible_signals}")
-    return eligible_signals
+        SESSION_LOGS.clear()
+        SESSION_LOGS.extend(candidate_status)
+        log_event("strategy_mid", f"VWAP eligible signals: {eligible_signals}")
+        return eligible_signals
+    return []
 
 def execute_mid_trades(signals, start_time):
     log_event("strategy_mid", "Executing trades...")
@@ -143,7 +146,7 @@ def execute_mid_trades(signals, start_time):
     deadline = start_time + timedelta(minutes=monitoring_minutes)
 
     for signal in signals:
-        if utc_now() >= deadline:
+        if now_local() >= deadline:
             break
 
         side = signal["side"]
@@ -221,7 +224,8 @@ def run_mid_strategy(screener_class):
         log_event("strategy_mid", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)
 
-    start_time = utc_now()
+    # Use local time for window logic
+    start_time = now_local()
     signals = analyze_vwap_signals(start_time, screener_class)
     trades = execute_mid_trades(signals, start_time)
     return StrategyResult(trades=trades, skipped=False)

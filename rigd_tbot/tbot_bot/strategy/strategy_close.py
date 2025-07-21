@@ -3,7 +3,7 @@
 
 from datetime import timedelta
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_time import utc_now, now_local
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.trading.utils_etf import get_inverse_etf
 from tbot_bot.trading.utils_puts import get_put_option
@@ -63,97 +63,100 @@ def analyze_closing_signals(start_time, screener_class):
     screener = screener_class(strategy="close")
     broker_api = get_broker_api()
     candidate_status = []
-    try:
-        screener_data = screener.run_screen(pool_size=MAX_TRADES * CANDIDATE_MULTIPLIER)
-    except Exception as e:
-        handle_error("strategy_close", "LogicError", e)
-        screener_data = []
+    # Use local time for window
+    while now_local() < deadline:
+        try:
+            screener_data = screener.run_screen(pool_size=MAX_TRADES * CANDIDATE_MULTIPLIER)
+        except Exception as e:
+            handle_error("strategy_close", "LogicError", e)
+            screener_data = []
 
-    if not screener_data:
-        log_event("strategy_close", "No symbols passed filter — triggering fallback kill-switch.")
-        trigger_shutdown()
-        return []
+        if not screener_data:
+            log_event("strategy_close", "No symbols passed filter — triggering fallback kill-switch.")
+            trigger_shutdown()
+            return []
 
-    allocations = []
-    for i in range(MAX_TRADES):
-        alloc = ACCOUNT_BALANCE * (WEIGHTS[i] if i < len(WEIGHTS) else MAX_RISK_PER_TRADE)
-        allocations.append(alloc)
+        allocations = []
+        for i in range(MAX_TRADES):
+            alloc = ACCOUNT_BALANCE * (WEIGHTS[i] if i < len(WEIGHTS) else MAX_RISK_PER_TRADE)
+            allocations.append(alloc)
 
-    eligible_signals = []
-    for idx, stock in enumerate(screener_data):
-        if len(eligible_signals) >= MAX_TRADES:
-            break
-        symbol = stock["symbol"]
-        price = float(stock["price"])
-        high = float(stock.get("high", 0))
-        low = float(stock.get("low", 0))
-        if high <= 0 or low <= 0 or price <= 0:
-            candidate_status.append({
+        eligible_signals = []
+        for idx, stock in enumerate(screener_data):
+            if len(eligible_signals) >= MAX_TRADES:
+                break
+            symbol = stock["symbol"]
+            price = float(stock["price"])
+            high = float(stock.get("high", 0))
+            low = float(stock.get("low", 0))
+            if high <= 0 or low <= 0 or price <= 0:
+                candidate_status.append({
+                    "symbol": symbol,
+                    "rank": idx + 1,
+                    "fractional": None,
+                    "min_order_size": None,
+                    "alloc": None,
+                    "status": "rejected",
+                    "reason": "Invalid high/low/price",
+                    "price": price
+                })
+                continue
+            range_mid = (high + low) / 2
+            if price > high * 0.995:
+                direction = "buy"
+            elif price < range_mid * 0.9:
+                direction = "sell"
+            else:
+                candidate_status.append({
+                    "symbol": symbol,
+                    "rank": idx + 1,
+                    "fractional": None,
+                    "min_order_size": None,
+                    "alloc": None,
+                    "status": "rejected",
+                    "reason": "No valid EOD breakout",
+                    "price": price
+                })
+                continue
+
+            alloc = allocations[len(eligible_signals)]
+            is_fractional = broker_api.supports_fractional(symbol)
+            min_order_size = broker_api.get_min_order_size(symbol)
+            reason = None
+            if FRACTIONAL and not is_fractional:
+                reason = "Fractional shares not supported"
+            elif alloc < min_order_size:
+                reason = f"Order size {alloc} below minimum {min_order_size}"
+
+            status_entry = {
                 "symbol": symbol,
                 "rank": idx + 1,
-                "fractional": None,
-                "min_order_size": None,
-                "alloc": None,
-                "status": "rejected",
-                "reason": "Invalid high/low/price",
+                "fractional": is_fractional,
+                "min_order_size": min_order_size,
+                "alloc": alloc,
+                "status": "eligible" if not reason else "rejected",
+                "reason": reason or "",
                 "price": price
-            })
-            continue
-        range_mid = (high + low) / 2
-        if price > high * 0.995:
-            direction = "buy"
-        elif price < range_mid * 0.9:
-            direction = "sell"
-        else:
-            candidate_status.append({
+            }
+            candidate_status.append(status_entry)
+            if reason:
+                log_event("strategy_close", f"REJECT: {symbol} - {reason}")
+                continue
+
+            eligible_signals.append({
                 "symbol": symbol,
-                "rank": idx + 1,
-                "fractional": None,
-                "min_order_size": None,
-                "alloc": None,
-                "status": "rejected",
-                "reason": "No valid EOD breakout",
-                "price": price
+                "price": price,
+                "side": direction,
+                "high": high,
+                "low": low,
+                "alloc": alloc
             })
-            continue
 
-        alloc = allocations[len(eligible_signals)]
-        is_fractional = broker_api.supports_fractional(symbol)
-        min_order_size = broker_api.get_min_order_size(symbol)
-        reason = None
-        if FRACTIONAL and not is_fractional:
-            reason = "Fractional shares not supported"
-        elif alloc < min_order_size:
-            reason = f"Order size {alloc} below minimum {min_order_size}"
-
-        status_entry = {
-            "symbol": symbol,
-            "rank": idx + 1,
-            "fractional": is_fractional,
-            "min_order_size": min_order_size,
-            "alloc": alloc,
-            "status": "eligible" if not reason else "rejected",
-            "reason": reason or "",
-            "price": price
-        }
-        candidate_status.append(status_entry)
-        if reason:
-            log_event("strategy_close", f"REJECT: {symbol} - {reason}")
-            continue
-
-        eligible_signals.append({
-            "symbol": symbol,
-            "price": price,
-            "side": direction,
-            "high": high,
-            "low": low,
-            "alloc": alloc
-        })
-
-    SESSION_LOGS.clear()
-    SESSION_LOGS.extend(candidate_status)
-    log_event("strategy_close", f"EOD eligible signals: {eligible_signals}")
-    return eligible_signals
+        SESSION_LOGS.clear()
+        SESSION_LOGS.extend(candidate_status)
+        log_event("strategy_close", f"EOD eligible signals: {eligible_signals}")
+        return eligible_signals
+    return []
 
 def monitor_closing_trades(signals, start_time):
     log_event("strategy_close", "Monitoring EOD trades...")
@@ -162,7 +165,7 @@ def monitor_closing_trades(signals, start_time):
     deadline = start_time + timedelta(minutes=monitoring_minutes)
 
     for signal in signals:
-        if utc_now() >= deadline:
+        if now_local() >= deadline:
             break
 
         symbol = signal["symbol"]
@@ -240,7 +243,8 @@ def run_close_strategy(screener_class):
         log_event("strategy_close", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)
 
-    start_time = utc_now()
+    # Use local time for window logic
+    start_time = now_local()
     signals = analyze_closing_signals(start_time, screener_class)
     if not signals:
         return StrategyResult(skipped=True)

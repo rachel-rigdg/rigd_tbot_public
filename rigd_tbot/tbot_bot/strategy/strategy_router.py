@@ -1,16 +1,15 @@
 # tbot_bot/strategy/strategy_router.py
-# Routes execution to correct strategy based on UTC time and TEST_MODE override
+# Routes execution to correct strategy based on UTC/local time and TEST_MODE override
 # THIS MODULE IS NOT A WORKER OR SUPERVISOR. IT MUST NEVER BE LAUNCHED DIRECTLY BY main.py, CLI, or as a persistent process.
 # Only imported by tbot_supervisor.py, integration_test_runner.py, or strategy modules for routing logic.
 
 import time
-from datetime import datetime, time as dt_time
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.strategy.strategy_open import run_open_strategy
 from tbot_bot.strategy.strategy_mid import run_mid_strategy
 from tbot_bot.strategy.strategy_close import run_close_strategy
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import utc_now
+from tbot_bot.support.utils_time import time_local, parse_time_local
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 
@@ -28,17 +27,10 @@ OPEN_SCREENER = config.get("OPEN_SCREENER", SCREENER_SOURCE).strip().upper()
 MID_SCREENER = config.get("MID_SCREENER", SCREENER_SOURCE).strip().upper()
 CLOSE_SCREENER = config.get("CLOSE_SCREENER", SCREENER_SOURCE).strip().upper()
 
-# Parse strategy start times from config
-def parse_start_time(tstr):
-    try:
-        h, m = map(int, tstr.strip().split(":"))
-        return dt_time(hour=h, minute=m)
-    except Exception:
-        raise ValueError(f"Invalid time format: {tstr}")
-
-START_TIME_OPEN = parse_start_time(config.get("START_TIME_OPEN", "14:30"))
-START_TIME_MID = parse_start_time(config.get("START_TIME_MID", "15:30"))
-START_TIME_CLOSE = parse_start_time(config.get("START_TIME_CLOSE", "19:30"))
+# Centralized start time parsing (local time zone aware)
+START_TIME_OPEN = parse_time_local(config.get("START_TIME_OPEN", "14:30"))
+START_TIME_MID = parse_time_local(config.get("START_TIME_MID", "15:30"))
+START_TIME_CLOSE = parse_time_local(config.get("START_TIME_CLOSE", "19:30"))
 
 # Check for TEST_MODE flag presence
 def is_test_mode_active() -> bool:
@@ -77,9 +69,9 @@ def get_screener_class(source_name):
         raise ValueError(f"Unknown screener source: {src}")
 
 # Main strategy routing function
-def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
+def route_strategy(current_local_time=None, override: str = None) -> StrategyResult:
     """
-    Main router to select and execute strategy based on UTC time, manual override,
+    Main router to select and execute strategy based on local time (per config TIMEZONE), manual override,
     or TEST_MODE immediate execution bypassing schedule.
     Only to be called by supervisor, integration test, or higher-level modules.
     Never launched as a persistent worker/process.
@@ -109,7 +101,7 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         # Return last strategy result or combined as needed (return last here)
         return results[-1]
 
-    now = current_utc_time or utc_now().time()
+    now = current_local_time or time_local()
 
     # Check for manual override (if provided)
     if override:

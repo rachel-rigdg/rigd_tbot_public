@@ -1,4 +1,3 @@
-<!-- tbot_web/templates/configuration.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -33,6 +32,23 @@
                 <br><br>
                 <label for="language_code">Language Code</label>
                 <input type="text" id="language_code" name="language_code" maxlength="8" value="{{ config.get('language_code', 'en') }}" />
+                <br><br>
+                <!-- TIMEZONE configuration -->
+                <label for="timezone">Timezone</label>
+                <select id="timezone" name="timezone" required>
+                    {% set tzval = config.get('TIMEZONE', 'UTC') %}
+                    <option value="America/New_York" {% if tzval == 'America/New_York' %}selected{% endif %}>New York (NYSE/NASDAQ, Eastern Time)</option>
+                    <option value="Europe/London" {% if tzval == 'Europe/London' %}selected{% endif %}>London (LSE, UK)</option>
+                    <option value="Asia/Tokyo" {% if tzval == 'Asia/Tokyo' %}selected{% endif %}>Tokyo (TSE, Japan)</option>
+                    <option value="Asia/Hong_Kong" {% if tzval == 'Asia/Hong_Kong' %}selected{% endif %}>Hong Kong (HKEX)</option>
+                    <option value="Asia/Shanghai" {% if tzval == 'Asia/Shanghai' %}selected{% endif %}>Shanghai (SSE, China)</option>
+                    <option value="Europe/Frankfurt" {% if tzval == 'Europe/Frankfurt' %}selected{% endif %}>Frankfurt (Xetra, Germany)</option>
+                    <option value="Asia/Singapore" {% if tzval == 'Asia/Singapore' %}selected{% endif %}>Singapore (SGX)</option>
+                    <option value="Australia/Sydney" {% if tzval == 'Australia/Sydney' %}selected{% endif %}>Sydney (ASX, Australia)</option>
+                    <option value="America/Sao_Paulo" {% if tzval == 'America/Sao_Paulo' %}selected{% endif %}>São Paulo (B3, Brazil)</option>
+                    <option value="Africa/Johannesburg" {% if tzval == 'Africa/Johannesburg' %}selected{% endif %}>Johannesburg (JSE, South Africa)</option>
+                    <option value="UTC" {% if tzval == 'UTC' %}selected{% endif %}>UTC (Coordinated Universal Time)</option>
+                </select>
             </fieldset>
             </div>
             <br><br>
