@@ -108,6 +108,9 @@ def route_strategy(current_local_time=None, override: str = None) -> StrategyRes
         return results[-1]
 
     now = current_local_time or time_local()
+    # --- Defensive cast: if 'now' is not a datetime.time, parse/cast it ---
+    if not isinstance(now, datetime.time):
+        now = parse_time_local(now)
 
     # Defensive: ensure all start times are datetime.time objects before comparison
     open_time = ensure_time(START_TIME_OPEN)
