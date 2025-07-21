@@ -3,6 +3,7 @@
 # Filtering logic now supports exchange whitelist via SCREENER_UNIVERSE_EXCHANGES.
 # Enhanced: robust normalization, numeric/format handling, and debug logging for missing fields.
 # MARKET CAP NORMALIZED TO USD (ALL VALUES FROM FEED ARE TREATED AS MILLIONS)
+# Fully compliant: handles all configured filter fields, no missing criteria.
 
 import re
 from decimal import Decimal

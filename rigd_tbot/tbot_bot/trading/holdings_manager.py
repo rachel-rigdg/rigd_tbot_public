@@ -13,6 +13,7 @@ from tbot_bot.trading.holdings_utils import (
     compute_realized_tax_cut,
     compute_post_tax_payroll_cut,
     compute_rebalance_orders,
+    simulate_rebalance_compliance,
 )
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
 from tbot_bot.support.utils_log import get_logger, log_event
@@ -26,7 +27,6 @@ log = get_logger(__name__)
 POLL_INTERVAL = 60  # seconds between checks, can be made configurable
 
 def _is_bot_initialized():
-    """Return True only if bot is past config, provisioning, and bootstrapping."""
     if is_first_bootstrap(quiet_mode=True):
         return False
     state_path = get_bot_state_path()
@@ -65,8 +65,17 @@ def _should_rebalance(holdings_cfg):
 def _mark_rebalance_complete(holdings_cfg):
     rebalance_interval = int(holdings_cfg.get("HOLDINGS_REBALANCE_INTERVAL", 3))
     next_due = datetime.utcnow().date() + relativedelta(months=rebalance_interval)
-    holdings_cfg["NEXT_REBALANCE_DUE"] = next_due.isoformat()
-    save_holdings_secrets(holdings_cfg, user="holdings_manager", reason="rebalance_complete")
+    save_holdings_secrets({**holdings_cfg, "NEXT_REBALANCE_DUE": next_due.isoformat()}, user="holdings_manager", reason="rebalance_complete")
+
+def _compliance_preview_or_abort(holdings, etf_targets, account_value):
+    # Simulate rebalance before executing, abort if noncompliant
+    compliance_ok, preview = simulate_rebalance_compliance(holdings, etf_targets, account_value)
+    if not compliance_ok:
+        log.error(f"Rebalance/compliance preview failed: {preview}")
+        log_event("holdings_compliance_block", user="holdings_manager", details={"reason": preview})
+        audit_log_event("holdings_compliance_block", user="holdings_manager", reference=None, details={"reason": preview})
+        return False
+    return True
 
 def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_manager"):
     if not _is_bot_initialized():
@@ -89,8 +98,13 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
 
     # === Step 0: Conditional rebalance if due ===
     if _should_rebalance(holdings_cfg):
-        perform_rebalance_cycle(user)
-        _mark_rebalance_complete(holdings_cfg)
+        holdings = broker.get_etf_holdings()
+        if _compliance_preview_or_abort(holdings, etf_targets, account_value):
+            perform_rebalance_cycle(user)
+            _mark_rebalance_complete(holdings_cfg)
+        else:
+            log.warning("Rebalance blocked for compliance, not executed.")
+            return
 
     # === Step 1: Top-up float (sell ETFs if needed) ===
     deficit = compute_cash_deficit(account_value, float_pct, current_cash)
@@ -134,6 +148,21 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
             })
             audit_log_event("holdings_reinvest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "reinvest"})
 
+    # === Step 4: Float excess auto-invest logic ===
+    float_target_value = account_value * (float_pct / 100)
+    float_excess = current_cash - float_target_value
+    if float_excess > 1:
+        prices = {symbol: broker.get_price(symbol) for symbol in etf_targets}
+        total_pct = sum(etf_targets.values())
+        for symbol, pct in etf_targets.items():
+            alloc_amt = float_excess * (pct / total_pct)
+            broker.place_order(symbol, "buy", alloc_amt)
+            log.info(f"Invested float excess: {alloc_amt} into {symbol}")
+            log_event("holdings_float_excess_invest", user=user, details={
+                "symbol": symbol, "amount": alloc_amt, "reason": "float_excess"
+            })
+            audit_log_event("holdings_float_excess_invest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "float_excess"})
+
 def perform_rebalance_cycle(user: str = "holdings_manager"):
     if not _is_bot_initialized():
         log.warning("Rebalance cycle: Bot not initialized/provisioned/bootstrapped.")
@@ -149,6 +178,10 @@ def perform_rebalance_cycle(user: str = "holdings_manager"):
 
     account_value = broker.get_account_value()
     holdings = broker.get_etf_holdings()
+
+    if not _compliance_preview_or_abort(holdings, etf_targets, account_value):
+        log.warning("Rebalance compliance preview failed, aborting rebalance.")
+        return
 
     orders = compute_rebalance_orders(holdings, etf_targets, account_value)
     for order in orders:

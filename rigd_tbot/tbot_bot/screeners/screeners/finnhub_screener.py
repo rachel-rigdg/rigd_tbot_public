@@ -10,6 +10,7 @@ from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_sym
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.screeners.screener_utils import load_universe_cache
 from tbot_bot.support.secrets_manager import load_screener_credentials
+from tbot_bot.support.utils_log import log_event
 
 def get_trading_screener_creds():
     # Only use providers with TRADING_ENABLED == "true" and PROVIDER == "FINNHUB"
@@ -18,7 +19,7 @@ def get_trading_screener_creds():
         k.split("_")[-1]
         for k, v in all_creds.items()
         if k.startswith("PROVIDER_")
-           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").upper() == "true"
+           and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").upper() == "TRUE"
            and all_creds.get(k, "").strip().upper() == "FINNHUB"
     ]
     if not provider_indices:
@@ -59,7 +60,7 @@ class FinnhubScreener(ScreenerBase):
     """
     Finnhub screener: loads eligible symbols from universe cache,
     fetches latest quotes from Finnhub API using screener credentials,
-    filters per strategy, test mode aware.
+    filters per strategy, test mode aware, always flags is_fractional eligibility.
     """
     def fetch_live_quotes(self, symbols):
         """
@@ -124,13 +125,13 @@ class FinnhubScreener(ScreenerBase):
                 continue
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
-            is_fractional = universe_cache.get(symbol, {}).get("isFractional", None)
+            is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
             price_candidates.append({
                 "symbol": symbol,
                 "lastClose": current,
                 "marketCap": mc,
                 "exchange": exch,
-                "isFractional": is_fractional,  # Informational only, not used for screening
+                "isFractional": is_fractional,
                 "price": current,
                 "vwap": vwap,
                 "open": open_
@@ -163,17 +164,16 @@ class FinnhubScreener(ScreenerBase):
                 "symbol": symbol,
                 "price": current,
                 "vwap": vwap,
-                "momentum": momentum
+                "momentum": momentum,
+                "is_fractional": q["isFractional"]
             })
 
         results.sort(key=lambda x: x["momentum"], reverse=True)
+        log_event("finnhub_screener", f"run_screen returned {len(results[:pool_size])} candidates")
         return results[:pool_size]
 
     # (Retain filter_candidates only for legacy support, but strategies must use run_screen.)
     def filter_candidates(self, quotes):
-        """
-        DEPRECATED: Returns a filtered, sorted candidate list for legacy modules.
-        """
         strategy = self.env.get("STRATEGY_NAME", "open")
         gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
         min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
@@ -199,7 +199,7 @@ class FinnhubScreener(ScreenerBase):
                 continue
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
-            is_fractional = universe_cache.get(symbol, {}).get("isFractional", None)
+            is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
             price_candidates.append({
                 "symbol": symbol,
                 "lastClose": current,
@@ -251,11 +251,13 @@ class FinnhubScreener(ScreenerBase):
                 "symbol": symbol,
                 "price": current,
                 "vwap": vwap,
-                "momentum": momentum
+                "momentum": momentum,
+                "is_fractional": q["isFractional"]
             })
 
         if not test_mode_active:
             results.sort(key=lambda x: x["momentum"], reverse=True)
+            log_event("finnhub_screener", f"filter_candidates returned {len(results[:limit])} candidates (legacy mode)")
             return results[:limit]
         else:
             return results[:limit]

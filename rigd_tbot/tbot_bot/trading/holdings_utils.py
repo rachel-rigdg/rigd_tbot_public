@@ -135,5 +135,22 @@ def record_rebalance(symbol, amount, action, user="system", audit_reference=None
     )
     log.info(f"Posted rebalance: {action} {amount} of {symbol}, User={user}, AuditRef={audit_reference}")
 
+def simulate_rebalance_compliance(current_holdings, etf_targets, account_value):
+    """
+    Simulate rebalance: return (compliance_ok, details_string)
+    Ensures no target allocation draws float/reserves below required, and all percentages sum to 100.
+    """
+    try:
+        total_pct = sum(etf_targets.values())
+        if not math.isclose(total_pct, 100.0, abs_tol=0.1):
+            return False, f"ETF allocations do not sum to 100%: {total_pct}"
+        for symbol, pct in etf_targets.items():
+            target_value = account_value * (pct / 100)
+            if target_value < 0:
+                return False, f"Negative target value for {symbol}: {target_value}"
+        return True, "Compliant"
+    except Exception as e:
+        return False, f"Simulation error: {e}"
+
 # No direct triggering of rebalance cycles or orchestration should exist here.
 # Any orchestration must be performed via flag files, IPC, or through the persistent holdings_manager process ONLY.

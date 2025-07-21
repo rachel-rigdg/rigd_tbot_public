@@ -23,6 +23,7 @@ SUMMARY_PATH = get_output_path(category="summaries", filename=f"{BOT_ID}_BOT_dai
 SHUTDOWN_FLAG = get_output_path(category="logs", filename="shutdown_triggered.txt")
 CONTROL_DIR = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[1] / "control"))
 KILL_FLAG = CONTROL_DIR / "control_kill.txt"
+KILL_LOG_PATH = get_output_path(category="logs", filename="kill_switch.log")
 
 def load_summary():
     """Load session summary JSON to access total PnL."""
@@ -41,15 +42,16 @@ def load_summary():
         log_event("kill_switch", f"Failed to load summary file: {e}")
         return None
 
+def _log_kill_switch_event(msg):
+    """Append event to kill_switch.log."""
+    try:
+        with open(KILL_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"{utc_now().isoformat()} | {msg}\n")
+    except Exception as e:
+        log_event("kill_switch", f"Failed to write to kill_switch.log: {e}")
+
 def check_daily_loss_limit():
     """Abort session if realized PnL exceeds allowable loss or kill flag present."""
-    # Emergency kill flag check
-    #if KILL_FLAG.exists():
-    #    print("[kill_switch] control_kill.txt detected — immediate shutdown triggered.")
-    #   log_event("kill_switch", "control_kill.txt detected — immediate shutdown triggered.")
-    #    trigger_shutdown(reason="Immediate kill flag (control_kill.txt) detected")
-     #   return True
-
     summary = load_summary()
     if not summary:
         print("[kill_switch] No summary data available; skipping loss limit check.")
@@ -63,6 +65,7 @@ def check_daily_loss_limit():
     if total_pnl < -abs(DAILY_LOSS_LIMIT):
         print(f"[kill_switch] DAILY_LOSS_LIMIT breached: {total_pnl:.2f} < -{DAILY_LOSS_LIMIT:.2f}")
         log_event("kill_switch", f"DAILY_LOSS_LIMIT breached: {total_pnl:.2f} < -{DAILY_LOSS_LIMIT:.2f}")
+        _log_kill_switch_event(f"DAILY_LOSS_LIMIT breached: {total_pnl:.2f} < -{DAILY_LOSS_LIMIT:.2f}")
         trigger_shutdown(reason=f"PnL {total_pnl:.2f} < -{DAILY_LOSS_LIMIT:.2f}")
         return True
 
@@ -75,14 +78,16 @@ def check_zero_symbol_scan(filtered_count: int):
     if filtered_count <= 0:
         print("[kill_switch] No symbols passed screener filter — triggering strategy abort.")
         log_event("kill_switch", "No symbols passed screener filter — triggering strategy abort.")
+        _log_kill_switch_event("No symbols passed screener filter — triggering strategy abort.")
         trigger_shutdown(reason="All symbols rejected by screener")
         return True
     return False
 
 def trigger_shutdown(reason="DAILY_LOSS_LIMIT breach"):
-    """Trigger emergency stop and notify administrators, set kill flag."""
+    """Trigger emergency stop and notify administrators, set kill flag, log event."""
     print(f"[kill_switch] EMERGENCY SHUTDOWN triggered — Reason: {reason}")
     log_event("kill_switch", f"EMERGENCY SHUTDOWN — Reason: {reason}")
+    _log_kill_switch_event(f"EMERGENCY SHUTDOWN — Reason: {reason}")
     try:
         with open(SHUTDOWN_FLAG, "w") as f:
             f.write(f"Shutdown triggered at {utc_now().isoformat()} — Reason: {reason}\n")

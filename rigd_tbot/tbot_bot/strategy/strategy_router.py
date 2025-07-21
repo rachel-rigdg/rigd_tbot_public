@@ -48,11 +48,11 @@ def is_test_mode_active() -> bool:
 # Symbol universe check before strategies
 def ensure_universe_valid():
     from tbot_bot.screeners.screener_utils import is_cache_stale, UniverseCacheError
-    from tbot_bot.screeners.symbol_universe_refresh import main as refresh_main
+    from tbot_bot.screeners.universe_orchestrator import main as orchestrator_main
     try:
         if is_cache_stale():
             log_event("router", "Universe cache missing or stale. Triggering rebuild.")
-            refresh_main()
+            orchestrator_main()
             log_event("router", "Universe cache rebuild completed by strategy router.")
     except UniverseCacheError as ue:
         log_event("router", f"Failed to rebuild universe: {ue}")
@@ -62,16 +62,16 @@ def ensure_universe_valid():
 def get_screener_class(source_name):
     src = source_name.strip().upper()
     if src == "ALPACA":
-        from tbot_bot.screeners.alpaca_screener import AlpacaScreener
+        from tbot_bot.screeners.screeners.alpaca_screener import AlpacaScreener
         return AlpacaScreener
     elif src == "FINNHUB":
-        from tbot_bot.screeners.finnhub_screener import FinnhubScreener
+        from tbot_bot.screeners.screeners.finnhub_screener import FinnhubScreener
         return FinnhubScreener
     elif src == "IBKR":
-        from tbot_bot.screeners.ibkr_screener import IBKRScreener
+        from tbot_bot.screeners.screeners.ibkr_screener import IBKRScreener
         return IBKRScreener
     elif src == "TRADIER":
-        from tbot_bot.screeners.tradier_screener import TradierScreener
+        from tbot_bot.screeners.screeners.tradier_screener import TradierScreener
         return TradierScreener
     else:
         raise ValueError(f"Unknown screener source: {src}")

@@ -49,3 +49,35 @@ def export_transactions(transactions, session_tag=""):
             error_msg="Failed to export transactions",
             exception=e
         )
+
+def propose_external_transfer(transfer_type, amount, currency, notes=""):
+    """
+    Creates a transfer proposal for external float movement (tax, payroll, or operational).
+    The proposal is written to output/{BOT_ID}/transfers/{transfer_type}_{timestamp}.json.
+    Args:
+        transfer_type (str): "tax_reserve", "payroll", "float_injection", etc.
+        amount (float): Amount to transfer.
+        currency (str): Currency code (e.g., "USD").
+        notes (str): Optional details for audit.
+    """
+    if not BOT_ID:
+        return
+
+    from datetime import datetime
+    proposal_dir = Path(__file__).resolve().parents[2] / "output" / BOT_ID / "transfers"
+    proposal_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    proposal = {
+        "bot_id": BOT_ID,
+        "transfer_type": transfer_type,
+        "amount": amount,
+        "currency": currency,
+        "notes": notes,
+        "timestamp_utc": timestamp,
+        "entity": ENTITY,
+        "jurisdiction": JURISDICTION,
+        "broker": BROKER
+    }
+    fname = f"{transfer_type}_{timestamp}.json"
+    with open(proposal_dir / fname, "w", encoding="utf-8") as f:
+        json.dump(proposal, f, indent=2)

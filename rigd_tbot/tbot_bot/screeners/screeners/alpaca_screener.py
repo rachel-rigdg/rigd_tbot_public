@@ -9,6 +9,7 @@ from tbot_bot.screeners.screener_utils import load_universe_cache
 from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.secrets_manager import load_screener_credentials
+from tbot_bot.support.utils_log import log_event
 
 def get_trading_screener_creds():
     """
@@ -61,6 +62,7 @@ class AlpacaScreener(ScreenerBase):
     """
     Alpaca screener: loads eligible symbols from universe cache,
     fetches latest quotes from Alpaca, filters per strategy.
+    Ensures output always flags fractional eligibility.
     """
     def fetch_live_quotes(self, symbols):
         """
@@ -129,7 +131,8 @@ class AlpacaScreener(ScreenerBase):
                 continue
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
-            is_fractional = universe_cache.get(symbol, {}).get("isFractional", None)
+            # Fractional enforcement: always present in result
+            is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
             price_candidates.append({
                 "symbol": symbol,
                 "lastClose": current,
@@ -168,12 +171,13 @@ class AlpacaScreener(ScreenerBase):
                 "symbol": symbol,
                 "price": current,
                 "vwap": vwap,
-                "momentum": momentum
+                "momentum": momentum,
+                "is_fractional": q["isFractional"]
             })
         results.sort(key=lambda x: x["momentum"], reverse=True)
+        log_event("alpaca_screener", f"run_screen returned {len(results[:pool_size])} candidates")
         return results[:pool_size]
 
-    # (Retain filter_candidates only for legacy support, but strategies must use run_screen.)
     def filter_candidates(self, quotes):
         """
         DEPRECATED: Returns a filtered, sorted candidate list for legacy modules.
@@ -202,7 +206,7 @@ class AlpacaScreener(ScreenerBase):
                 continue
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
-            is_fractional = universe_cache.get(symbol, {}).get("isFractional", None)
+            is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
             price_candidates.append({
                 "symbol": symbol,
                 "lastClose": current,
@@ -241,7 +245,9 @@ class AlpacaScreener(ScreenerBase):
                 "symbol": symbol,
                 "price": current,
                 "vwap": vwap,
-                "momentum": momentum
+                "momentum": momentum,
+                "is_fractional": q["isFractional"]
             })
         results.sort(key=lambda x: x["momentum"], reverse=True)
+        log_event("alpaca_screener", f"filter_candidates returned {len(results)} candidates (legacy mode)")
         return results

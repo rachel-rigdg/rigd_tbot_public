@@ -3,6 +3,7 @@
 # 1) Runs symbol_universe_raw_builder.py to create symbol_universe.symbols_raw.json (single API call)
 # 2) Runs symbol_enrichment.py to enrich, filter, blocklist, and build universe files from API adapters
 # 3) Atomically copies partial.json to symbol_universe.json
+# 4) Optionally polls for blocklist/manual recovery and logs if triggered
 # Logs progress and errors. No legacy TXT/CSV steps.
 
 import subprocess
@@ -28,6 +29,19 @@ def run_module(module_path):
         sys.exit(proc.returncode)
     log(f"{module_path} completed successfully.")
 
+def poll_blocklist_recovery():
+    """
+    Poll for manual blocklist or recovery file (blocklist_recovery.flag).
+    If present, log event and remove the flag to allow manual intervention.
+    """
+    from tbot_bot.support.path_resolver import resolve_blocklist_recovery_flag_path
+    flag_path = resolve_blocklist_recovery_flag_path()
+    if os.path.exists(flag_path):
+        log(f"Blocklist recovery/manual intervention triggered via {flag_path}")
+        os.remove(flag_path)
+        return True
+    return False
+
 def main():
     # Step 1: Build raw symbols file from provider API (single API call)
     run_module("tbot_bot.screeners.symbol_universe_raw_builder")
@@ -41,6 +55,10 @@ def main():
         sys.exit(1)
     atomic_copy_file(PARTIAL_PATH, FINAL_PATH)
     log("Universe orchestration completed successfully.")
+
+    # Step 4: Poll for blocklist/manual recovery flag
+    if poll_blocklist_recovery():
+        log("Blocklist/manual recovery event logged during universe orchestration.")
 
 if __name__ == "__main__":
     main()

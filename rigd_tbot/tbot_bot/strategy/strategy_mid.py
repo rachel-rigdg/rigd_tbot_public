@@ -13,7 +13,7 @@ from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.enhancements.adx_filter import adx_filter
 from tbot_bot.enhancements.bollinger_confluence import confirm_bollinger_touch
 from tbot_bot.trading.kill_switch import trigger_shutdown
-from tbot_bot.trading.risk_bot import validate_trade
+from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from pathlib import Path
@@ -180,11 +180,12 @@ def execute_mid_trades(signals, start_time):
 
         try:
             if side == "buy":
-                if validate_trade(symbol, "buy", alloc):
+                valid, alloc_amt = validate_trade(symbol, "buy", ACCOUNT_BALANCE, 0, 0, 1)
+                if valid:
                     result = create_order(
                         ticker=symbol,
                         side="buy",
-                        capital=alloc,
+                        capital=alloc_amt,
                         price=price,
                         stop_loss_pct=0.02,
                         strategy_name="mid"
@@ -194,46 +195,48 @@ def execute_mid_trades(signals, start_time):
             else:
                 if SHORT_TYPE_MID == "disabled":
                     log_event("strategy_mid", f"SHORT skipped for {symbol} (SHORT_TYPE disabled)")
-                elif validate_trade(symbol, "sell", alloc):
-                    instrument = None
-                    side_exec = "sell"
+                else:
+                    valid, alloc_amt = validate_trade(symbol, "sell", ACCOUNT_BALANCE, 0, 0, 1)
+                    if valid:
+                        instrument = None
+                        side_exec = "sell"
 
-                    if SHORT_TYPE_MID == "InverseETF":
-                        instrument = get_inverse_etf(symbol)
-                        if not instrument:
-                            log_event("strategy_mid", f"No inverse ETF mapping for {symbol}, skipping short trade")
+                        if SHORT_TYPE_MID == "InverseETF":
+                            instrument = get_inverse_etf(symbol)
+                            if not instrument:
+                                log_event("strategy_mid", f"No inverse ETF mapping for {symbol}, skipping short trade")
+                                continue
+                            side_exec = "buy"
+
+                        elif SHORT_TYPE_MID == "LongPut":
+                            instrument = get_put_option(symbol)
+                            if not instrument:
+                                log_event("strategy_mid", f"Put option contract unavailable for {symbol}, skipping short trade")
+                                continue
+                            side_exec = "buy"
+
+                        elif SHORT_TYPE_MID in ("Short", "Synthetic"):
+                            short_spec = get_short_instrument(symbol, BROKER_CODE, short_type=SHORT_TYPE_MID)
+                            if not short_spec:
+                                log_event("strategy_mid", f"No valid short method for {symbol} on {BROKER_CODE}")
+                                continue
+                            instrument = short_spec.get("symbol", symbol)
+                            side_exec = short_spec.get("side", "sell")
+
+                        else:
+                            log_event("strategy_mid", f"Unsupported SHORT_TYPE_MID: {SHORT_TYPE_MID}")
                             continue
-                        side_exec = "buy"
 
-                    elif SHORT_TYPE_MID == "LongPut":
-                        instrument = get_put_option(symbol)
-                        if not instrument:
-                            log_event("strategy_mid", f"Put option contract unavailable for {symbol}, skipping short trade")
-                            continue
-                        side_exec = "buy"
-
-                    elif SHORT_TYPE_MID in ("Short", "Synthetic"):
-                        short_spec = get_short_instrument(symbol, BROKER_CODE, short_type=SHORT_TYPE_MID)
-                        if not short_spec:
-                            log_event("strategy_mid", f"No valid short method for {symbol} on {BROKER_CODE}")
-                            continue
-                        instrument = short_spec.get("symbol", symbol)
-                        side_exec = short_spec.get("side", "sell")
-
-                    else:
-                        log_event("strategy_mid", f"Unsupported SHORT_TYPE_MID: {SHORT_TYPE_MID}")
-                        continue
-
-                    result = create_order(
-                        ticker=instrument,
-                        side=side_exec,
-                        capital=alloc,
-                        price=price,
-                        stop_loss_pct=0.02,
-                        strategy_name="mid"
-                    )
-                    if result:
-                        trades.append(result)
+                        result = create_order(
+                            ticker=instrument,
+                            side=side_exec,
+                            capital=alloc_amt,
+                            price=price,
+                            stop_loss_pct=0.02,
+                            strategy_name="mid"
+                        )
+                        if result:
+                            trades.append(result)
         except Exception as e:
             handle_error("strategy_mid", "BrokerError", e)
 

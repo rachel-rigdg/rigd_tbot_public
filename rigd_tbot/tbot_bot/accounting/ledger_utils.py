@@ -97,6 +97,15 @@ def validate_ledger_schema():
             result = conn.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'").fetchone()
             if not result:
                 raise RuntimeError(f"Required table '{table}' missing in ledger DB: {db_path}")
+        # ============ SPEC FIELD CHECKS ===============
+        cursor = conn.execute("PRAGMA table_info(trades)")
+        required_fields = [
+            "fitid", "tag", "leverage_multiplier", "account", "total_value", "datetime_utc"
+        ]
+        columns = [row[1] for row in cursor.fetchall()]
+        for field in required_fields:
+            if field not in columns:
+                raise RuntimeError(f"Required field '{field}' missing in trades table schema")
     return True
 
 def get_entry_by_id(entry_id):
@@ -232,3 +241,26 @@ def get_coa_accounts():
         cursor = conn.execute("SELECT json_extract(account_json, '$.code'), json_extract(account_json, '$.name') FROM coa_accounts")
         accounts = sorted([(row[0], row[1]) for row in cursor.fetchall() if row[0] and row[1]], key=lambda x: x[1])
     return accounts
+
+def validate_double_entry():
+    """
+    Checks that for every transaction, debits and credits sum to zero (double-entry).
+    Raises error if any imbalance found.
+    """
+    if TEST_MODE_FLAG.exists():
+        return True
+    key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
+    enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
+    key = key_path.read_bytes()
+    cipher = Fernet(key)
+    plaintext = cipher.decrypt(enc_path.read_bytes())
+    bot_identity_data = json.loads(plaintext.decode("utf-8"))
+    identity = bot_identity_data.get("BOT_IDENTITY_STRING")
+    entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute("SELECT fitid, SUM(total_value) FROM trades GROUP BY fitid")
+        imbalances = [(fitid, total) for fitid, total in cursor.fetchall() if abs(total) > 1e-8]
+        if imbalances:
+            raise RuntimeError(f"Double-entry imbalance detected for fitids: {imbalances}")
+    return True

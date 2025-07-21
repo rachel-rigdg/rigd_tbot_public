@@ -37,6 +37,11 @@ try:
 except ImportError:
     get_vix_value = None
 
+try:
+    from tbot_bot.enhancements.black_scholes_filter import validate_option
+except ImportError:
+    validate_option = None
+
 config = get_bot_config()
 TOTAL_ALLOCATION = float(config.get("TOTAL_ALLOCATION", 0.02))
 MAX_TRADES = int(config.get("MAX_TRADES", 4))
@@ -44,9 +49,8 @@ WEIGHTS = [float(w) for w in str(config.get("WEIGHTS", "0.4,0.2,0.2,0.2")).split
 MAX_OPEN_POSITIONS = int(config.get("MAX_OPEN_POSITIONS", 5))
 MAX_RISK_PER_TRADE = float(config.get("MAX_RISK_PER_TRADE", 0.025))
 
-# --- Enhancement thresholds (hardcoded or config) ---
-ADX_MAX = float(config.get("ADX_MAX", 45))   # Example threshold
-VIX_MIN = float(config.get("VIX_MIN", 12))   # Example threshold
+ADX_MAX = float(config.get("ADX_MAX", 45))
+VIX_MAX = float(config.get("VIX_MAX", 24))
 
 def get_trade_weight(index: int, active_count: int) -> float:
     if active_count <= 0:
@@ -71,7 +75,8 @@ def validate_trade(
     open_positions_count: int,
     signal_index: int,
     total_signals: int,
-    ibkr_client=None,  # Pass IBKR client if using IBKR enhancements
+    ibkr_client=None,
+    option_data=None,
 ):
     """
     Fully validates a proposed trade signal before execution.
@@ -98,7 +103,6 @@ def validate_trade(
     if get_bollinger_bands is not None:
         try:
             bands = get_bollinger_bands(symbol)
-            # Logic: for "long", block if price > lower; for "short", block if price < upper
             if bands:
                 price = bands.get("price")
                 lower = bands.get("lower")
@@ -133,15 +137,25 @@ def validate_trade(
         except Exception as e:
             log_event("risk_module", f"IBKR imbalance check error: {e}")
 
-    # 6. Enhancement: VIX Gatekeeper
+    # 6. Enhancement: VIX Gatekeeper (spec: block when VIX >= VIX_MAX)
     if get_vix_value is not None:
         try:
             vix = get_vix_value()
-            if vix is not None and vix < VIX_MIN:
-                log_event("risk_module", f"VIX too low: {vix:.2f}")
-                return False, f"VIX below minimum ({vix:.2f})"
+            if vix is not None and vix >= VIX_MAX:
+                log_event("risk_module", f"VIX too high: {vix:.2f}")
+                return False, f"VIX above maximum ({vix:.2f})"
         except Exception as e:
             log_event("risk_module", f"VIX check error: {e}")
+
+    # 7. Enhancement: Black-Scholes Filter (options only)
+    if validate_option is not None and option_data is not None:
+        try:
+            ok, reason = validate_option(option_data)
+            if not ok:
+                log_event("risk_module", f"Black-Scholes block for {symbol}: {reason}")
+                return False, f"Black-Scholes block: {reason}"
+        except Exception as e:
+            log_event("risk_module", f"Black-Scholes filter error: {e}")
 
     # --- Core risk/position/alloc checks ---
     if open_positions_count >= MAX_OPEN_POSITIONS:
