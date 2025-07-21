@@ -127,7 +127,7 @@ def run_integration_test():
         for strat in strategies:
             strat = strat.strip().lower()
             log_event("integration_test", f"Triggering strategy: {strat}")
-            result = route_strategy(strat)
+            result = route_strategy(override=strat)
             if getattr(result, 'skipped', False):
                 print(f"Strategy {strat} was skipped or failed to trigger.")
             else:
