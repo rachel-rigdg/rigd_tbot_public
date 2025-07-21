@@ -46,6 +46,10 @@ class IBKRScreener(ScreenerBase):
     fetches latest quotes from IBKR (using screener credentials), filters per strategy.
     Ensures output always flags is_fractional eligibility.
     """
+    def __init__(self, strategy=None, **kwargs):
+        super().__init__()
+        self.strategy = strategy
+
     def fetch_live_quotes(self, symbols):
         """
         Fetches latest price/open/vwap for each symbol using IBKR API.

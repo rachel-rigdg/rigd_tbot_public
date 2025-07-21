@@ -62,6 +62,10 @@ class FinnhubScreener(ScreenerBase):
     fetches latest quotes from Finnhub API using screener credentials,
     filters per strategy, test mode aware, always flags is_fractional eligibility.
     """
+    def __init__(self, *args, strategy=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.strategy = strategy
+
     def fetch_live_quotes(self, symbols):
         """
         Fetches latest price/open/vwap for each symbol using Finnhub API.
@@ -102,7 +106,7 @@ class FinnhubScreener(ScreenerBase):
         universe = load_universe_cache()
         all_symbols = [s["symbol"] for s in universe][:pool_size * 2]
         quotes = self.fetch_live_quotes(all_symbols)
-        strategy = self.env.get("STRATEGY_NAME", "open")
+        strategy = self.strategy or self.env.get("STRATEGY_NAME", "open")
         gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
         min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
         max_cap_key = f"MAX_MARKET_CAP_{strategy.upper()}"
@@ -174,7 +178,7 @@ class FinnhubScreener(ScreenerBase):
 
     # (Retain filter_candidates only for legacy support, but strategies must use run_screen.)
     def filter_candidates(self, quotes):
-        strategy = self.env.get("STRATEGY_NAME", "open")
+        strategy = self.strategy or self.env.get("STRATEGY_NAME", "open")
         gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
         min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
         max_cap_key = f"MAX_MARKET_CAP_{strategy.upper()}"
