@@ -57,7 +57,7 @@ def save_cache(cache):
 def fetch_fundamentals(symbol: str) -> dict:
     api_key, api_url, username, password = get_finnhub_api_params()
     if not api_key:
-        log_event(f"FUNDAMENTAL_FETCH_ERROR: symbol={symbol} error=missing_api_key")
+        log_event(f"FUNDAMENTAL_FETCH_ERROR: symbol={symbol} error=missing_api_key", "finnhub_fundamental_guard")
         return {}
     url = f"{api_url.rstrip('/')}/stock/metric?symbol={symbol}&metric=all&token={api_key}"
     auth = (username, password) if username and password else None
@@ -66,7 +66,7 @@ def fetch_fundamentals(symbol: str) -> dict:
         if resp.status_code == 200:
             return resp.json().get("metric", {})
     except Exception as e:
-        log_event(f"FUNDAMENTAL_FETCH_ERROR: symbol={symbol} error={str(e)}")
+        log_event(f"FUNDAMENTAL_FETCH_ERROR: symbol={symbol} error={str(e)}", "finnhub_fundamental_guard")
     return {}
 
 
@@ -92,13 +92,14 @@ def passes_fundamental_guard(symbol: str, context: dict = None) -> bool:
         debt_equity = float(data.get("totalDebt/totalEquityAnnual", 0))
         market_cap = float(data.get("marketCapitalization", 0))
     except Exception:
-        log_event(f"FUNDAMENTAL_PARSE_FAIL: {symbol} raw={data}")
+        log_event(f"FUNDAMENTAL_PARSE_FAIL: {symbol} raw={data}", "finnhub_fundamental_guard")
         return False
 
     if pe > MAX_PE_RATIO or debt_equity > MAX_DEBT_EQUITY or market_cap < MIN_MARKET_CAP:
         log_event(
             f"FUNDAMENTAL_REJECTED: {symbol} | P/E={pe:.1f} D/E={debt_equity:.2f} Cap=${market_cap:,.0f} "
-            f"| context={context}"
+            f"| context={context}",
+            "finnhub_fundamental_guard"
         )
         return False
 
