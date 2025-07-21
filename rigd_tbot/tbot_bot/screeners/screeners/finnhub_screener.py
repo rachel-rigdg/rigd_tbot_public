@@ -143,7 +143,6 @@ class FinnhubScreener(ScreenerBase):
 
         filtered = core_filter_symbols(
             price_candidates,
-            exchanges=["US"],
             min_price=MIN_PRICE,
             max_price=MAX_PRICE,
             min_market_cap=min_cap,
@@ -217,7 +216,6 @@ class FinnhubScreener(ScreenerBase):
 
         filtered = core_filter_symbols(
             price_candidates,
-            exchanges=["US"],
             min_price=MIN_PRICE,
             max_price=MAX_PRICE,
             min_market_cap=min_cap,
@@ -246,7 +244,7 @@ class FinnhubScreener(ScreenerBase):
                     break
                 continue
 
-            gap = abs((current - open_) / open_)
+            gap = abs(current - open_) / open_
             if gap > max_gap:
                 continue
 

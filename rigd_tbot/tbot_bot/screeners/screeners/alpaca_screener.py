@@ -1,3 +1,63 @@
+# tbot_bot/screeners/screeners/alpaca_screener.py
+# Loads screener credentials where TRADING_ENABLED == "true" and PROVIDER == "ALPACA" per spec.
+# Uses ONLY generic SCREENER_ keys—never BROKER_—and never reads internal env for credentials.
+
+import requests
+import time
+from tbot_bot.screeners.screener_base import ScreenerBase
+from tbot_bot.screeners.screener_utils import load_universe_cache
+from tbot_bot.screeners.screener_filter import filter_symbols as core_filter_symbols
+from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.secrets_manager import load_screener_credentials
+from tbot_bot.support.utils_log import log_event
+
+def get_trading_screener_creds():
+    """
+    Loads screener credentials where TRADING_ENABLED == 'true' and PROVIDER == 'ALPACA'.
+    Returns dict of keys for the first enabled ALPACA provider.
+    """
+    all_creds = load_screener_credentials()
+    candidates = [
+        k.split("_")[-1]
+        for k, v in all_creds.items()
+        if k.startswith("PROVIDER_")
+        and all_creds.get(f"TRADING_ENABLED_{k.split('_')[-1]}", "false").lower() == "true"
+        and all_creds.get(k, "").strip().upper() == "ALPACA"
+    ]
+    if not candidates:
+        raise RuntimeError("No ALPACA screener provider enabled for active trading. Please enable in credential admin.")
+    idx = candidates[0]
+    return {
+        key.replace(f"_{idx}", ""): v
+        for key, v in all_creds.items()
+        if key.endswith(f"_{idx}") and not key.startswith("PROVIDER_")
+    }
+
+config = get_bot_config()
+screener_creds = get_trading_screener_creds()
+SCREENER_API_KEY = screener_creds.get("SCREENER_API_KEY", "")
+SCREENER_SECRET_KEY = screener_creds.get("SCREENER_SECRET_KEY", "")
+SCREENER_USERNAME = screener_creds.get("SCREENER_USERNAME", "")
+SCREENER_PASSWORD = screener_creds.get("SCREENER_PASSWORD", "")
+SCREENER_URL = screener_creds.get("SCREENER_URL", "https://data.alpaca.markets")
+SCREENER_TOKEN = screener_creds.get("SCREENER_TOKEN", "")
+
+HEADERS = {
+    "APCA-API-KEY-ID": SCREENER_API_KEY,
+    "APCA-API-SECRET-KEY": SCREENER_SECRET_KEY,
+    "Authorization": f"Bearer {SCREENER_TOKEN}" if SCREENER_TOKEN else ""
+}
+
+API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
+MIN_PRICE = float(config.get("MIN_PRICE", 5))
+MAX_PRICE = float(config.get("MAX_PRICE", 100))
+FRACTIONAL = config.get("FRACTIONAL", True)
+LOG_LEVEL = str(config.get("LOG_LEVEL", "silent")).lower()
+
+def log(msg):
+    if LOG_LEVEL == "verbose":
+        print(f"[Alpaca Screener] {msg}")
+
 class AlpacaScreener(ScreenerBase):
     """
     Alpaca screener: loads eligible symbols from universe cache,
