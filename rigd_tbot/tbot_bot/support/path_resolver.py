@@ -288,6 +288,9 @@ def resolve_symbol_universe_refresh_path() -> str:
 def resolve_integration_test_runner_path() -> str:
     return resolve_test_script_path("integration_test_runner.py")
 
+def get_enhancements_path() -> str:
+    return str(PROJECT_ROOT / "tbot_bot" / "enhancements")
+
 def resolve_nasdaqlisted_txt_path() -> str:
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
     screeners_dir = base_output_dir / "screeners"
@@ -327,6 +330,7 @@ __all__ = [
     "get_schema_path",
     "get_cache_path",
     "get_bot_state_path",
+    "get_enhancements_path"
     "resolve_output_folder_path",
     "resolve_ledger_db_path",
     "resolve_coa_db_path",

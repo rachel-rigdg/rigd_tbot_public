@@ -33,7 +33,7 @@ MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
 MAX_TRADES = int(config["MAX_TRADES"])
 CANDIDATE_MULTIPLIER = int(config["CANDIDATE_MULTIPLIER"])
-FRACTIONAL = config.get("FRACTIONAL", "false").lower() == "true"
+FRACTIONAL = str(config.get("FRACTIONAL", "false")).lower() == "true"
 WEIGHTS = [float(w) for w in config["WEIGHTS"].split(",")]
 
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
