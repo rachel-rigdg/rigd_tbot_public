@@ -7,19 +7,21 @@ from tbot_bot.config.env_bot import load_env_var, update_env_var
 from tbot_web.support.auth_web import get_current_user, get_user_role
 from tbot_bot.trading.holdings_utils import parse_etf_allocations
 from tbot_bot.support.decrypt_secrets import load_bot_identity
-from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
+from tbot_bot.support.path_resolver import (
+    validate_bot_identity,
+    get_bot_identity_string_regex,
+    resolve_holdings_secrets_path
+)
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from pathlib import Path
-import os
 
 holdings_web = Blueprint("holdings_web", __name__)
 
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
-BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
-HOLDINGS_SECRET_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "holdings_secrets.json.enc"
+BOT_STATE_PATH = resolve_holdings_secrets_path().parents[3] / "tbot_bot" / "control" / "bot_state.txt"
+HOLDINGS_SECRET_PATH = resolve_holdings_secrets_path()
 
 def get_current_bot_state():
     try:
