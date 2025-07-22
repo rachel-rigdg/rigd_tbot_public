@@ -67,10 +67,10 @@ def save_holdings_secrets(data: dict, user: str = "system", reason: str = "updat
     os.replace(tmp_path, HOLDINGS_SECRETS_FILE)
     # Audit log
     log_event(
-        action="holdings_secrets_save",
-        user=user or "system",
-        details={"reason": reason, "file": str(HOLDINGS_SECRETS_FILE)},
-        timestamp=datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+        "holdings_secrets_save",
+        f"Saved holdings secrets ({reason}) by {user or 'system'}: {HOLDINGS_SECRETS_FILE}",
+        level="info",
+        extra={"file": str(HOLDINGS_SECRETS_FILE)}
     )
 
 def rotate_holdings_key(new_key: bytes, user: str):
@@ -85,10 +85,10 @@ def rotate_holdings_key(new_key: bytes, user: str):
         kf.write(new_key)
     save_holdings_secrets(secrets_data, user, reason="key_rotation")
     log_event(
-        action="holdings_key_rotation",
-        user=user,
-        details={"file": str(HOLDINGS_SECRETS_KEY_FILE)},
-        timestamp=datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+        "holdings_key_rotation",
+        f"Rotated holdings secrets key by {user}",
+        level="info",
+        extra={"file": str(HOLDINGS_SECRETS_KEY_FILE)}
     )
 
 def update_holdings_secrets(patch: dict, user: str = "system", reason: str = "update"):
@@ -119,8 +119,8 @@ def restore_holdings_secrets(backup_file: str, user: str = "system"):
         raise FileNotFoundError(f"Backup file not found: {backup_file}")
     shutil.copy2(backup_path, HOLDINGS_SECRETS_FILE)
     log_event(
-        action="holdings_secrets_restore",
-        user=user,
-        details={"file": str(HOLDINGS_SECRETS_FILE), "restored_from": str(backup_path)},
-        timestamp=datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+        "holdings_secrets_restore",
+        f"Restored holdings secrets from backup by {user}: {backup_path}",
+        level="info",
+        extra={"file": str(HOLDINGS_SECRETS_FILE), "restored_from": str(backup_path)}
     )
