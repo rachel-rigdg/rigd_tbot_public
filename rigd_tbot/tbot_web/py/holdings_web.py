@@ -3,7 +3,6 @@
 # Fully compliant with v048 specs, with guards, RBAC, logging, and real-time broker data.
 
 from flask import Blueprint, request, jsonify, render_template, flash, redirect, url_for
-from tbot_bot.config.env_bot import load_env_var, update_env_var
 from tbot_web.support.auth_web import get_current_user, get_user_role
 from tbot_bot.trading.holdings_utils import parse_etf_allocations
 from tbot_bot.support.decrypt_secrets import load_bot_identity
@@ -70,11 +69,11 @@ def get_holdings_config():
 
         secrets = load_holdings_secrets()
         return jsonify({
-            "HOLDINGS_FLOAT_TARGET_PCT": load_env_var("HOLDINGS_FLOAT_TARGET_PCT", 10),
-            "HOLDINGS_TAX_RESERVE_PCT": load_env_var("HOLDINGS_TAX_RESERVE_PCT", 20),
-            "HOLDINGS_PAYROLL_PCT": load_env_var("HOLDINGS_PAYROLL_PCT", 10),
-            "HOLDINGS_REBALANCE_INTERVAL": load_env_var("HOLDINGS_REBALANCE_INTERVAL", 6),
-            "HOLDINGS_ETF_LIST": load_env_var("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50"),
+            "HOLDINGS_FLOAT_TARGET_PCT": secrets.get("HOLDINGS_FLOAT_TARGET_PCT", 10),
+            "HOLDINGS_TAX_RESERVE_PCT": secrets.get("HOLDINGS_TAX_RESERVE_PCT", 20),
+            "HOLDINGS_PAYROLL_PCT": secrets.get("HOLDINGS_PAYROLL_PCT", 10),
+            "HOLDINGS_REBALANCE_INTERVAL": secrets.get("HOLDINGS_REBALANCE_INTERVAL", 6),
+            "HOLDINGS_ETF_LIST": secrets.get("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50"),
             "next_rebalance_due": secrets.get("NEXT_REBALANCE_DUE"),
             "status": "ok"
         })
@@ -88,18 +87,17 @@ def update_holdings_config():
         return jsonify({"error": "Access denied"}), 403
     data = request.json or {}
     try:
-        update_env_var("HOLDINGS_FLOAT_TARGET_PCT", data.get("HOLDINGS_FLOAT_TARGET_PCT"))
-        update_env_var("HOLDINGS_TAX_RESERVE_PCT", data.get("HOLDINGS_TAX_RESERVE_PCT"))
-        update_env_var("HOLDINGS_PAYROLL_PCT", data.get("HOLDINGS_PAYROLL_PCT"))
-        update_env_var("HOLDINGS_REBALANCE_INTERVAL", data.get("HOLDINGS_REBALANCE_INTERVAL"))
-        update_env_var("HOLDINGS_ETF_LIST", data.get("HOLDINGS_ETF_LIST"))
-
-        # === Rebalance timer logic ===
-        interval = int(data.get("HOLDINGS_REBALANCE_INTERVAL", 3))
-        next_due = datetime.utcnow().date() + relativedelta(months=interval)
         secrets = load_holdings_secrets() if HOLDINGS_SECRET_PATH.exists() else {}
+        secrets["HOLDINGS_FLOAT_TARGET_PCT"] = data.get("HOLDINGS_FLOAT_TARGET_PCT", 10)
+        secrets["HOLDINGS_TAX_RESERVE_PCT"] = data.get("HOLDINGS_TAX_RESERVE_PCT", 20)
+        secrets["HOLDINGS_PAYROLL_PCT"] = data.get("HOLDINGS_PAYROLL_PCT", 10)
+        secrets["HOLDINGS_REBALANCE_INTERVAL"] = data.get("HOLDINGS_REBALANCE_INTERVAL", 6)
+        secrets["HOLDINGS_ETF_LIST"] = data.get("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50")
+
+        interval = int(secrets["HOLDINGS_REBALANCE_INTERVAL"])
+        next_due = datetime.utcnow().date() + relativedelta(months=interval)
         secrets["NEXT_REBALANCE_DUE"] = next_due.isoformat()
-        save_holdings_secrets(secrets)
+        save_holdings_secrets(secrets, user=getattr(user, "username", user if user else "system"), reason="update_holdings_config")
 
         return jsonify({
             "status": "success",
