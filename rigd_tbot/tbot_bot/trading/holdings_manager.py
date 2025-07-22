@@ -43,7 +43,10 @@ def _is_broker_configured():
         _ = broker.get_account_value()
         return True
     except Exception as e:
-        log.error(f"Broker not configured or not provisioned: {e}")
+        if hasattr(log, "warn"):
+            log.warn(f"Broker not configured or not provisioned: {e}")
+        else:
+            log.warning(f"Broker not configured or not provisioned: {e}")
         return False
 
 def _should_topup_float(account_value, float_pct, current_cash):
@@ -59,7 +62,10 @@ def _should_rebalance(holdings_cfg):
             if datetime.utcnow().date() >= rebalance_due_date:
                 return True
     except Exception as e:
-        log.warning(f"Rebalance date check failed: {e}")
+        if hasattr(log, "warn"):
+            log.warn(f"Rebalance date check failed: {e}")
+        else:
+            log.warning(f"Rebalance date check failed: {e}")
     return False
 
 def _mark_rebalance_complete(holdings_cfg):
@@ -70,7 +76,10 @@ def _mark_rebalance_complete(holdings_cfg):
 def _compliance_preview_or_abort(holdings, etf_targets, account_value):
     compliance_ok, preview = simulate_rebalance_compliance(holdings, etf_targets, account_value)
     if not compliance_ok:
-        log.error(f"Rebalance/compliance preview failed: {preview}")
+        if hasattr(log, "warn"):
+            log.warn(f"Rebalance/compliance preview failed: {preview}")
+        else:
+            log.warning(f"Rebalance/compliance preview failed: {preview}")
         log_event("holdings_compliance_block", user="holdings_manager", details={"reason": preview})
         audit_log_event("holdings_compliance_block", user="holdings_manager", reference=None, details={"reason": preview})
         return False
@@ -103,7 +112,10 @@ def get_holdings_status():
                 "total_gain_loss": etf.get("total_gain_loss", 0)
             })
     except Exception as e:
-        log.error(f"Failed to fetch ETF holdings: {e}")
+        if hasattr(log, "warn"):
+            log.warn(f"Failed to fetch ETF holdings: {e}")
+        else:
+            log.warning(f"Failed to fetch ETF holdings: {e}")
 
     return {
         "account_value": account_value,
@@ -114,10 +126,16 @@ def get_holdings_status():
 
 def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_manager"):
     if not _is_bot_initialized():
-        log.warning("Holdings manager: Bot not initialized/provisioned/bootstrapped.")
+        if hasattr(log, "warn"):
+            log.warn("Holdings manager: Bot not initialized/provisioned/bootstrapped.")
+        else:
+            log.warning("Holdings manager: Bot not initialized/provisioned/bootstrapped.")
         return
     if not _is_broker_configured():
-        log.warning("Holdings manager: No broker is configured or provisioned yet.")
+        if hasattr(log, "warn"):
+            log.warn("Holdings manager: No broker is configured or provisioned yet.")
+        else:
+            log.warning("Holdings manager: No broker is configured or provisioned yet.")
         return
 
     broker = get_active_broker()
@@ -138,7 +156,10 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
             perform_rebalance_cycle(user)
             _mark_rebalance_complete(holdings_cfg)
         else:
-            log.warning("Rebalance blocked for compliance, not executed.")
+            if hasattr(log, "warn"):
+                log.warn("Rebalance blocked for compliance, not executed.")
+            else:
+                log.warning("Rebalance blocked for compliance, not executed.")
             return
 
     # === Step 1: Top-up float (sell ETFs if needed) ===
@@ -152,7 +173,10 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
             sell_amt = min(deficit, value)
             broker.place_order(symbol, "sell", sell_amt)
             deficit -= sell_amt
-            log.info(f"Topped up cash by selling {sell_amt} of {symbol}")
+            if hasattr(log, "warn"):
+                log.warn(f"Topped up cash by selling {sell_amt} of {symbol}")
+            else:
+                log.info(f"Topped up cash by selling {sell_amt} of {symbol}")
             log_event("holdings_float_topup", user=user, details={
                 "symbol": symbol, "amount": sell_amt, "reason": "float_topup"
             })
@@ -163,7 +187,10 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
     # === Step 2: Allocate tax + payroll reserve ===
     tax_cut = compute_realized_tax_cut(realized_gains, tax_pct)
     payroll_cut = compute_post_tax_payroll_cut(realized_gains, tax_cut, payroll_pct)
-    log.info(f"Tax Reserve: {tax_cut}, Payroll: {payroll_cut}")
+    if hasattr(log, "warn"):
+        log.warn(f"Tax Reserve: {tax_cut}, Payroll: {payroll_cut}")
+    else:
+        log.info(f"Tax Reserve: {tax_cut}, Payroll: {payroll_cut}")
     log_event("holdings_reserve_allocation", user=user, details={
         "tax_cut": tax_cut, "payroll_cut": payroll_cut
     })
@@ -177,7 +204,10 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
         for symbol, pct in etf_targets.items():
             alloc_amt = remainder * (pct / total_pct)
             broker.place_order(symbol, "buy", alloc_amt)
-            log.info(f"Reinvested {alloc_amt} into {symbol}")
+            if hasattr(log, "warn"):
+                log.warn(f"Reinvested {alloc_amt} into {symbol}")
+            else:
+                log.info(f"Reinvested {alloc_amt} into {symbol}")
             log_event("holdings_reinvest", user=user, details={
                 "symbol": symbol, "amount": alloc_amt, "reason": "reinvest"
             })
@@ -192,7 +222,10 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
         for symbol, pct in etf_targets.items():
             alloc_amt = float_excess * (pct / total_pct)
             broker.place_order(symbol, "buy", alloc_amt)
-            log.info(f"Invested float excess: {alloc_amt} into {symbol}")
+            if hasattr(log, "warn"):
+                log.warn(f"Invested float excess: {alloc_amt} into {symbol}")
+            else:
+                log.info(f"Invested float excess: {alloc_amt} into {symbol}")
             log_event("holdings_float_excess_invest", user=user, details={
                 "symbol": symbol, "amount": alloc_amt, "reason": "float_excess"
             })
@@ -200,10 +233,16 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
 
 def perform_rebalance_cycle(user: str = "holdings_manager"):
     if not _is_bot_initialized():
-        log.warning("Rebalance cycle: Bot not initialized/provisioned/bootstrapped.")
+        if hasattr(log, "warn"):
+            log.warn("Rebalance cycle: Bot not initialized/provisioned/bootstrapped.")
+        else:
+            log.warning("Rebalance cycle: Bot not initialized/provisioned/bootstrapped.")
         return
     if not _is_broker_configured():
-        log.warning("Rebalance cycle: No broker is configured or provisioned yet.")
+        if hasattr(log, "warn"):
+            log.warn("Rebalance cycle: No broker is configured or provisioned yet.")
+        else:
+            log.warning("Rebalance cycle: No broker is configured or provisioned yet.")
         return
 
     broker = get_active_broker()
@@ -215,13 +254,19 @@ def perform_rebalance_cycle(user: str = "holdings_manager"):
     holdings = broker.get_etf_holdings()
 
     if not _compliance_preview_or_abort(holdings, etf_targets, account_value):
-        log.warning("Rebalance compliance preview failed, aborting rebalance.")
+        if hasattr(log, "warn"):
+            log.warn("Rebalance compliance preview failed, aborting rebalance.")
+        else:
+            log.warning("Rebalance compliance preview failed, aborting rebalance.")
         return
 
     orders = compute_rebalance_orders(holdings, etf_targets, account_value)
     for order in orders:
         broker.place_order(order['symbol'], order['action'], order['amount'])
-        log.info(f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}")
+        if hasattr(log, "warn"):
+            log.warn(f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}")
+        else:
+            log.info(f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}")
         log_event("holdings_rebalance", user=user, details=order)
         audit_log_event("holdings_rebalance", user=user, reference=order['symbol'], details=order)
 
@@ -232,12 +277,18 @@ def manual_holdings_action(action, user="manual"):
     return {"error": "invalid action"}
 
 def main():
-    log.info("Holdings manager started as persistent service.")
+    if hasattr(log, "warn"):
+        log.warn("Holdings manager started as persistent service.")
+    else:
+        log.info("Holdings manager started as persistent service.")
     while True:
         try:
             perform_holdings_cycle()
         except Exception as e:
-            log.error(f"Exception in holdings cycle: {e}")
+            if hasattr(log, "warn"):
+                log.warn(f"Exception in holdings cycle: {e}")
+            else:
+                log.error(f"Exception in holdings cycle: {e}")
             log_event("holdings_manager_error", user="holdings_manager", details={"error": str(e)})
             audit_log_event("holdings_manager_error", user="holdings_manager", reference=None, details={"error": str(e)})
         time.sleep(POLL_INTERVAL)

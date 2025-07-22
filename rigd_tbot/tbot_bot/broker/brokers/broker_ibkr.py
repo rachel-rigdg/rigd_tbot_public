@@ -41,6 +41,30 @@ class IBKRBroker:
             log_event("broker_ibkr", f"Account info error: {e}", level="error")
             return {"error": str(e)}
 
+    def get_account_value(self):
+        try:
+            # Use "TotalCashValue" or "NetLiquidation" for account value
+            summary = self.client.accountSummary().df
+            if "NetLiquidation" in summary.index:
+                return float(summary.loc["NetLiquidation"]["value"])
+            elif "TotalCashValue" in summary.index:
+                return float(summary.loc["TotalCashValue"]["value"])
+            else:
+                return 0.0
+        except Exception as e:
+            log_event("broker_ibkr", f"get_account_value error: {e}", level="error")
+            return 0.0
+
+    def get_cash_balance(self):
+        try:
+            summary = self.client.accountSummary().df
+            if "TotalCashValue" in summary.index:
+                return float(summary.loc["TotalCashValue"]["value"])
+            return 0.0
+        except Exception as e:
+            log_event("broker_ibkr", f"get_cash_balance error: {e}", level="error")
+            return 0.0
+
     def get_positions(self):
         try:
             return self.client.positions()

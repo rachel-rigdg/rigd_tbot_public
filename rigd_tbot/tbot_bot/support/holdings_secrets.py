@@ -19,9 +19,15 @@ BACKUP_DIR = resolve_holdings_secrets_backup_dir()
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 def _get_fernet():
-    """Load Fernet key for encryption/decryption."""
-    with open(HOLDINGS_SECRETS_KEY_FILE, "rb") as kf:
-        key = kf.read().strip()
+    """Load Fernet key for encryption/decryption, auto-generate if missing."""
+    if not HOLDINGS_SECRETS_KEY_FILE.exists():
+        key = Fernet.generate_key()
+        with open(HOLDINGS_SECRETS_KEY_FILE, "wb") as kf:
+            kf.write(key)
+        os.chmod(HOLDINGS_SECRETS_KEY_FILE, 0o600)
+    else:
+        with open(HOLDINGS_SECRETS_KEY_FILE, "rb") as kf:
+            key = kf.read().strip()
     return Fernet(key)
 
 def load_holdings_secrets():

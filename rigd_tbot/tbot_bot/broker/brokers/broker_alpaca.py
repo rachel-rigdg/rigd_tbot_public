@@ -42,6 +42,14 @@ class AlpacaBroker:
     def get_account_info(self):
         return self._request("GET", "/v2/account")
 
+    def get_account_value(self):
+        info = self.get_account_info()
+        return float(info.get("equity", 0.0))
+
+    def get_cash_balance(self):
+        info = self.get_account_info()
+        return float(info.get("cash", 0.0))
+
     def get_positions(self):
         return self._request("GET", "/v2/positions")
 
