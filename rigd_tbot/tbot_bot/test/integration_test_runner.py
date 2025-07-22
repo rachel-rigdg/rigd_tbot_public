@@ -23,6 +23,25 @@ CONTROL_DIR = resolve_control_path()
 PROJECT_ROOT = get_project_root()
 MAX_STRATEGY_TIME = 60  # seconds per strategy
 
+# Add: Test list and status path for real-time status reporting
+ALL_TESTS = [
+    "universe_cache",
+    "strategy_selfcheck",
+    "screener_random",
+    "screener_integration",
+    "main_bot",
+    "ledger_schema",
+    "env_bot",
+    "coa_web_endpoints",
+    "coa_consistency",
+    "broker_trade_stub",
+    "backtest_engine",
+    "logging_format",
+    "fallback_logic",
+    "holdings_manager"
+]
+TEST_STATUS_PATH = get_output_path("logs", "test_status.json")
+
 def set_cwd_and_syspath():
     os.chdir(PROJECT_ROOT)
     if str(PROJECT_ROOT) not in sys.path:
@@ -81,6 +100,29 @@ def detect_individual_test_flag():
             return flag
     return None
 
+def set_test_status(status_dict):
+    try:
+        os.makedirs(os.path.dirname(TEST_STATUS_PATH), exist_ok=True)
+        with open(TEST_STATUS_PATH, "w", encoding="utf-8") as f:
+            json.dump(status_dict, f, indent=2)
+    except Exception:
+        pass
+
+def update_test_status(test_name, status):
+    try:
+        if os.path.exists(TEST_STATUS_PATH):
+            with open(TEST_STATUS_PATH, "r", encoding="utf-8") as f:
+                status_dict = json.load(f)
+        else:
+            status_dict = {t: "" for t in ALL_TESTS}
+        status_dict[test_name] = status
+        set_test_status(status_dict)
+    except Exception:
+        pass
+
+def reset_all_status():
+    set_test_status({t: "QUEUED" for t in ALL_TESTS})
+
 def run_single_test_module(flag):
     test_name = flag.name.replace("test_mode_", "").replace(".flag", "")
     test_map = {
@@ -101,13 +143,19 @@ def run_single_test_module(flag):
     module = test_map.get(test_name)
     if module:
         print(f"[integration_test_runner] Detected individual test flag: {flag}. Running {module}")
-        subprocess.run(
+        update_test_status(test_name, "RUNNING")
+        proc = subprocess.run(
             ["python3", "-u", "-m", module],
             cwd=PROJECT_ROOT,
             env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
         )
+        if proc.returncode == 0:
+            update_test_status(test_name, "PASSED")
+        else:
+            update_test_status(test_name, "ERRORS")
     else:
         print(f"[integration_test_runner] Unknown test flag or test module: {flag}")
+        update_test_status(test_name, "ERRORS")
     _clear_flag(flag)
 
 def run_strategy_with_timeout(strat):
@@ -126,14 +174,18 @@ def run_strategy_with_timeout(strat):
             print(f"Strategy {strat} failed with return code {proc.returncode}")
             print(proc.stdout)
             print(proc.stderr)
+            return "ERRORS"
         else:
             print(f"Strategy {strat} executed successfully.")
+            return "PASSED"
     except subprocess.TimeoutExpired:
         print(f"Strategy {strat} timed out after {MAX_STRATEGY_TIME} seconds.")
         log_event("integration_test", f"Strategy {strat} timed out after {MAX_STRATEGY_TIME} seconds")
+        return "ERRORS"
     except Exception as e:
         print(f"Strategy {strat} failed with exception: {e}")
         log_event("integration_test", f"Strategy {strat} failed with exception: {e}")
+        return "ERRORS"
 
 def run_integration_test():
     set_cwd_and_syspath()
@@ -144,15 +196,46 @@ def run_integration_test():
 
     log_event("integration_test", "Starting integration test runner...")
 
-    config = get_bot_config()
-    try:
-        sequence = config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")
-        override = config.get("STRATEGY_OVERRIDE")
-        strategies = override.split(",") if override and override != "null" else sequence
+    # Reset test status at start of "all tests" run
+    reset_all_status()
 
-        for strat in strategies:
-            strat = strat.strip().lower()
-            run_strategy_with_timeout(strat)
+    config = get_bot_config()
+    test_map = {
+        "universe_cache": "tbot_bot.test.test_universe_cache",
+        "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
+        "screener_random": "tbot_bot.test.test_screener_random",
+        "screener_integration": "tbot_bot.test.test_screener_integration",
+        "main_bot": "tbot_bot.test.test_main_bot",
+        "ledger_schema": "tbot_bot.test.test_ledger_schema",
+        "env_bot": "tbot_bot.test.test_env_bot",
+        "coa_web_endpoints": "tbot_bot.test.test_coa_web_endpoints",
+        "coa_consistency": "tbot_bot.test.test_coa_consistency",
+        "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
+        "backtest_engine": "tbot_bot.test.test_backtest_engine",
+        "logging_format": "tbot_bot.test.test_logging_format",
+        "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic",
+        "holdings_manager": "tbot_bot.test.test_holdings_manager"
+    }
+
+    try:
+        for test_name in ALL_TESTS:
+            update_test_status(test_name, "RUNNING")
+            module = test_map.get(test_name)
+            if not module:
+                update_test_status(test_name, "ERRORS")
+                continue
+            proc = subprocess.run(
+                ["python3", "-u", "-m", module],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+                timeout=MAX_STRATEGY_TIME,
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode == 0:
+                update_test_status(test_name, "PASSED")
+            else:
+                update_test_status(test_name, "ERRORS")
             time.sleep(1)
 
         print("\nVerifying output artifacts...\n")
@@ -168,6 +251,15 @@ def run_integration_test():
     except Exception as e:
         tb = traceback.format_exc()
         log_event("integration_test", f"Fatal error during test: {e}")
+        # On global error, mark all incomplete tests as ERRORS
+        for test_name in ALL_TESTS:
+            if os.path.exists(TEST_STATUS_PATH):
+                with open(TEST_STATUS_PATH, "r", encoding="utf-8") as f:
+                    status_dict = json.load(f)
+            else:
+                status_dict = {}
+            if status_dict.get(test_name) == "RUNNING":
+                update_test_status(test_name, "ERRORS")
         print("Integration test failed with error:\n", tb)
         sys.exit(1)
     finally:

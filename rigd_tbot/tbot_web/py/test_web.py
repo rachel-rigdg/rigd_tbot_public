@@ -122,9 +122,8 @@ def trigger_test_mode():
     with LOCK:
         if any_test_active():
             return jsonify({"result": "already_running"})
-        # Reset all statuses to RUNNING for all tests
-        reset_all_status({t: "" for t in ALL_TESTS})
-        reset_all_status({t: "RUNNING" for t in ALL_TESTS})
+        # Set all statuses to QUEUED before starting
+        set_test_status({t: "QUEUED" for t in ALL_TESTS})
         create_test_flag()
         log_path = get_test_log_path()
         proc = None
@@ -138,7 +137,7 @@ def trigger_test_mode():
                 cwd=str(PROJECT_ROOT),
                 env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
             )
-        threading.Thread(target=wait_and_update_all_status, args=(proc,)).start()
+        # No background watcher needed: integration_test_runner will update statuses per test
     return jsonify({"result": "started"})
 
 @test_web.route("/run/<test_name>", methods=["POST"])
@@ -166,9 +165,10 @@ def run_individual_test(test_name):
         module = test_map.get(test_name)
         if not module:
             return jsonify({"result": "unknown_test"})
-        # Blank all, then mark this as RUNNING
-        reset_all_status({t: "" for t in ALL_TESTS})
-        update_test_status(test_name, "RUNNING")
+        # Blank all, then mark this as QUEUED except for this test as RUNNING
+        status_dict = {t: "QUEUED" for t in ALL_TESTS}
+        status_dict[test_name] = "RUNNING"
+        set_test_status(status_dict)
         create_test_flag(test_name)
         log_path = get_test_log_path()
         proc = None
@@ -194,18 +194,6 @@ def wait_and_update_status(test_name, proc):
         status = "ERRORS"
     update_test_status(test_name, status)
     remove_test_flag(test_name)
-
-def wait_and_update_all_status(proc):
-    for t in ALL_TESTS:
-        update_test_status(t, "RUNNING")
-    proc.wait()
-    logs = read_test_logs()
-    status_final = "PASSED"
-    if "FAILED" in logs or "FAIL" in logs or "ERROR" in logs or "Traceback" in logs:
-        status_final = "ERRORS"
-    for t in ALL_TESTS:
-        update_test_status(t, status_final)
-    remove_test_flag(None)
 
 @test_web.route("/logs", methods=["GET"])
 @admin_required
