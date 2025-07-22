@@ -85,6 +85,7 @@ def _compliance_preview_or_abort(holdings, etf_targets, account_value):
 def get_holdings_status():
     """
     Returns status for the UI table: account value, cash, next rebalance, and ETF holdings rows.
+    Allocation % is always sourced from config. Other data is live if available.
     """
     broker = get_active_broker()
     account_value = broker.get_account_value()
@@ -94,23 +95,26 @@ def get_holdings_status():
     etf_targets = parse_etf_allocations(etf_cfg)
     next_rebalance_due = holdings_cfg.get("NEXT_REBALANCE_DUE")
     etf_holdings = []
+    # Always iterate over config allocation symbols
+    live = {}
     try:
-        live = broker.get_etf_positions()  # Must return list of dicts per ETF: symbol, units, purchase_price, market_price, market_value, pl, total_gain_loss
-        for etf in live:
-            symbol = etf.get("symbol")
-            etf_holdings.append({
-                "symbol": symbol,
-                "allocation_pct": etf_targets.get(symbol, 0),
-                "purchase_price": etf.get("purchase_price", 0),
-                "units": etf.get("units", 0),
-                "market_price": etf.get("market_price", 0),
-                "market_value": etf.get("market_value", 0),
-                "unrealized_pl": etf.get("unrealized_pl", 0),
-                "total_gain_loss": etf.get("total_gain_loss", 0)
-            })
+        broker_positions = broker.get_etf_positions()  # Must return list of dicts per ETF: symbol, units, purchase_price, market_price, market_value, pl, total_gain_loss
+        for etf in broker_positions:
+            live[etf.get("symbol")] = etf
     except Exception as e:
         _warn_or_info(f"Failed to fetch ETF holdings: {e}")
-
+    for symbol, alloc in etf_targets.items():
+        etf_live = live.get(symbol, {})
+        etf_holdings.append({
+            "symbol": symbol,
+            "allocation_pct": alloc,
+            "purchase_price": etf_live.get("purchase_price", 0),
+            "units": etf_live.get("units", 0),
+            "market_price": etf_live.get("market_price", 0),
+            "market_value": etf_live.get("market_value", 0),
+            "unrealized_pl": etf_live.get("unrealized_pl", 0),
+            "total_gain_loss": etf_live.get("total_gain_loss", 0)
+        })
     return {
         "account_value": account_value,
         "cash": cash,
