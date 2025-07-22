@@ -23,14 +23,54 @@ from tbot_bot.reporting.audit_logger import audit_log_event
 log = get_logger(__name__)
 
 def parse_etf_allocations(etf_list_str):
-    """Parses ETF allocation string into dict: {'SCHD': 50, 'SCHY': 50}"""
+    """
+    Parses ETF allocation string into dict: {'SCHD': 50, 'SCHY': 50}.
+    If any percentage is missing, unassigned are divided equally to total 100%.
+    Supports: "SCHD:40,SCHY,SCHF:20" → {"SCHD":40, "SCHY":40, "SCHF":20}
+    """
     etfs = {}
+    symbols = []
+    specified = {}
+    total_specified = 0.0
+
     if not etf_list_str:
         return etfs
+
     parts = etf_list_str.split(',')
     for part in parts:
-        symbol, pct = part.strip().split(':')
-        etfs[symbol.strip()] = float(pct)
+        part = part.strip()
+        if not part:
+            continue
+        if ':' in part:
+            symbol, pct = part.split(':', 1)
+            symbol = symbol.strip()
+            try:
+                pct_val = float(pct.strip())
+                specified[symbol] = pct_val
+                total_specified += pct_val
+            except Exception:
+                specified[symbol] = None
+        else:
+            symbol = part.strip()
+            specified[symbol] = None
+        symbols.append(symbol)
+
+    unassigned = [s for s in symbols if specified[s] is None]
+    n_unassigned = len(unassigned)
+    remaining = 100.0 - total_specified if total_specified < 100.0 else 0.0
+    per_unassigned = remaining / n_unassigned if n_unassigned > 0 else 0.0
+
+    for s in symbols:
+        if specified[s] is not None:
+            etfs[s] = specified[s]
+        else:
+            etfs[s] = per_unassigned
+
+    # Clamp to 0 if over-allocated
+    for s in etfs:
+        if etfs[s] < 0:
+            etfs[s] = 0.0
+
     return etfs
 
 def compute_target_cash(account_value, float_pct):
