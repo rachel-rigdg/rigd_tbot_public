@@ -53,7 +53,7 @@ def holdings_ui():
         return redirect(url_for("main.root_router"))
     return render_template("holdings.html")
 
-@holdings_web.route("/holdings/config", methods=["GET"])
+@holdings_web.route("/config", methods=["GET"])
 def get_holdings_config():
     """Return all editable holdings configuration parameters."""
     try:
@@ -81,7 +81,7 @@ def get_holdings_config():
     except Exception as e:
         return jsonify({"error": f"Failed to load config: {str(e)}"}), 500
 
-@holdings_web.route("/holdings/config", methods=["POST"])
+@holdings_web.route("/config", methods=["POST"])
 def update_holdings_config():
     user = get_current_user()
     if get_user_role(user) != "admin":
@@ -109,7 +109,7 @@ def update_holdings_config():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@holdings_web.route("/holdings/status", methods=["GET"])
+@holdings_web.route("/status", methods=["GET"])
 def holdings_status():
     if provisioning_guard() or identity_guard():
         return jsonify({"error": "Holdings unavailable: provisioning or identity incomplete"}), 400
@@ -119,7 +119,7 @@ def holdings_status():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@holdings_web.route("/holdings/rebalance", methods=["POST"])
+@holdings_web.route("/rebalance", methods=["POST"])
 def holdings_manual_rebalance():
     user = get_current_user()
     if get_user_role(user) != "admin":
