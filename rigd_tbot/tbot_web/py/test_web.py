@@ -15,12 +15,16 @@ from tbot_bot.support.path_resolver import (
 )
 
 CONTROL_DIR = resolve_control_path()
-TEST_LOG_PATH = get_output_path("logs", "test_mode.log")
-TEST_STATUS_PATH = get_output_path("logs", "test_status.json")
 PROJECT_ROOT = get_project_root()
 LOCK = threading.Lock()
 
 test_web = Blueprint("test_web", __name__, template_folder="../templates")
+
+def get_test_log_path():
+    return get_output_path("logs", "test_mode.log")
+
+def get_test_status_path():
+    return get_output_path("logs", "test_status.json")
 
 def get_test_flag_path(test_name: str = None) -> Path:
     if test_name:
@@ -39,23 +43,26 @@ def any_test_active() -> bool:
     return False
 
 def read_test_logs():
-    if not os.path.exists(TEST_LOG_PATH):
+    log_path = get_test_log_path()
+    if not os.path.exists(log_path):
         return ""
-    with open(TEST_LOG_PATH, "r", encoding="utf-8") as f:
+    with open(log_path, "r", encoding="utf-8") as f:
         return f.read()[-30000:]
 
 def get_test_status():
-    if not os.path.exists(TEST_STATUS_PATH):
+    status_path = get_test_status_path()
+    if not os.path.exists(status_path):
         return {}
     try:
-        with open(TEST_STATUS_PATH, "r", encoding="utf-8") as f:
+        with open(status_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
 
 def set_test_status(test_status):
-    os.makedirs(os.path.dirname(TEST_STATUS_PATH), exist_ok=True)
-    with open(TEST_STATUS_PATH, "w", encoding="utf-8") as f:
+    status_path = get_test_status_path()
+    os.makedirs(os.path.dirname(status_path), exist_ok=True)
+    with open(status_path, "w", encoding="utf-8") as f:
         json.dump(test_status, f, indent=2)
 
 def update_test_status(test_name, status):
@@ -119,7 +126,9 @@ def trigger_test_mode():
         reset_all_status({t: "" for t in ALL_TESTS})
         reset_all_status({t: "RUNNING" for t in ALL_TESTS})
         create_test_flag()
-        with open(TEST_LOG_PATH, "a") as log_file:
+        log_path = get_test_log_path()
+        proc = None
+        with open(log_path, "a") as log_file:
             proc = subprocess.Popen(
                 ["python3", "-u", "-m", "tbot_bot.test.integration_test_runner"],
                 stdout=log_file,
@@ -129,7 +138,6 @@ def trigger_test_mode():
                 cwd=str(PROJECT_ROOT),
                 env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
             )
-        # Optionally spawn a watcher thread to update status file
         threading.Thread(target=wait_and_update_all_status, args=(proc,)).start()
     return jsonify({"result": "started"})
 
@@ -162,7 +170,9 @@ def run_individual_test(test_name):
         reset_all_status({t: "" for t in ALL_TESTS})
         update_test_status(test_name, "RUNNING")
         create_test_flag(test_name)
-        with open(TEST_LOG_PATH, "a") as log_file:
+        log_path = get_test_log_path()
+        proc = None
+        with open(log_path, "a") as log_file:
             proc = subprocess.Popen(
                 ["python3", "-u", "-m", module],
                 stdout=log_file,
@@ -178,7 +188,6 @@ def run_individual_test(test_name):
 def wait_and_update_status(test_name, proc):
     update_test_status(test_name, "RUNNING")
     proc.wait()
-    # Scan logs for "PASSED" or "FAILED"
     logs = read_test_logs()
     status = "PASSED"
     if "FAILED" in logs or "FAIL" in logs or "ERROR" in logs or "Traceback" in logs:
@@ -190,7 +199,6 @@ def wait_and_update_all_status(proc):
     for t in ALL_TESTS:
         update_test_status(t, "RUNNING")
     proc.wait()
-    # Only check final log for errors
     logs = read_test_logs()
     status_final = "PASSED"
     if "FAILED" in logs or "FAIL" in logs or "ERROR" in logs or "Traceback" in logs:
