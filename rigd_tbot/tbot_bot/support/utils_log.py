@@ -44,7 +44,7 @@ def sanitize_filename(filename: str, max_length=100):
 def get_logger(module_name: str):
     """
     Returns a bound logger object for the given module.
-    Supports: .info(), .debug(), .error()
+    Supports: .info(), .debug(), .error(), .warn(), .warning()
     """
     class BoundLogger:
         def info(self, message, extra=None):
@@ -53,6 +53,10 @@ def get_logger(module_name: str):
             log_event(module_name, message, level="debug", extra=extra)
         def error(self, message, extra=None):
             log_event(module_name, message, level="error", extra=extra)
+        def warn(self, message, extra=None):
+            log_event(module_name, message, level="warning", extra=extra)
+        def warning(self, message, extra=None):
+            self.warn(message, extra=extra)
     return BoundLogger()
 
 def log_event(module: str, message: str, level: str = "info", extra: dict = None):
