@@ -10,13 +10,14 @@ from tbot_bot.screeners.screener_utils import (
     UniverseCacheError,
 )
 from tbot_bot.screeners.symbol_universe_refresh import main as refresh_main
-from tbot_bot.support.path_resolver import resolve_universe_cache_path, get_output_path
+from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_control_path
 import os
 from pathlib import Path
 import sys
 
-TEST_FLAG_PATH = get_output_path("control", "test_mode_universe_cache.flag")
-RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_universe_cache.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):

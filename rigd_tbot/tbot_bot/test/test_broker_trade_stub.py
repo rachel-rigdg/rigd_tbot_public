@@ -12,11 +12,12 @@ from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.trading.instruments import resolve_bearish_instrument
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.decrypt_secrets import decrypt_json
-from tbot_bot.support.path_resolver import get_output_path, get_project_root
+from tbot_bot.support.path_resolver import get_output_path, get_project_root, resolve_control_path
 import os
 
-TEST_FLAG_PATH = get_output_path("control", "test_mode_broker_trade_stub.flag")
-RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_broker_trade_stub.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 LOGFILE = get_output_path("logs", "test_mode.log")
 PROJECT_ROOT = get_project_root()
 

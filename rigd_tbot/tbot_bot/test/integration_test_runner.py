@@ -23,7 +23,6 @@ CONTROL_DIR = resolve_control_path()
 PROJECT_ROOT = get_project_root()
 MAX_STRATEGY_TIME = 60  # seconds per strategy
 
-# Add: Test list and status path for real-time status reporting
 ALL_TESTS = [
     "universe_cache",
     "strategy_selfcheck",
@@ -160,7 +159,6 @@ def run_single_test_module(flag):
 
 def run_strategy_with_timeout(strat):
     log_event("integration_test", f"Triggering strategy: {strat}")
-    # Run strategy in subprocess with timeout
     try:
         proc = subprocess.run(
             [sys.executable, "-c", f"from tbot_bot.strategy.strategy_router import route_strategy; route_strategy(override='{strat}')"],
@@ -196,7 +194,6 @@ def run_integration_test():
 
     log_event("integration_test", "Starting integration test runner...")
 
-    # Reset test status at start of "all tests" run
     reset_all_status()
 
     config = get_bot_config()
@@ -224,6 +221,9 @@ def run_integration_test():
             if not module:
                 update_test_status(test_name, "ERRORS")
                 continue
+            flag_path = CONTROL_DIR / f"test_mode_{test_name}.flag"
+            with open(flag_path, "w") as f:
+                f.write("1\n")
             proc = subprocess.run(
                 ["python3", "-u", "-m", module],
                 cwd=PROJECT_ROOT,
@@ -236,6 +236,8 @@ def run_integration_test():
                 update_test_status(test_name, "PASSED")
             else:
                 update_test_status(test_name, "ERRORS")
+            if flag_path.exists():
+                flag_path.unlink()
             time.sleep(1)
 
         print("\nVerifying output artifacts...\n")
@@ -251,7 +253,6 @@ def run_integration_test():
     except Exception as e:
         tb = traceback.format_exc()
         log_event("integration_test", f"Fatal error during test: {e}")
-        # On global error, mark all incomplete tests as ERRORS
         for test_name in ALL_TESTS:
             if os.path.exists(TEST_STATUS_PATH):
                 with open(TEST_STATUS_PATH, "r", encoding="utf-8") as f:
@@ -263,7 +264,9 @@ def run_integration_test():
         print("Integration test failed with error:\n", tb)
         sys.exit(1)
     finally:
-        _clear_flag(CONTROL_DIR / "test_mode.flag")
+        flag = CONTROL_DIR / "test_mode.flag"
+        if flag.exists():
+            flag.unlink()
 
 if __name__ == "__main__":
     run_integration_test()

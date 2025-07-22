@@ -4,10 +4,11 @@
 
 import sys
 from pathlib import Path
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import resolve_control_path
 
-TEST_FLAG_PATH = get_output_path("control", "test_mode_backtest_engine.flag")
-RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_backtest_engine.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def safe_print(msg):
     try:

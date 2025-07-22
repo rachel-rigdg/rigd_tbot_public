@@ -8,10 +8,11 @@ from flask import Flask
 from tbot_web.py.coa_web import coa_web
 from pathlib import Path
 import sys
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import resolve_control_path
 
-TEST_FLAG_PATH = get_output_path("control", "test_mode_coa_web_endpoints.flag")
-RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_coa_web_endpoints.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def safe_print(msg):
     try:

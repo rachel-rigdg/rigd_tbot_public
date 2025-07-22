@@ -7,14 +7,15 @@ import os
 import json
 from tbot_bot.runtime import main_bot
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import get_output_path, resolve_control_path
 from tbot_bot.support.utils_identity import get_bot_identity
 from pathlib import Path
 import sys
 
 BOT_ID = get_bot_identity()
-TEST_FLAG_PATH = get_output_path("control", "test_mode_main_bot.flag")
-RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_main_bot.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 LOG_FILES = [
     "open.log",

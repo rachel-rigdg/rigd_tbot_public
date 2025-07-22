@@ -7,12 +7,13 @@ import unittest
 from tbot_bot.screeners.alpaca_screener import AlpacaScreener
 from tbot_bot.screeners.finnhub_screener import FinnhubScreener
 from tbot_bot.screeners.ibkr_screener import IBKRScreener
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import resolve_control_path
 from pathlib import Path
 import sys
 
-TEST_FLAG_PATH = get_output_path("control", "test_mode_screener_integration.flag")
-RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_screener_integration.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def safe_print(msg):
     try:

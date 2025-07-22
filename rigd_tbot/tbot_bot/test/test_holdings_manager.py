@@ -4,6 +4,13 @@
 import pytest
 from unittest.mock import patch
 from tbot_bot.trading import holdings_manager
+from tbot_bot.support.path_resolver import resolve_control_path
+from pathlib import Path
+import sys
+
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_holdings_manager.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 class MockBroker:
     def __init__(self):
@@ -32,6 +39,11 @@ class MockBroker:
 
     def get_price(self, symbol):
         return 1.0
+
+if __name__ == "__main__":
+    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
+        print("[test_holdings_manager.py] Individual test flag not present. Exiting.")
+        sys.exit(0)
 
 @patch("tbot_bot.trading.holdings_manager.load_holdings_secrets")
 def test_run_holdings_maintenance(mock_secrets):

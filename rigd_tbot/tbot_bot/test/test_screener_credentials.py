@@ -8,7 +8,7 @@ import shutil
 import pytest
 import json
 from tbot_bot.support import secrets_manager
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import resolve_control_path
 
 # Patch locations for isolation
 ORIG_KEY_DIR = secrets_manager.KEY_DIR

@@ -4,6 +4,13 @@
 import pytest
 from flask import Flask
 from tbot_web.py.holdings_web import holdings_web
+from tbot_bot.support.path_resolver import resolve_control_path
+from pathlib import Path
+import sys
+
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_holdings_web_endpoints.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 @pytest.fixture
 def test_client():
@@ -11,6 +18,17 @@ def test_client():
     app.secret_key = "test"
     app.register_blueprint(holdings_web, url_prefix="/holdings")
     return app.test_client()
+
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
+
+if __name__ == "__main__":
+    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
+        safe_print("[test_holdings_web_endpoints.py] Individual test flag not present. Exiting.")
+        sys.exit(0)
 
 def test_get_holdings_config(test_client):
     resp = test_client.get("/holdings/config")

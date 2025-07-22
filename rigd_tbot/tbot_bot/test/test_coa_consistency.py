@@ -12,10 +12,11 @@ from tbot_bot.accounting.coa_utils_ledger import (
     load_coa_accounts,
     validate_coa_structure
 )
-from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path, get_output_path
+from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path, resolve_control_path
 
-TEST_FLAG_PATH = get_output_path("control", "test_mode_coa_consistency.flag")
-RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_coa_consistency.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def safe_print(msg):
     try:

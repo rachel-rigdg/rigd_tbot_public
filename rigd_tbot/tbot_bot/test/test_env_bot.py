@@ -4,12 +4,13 @@
 
 import pytest
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import resolve_control_path
 from pathlib import Path
 import sys
 
-TEST_FLAG_PATH = get_output_path("control", "test_mode_env_bot.flag")
-RUN_ALL_FLAG = get_output_path("control", "test_mode.flag")
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_env_bot.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 REQUIRED_KEYS = [
     "VERSION_TAG",
