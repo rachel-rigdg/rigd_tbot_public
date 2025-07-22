@@ -19,7 +19,7 @@ holdings_web = Blueprint("holdings_web", __name__)
 
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
-HOLDINGS_SECRET_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "holdings_config.json.enc"
+HOLDINGS_SECRET_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "holdings_secrets.json.enc"
 
 def get_current_bot_state():
     try:
