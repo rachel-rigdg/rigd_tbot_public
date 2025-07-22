@@ -10,7 +10,6 @@ from tbot_bot.trading.utils_etf import get_inverse_etf
 from tbot_bot.trading.utils_puts import get_put_option
 from tbot_bot.trading.utils_shorts import get_short_instrument
 from tbot_bot.trading.orders_bot import create_order
-from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
@@ -69,8 +68,7 @@ def analyze_opening_range(start_time, screener_class):
             break
 
         if not candidates:
-            log_event("strategy_open", "No valid symbols returned — triggering fallback shutdown")
-            trigger_shutdown("No symbols passed screener during open analysis")
+            log_event("strategy_open", "No valid symbols returned — no trades will be placed this cycle.")
             return {}
 
         for stock in candidates:

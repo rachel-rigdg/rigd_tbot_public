@@ -88,11 +88,14 @@ def passes_fundamental_guard(symbol: str, context: dict = None) -> bool:
         save_cache(cache)
 
     try:
-        pe = float(data.get("peNormalizedAnnual", 0))
-        debt_equity = float(data.get("totalDebt/totalEquityAnnual", 0))
-        market_cap = float(data.get("marketCapitalization", 0))
+        pe_raw = data.get("peNormalizedAnnual", 0)
+        pe = float(pe_raw) if pe_raw is not None else 0.0
+        de_raw = data.get("totalDebt/totalEquityAnnual", 0)
+        debt_equity = float(de_raw) if de_raw is not None else 0.0
+        mc_raw = data.get("marketCapitalization", 0)
+        market_cap = float(mc_raw) if mc_raw is not None else 0.0
     except Exception:
-        log_event(f"FUNDAMENTAL_PARSE_FAIL: {symbol} raw={data}", "finnhub_fundamental_guard")
+        log_event(f"FUNDAMENTAL_PARSE_FAIL: {symbol} raw={str(data)[:200]}", "finnhub_fundamental_guard")  # truncate raw data
         return False
 
     if pe > MAX_PE_RATIO or debt_equity > MAX_DEBT_EQUITY or market_cap < MIN_MARKET_CAP:

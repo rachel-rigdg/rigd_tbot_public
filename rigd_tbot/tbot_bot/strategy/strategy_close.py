@@ -11,7 +11,6 @@ from tbot_bot.trading.utils_shorts import get_short_instrument
 from tbot_bot.trading.orders_bot import create_order
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.enhancements.vix_gatekeeper import is_vix_above_threshold
-from tbot_bot.trading.kill_switch import trigger_shutdown
 from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
@@ -72,8 +71,7 @@ def analyze_closing_signals(start_time, screener_class):
             screener_data = []
 
         if not screener_data:
-            log_event("strategy_close", "No symbols passed filter — triggering fallback kill-switch.")
-            trigger_shutdown()
+            log_event("strategy_close", "No symbols passed filter — none eligible for trading. Skipping to next cycle or idle.")
             return []
 
         allocations = []

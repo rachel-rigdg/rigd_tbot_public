@@ -7,6 +7,7 @@ from pathlib import Path
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_config import get_bot_config
 # Do NOT import get_output_path globally to avoid circular import
+import re
 
 def get_log_dir():
     """
@@ -29,6 +30,16 @@ def get_log_settings():
         return debug, enable, fmt
     except Exception:
         return "info", True, "json"
+
+def sanitize_filename(filename: str, max_length=100):
+    """
+    Sanitizes and truncates filename to avoid filesystem errors.
+    Removes or replaces unsafe characters and limits length.
+    """
+    filename = re.sub(r"[^\w\-_\. ]", "_", filename)
+    if len(filename) > max_length:
+        filename = filename[:max_length]
+    return filename
 
 def get_logger(module_name: str):
     """
@@ -63,6 +74,9 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
         return
     # DEBUG: All logs allowed
 
+    # Sanitize module name for filename safety
+    safe_module_name = sanitize_filename(module)
+
     log_entry = {
         "timestamp": utc_now().isoformat(),
         "module": module,
@@ -76,7 +90,7 @@ def log_event(module: str, message: str, level: str = "info", extra: dict = None
     try:
         # Import here to avoid circular import at module level
         from tbot_bot.support.path_resolver import get_output_path
-        log_path = get_output_path(category="logs", filename=f"{module}.log")
+        log_path = get_output_path(category="logs", filename=f"{safe_module_name}.log")
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
 
         if LOG_FORMAT == "json":

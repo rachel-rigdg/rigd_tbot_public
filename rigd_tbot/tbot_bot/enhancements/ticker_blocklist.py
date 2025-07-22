@@ -24,7 +24,7 @@ def load_blocklist():
             today = datetime.utcnow().date().isoformat()
             return set(ticker.upper() for ticker in data.get(today, []))
     except Exception as e:
-        log_error(f"[ticker_blocklist] Failed to load blocklist: {e}")
+        log_error(f"[ticker_blocklist] Failed to load blocklist: {e}", module="ticker_blocklist")
         return set()
 
 def save_blocklist(ticker):
@@ -47,9 +47,9 @@ def save_blocklist(ticker):
         with open(BLOCKLIST_FILE, "w") as f:
             json.dump(data, f, indent=2)
 
-        log_debug(f"[ticker_blocklist] Added {ticker.upper()} to blocklist.")
+        log_debug(f"[ticker_blocklist] Added {ticker.upper()} to blocklist.", module="ticker_blocklist")
     except Exception as e:
-        log_error(f"[ticker_blocklist] Failed to save ticker {ticker}: {e}")
+        log_error(f"[ticker_blocklist] Failed to save ticker {ticker}: {e}", module="ticker_blocklist")
 
 def is_ticker_blocked(ticker):
     """

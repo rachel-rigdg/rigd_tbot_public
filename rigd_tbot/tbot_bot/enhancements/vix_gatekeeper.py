@@ -54,6 +54,9 @@ def get_vix_value():
         response.raise_for_status()
         data = response.json()
         vix = float(data.get("c", 0))
+        if vix == 0:
+            log_error("[vix_gatekeeper] VIX data returned zero, possibly invalid.", module="vix_gatekeeper")
+            return None
         _vix_cache = {"value": vix, "timestamp": current_time}
         log_debug(f"[vix_gatekeeper] Current VIX: {vix}", module="vix_gatekeeper")
         return vix
