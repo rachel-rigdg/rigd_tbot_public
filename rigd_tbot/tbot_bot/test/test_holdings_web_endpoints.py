@@ -26,9 +26,22 @@ def safe_print(msg):
         pass
 
 if __name__ == "__main__":
+    result = "PASSED"
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         safe_print("[test_holdings_web_endpoints.py] Individual test flag not present. Exiting.")
         sys.exit(0)
+    try:
+        import pytest as _pytest
+        ret = _pytest.main([__file__])
+        if ret != 0:
+            result = "ERRORS"
+    except Exception as e:
+        result = "ERRORS"
+        safe_print(f"[test_holdings_web_endpoints.py] Exception: {e}")
+    finally:
+        if Path(TEST_FLAG_PATH).exists():
+            Path(TEST_FLAG_PATH).unlink()
+        safe_print(f"[test_holdings_web_endpoints.py] FINAL RESULT: {result}")
 
 def test_get_holdings_config(test_client):
     resp = test_client.get("/holdings/config")

@@ -10,7 +10,17 @@ import json
 from unittest import mock
 from tbot_bot.screeners import symbol_universe_refresh
 from tbot_bot.support import secrets_manager
-from tbot_bot.support.path_resolver import get_output_path
+from tbot_bot.support.path_resolver import resolve_control_path
+
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_symbol_universe_refresh.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
+
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
 
 @pytest.fixture(scope="function")
 def temp_universe_env(monkeypatch):
@@ -94,3 +104,22 @@ def test_append_to_blocklist(temp_universe_env):
     with open(blocklist_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
     assert "AAPL,PRICE_BELOW_MIN" in lines[0]
+
+if __name__ == "__main__":
+    result = "PASSED"
+    if not (os.path.exists(TEST_FLAG_PATH) or os.path.exists(RUN_ALL_FLAG)):
+        safe_print("[test_symbol_universe_refresh.py] Individual test flag not present. Exiting.")
+        import sys
+        sys.exit(1)
+    try:
+        import pytest as _pytest
+        ret = _pytest.main([__file__])
+        if ret != 0:
+            result = "ERRORS"
+    except Exception as e:
+        result = "ERRORS"
+        safe_print(f"[test_symbol_universe_refresh.py] Exception: {e}")
+    finally:
+        if os.path.exists(TEST_FLAG_PATH):
+            os.unlink(TEST_FLAG_PATH)
+        safe_print(f"[test_symbol_universe_refresh.py] FINAL RESULT: {result}")

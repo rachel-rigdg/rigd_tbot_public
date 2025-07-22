@@ -100,7 +100,12 @@ def validate_ledger_schema():
         # ============ SPEC FIELD CHECKS ===============
         cursor = conn.execute("PRAGMA table_info(trades)")
         required_fields = [
-            "fitid", "tag", "leverage_multiplier", "account", "total_value", "datetime_utc"
+            "id", "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity",
+            "price", "total_value", "fees", "broker", "strategy", "account",
+            "trade_id", "entity_code", "created_at", "updated_at", "approved_by",
+            "approval_status", "created_by", "gdpr_compliant", "ccpa_compliant",
+            "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type",
+            "json_metadata"
         ]
         columns = [row[1] for row in cursor.fetchall()]
         for field in required_fields:
@@ -244,7 +249,7 @@ def get_coa_accounts():
 
 def validate_double_entry():
     """
-    Checks that for every transaction, debits and credits sum to zero (double-entry).
+    Checks that for every trade_id, debits and credits sum to zero (double-entry).
     Raises error if any imbalance found.
     """
     if TEST_MODE_FLAG.exists():
@@ -259,8 +264,8 @@ def validate_double_entry():
     entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     with sqlite3.connect(db_path) as conn:
-        cursor = conn.execute("SELECT fitid, SUM(total_value) FROM trades GROUP BY fitid")
-        imbalances = [(fitid, total) for fitid, total in cursor.fetchall() if abs(total) > 1e-8]
+        cursor = conn.execute("SELECT trade_id, SUM(total_value) FROM trades GROUP BY trade_id")
+        imbalances = [(trade_id, total) for trade_id, total in cursor.fetchall() if trade_id and abs(total) > 1e-8]
         if imbalances:
-            raise RuntimeError(f"Double-entry imbalance detected for fitids: {imbalances}")
+            raise RuntimeError(f"Double-entry imbalance detected for trade_ids: {imbalances}")
     return True

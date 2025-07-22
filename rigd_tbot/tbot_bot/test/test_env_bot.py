@@ -4,11 +4,13 @@
 
 import pytest
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.path_resolver import resolve_control_path
+from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
+from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
 
 CONTROL_DIR = resolve_control_path()
+LOGFILE = get_output_path("logs", "test_mode.log")
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_env_bot.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
@@ -34,7 +36,7 @@ REQUIRED_KEYS = [
     "STRATEGY_SEQUENCE",
     "STRATEGY_OVERRIDE",
     "TRADING_DAYS",
-    "SLEEP_TIME",
+    "STRATEGY_SLEEP_TIME",  # renamed from SLEEP_TIME
     # Open strategy
     "STRAT_OPEN_ENABLED",
     "START_TIME_OPEN",
@@ -66,6 +68,10 @@ def safe_print(msg):
         print(msg, flush=True)
     except Exception:
         pass
+    try:
+        log_event("test_env_bot", msg, logfile=LOGFILE)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
@@ -83,7 +89,7 @@ def test_value_types():
     assert isinstance(config.get("TOTAL_ALLOCATION"), float)
     assert isinstance(config.get("MAX_RISK_PER_TRADE"), float)
     assert isinstance(config.get("MAX_OPEN_POSITIONS"), int)
-    assert isinstance(config.get("SLEEP_TIME"), str)
+    assert isinstance(config.get("STRATEGY_SLEEP_TIME"), str)  # renamed from SLEEP_TIME
     assert isinstance(config.get("DAILY_LOSS_LIMIT"), float)
     assert isinstance(config.get("FRACTIONAL"), bool)
     assert isinstance(config.get("DISABLE_ALL_TRADES"), bool)
@@ -101,12 +107,10 @@ def test_logging_format():
 def run_test():
     import pytest as _pytest
     ret = _pytest.main([__file__])
+    status = "PASSED" if ret == 0 else "ERRORS"
     if Path(TEST_FLAG_PATH).exists():
         Path(TEST_FLAG_PATH).unlink()
-    if ret == 0:
-        safe_print("[test_env_bot.py] TEST PASSED")
-    else:
-        safe_print(f"[test_env_bot.py] TEST FAILED (code={ret})")
+    safe_print(f"[test_env_bot.py] FINAL RESULT: {status}")
 
 if __name__ == "__main__":
     run_test()

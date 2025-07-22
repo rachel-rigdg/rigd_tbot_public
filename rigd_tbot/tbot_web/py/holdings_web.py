@@ -13,11 +13,13 @@ from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from pathlib import Path
+import os
 
 holdings_web = Blueprint("holdings_web", __name__)
 
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+HOLDINGS_SECRET_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "holdings_config.json.enc"
 
 def get_current_bot_state():
     try:
@@ -52,13 +54,30 @@ def holdings_ui():
 @holdings_web.route("/holdings/config", methods=["GET"])
 def get_holdings_config():
     """Return all editable holdings configuration parameters."""
-    return jsonify({
-        "HOLDINGS_FLOAT_TARGET_PCT": load_env_var("HOLDINGS_FLOAT_TARGET_PCT", 10),
-        "HOLDINGS_TAX_RESERVE_PCT": load_env_var("HOLDINGS_TAX_RESERVE_PCT", 20),
-        "HOLDINGS_PAYROLL_PCT": load_env_var("HOLDINGS_PAYROLL_PCT", 10),
-        "HOLDINGS_REBALANCE_INTERVAL": load_env_var("HOLDINGS_REBALANCE_INTERVAL", 6),
-        "HOLDINGS_ETF_LIST": load_env_var("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50")
-    })
+    try:
+        if not HOLDINGS_SECRET_PATH.exists():
+            return jsonify({
+                "HOLDINGS_FLOAT_TARGET_PCT": 10,
+                "HOLDINGS_TAX_RESERVE_PCT": 20,
+                "HOLDINGS_PAYROLL_PCT": 10,
+                "HOLDINGS_REBALANCE_INTERVAL": 6,
+                "HOLDINGS_ETF_LIST": "SCHD:50,SCHY:50",
+                "next_rebalance_due": None,
+                "status": "uninitialized"
+            })
+
+        secrets = load_holdings_secrets()
+        return jsonify({
+            "HOLDINGS_FLOAT_TARGET_PCT": load_env_var("HOLDINGS_FLOAT_TARGET_PCT", 10),
+            "HOLDINGS_TAX_RESERVE_PCT": load_env_var("HOLDINGS_TAX_RESERVE_PCT", 20),
+            "HOLDINGS_PAYROLL_PCT": load_env_var("HOLDINGS_PAYROLL_PCT", 10),
+            "HOLDINGS_REBALANCE_INTERVAL": load_env_var("HOLDINGS_REBALANCE_INTERVAL", 6),
+            "HOLDINGS_ETF_LIST": load_env_var("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50"),
+            "next_rebalance_due": secrets.get("NEXT_REBALANCE_DUE"),
+            "status": "ok"
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to load config: {str(e)}"}), 500
 
 @holdings_web.route("/holdings/config", methods=["POST"])
 def update_holdings_config():
@@ -76,7 +95,7 @@ def update_holdings_config():
         # === Rebalance timer logic ===
         interval = int(data.get("HOLDINGS_REBALANCE_INTERVAL", 3))
         next_due = datetime.utcnow().date() + relativedelta(months=interval)
-        secrets = load_holdings_secrets()
+        secrets = load_holdings_secrets() if HOLDINGS_SECRET_PATH.exists() else {}
         secrets["NEXT_REBALANCE_DUE"] = next_due.isoformat()
         save_holdings_secrets(secrets)
 

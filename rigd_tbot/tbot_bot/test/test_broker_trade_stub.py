@@ -26,6 +26,10 @@ def safe_print(msg):
         print(msg, flush=True)
     except Exception:
         pass
+    try:
+        log_event("test_broker_trade_stub", msg, logfile=LOGFILE)
+    except Exception:
+        pass
 
 def set_cwd_and_syspath():
     os.chdir(PROJECT_ROOT)
@@ -49,10 +53,11 @@ if __name__ == "__main__":
 
     TEST_TICKERS = ["AAPL", "MSFT", "TSLA", "AMD", "NVDA", "SPY", "QQQ"]
     executed_sides = defaultdict(set)
+    status = "PASSED"
 
     def run_trade_stub():
+        nonlocal status
         safe_print("[test_broker_trade_stub] Starting randomized trade validation sequence...")
-        log_event("test_trade_stub", "Starting randomized trade validation sequence...", logfile=LOGFILE)
 
         attempts = 0
         successful = 0
@@ -71,7 +76,6 @@ if __name__ == "__main__":
                 instrument = resolve_bearish_instrument(symbol, short_type=config.get("SHORT_TYPE_OPEN", "direct"))
                 if not instrument:
                     safe_print(f"[test_broker_trade_stub] Skipping short trade — no inverse instrument for {symbol}")
-                    log_event("test_trade_stub", f"Skipping short trade — no inverse instrument for {symbol}", logfile=LOGFILE)
                     continue
                 exec_symbol = instrument
                 exec_side = "sell"
@@ -92,20 +96,19 @@ if __name__ == "__main__":
                     executed_sides[symbol].add(side)
                     msg = f"Trade executed: {result}"
                     safe_print(f"[test_broker_trade_stub] {msg}")
-                    log_event("test_trade_stub", msg, logfile=LOGFILE)
                     successful += 1
                 else:
                     safe_print(f"[test_broker_trade_stub] No trade result returned for {symbol}")
-                    log_event("test_trade_stub", f"No trade result returned for {symbol}", logfile=LOGFILE)
+                    status = "ERRORS"
             except Exception as e:
                 err_msg = f"Trade execution error: {e}"
                 safe_print(f"[test_broker_trade_stub] {err_msg}")
-                log_event("test_trade_stub", err_msg, level="error", logfile=LOGFILE)
+                status = "ERRORS"
 
             time.sleep(DELAY_BETWEEN_TRADES)
 
         safe_print(f"[test_broker_trade_stub] Trade stub sequence completed: {successful} trades executed.")
-        log_event("test_trade_stub", f"Trade stub sequence completed: {successful} trades executed.", logfile=LOGFILE)
+        safe_print(f"[test_broker_trade_stub] FINAL RESULT: {status if status != 'PASSED' or successful < TRADE_COUNT else 'PASSED'}")
 
     def run_test():
         run_trade_stub()

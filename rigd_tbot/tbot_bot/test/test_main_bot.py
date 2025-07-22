@@ -5,10 +5,11 @@
 import pytest
 import os
 import json
-from tbot_bot.runtime import main_bot
+from tbot_bot.runtime import main as main_bot
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.path_resolver import get_output_path, resolve_control_path
 from tbot_bot.support.utils_identity import get_bot_identity
+from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
 
@@ -16,6 +17,7 @@ BOT_ID = get_bot_identity()
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_main_bot.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
+LOGFILE = get_output_path("logs", "test_mode.log")
 
 LOG_FILES = [
     "open.log",
@@ -33,6 +35,10 @@ def safe_print(msg):
         print(msg, flush=True)
     except Exception:
         pass
+    try:
+        log_event("test_main_bot", msg, logfile=LOGFILE)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
@@ -43,7 +49,9 @@ if __name__ == "__main__":
 def test_main_bot_initialization():
     try:
         main_bot.run_build_check()
+        safe_print("[test_main_bot] Initialization PASSED.")
     except Exception as e:
+        safe_print(f"[test_main_bot] Initialization FAILED: {e}")
         pytest.fail(f"main_bot initialization failed: {e}")
 
 @pytest.mark.order(2)
@@ -62,33 +70,50 @@ def test_main_bot_self_check():
         from tbot_bot.strategy.strategy_close import self_check as close_check
         if not close_check():
             errors.append("strategy_close failed self_check")
+    if errors:
+        safe_print("[test_main_bot] Self_check errors: " + ", ".join(errors))
     assert not errors, "Strategy self_check failures: " + ", ".join(errors)
 
 @pytest.mark.order(3)
 def test_main_bot_logs_created():
     for fname in LOG_FILES:
         path = get_output_path("logs", fname)
+        if not os.path.exists(path):
+            safe_print(f"[test_main_bot] Missing log: {path}")
         assert os.path.exists(path), f"Missing log: {path}"
+        if os.path.getsize(path) == 0:
+            safe_print(f"[test_main_bot] Log file is empty: {path}")
         assert os.path.getsize(path) > 0, f"Log file is empty: {path}"
 
 @pytest.mark.order(4)
 def test_main_bot_trade_log_format():
     path = get_output_path("trades", TRADE_LOG_JSON)
+    if not os.path.exists(path):
+        safe_print(f"[test_main_bot] Missing trade history JSON log: {path}")
     assert os.path.exists(path), "Missing trade history JSON log"
     with open(path, "r") as f:
         lines = [json.loads(line.strip()) for line in f if line.strip()]
     assert isinstance(lines, list)
     for entry in lines:
-        assert "strategy" in entry
-        assert "ticker" in entry
-        assert "side" in entry
+        for field in ["strategy", "ticker", "side"]:
+            if field not in entry:
+                safe_print(f"[test_main_bot] Trade log missing field: {field}")
+            assert field in entry
+        if not ("entry_price" in entry or "price" in entry):
+            safe_print(f"[test_main_bot] Trade log missing entry_price/price: {entry}")
         assert "entry_price" in entry or "price" in entry
+        if "exit_price" not in entry:
+            safe_print(f"[test_main_bot] Trade log missing exit_price: {entry}")
         assert "exit_price" in entry
+        if "PnL" not in entry:
+            safe_print(f"[test_main_bot] Trade log missing PnL: {entry}")
         assert "PnL" in entry
 
 def run_test():
     import pytest as _pytest
-    _pytest.main([__file__])
+    ret = _pytest.main([__file__])
+    result = "PASSED" if ret == 0 else "ERRORS"
+    safe_print(f"[test_main_bot.py] FINAL RESULT: {result}")
     if Path(TEST_FLAG_PATH).exists():
         Path(TEST_FLAG_PATH).unlink()
 

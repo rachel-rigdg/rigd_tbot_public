@@ -5,18 +5,18 @@ PRAGMA foreign_keys = ON;
 
 -- Reference Table: Countries
 CREATE TABLE IF NOT EXISTS countries (
-    code TEXT PRIMARY KEY,                             -- ISO 3166-1 alpha-2 country code
+    code TEXT PRIMARY KEY,                              -- ISO 3166-1 alpha-2 country code
     name TEXT NOT NULL,
-    region TEXT NOT NULL,                              -- Continent or regional classification (ISO 3166-2/UN)
-    timezone TEXT NOT NULL,                            -- Default time zone (IANA)
-    currency_code TEXT NOT NULL,                       -- ISO 4217 currency code
-    language_code TEXT DEFAULT 'en',                   -- Default language (ISO 639-1)
+    region TEXT NOT NULL,                               -- Continent or regional classification (ISO 3166-2/UN)
+    timezone TEXT NOT NULL,                             -- Default time zone (IANA)
+    currency_code TEXT NOT NULL,                        -- ISO 4217 currency code
+    language_code TEXT DEFAULT 'en',                    -- Default language (ISO 639-1)
     json_metadata TEXT DEFAULT '{}'
 );
 
 -- Reference Table: Currencies
 CREATE TABLE IF NOT EXISTS currencies (
-    code TEXT PRIMARY KEY,                             -- ISO 4217 currency code
+    code TEXT PRIMARY KEY,                              -- ISO 4217 currency code
     name TEXT NOT NULL,
     symbol TEXT,
     fraction_digits INTEGER DEFAULT 2,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS currencies (
 
 -- Reference Table: Languages
 CREATE TABLE IF NOT EXISTS languages (
-    code TEXT PRIMARY KEY,                             -- ISO 639-1 language code
+    code TEXT PRIMARY KEY,                              -- ISO 639-1 language code
     name TEXT NOT NULL,
     region TEXT,
     json_metadata TEXT DEFAULT '{}'
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS languages (
 
 -- Reference Table: Regions
 CREATE TABLE IF NOT EXISTS regions (
-    code TEXT PRIMARY KEY,                             -- UN M.49 or custom
+    code TEXT PRIMARY KEY,                              -- UN M.49 or custom
     name TEXT NOT NULL,
     parent_region TEXT,
     json_metadata TEXT DEFAULT '{}'
@@ -44,7 +44,18 @@ CREATE TABLE IF NOT EXISTS jurisdictions (
     code TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     region TEXT,
-    compliance_profile TEXT,                           -- e.g. GDPR, CCPA
+    compliance_profile TEXT,                            -- e.g. GDPR, CCPA
+    json_metadata TEXT DEFAULT '{}'
+);
+
+-- Table: Brokers (reference table for all integrated brokers)
+CREATE TABLE IF NOT EXISTS brokers (
+    code TEXT PRIMARY KEY,                              -- e.g. ALPACA, IBKR
+    name TEXT NOT NULL,
+    country_code TEXT REFERENCES countries(code),
+    timezone TEXT,
+    contact TEXT,
+    compliance TEXT,
     json_metadata TEXT DEFAULT '{}'
 );
 
@@ -63,7 +74,7 @@ CREATE TABLE IF NOT EXISTS coa_metadata (
 -- Table: COA Accounts (hierarchical as JSON)
 CREATE TABLE IF NOT EXISTS coa_accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_json TEXT NOT NULL,                         -- Root/top-level node JSON
+    account_json TEXT NOT NULL,                          -- Root/top-level node JSON
     entity_code TEXT NOT NULL,
     jurisdiction_code TEXT NOT NULL,
     coa_version TEXT NOT NULL,
@@ -75,22 +86,48 @@ CREATE TABLE IF NOT EXISTS coa_accounts (
     json_metadata TEXT DEFAULT '{}'
 );
 
--- Table: Ledger Entries (primary table, transaction log)
+-- Table: Ledger Entries (primary table, transaction log, OFX/IBKR/Alpaca-aligned, international, max fields)
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    datetime_utc TEXT NOT NULL,                         -- ISO-8601 UTC timestamp
-    entry_type TEXT NOT NULL,                           -- e.g. "trade", "deposit", "withdrawal", "fee", "adjustment", etc
-    symbol TEXT,                                        -- e.g. Stock, ETF, FX pair
-    action TEXT CHECK(action IN ('buy', 'sell', 'long', 'short', 'put', 'call', 'dividend', 'interest', 'fee', 'transfer', 'other')) NOT NULL,
+    datetime_utc TEXT NOT NULL,                              -- ISO-8601 UTC timestamp
+    entry_type TEXT NOT NULL,                                -- e.g. "trade", "deposit", "withdrawal", "fee", "adjustment", etc
+    symbol TEXT,                                             -- e.g. Stock, ETF, FX pair, Option root symbol
+    symbol_full TEXT,                                        -- IBKR: full symbol name (e.g., contract or CUSIP)
+    isin TEXT,                                               -- ISIN (optional, for global securities)
+    cusip TEXT,                                              -- CUSIP (optional, for US securities)
+    sedol TEXT,                                              -- SEDOL (optional, for UK/international)
+    figi TEXT,                                               -- FIGI (optional, for OpenFIGI mapping)
+    action TEXT CHECK(action IN (
+        'buy', 'sell', 'long', 'short', 'put', 'call', 'dividend', 'interest',
+        'fee', 'transfer', 'other', 'exercise', 'assignment', 'split', 'expire',
+        'journal', 'contribution', 'distribution', 'withhold', 'correction', 'reorg', 'tax', 'foreign_fx'
+    )) NOT NULL,
+    trade_id TEXT UNIQUE,                                    -- Broker trade/external ID (IBKR: TradeID, Alpaca: order_id)
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
+    account_code TEXT,                                       -- e.g. COA code (links to COA)
+    account_id TEXT,                                         -- Broker or entity account ID (IBKR: AccountId, Alpaca: account number)
+    sub_account TEXT,                                        -- IBKR: sub-account if any
     quantity REAL CHECK(quantity >= 0.0),
+    quantity_type TEXT,                                      -- IBKR: "Shares", "Contracts", etc
     price REAL CHECK(price >= 0.0),
-    amount REAL NOT NULL,                               -- Signed amount (credit+/debit-)
-    total_value REAL,                                   -- Absolute (for reporting)
-    currency_code TEXT NOT NULL REFERENCES currencies(code),
-    account_code TEXT,                                  -- e.g. COA code (links to COA)
-    counterparty TEXT,                                  -- Broker/counterparty info
-    trade_id TEXT UNIQUE,                               -- Broker trade/external ID
-    broker TEXT,
+    price_currency TEXT REFERENCES currencies(code),
+    amount REAL NOT NULL,                                    -- Signed amount (credit+/debit-)
+    total_value REAL,                                        -- Absolute (for reporting)
+    currency_code TEXT NOT NULL REFERENCES currencies(code),  -- Settlement currency
+    fx_rate REAL,                                            -- FX rate if non-USD
+    commission REAL DEFAULT 0.0 CHECK(commission >= 0.0),
+    commission_currency TEXT REFERENCES currencies(code),
+    fee REAL DEFAULT 0.0 CHECK(fee >= 0.0),
+    fee_currency TEXT REFERENCES currencies(code),
+    accrued_interest REAL DEFAULT 0.0,
+    accrued_interest_currency TEXT REFERENCES currencies(code),
+    tax REAL DEFAULT 0.0,
+    tax_currency TEXT REFERENCES currencies(code),
+    net_amount REAL,
+    settlement_date TEXT,                                    -- ISO-8601 date
+    trade_date TEXT,                                         -- ISO-8601 date
+    description TEXT,
+    counterparty TEXT,                                       -- Broker/counterparty info
     strategy TEXT,
     tags TEXT DEFAULT '',
     notes TEXT DEFAULT '',
@@ -109,24 +146,28 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     hipaa_sensitive BOOLEAN DEFAULT 0,
     iso27001_tag TEXT DEFAULT '',
     soc2_type TEXT DEFAULT '',
+    extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}'
 );
 
--- Table: Trades (normalized view of ledger_entries, for legacy code/support)
+-- Table: Trades (normalized view, legacy, for bot-internal trade logic)
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ledger_entry_id INTEGER REFERENCES ledger_entries(id) ON DELETE CASCADE,
     datetime_utc TEXT NOT NULL,
     symbol TEXT NOT NULL,
-    action TEXT CHECK(action IN ('long', 'short', 'put', 'inverse')) NOT NULL,
+    symbol_full TEXT,
+    action TEXT CHECK(action IN ('long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg')) NOT NULL,
     quantity REAL CHECK(quantity >= 0.0) NOT NULL,
+    quantity_type TEXT,
     price REAL CHECK(price >= 0.0) NOT NULL,
     total_value REAL NOT NULL,
-    fees REAL DEFAULT 0.0 CHECK(fees >= 0.0),
-    broker TEXT NOT NULL,
-    strategy TEXT CHECK(strategy IN ('open', 'mid', 'close', 'other')) DEFAULT 'other',
+    commission REAL DEFAULT 0.0 CHECK(commission >= 0.0),
+    fee REAL DEFAULT 0.0 CHECK(fee >= 0.0),
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
     account TEXT NOT NULL,
     trade_id TEXT UNIQUE NOT NULL,
+    strategy TEXT CHECK(strategy IN ('open', 'mid', 'close', 'other')) DEFAULT 'other',
     tags TEXT DEFAULT '',
     notes TEXT DEFAULT '',
     jurisdiction TEXT,
@@ -144,6 +185,7 @@ CREATE TABLE IF NOT EXISTS trades (
     hipaa_sensitive BOOLEAN DEFAULT 0,
     iso27001_tag TEXT DEFAULT '',
     soc2_type TEXT DEFAULT '',
+    extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
     FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
 );
@@ -167,6 +209,7 @@ CREATE TABLE IF NOT EXISTS events (
     resolution_notes TEXT DEFAULT '',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT NULL,
+    extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
     FOREIGN KEY (related_trade_id) REFERENCES trades(trade_id) ON DELETE SET NULL ON UPDATE CASCADE
 );
@@ -180,6 +223,7 @@ CREATE TABLE IF NOT EXISTS ledger_lock_state (
     lock_reason TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT NULL,
+    extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}'
 );
 
@@ -189,12 +233,13 @@ CREATE TABLE IF NOT EXISTS float_allocation_history (
     date TEXT NOT NULL,
     entity_code TEXT NOT NULL,
     jurisdiction TEXT NOT NULL,
-    broker TEXT NOT NULL,
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
     allocated_amount REAL NOT NULL,
     reason TEXT,
     allocated_by TEXT,
     approved_by TEXT,
     approved_on TEXT,
+    extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}'
 );
 
@@ -216,6 +261,94 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     hipaa_sensitive BOOLEAN DEFAULT 0,
     iso27001_tag TEXT DEFAULT '',
     soc2_type TEXT DEFAULT '',
+    extra_fields TEXT DEFAULT '{}',
+    json_metadata TEXT DEFAULT '{}'
+);
+
+-- Table: External Statements (broker imports)
+CREATE TABLE IF NOT EXISTS external_statements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
+    account_id TEXT,
+    statement_date TEXT NOT NULL,
+    import_source TEXT,
+    import_format TEXT,
+    import_file TEXT,
+    imported_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    imported_by TEXT,
+    status TEXT CHECK(status IN ('pending', 'imported', 'error')) DEFAULT 'pending',
+    error_message TEXT,
+    json_metadata TEXT DEFAULT '{}'
+);
+
+-- Table: External Transactions (raw broker transaction import log)
+CREATE TABLE IF NOT EXISTS external_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    external_statement_id INTEGER REFERENCES external_statements(id) ON DELETE CASCADE,
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
+    trade_id TEXT,
+    datetime_utc TEXT,
+    symbol TEXT,
+    symbol_full TEXT,
+    action TEXT,
+    quantity REAL,
+    price REAL,
+    amount REAL,
+    currency_code TEXT,
+    commission REAL,
+    fee REAL,
+    net_amount REAL,
+    description TEXT,
+    notes TEXT,
+    json_metadata TEXT DEFAULT '{}'
+);
+
+-- Table: Account Balances (per-broker, per-entity, per-currency)
+CREATE TABLE IF NOT EXISTS account_balances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
+    entity_code TEXT NOT NULL,
+    account_id TEXT,
+    currency_code TEXT NOT NULL REFERENCES currencies(code),
+    balance REAL NOT NULL,
+    as_of_datetime_utc TEXT NOT NULL,
+    notes TEXT,
+    json_metadata TEXT DEFAULT '{}'
+);
+
+-- Table: Option Contracts (for detailed option trade reporting)
+CREATE TABLE IF NOT EXISTS option_contracts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    symbol_full TEXT,
+    underlying TEXT,
+    expiration TEXT,
+    strike REAL,
+    option_type TEXT CHECK(option_type IN ('put', 'call')),
+    multiplier REAL DEFAULT 100.0,
+    currency_code TEXT REFERENCES currencies(code),
+    exchange TEXT,
+    broker_code TEXT REFERENCES brokers(code),
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT NULL,
+    json_metadata TEXT DEFAULT '{}'
+);
+
+-- Table: Reconciliation Log (ledger vs. broker statement)
+CREATE TABLE IF NOT EXISTS reconciliation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_code TEXT NOT NULL,
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
+    account_id TEXT,
+    statement_date TEXT,
+    ledger_balance REAL,
+    broker_balance REAL,
+    delta REAL,
+    status TEXT CHECK(status IN ('pending', 'matched', 'mismatched', 'resolved')),
+    resolution TEXT,
+    resolved_by TEXT,
+    resolved_at TEXT,
+    notes TEXT,
     json_metadata TEXT DEFAULT '{}'
 );
 
@@ -231,6 +364,10 @@ CREATE INDEX IF NOT EXISTS idx_events_entity ON events (entity_code);
 CREATE INDEX IF NOT EXISTS idx_float_allocation_by_date ON float_allocation_history (date, entity_code);
 CREATE INDEX IF NOT EXISTS idx_audit_trail_event_type ON audit_trail (event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_trail_timestamp ON audit_trail (timestamp);
+CREATE INDEX IF NOT EXISTS idx_extstat_broker_date ON external_statements (broker_code, statement_date);
+CREATE INDEX IF NOT EXISTS idx_exttrans_broker_tradeid ON external_transactions (broker_code, trade_id);
+CREATE INDEX IF NOT EXISTS idx_acct_balances_broker_entity ON account_balances (broker_code, entity_code, currency_code);
+CREATE INDEX IF NOT EXISTS idx_option_contracts_symbol ON option_contracts (symbol, expiration, strike, option_type);
 
 -- Cross-table Relationships (for future expansion)
 -- (e.g., FOREIGN KEY (entity_code) REFERENCES entities(code) ON DELETE SET NULL, ...)

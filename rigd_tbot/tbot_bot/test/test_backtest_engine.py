@@ -4,15 +4,21 @@
 
 import sys
 from pathlib import Path
-from tbot_bot.support.path_resolver import resolve_control_path
+from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
+from tbot_bot.support.utils_log import log_event
 
 CONTROL_DIR = resolve_control_path()
+LOGFILE = get_output_path("logs", "test_mode.log")
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_backtest_engine.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def safe_print(msg):
     try:
         print(msg, flush=True)
+    except Exception:
+        pass
+    try:
+        log_event("test_backtest_engine", msg, logfile=LOGFILE)
     except Exception:
         pass
 
@@ -84,12 +90,10 @@ def test_invalid_strategy(backtest_config):
 def run_test():
     import pytest as _pytest
     ret = _pytest.main([__file__])
+    status = "PASSED" if ret == 0 else "ERRORS"
     if Path(TEST_FLAG_PATH).exists():
         Path(TEST_FLAG_PATH).unlink()
-    if ret == 0:
-        safe_print("[test_backtest_engine.py] ALL TESTS PASSED")
-    else:
-        safe_print(f"[test_backtest_engine.py] ONE OR MORE TESTS FAILED (code={ret})")
+    safe_print(f"[test_backtest_engine.py] FINAL RESULT: {status}")
 
 if __name__ == "__main__":
     run_test()

@@ -12,15 +12,21 @@ from tbot_bot.accounting.coa_utils_ledger import (
     load_coa_accounts,
     validate_coa_structure
 )
-from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path, resolve_control_path
+from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path, resolve_control_path, get_output_path
+from tbot_bot.support.utils_log import log_event
 
 CONTROL_DIR = resolve_control_path()
+LOGFILE = get_output_path("logs", "test_mode.log")
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_coa_consistency.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def safe_print(msg):
     try:
         print(msg, flush=True)
+    except Exception:
+        pass
+    try:
+        log_event("test_coa_consistency", msg, logfile=LOGFILE)
     except Exception:
         pass
 
@@ -74,7 +80,9 @@ class TestCOAConsistency(unittest.TestCase):
         safe_print("[test_coa_consistency] Metadata fields present.")
 
 def run_test():
-    unittest.main(module=__name__, exit=False)
+    result = unittest.main(module=__name__, exit=False)
+    status = "PASSED" if result.result.wasSuccessful() else "ERRORS"
+    safe_print(f"[test_coa_consistency] FINAL RESULT: {status}.")
 
 if __name__ == "__main__":
     run_test()

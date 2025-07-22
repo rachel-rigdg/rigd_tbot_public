@@ -8,14 +8,20 @@ import os
 import re
 from pathlib import Path
 from tbot_bot.support.path_resolver import get_output_path, resolve_control_path
+from tbot_bot.support.utils_log import log_event
 
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_logging_format.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
+LOGFILE = get_output_path("logs", "test_mode.log")
 
 def safe_print(msg):
     try:
         print(msg, flush=True)
+    except Exception:
+        pass
+    try:
+        log_event("test_logging_format", msg, logfile=LOGFILE)
     except Exception:
         pass
 
@@ -41,7 +47,11 @@ class TestLoggingFormat(unittest.TestCase):
     def test_logs_exist_and_not_empty(self):
         for path in self.log_paths:
             with self.subTest(log_file=path):
+                if not os.path.exists(path):
+                    safe_print(f"[test_logging_format] Log file does not exist: {path}")
                 self.assertTrue(os.path.exists(path), f"Log file does not exist: {path}")
+                if os.path.getsize(path) == 0:
+                    safe_print(f"[test_logging_format] Log file is empty: {path}")
                 self.assertGreater(os.path.getsize(path), 0, f"Log file is empty: {path}")
 
     def test_log_format(self):
@@ -52,6 +62,8 @@ class TestLoggingFormat(unittest.TestCase):
                         line = line.strip()
                         if not line:
                             continue
+                        if not LOG_FILE_PATTERN.match(line):
+                            safe_print(f"[test_logging_format] Log line {line_number} in {path} does not match format: {line}")
                         self.assertRegex(
                             line,
                             LOG_FILE_PATTERN,
@@ -61,12 +73,10 @@ class TestLoggingFormat(unittest.TestCase):
 def run_test():
     import unittest as _unittest
     ret = _unittest.main([__file__])
+    result = "PASSED" if ret == 0 else "ERRORS"
+    safe_print(f"[test_logging_format.py] FINAL RESULT: {result}")
     if Path(TEST_FLAG_PATH).exists():
         Path(TEST_FLAG_PATH).unlink()
-    if ret == 0:
-        safe_print("[test_logging_format.py] TEST PASSED")
-    else:
-        safe_print(f"[test_logging_format.py] TEST FAILED (code={ret})")
 
 if __name__ == "__main__":
     run_test()

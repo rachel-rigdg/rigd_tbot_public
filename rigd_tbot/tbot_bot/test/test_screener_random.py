@@ -4,21 +4,27 @@
 
 import unittest
 import random
-from tbot_bot.screeners.finnhub_screener import FinnhubScreener
-from tbot_bot.screeners.alpaca_screener import AlpacaScreener
-from tbot_bot.screeners.ibkr_screener import IBKRScreener
+from tbot_bot.screeners.screeners.alpaca_screener import AlpacaScreener
+from tbot_bot.screeners.screeners.finnhub_screener import FinnhubScreener
+from tbot_bot.screeners.screeners.ibkr_screener import IBKRScreener
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.path_resolver import resolve_control_path
+from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
+from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
 
 CONTROL_DIR = resolve_control_path()
+LOGFILE = get_output_path("logs", "test_mode.log")
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_screener_random.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def safe_print(msg):
     try:
         print(msg, flush=True)
+    except Exception:
+        pass
+    try:
+        log_event("test_screener_random", msg, logfile=LOGFILE)
     except Exception:
         pass
 
@@ -61,7 +67,9 @@ class TestScreenerRandom(unittest.TestCase):
         safe_print("[test_screener_random] PASSED.")
 
 def run_test():
-    unittest.main(module=__name__, exit=False)
+    result = unittest.main(module=__name__, exit=False)
+    status = "PASSED" if result.result.wasSuccessful() else "ERRORS"
+    safe_print(f"[test_screener_random] FINAL RESULT: {status}.")
 
 if __name__ == "__main__":
     run_test()

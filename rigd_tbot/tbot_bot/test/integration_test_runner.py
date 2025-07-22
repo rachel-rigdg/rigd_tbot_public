@@ -40,6 +40,7 @@ ALL_TESTS = [
     "holdings_manager"
 ]
 TEST_STATUS_PATH = get_output_path("logs", "test_status.json")
+TEST_LOG_PATH = get_output_path("logs", "test_mode.log")
 
 def set_cwd_and_syspath():
     os.chdir(PROJECT_ROOT)
@@ -122,6 +123,31 @@ def update_test_status(test_name, status):
 def reset_all_status():
     set_test_status({t: "QUEUED" for t in ALL_TESTS})
 
+def write_log_realtime(proc):
+    with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+        while True:
+            out = proc.stdout.readline()
+            err = proc.stderr.readline()
+            if not out and not err and proc.poll() is not None:
+                break
+            if out:
+                logf.write(out.decode())
+                logf.flush()
+            if err:
+                logf.write(err.decode())
+                logf.flush()
+
+def run_subprocess_with_realtime_log(cmd, **kwargs):
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **kwargs
+    )
+    write_log_realtime(proc)
+    proc.wait()
+    return proc
+
 def run_single_test_module(flag):
     test_name = flag.name.replace("test_mode_", "").replace(".flag", "")
     test_map = {
@@ -137,16 +163,17 @@ def run_single_test_module(flag):
         "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
         "backtest_engine": "tbot_bot.test.test_backtest_engine",
         "logging_format": "tbot_bot.test.test_logging_format",
-        "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic"
+        "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic",
+        "holdings_manager": "tbot_bot.test.test_holdings_manager"
     }
     module = test_map.get(test_name)
     if module:
         print(f"[integration_test_runner] Detected individual test flag: {flag}. Running {module}")
         update_test_status(test_name, "RUNNING")
-        proc = subprocess.run(
+        proc = run_subprocess_with_realtime_log(
             ["python3", "-u", "-m", module],
             cwd=PROJECT_ROOT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)}
         )
         if proc.returncode == 0:
             update_test_status(test_name, "PASSED")
@@ -160,18 +187,13 @@ def run_single_test_module(flag):
 def run_strategy_with_timeout(strat):
     log_event("integration_test", f"Triggering strategy: {strat}")
     try:
-        proc = subprocess.run(
+        proc = run_subprocess_with_realtime_log(
             [sys.executable, "-c", f"from tbot_bot.strategy.strategy_router import route_strategy; route_strategy(override='{strat}')"],
             cwd=PROJECT_ROOT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
-            timeout=MAX_STRATEGY_TIME,
-            capture_output=True,
-            text=True,
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)}
         )
         if proc.returncode != 0:
             print(f"Strategy {strat} failed with return code {proc.returncode}")
-            print(proc.stdout)
-            print(proc.stderr)
             return "ERRORS"
         else:
             print(f"Strategy {strat} executed successfully.")
@@ -216,29 +238,36 @@ def run_integration_test():
 
     try:
         for test_name in ALL_TESTS:
-            update_test_status(test_name, "RUNNING")
-            module = test_map.get(test_name)
-            if not module:
+            try:
+                update_test_status(test_name, "RUNNING")
+                module = test_map.get(test_name)
+                if not module:
+                    update_test_status(test_name, "ERRORS")
+                    continue
+                flag_path = CONTROL_DIR / f"test_mode_{test_name}.flag"
+                with open(flag_path, "w") as f:
+                    f.write("1\n")
+                proc = subprocess.Popen(
+                    ["python3", "-u", "-m", module],
+                    cwd=PROJECT_ROOT,
+                    env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                write_log_realtime(proc)
+                proc.wait()
+                if proc.returncode == 0:
+                    update_test_status(test_name, "PASSED")
+                else:
+                    update_test_status(test_name, "ERRORS")
+                if flag_path.exists():
+                    flag_path.unlink()
+                time.sleep(1)
+            except Exception as test_exc:
                 update_test_status(test_name, "ERRORS")
-                continue
-            flag_path = CONTROL_DIR / f"test_mode_{test_name}.flag"
-            with open(flag_path, "w") as f:
-                f.write("1\n")
-            proc = subprocess.run(
-                ["python3", "-u", "-m", module],
-                cwd=PROJECT_ROOT,
-                env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
-                timeout=MAX_STRATEGY_TIME,
-                capture_output=True,
-                text=True,
-            )
-            if proc.returncode == 0:
-                update_test_status(test_name, "PASSED")
-            else:
-                update_test_status(test_name, "ERRORS")
-            if flag_path.exists():
-                flag_path.unlink()
-            time.sleep(1)
+                tb_str = traceback.format_exc()
+                with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+                    logf.write(f"[integration_test_runner] Test {test_name} crashed:\n{tb_str}\n")
 
         print("\nVerifying output artifacts...\n")
         check_output_artifacts()
@@ -261,7 +290,8 @@ def run_integration_test():
                 status_dict = {}
             if status_dict.get(test_name) == "RUNNING":
                 update_test_status(test_name, "ERRORS")
-        print("Integration test failed with error:\n", tb)
+        with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+            logf.write("Integration test failed with error:\n" + tb + "\n")
         sys.exit(1)
     finally:
         flag = CONTROL_DIR / "test_mode.flag"

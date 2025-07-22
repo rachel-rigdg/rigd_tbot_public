@@ -19,9 +19,22 @@ def safe_print(msg):
         pass
 
 if __name__ == "__main__":
+    result = "PASSED"
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         safe_print("[test_ledger_schema.py] Individual test flag not present. Exiting.")
         sys.exit(1)
+    try:
+        import pytest as _pytest
+        ret = _pytest.main([__file__])
+        if ret != 0:
+            result = "ERRORS"
+    except Exception as e:
+        result = "ERRORS"
+        safe_print(f"[test_ledger_schema.py] Exception: {e}")
+    finally:
+        if Path(TEST_FLAG_PATH).exists():
+            Path(TEST_FLAG_PATH).unlink()
+        safe_print(f"[test_ledger_schema.py] FINAL RESULT: {result}")
 
 def test_ledger_schema_validation():
     """
@@ -33,16 +46,3 @@ def test_ledger_schema_validation():
     except Exception as e:
         pytest.fail(f"Ledger schema validation failed: {e}")
     assert result is True, "Ledger schema is not valid or compliant."
-
-def run_test():
-    import pytest as _pytest
-    ret = _pytest.main([__file__])
-    if Path(TEST_FLAG_PATH).exists():
-        Path(TEST_FLAG_PATH).unlink()
-    if ret == 0:
-        safe_print("[test_ledger_schema.py] TEST PASSED")
-    else:
-        safe_print(f"[test_ledger_schema.py] TEST FAILED (code={ret})")
-
-if __name__ == "__main__":
-    run_test()

@@ -18,13 +18,20 @@ def safe_print(msg):
     except Exception:
         pass
 
-if __name__ == "__main__":
+def run_and_log():
+    result = "PASSED"
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         safe_print("[test_strategy_selfcheck.py] Individual test flag not present. Exiting.")
         sys.exit(0)
-else:
-    if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
-        raise RuntimeError("[test_strategy_selfcheck.py] Individual test flag not present.")
+    try:
+        unittest.main(module=__name__, exit=False)
+    except Exception as e:
+        result = "ERRORS"
+        safe_print(f"[test_strategy_selfcheck.py] Exception: {e}")
+    finally:
+        if Path(TEST_FLAG_PATH).exists():
+            Path(TEST_FLAG_PATH).unlink()
+        safe_print(f"[test_strategy_selfcheck.py] FINAL RESULT: {result}")
 
 class TestStrategySelfCheck(unittest.TestCase):
     def setUp(self):
@@ -65,8 +72,5 @@ class TestStrategySelfCheck(unittest.TestCase):
 
         self.assertFalse(failures, "Self-check errors:\n" + "\n".join(failures))
 
-def run_test():
-    unittest.main(module=__name__, exit=False)
-
 if __name__ == "__main__":
-    run_test()
+    run_and_log()

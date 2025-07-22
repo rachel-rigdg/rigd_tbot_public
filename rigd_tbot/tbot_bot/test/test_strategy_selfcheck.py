@@ -4,7 +4,8 @@
 
 import unittest
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.path_resolver import resolve_control_path
+from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
+from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
 import subprocess
@@ -12,11 +13,16 @@ import subprocess
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_strategy_selfcheck.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
+LOGFILE = get_output_path("logs", "test_mode.log")
 TIMEOUT_SECONDS = 30
 
 def safe_print(msg):
     try:
         print(msg, flush=True)
+    except Exception:
+        pass
+    try:
+        log_event("test_strategy_selfcheck", msg, logfile=LOGFILE)
     except Exception:
         pass
 
@@ -33,6 +39,8 @@ def run_self_check_subprocess(module_path: str) -> bool:
             capture_output=True,
             text=True,
         )
+        if proc.returncode != 0:
+            safe_print(f"[test_strategy_selfcheck] {module_path}.self_check() FAILED.\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
         return proc.returncode == 0
     except subprocess.TimeoutExpired:
         safe_print(f"[test_strategy_selfcheck] Timeout: {module_path} self_check exceeded {TIMEOUT_SECONDS} seconds.")
@@ -72,8 +80,13 @@ class TestStrategySelfCheck(unittest.TestCase):
             if not run_self_check_subprocess("tbot_bot.strategy.strategy_close"):
                 failures.append("strategy_close failed self_check() or timed out")
 
+        if failures:
+            safe_print("[test_strategy_selfcheck] ERRORS:\n" + "\n".join(failures))
+        else:
+            safe_print("[test_strategy_selfcheck] PASSED.")
+
         self.assertFalse(failures, "Self-check errors:\n" + "\n".join(failures))
-        safe_print("[test_strategy_selfcheck] PASSED.")
+        safe_print(f"[test_strategy_selfcheck] FINAL RESULT: {'ERRORS' if failures else 'PASSED'}.")
 
 def run_test():
     unittest.main(module=__name__, exit=False)

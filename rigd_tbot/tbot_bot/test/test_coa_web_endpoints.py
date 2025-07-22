@@ -8,9 +8,11 @@ from flask import Flask
 from tbot_web.py.coa_web import coa_web
 from pathlib import Path
 import sys
-from tbot_bot.support.path_resolver import resolve_control_path
+from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
+from tbot_bot.support.utils_log import log_event
 
 CONTROL_DIR = resolve_control_path()
+LOGFILE = get_output_path("logs", "test_mode.log")
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_coa_web_endpoints.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
@@ -19,10 +21,14 @@ def safe_print(msg):
         print(msg, flush=True)
     except Exception:
         pass
+    try:
+        log_event("test_coa_web_endpoints", msg, logfile=LOGFILE)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
-        print("[test_coa_web_endpoints.py] Individual test flag not present. Exiting.")
+        safe_print("[test_coa_web_endpoints.py] Individual test flag not present. Exiting.")
         sys.exit(1)
 
 class COAWebEndpointTestCase(unittest.TestCase):
@@ -86,7 +92,9 @@ class COAWebEndpointTestCase(unittest.TestCase):
         safe_print("[test_coa_web_endpoints] /coa/rbac endpoint OK.")
 
 def run_test():
-    unittest.main(module=__name__, exit=False)
+    result = unittest.main(module=__name__, exit=False)
+    status = "PASSED" if result.result.wasSuccessful() else "ERRORS"
+    safe_print(f"[test_coa_web_endpoints] FINAL RESULT: {status}.")
 
 if __name__ == "__main__":
     run_test()

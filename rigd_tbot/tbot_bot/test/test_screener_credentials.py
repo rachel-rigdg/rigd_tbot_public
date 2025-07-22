@@ -10,6 +10,10 @@ import json
 from tbot_bot.support import secrets_manager
 from tbot_bot.support.path_resolver import resolve_control_path
 
+CONTROL_DIR = resolve_control_path()
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode_screener_credentials.flag"
+RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
+
 # Patch locations for isolation
 ORIG_KEY_DIR = secrets_manager.KEY_DIR
 ORIG_AUDIT_LOG_PATH = secrets_manager.AUDIT_LOG_PATH
@@ -28,6 +32,31 @@ def temp_credential_env(monkeypatch):
     monkeypatch.setattr(secrets_manager, "get_screener_credentials_path", lambda: os.path.join(secrets_dir, "screener_api.json.enc"))
     yield
     shutil.rmtree(tmpdir)
+
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
+
+if __name__ == "__main__":
+    result = "PASSED"
+    if not (os.path.exists(TEST_FLAG_PATH) or os.path.exists(RUN_ALL_FLAG)):
+        safe_print("[test_screener_credentials.py] Individual test flag not present. Exiting.")
+        import sys
+        sys.exit(1)
+    try:
+        import pytest as _pytest
+        ret = _pytest.main([__file__])
+        if ret != 0:
+            result = "ERRORS"
+    except Exception as e:
+        result = "ERRORS"
+        safe_print(f"[test_screener_credentials.py] Exception: {e}")
+    finally:
+        if os.path.exists(TEST_FLAG_PATH):
+            os.unlink(TEST_FLAG_PATH)
+        safe_print(f"[test_screener_credentials.py] FINAL RESULT: {result}")
 
 def test_add_and_update_credentials(temp_credential_env):
     provider1 = "FINNHUB"
