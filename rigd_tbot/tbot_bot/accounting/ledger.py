@@ -15,46 +15,48 @@ def load_internal_ledger():
     db_path = resolve_ledger_db_path(*bot_identity)
     conn = sqlite3.connect(db_path)
     cursor = conn.execute(
-        "SELECT id, datetime_utc, symbol, action, quantity, price, total_value, fees, broker, "
+        "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, fees, broker, "
         "strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
         "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
         "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
-        "CASE WHEN approval_status = 'approved' THEN 'ok' ELSE 'mismatch' END AS status "
+        "CASE WHEN approval_status = 'approved' THEN 'ok' ELSE 'mismatch' END AS status, json_metadata "
         "FROM trades"
     )
     results = []
     for row in cursor.fetchall():
         results.append({
             "id": row[0],
-            "datetime_utc": row[1],
-            "symbol": row[2],
-            "action": row[3],
-            "quantity": row[4],
-            "price": row[5],
-            "total_value": row[6],
-            "fees": row[7],
-            "broker": row[8],
-            "strategy": row[9],
-            "account": row[10],
-            "trade_id": row[11],
-            "tags": row[12],
-            "notes": row[13],
-            "jurisdiction": row[14],
-            "entity_code": row[15],
-            "language": row[16],
-            "created_by": row[17],
-            "updated_by": row[18],
-            "approved_by": row[19],
-            "approval_status": row[20],
-            "gdpr_compliant": row[21],
-            "ccpa_compliant": row[22],
-            "pipeda_compliant": row[23],
-            "hipaa_sensitive": row[24],
-            "iso27001_tag": row[25],
-            "soc2_type": row[26],
-            "created_at": row[27],
-            "updated_at": row[28],
-            "status": row[29],
+            "ledger_entry_id": row[1],
+            "datetime_utc": row[2],
+            "symbol": row[3],
+            "action": row[4],
+            "quantity": row[5],
+            "price": row[6],
+            "total_value": row[7],
+            "fees": row[8],
+            "broker": row[9],
+            "strategy": row[10],
+            "account": row[11],
+            "trade_id": row[12],
+            "tags": row[13],
+            "notes": row[14],
+            "jurisdiction": row[15],
+            "entity_code": row[16],
+            "language": row[17],
+            "created_by": row[18],
+            "updated_by": row[19],
+            "approved_by": row[20],
+            "approval_status": row[21],
+            "gdpr_compliant": row[22],
+            "ccpa_compliant": row[23],
+            "pipeda_compliant": row[24],
+            "hipaa_sensitive": row[25],
+            "iso27001_tag": row[26],
+            "soc2_type": row[27],
+            "created_at": row[28],
+            "updated_at": row[29],
+            "status": row[30],
+            "json_metadata": row[31],
         })
     conn.close()
     return results
@@ -90,10 +92,10 @@ def add_ledger_entry(entry_data):
     except Exception:
         entry_data["total_value"] = entry_data.get("total_value") or 0
     columns = [
-        "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
         "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
-        "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type"
+        "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
     ]
     values = [entry_data.get(col) for col in columns]
     placeholders = ", ".join("?" for _ in columns)
@@ -120,10 +122,10 @@ def edit_ledger_entry(entry_id, updated_data):
     except Exception:
         updated_data["total_value"] = updated_data.get("total_value") or 0
     columns = [
-        "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
         "updated_by", "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant",
-        "hipaa_sensitive", "iso27001_tag", "soc2_type"
+        "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
     ]
     set_clause = ", ".join([f"{col}=?" for col in columns])
     values = [updated_data.get(col) for col in columns]
@@ -154,6 +156,7 @@ def post_tax_reserve_entry(amount, datetime_utc, notes=None):
     Posts a tax reserve allocation entry to the ledger.
     """
     entry = {
+        "ledger_entry_id": None,
         "datetime_utc": datetime_utc,
         "symbol": None,
         "action": "reserve_tax",
@@ -179,7 +182,8 @@ def post_tax_reserve_entry(amount, datetime_utc, notes=None):
         "pipeda_compliant": False,
         "hipaa_sensitive": False,
         "iso27001_tag": None,
-        "soc2_type": None
+        "soc2_type": None,
+        "json_metadata": "{}"
     }
     add_ledger_entry(entry)
 
@@ -188,6 +192,7 @@ def post_payroll_reserve_entry(amount, datetime_utc, notes=None):
     Posts a payroll reserve allocation entry to the ledger.
     """
     entry = {
+        "ledger_entry_id": None,
         "datetime_utc": datetime_utc,
         "symbol": None,
         "action": "reserve_payroll",
@@ -213,7 +218,8 @@ def post_payroll_reserve_entry(amount, datetime_utc, notes=None):
         "pipeda_compliant": False,
         "hipaa_sensitive": False,
         "iso27001_tag": None,
-        "soc2_type": None
+        "soc2_type": None,
+        "json_metadata": "{}"
     }
     add_ledger_entry(entry)
 
@@ -222,6 +228,7 @@ def post_float_allocation_entry(amount, datetime_utc, notes=None):
     Posts a float allocation entry to the ledger.
     """
     entry = {
+        "ledger_entry_id": None,
         "datetime_utc": datetime_utc,
         "symbol": None,
         "action": "float_allocation",
@@ -247,7 +254,8 @@ def post_float_allocation_entry(amount, datetime_utc, notes=None):
         "pipeda_compliant": False,
         "hipaa_sensitive": False,
         "iso27001_tag": None,
-        "soc2_type": None
+        "soc2_type": None,
+        "json_metadata": "{}"
     }
     add_ledger_entry(entry)
 
@@ -256,6 +264,7 @@ def post_rebalance_entry(symbol, amount, action, datetime_utc, notes=None):
     Posts a rebalance action entry to the ledger.
     """
     entry = {
+        "ledger_entry_id": None,
         "datetime_utc": datetime_utc,
         "symbol": symbol,
         "action": f"rebalance_{action}",
@@ -281,6 +290,7 @@ def post_rebalance_entry(symbol, amount, action, datetime_utc, notes=None):
         "pipeda_compliant": False,
         "hipaa_sensitive": False,
         "iso27001_tag": None,
-        "soc2_type": None
+        "soc2_type": None,
+        "json_metadata": "{}"
     }
     add_ledger_entry(entry)

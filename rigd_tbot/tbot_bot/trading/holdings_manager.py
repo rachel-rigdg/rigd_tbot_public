@@ -68,7 +68,6 @@ def _mark_rebalance_complete(holdings_cfg):
     save_holdings_secrets({**holdings_cfg, "NEXT_REBALANCE_DUE": next_due.isoformat()}, user="holdings_manager", reason="rebalance_complete")
 
 def _compliance_preview_or_abort(holdings, etf_targets, account_value):
-    # Simulate rebalance before executing, abort if noncompliant
     compliance_ok, preview = simulate_rebalance_compliance(holdings, etf_targets, account_value)
     if not compliance_ok:
         log.error(f"Rebalance/compliance preview failed: {preview}")
@@ -76,6 +75,42 @@ def _compliance_preview_or_abort(holdings, etf_targets, account_value):
         audit_log_event("holdings_compliance_block", user="holdings_manager", reference=None, details={"reason": preview})
         return False
     return True
+
+def get_holdings_status():
+    """
+    Returns status for the UI table: account value, cash, next rebalance, and ETF holdings rows.
+    """
+    broker = get_active_broker()
+    account_value = broker.get_account_value()
+    cash = broker.get_cash_balance()
+    holdings_cfg = load_holdings_secrets()
+    etf_cfg = holdings_cfg.get("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50")
+    etf_targets = parse_etf_allocations(etf_cfg)
+    next_rebalance_due = holdings_cfg.get("NEXT_REBALANCE_DUE")
+    etf_holdings = []
+    try:
+        live = broker.get_etf_positions()  # Must return list of dicts per ETF: symbol, units, purchase_price, market_price, market_value, pl, total_gain_loss
+        for etf in live:
+            symbol = etf.get("symbol")
+            etf_holdings.append({
+                "symbol": symbol,
+                "allocation_pct": etf_targets.get(symbol, 0),
+                "purchase_price": etf.get("purchase_price", 0),
+                "units": etf.get("units", 0),
+                "market_price": etf.get("market_price", 0),
+                "market_value": etf.get("market_value", 0),
+                "unrealized_pl": etf.get("unrealized_pl", 0),
+                "total_gain_loss": etf.get("total_gain_loss", 0)
+            })
+    except Exception as e:
+        log.error(f"Failed to fetch ETF holdings: {e}")
+
+    return {
+        "account_value": account_value,
+        "cash": cash,
+        "next_rebalance_due": next_rebalance_due,
+        "etf_holdings": etf_holdings
+    }
 
 def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_manager"):
     if not _is_bot_initialized():
@@ -87,10 +122,10 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
 
     broker = get_active_broker()
     holdings_cfg = load_holdings_secrets()
-    float_pct = float(holdings_cfg.get("FLOAT_TARGET_PCT", 10))
-    tax_pct = float(holdings_cfg.get("TAX_RESERVE_PCT", 20))
-    payroll_pct = float(holdings_cfg.get("PAYROLL_PCT", 10))
-    etf_cfg = holdings_cfg.get("ETF_ALLOC_LIST", "SCHD:50,SCHY:50")
+    float_pct = float(holdings_cfg.get("HOLDINGS_FLOAT_TARGET_PCT", 10))
+    tax_pct = float(holdings_cfg.get("HOLDINGS_TAX_RESERVE_PCT", 20))
+    payroll_pct = float(holdings_cfg.get("HOLDINGS_PAYROLL_PCT", 10))
+    etf_cfg = holdings_cfg.get("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50")
     etf_targets = parse_etf_allocations(etf_cfg)
 
     account_value = broker.get_account_value()
@@ -173,7 +208,7 @@ def perform_rebalance_cycle(user: str = "holdings_manager"):
 
     broker = get_active_broker()
     holdings_cfg = load_holdings_secrets()
-    etf_cfg = holdings_cfg.get("ETF_ALLOC_LIST", "SCHD:50,SCHY:50")
+    etf_cfg = holdings_cfg.get("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50")
     etf_targets = parse_etf_allocations(etf_cfg)
 
     account_value = broker.get_account_value()
@@ -189,6 +224,12 @@ def perform_rebalance_cycle(user: str = "holdings_manager"):
         log.info(f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}")
         log_event("holdings_rebalance", user=user, details=order)
         audit_log_event("holdings_rebalance", user=user, reference=order['symbol'], details=order)
+
+def manual_holdings_action(action, user="manual"):
+    if action == "rebalance":
+        perform_rebalance_cycle(user)
+        return {"result": "rebalance triggered"}
+    return {"error": "invalid action"}
 
 def main():
     log.info("Holdings manager started as persistent service.")
