@@ -1,11 +1,23 @@
 // static/js/test_ui.js
 
 let logPoller = null;
+let statusPoller = null;
 let currentTest = null;
+let allTests = [];
 
 function startLogPolling() {
     if (logPoller) clearInterval(logPoller);
     logPoller = setInterval(fetchLogs, 1500);
+}
+
+function startStatusPolling() {
+    if (statusPoller) clearInterval(statusPoller);
+    statusPoller = setInterval(fetchTestStatus, 1000);
+}
+
+function stopPolling() {
+    if (logPoller) clearInterval(logPoller);
+    if (statusPoller) clearInterval(statusPoller);
 }
 
 function fetchLogs() {
@@ -13,36 +25,30 @@ function fetchLogs() {
     .then(response => response.json())
     .then(data => {
         document.getElementById('test-log-output').textContent = data.logs || '';
-        const statusEl = document.getElementById('test-status');
-        statusEl.textContent = data.status || '';
-        statusEl.className = '';
-        if (currentTest) {
-            document.getElementById('running-test-label').textContent = "Running: " + currentTest;
-        }
-        if (data.status === "completed") {
-            statusEl.classList.add('status-completed');
-            clearInterval(logPoller);
+    });
+}
+
+function fetchTestStatus() {
+    fetch("/test/test_status")
+    .then(response => response.json())
+    .then(statusDict => {
+        allTests.forEach(test => {
+            const ind = document.getElementById('test-status-' + test);
+            if (!ind) return;
+            let status = statusDict[test] || "";
+            ind.textContent = status;
+            ind.className = "test-status-indicator";
+            if (status === "RUNNING") ind.classList.add("test-status-running");
+            else if (status === "PASSED") ind.classList.add("test-status-passed");
+            else if (status === "ERRORS") ind.classList.add("test-status-errors");
+        });
+
+        let isAnyRunning = Object.values(statusDict).some(st => st === "RUNNING");
+        if (!isAnyRunning) {
             enableButtons();
-            if (currentTest) {
-                document.getElementById('running-test-label').textContent = currentTest + " — Completed";
-            }
+            stopPolling();
             currentTest = null;
-        } else if (data.status === "idle") {
-            statusEl.classList.remove('status-running', 'status-error', 'status-completed');
-            clearInterval(logPoller);
-            enableButtons();
             document.getElementById('running-test-label').textContent = '';
-            currentTest = null;
-        } else if (data.status === "error") {
-            statusEl.classList.add('status-error');
-            clearInterval(logPoller);
-            enableButtons();
-            if (currentTest) {
-                document.getElementById('running-test-label').textContent = currentTest + " — Error";
-            }
-            currentTest = null;
-        } else {
-            statusEl.classList.add('status-running');
         }
     });
 }
@@ -59,41 +65,52 @@ function runAllTests() {
     disableButtons();
     currentTest = "ALL TESTS";
     document.getElementById('running-test-label').textContent = "Running: ALL TESTS";
-    const statusEl = document.getElementById('test-status');
-    statusEl.textContent = "triggered";
-    statusEl.className = 'status-running';
+    allTests.forEach(test => setIndicator(test, ""));
     fetch("/test/trigger", {method: "POST"})
-        .then(() => startLogPolling());
+        .then(() => {
+            startLogPolling();
+            startStatusPolling();
+        });
 }
 
 function runIndividualTest(testName) {
     disableButtons();
     currentTest = testName;
     document.getElementById('running-test-label').textContent = "Running: " + testName;
-    const statusEl = document.getElementById('test-status');
-    statusEl.textContent = "triggered";
-    statusEl.className = 'status-running';
+    setIndicator(testName, "RUNNING");
     fetch("/test/run/" + encodeURIComponent(testName), {method: "POST"})
         .then(response => response.json())
         .then(data => {
             if (data.result === "already_running") {
-                statusEl.textContent = "A test is already running.";
-                statusEl.className = 'status-error';
+                setIndicator(testName, "RUNNING");
                 enableButtons();
                 currentTest = null;
                 document.getElementById('running-test-label').textContent = '';
             } else if (data.result === "unknown_test") {
-                statusEl.textContent = "Unknown test: " + testName;
-                statusEl.className = 'status-error';
+                setIndicator(testName, "ERRORS");
                 enableButtons();
                 currentTest = null;
                 document.getElementById('running-test-label').textContent = '';
             } else {
                 startLogPolling();
+                startStatusPolling();
             }
         });
 }
 
+function setIndicator(test, status) {
+    const ind = document.getElementById('test-status-' + test);
+    if (!ind) return;
+    ind.textContent = status || "";
+    ind.className = "test-status-indicator";
+    if (status === "RUNNING") ind.classList.add("test-status-running");
+    else if (status === "PASSED") ind.classList.add("test-status-passed");
+    else if (status === "ERRORS") ind.classList.add("test-status-errors");
+}
+
 window.onload = function() {
+    allTests = window.allTests || [];
     fetchLogs();
+    fetchTestStatus();
+    startStatusPolling();
 };

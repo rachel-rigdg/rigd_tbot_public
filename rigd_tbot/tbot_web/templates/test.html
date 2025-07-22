@@ -13,38 +13,83 @@
 </head>
 <body>
     <div class="main-container">
-        <div class="test-header">TEST_MODE — End-to-End Bot System Test</div>
-        <div class="center" style="margin-bottom: 1em;">
+        <div class="left-panel">
+            <div class="test-header">TEST_MODE — End-to-End Bot System Test</div>
             <button id="trigger-btn" class="trigger-btn test-btn" onclick="runAllTests()" {% if test_active %}disabled{% endif %}>Run All Tests</button>
+            <div style="margin-bottom: 0.8em;"></div>
+            <div class="test-list">
+                <div>
+                    <button class="test-btn" id="btn-universe_cache" onclick="runIndividualTest('universe_cache')" {% if test_active %}disabled{% endif %}>Run Universe Cache Test</button>
+                    <span class="test-status-indicator" id="status-universe_cache"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-strategy_selfcheck" onclick="runIndividualTest('strategy_selfcheck')" {% if test_active %}disabled{% endif %}>Run Strategy Self-Check Test</button>
+                    <span class="test-status-indicator" id="status-strategy_selfcheck"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-screener_random" onclick="runIndividualTest('screener_random')" {% if test_active %}disabled{% endif %}>Run Screener Random Test</button>
+                    <span class="test-status-indicator" id="status-screener_random"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-screener_integration" onclick="runIndividualTest('screener_integration')" {% if test_active %}disabled{% endif %}>Run Screener Integration Test</button>
+                    <span class="test-status-indicator" id="status-screener_integration"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-main_bot" onclick="runIndividualTest('main_bot')" {% if test_active %}disabled{% endif %}>Run Main Bot Test</button>
+                    <span class="test-status-indicator" id="status-main_bot"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-ledger_schema" onclick="runIndividualTest('ledger_schema')" {% if test_active %}disabled{% endif %}>Run Ledger Schema Test</button>
+                    <span class="test-status-indicator" id="status-ledger_schema"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-env_bot" onclick="runIndividualTest('env_bot')" {% if test_active %}disabled{% endif %}>Run Env Bot Test</button>
+                    <span class="test-status-indicator" id="status-env_bot"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-coa_web_endpoints" onclick="runIndividualTest('coa_web_endpoints')" {% if test_active %}disabled{% endif %}>Run COA Web Endpoints Test</button>
+                    <span class="test-status-indicator" id="status-coa_web_endpoints"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-coa_consistency" onclick="runIndividualTest('coa_consistency')" {% if test_active %}disabled{% endif %}>Run COA Consistency Test</button>
+                    <span class="test-status-indicator" id="status-coa_consistency"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-broker_trade_stub" onclick="runIndividualTest('broker_trade_stub')" {% if test_active %}disabled{% endif %}>Run Broker Trade Stub Test</button>
+                    <span class="test-status-indicator" id="status-broker_trade_stub"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-backtest_engine" onclick="runIndividualTest('backtest_engine')" {% if test_active %}disabled{% endif %}>Run Backtest Engine Test</button>
+                    <span class="test-status-indicator" id="status-backtest_engine"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-logging_format" onclick="runIndividualTest('logging_format')" {% if test_active %}disabled{% endif %}>Run Logging Format Test</button>
+                    <span class="test-status-indicator" id="status-logging_format"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-fallback_logic" onclick="runIndividualTest('fallback_logic')" {% if test_active %}disabled{% endif %}>Run Fallback Logic Test</button>
+                    <span class="test-status-indicator" id="status-fallback_logic"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-holdings_manager" onclick="runIndividualTest('holdings_manager')" {% if test_active %}disabled{% endif %}>Run Holdings Manager Test</button>
+                    <span class="test-status-indicator" id="status-holdings_manager"></span>
+                </div>
+            </div>
         </div>
-        <div class="center" style="margin-bottom: 1em;">
-            <button class="test-btn" onclick="runIndividualTest('universe_cache')" {% if test_active %}disabled{% endif %}>Run Universe Cache Test</button>
-            <button class="test-btn" onclick="runIndividualTest('strategy_selfcheck')" {% if test_active %}disabled{% endif %}>Run Strategy Self-Check Test</button>
-            <button class="test-btn" onclick="runIndividualTest('screener_random')" {% if test_active %}disabled{% endif %}>Run Screener Random Test</button>
-            <button class="test-btn" onclick="runIndividualTest('screener_integration')" {% if test_active %}disabled{% endif %}>Run Screener Integration Test</button>
-            <button class="test-btn" onclick="runIndividualTest('main_bot')" {% if test_active %}disabled{% endif %}>Run Main Bot Test</button>
-            <button class="test-btn" onclick="runIndividualTest('ledger_schema')" {% if test_active %}disabled{% endif %}>Run Ledger Schema Test</button>
-            <button class="test-btn" onclick="runIndividualTest('env_bot')" {% if test_active %}disabled{% endif %}>Run Env Bot Test</button>
-            <button class="test-btn" onclick="runIndividualTest('coa_web_endpoints')" {% if test_active %}disabled{% endif %}>Run COA Web Endpoints Test</button>
-            <button class="test-btn" onclick="runIndividualTest('coa_consistency')" {% if test_active %}disabled{% endif %}>Run COA Consistency Test</button>
-            <button class="test-btn" onclick="runIndividualTest('broker_trade_stub')" {% if test_active %}disabled{% endif %}>Run Broker Trade Stub Test</button>
-            <button class="test-btn" onclick="runIndividualTest('backtest_engine')" {% if test_active %}disabled{% endif %}>Run Backtest Engine Test</button>
-            <button class="test-btn" onclick="runIndividualTest('logging_format')" {% if test_active %}disabled{% endif %}>Run Logging Format Test</button>
-            <button class="test-btn" onclick="runIndividualTest('fallback_logic')" {% if test_active %}disabled{% endif %}>Run Fallback Logic Test</button>
-            <button class="test-btn" onclick="runIndividualTest('holdings_manager')" {% if test_active %}disabled{% endif %}>Run Holdings Manager Test</button>
-        </div>
-        <div class="center" style="margin-bottom: 1em;">
-            <span id="test-status" class="status-running"></span>
-            <span id="running-test-label" style="font-weight:bold;"></span>
-        </div>
-        <div class="test-log-box" id="test-log-output">
-            {% if test_logs %}
-                {{ test_logs }}
-            {% endif %}
-        </div>
-        <div class="audit-log-info">
-            <p>All test actions are logged and visible here in real time. No live trades or data changes occur in TEST_MODE. The bot will reset to normal operation when test is complete.</p>
-            <p><strong>Admin Only:</strong> Only admin users can trigger or view system tests. All actions are audited.</p>
+        <div class="right-panel">
+            <div class="center" style="margin-bottom: 0.8em;">
+                <span id="test-status" class="status-running"></span>
+                <span id="running-test-label" style="font-weight:bold;"></span>
+            </div>
+            <div class="test-log-box" id="test-log-output">
+                {% if test_logs %}
+                    {{ test_logs }}
+                {% endif %}
+            </div>
+            <div class="audit-log-info">
+                <p>All test actions are logged and visible here in real time. No live trades or data changes occur in TEST_MODE. The bot will reset to normal operation when test is complete.</p>
+                <p><strong>Admin Only:</strong> Only admin users can trigger or view system tests. All actions are audited.</p>
+            </div>
         </div>
     </div>
 </body>
