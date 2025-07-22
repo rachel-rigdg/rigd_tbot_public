@@ -1,16 +1,18 @@
 /* pages/test.css — TEST_MODE page with log and status styling */
 
 .main-container {
-    max-width: 900px;
+    max-width: 90%;
     margin: 3em auto;
     padding: 2em;
     display: flex;
     flex-direction: row;
     gap: 2em;
+    margin-left:auto;
+    margin-right:auto;
 }
 
 .left-panel {
-    flex: 0 0 260px;
+    flex: 0 0 300px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -51,7 +53,7 @@
 .test-btn{
     padding: 7px 0.9em;
     margin-bottom: 0.6em;
-    width: 165px;
+    width: 200px;
     background: #31343c;
     color: #e1f3ff;
     border: none;
@@ -61,7 +63,7 @@
     transition: background 0.2s;
 }
 .test-btn:disabled {
-    background: #222325;
+    background: #333;
     color: #888;
     cursor: not-allowed;
 }
@@ -87,7 +89,7 @@
 
 .test-log-box {
     width: 100%;
-    height: 350px;
+    height: 800px;
     background: #181c22;
     color: #a5ffce;
     font-family: monospace;
