@@ -113,8 +113,7 @@ def add_ledger_entry_route():
         "quantity": form.get("quantity"),
         "price": form.get("price"),
         "total_value": form.get("total_value"),
-        "fees": form.get("fees", 0.0),
-        # Pulldown COA account
+        "fee": form.get("fee", 0.0),  # CHANGED: 'fees' -> 'fee'
         "account": form.get("account"),
         "strategy": form.get("strategy"),
         "trade_id": form.get("trade_id"),
@@ -163,8 +162,7 @@ def edit_ledger_entry_route(entry_id):
         "quantity": form.get("quantity"),
         "price": form.get("price"),
         "total_value": form.get("total_value"),
-        "fees": form.get("fees", 0.0),
-        # Pulldown COA account
+        "fee": form.get("fee", 0.0),  # CHANGED: 'fees' -> 'fee'
         "account": form.get("account"),
         "strategy": form.get("strategy"),
         "trade_id": form.get("trade_id"),
