@@ -81,10 +81,12 @@ rigd_tbot/
 │   │   ├── account_transaction.py               # Builds accounting journal entries for trade export to accounting (never manages/provisions secrets/keys)
 │   │   ├── accounting_api.py                    # Exports finalized trade/report data to accounting system endpoint (post-trade only, no live config)
 │   │   ├── accounting_config.py                 # Validates and creates required output folder structure; enforces ledger/COA existence and schema compliance
+│   │   ├── coa_mapping_table.py                 # COA mapping table: rule storage, lookup, auto-extension, version/snapshot, and learning from manual entries.
 │   │   ├── coa_utils.py                         # COA DB utilities: create/import/export/validate COA db (metadata + hierarchy), supports Web UI editing
 │   │   ├── init_coa_db.py                       # Bootstrap script: initializes a new COA DB using tbot_ledger_coa_template.json as hierarchy/template (called only at provisioning/reset)
 │   │   ├── init_ledger_db.py                    # Bootstrap script: initializes a new bot ledger DB file using tbot_ledger_schema.sql (called only at provisioning/reset)
 │   │   ├── ledger_utils.py                      # Ledger DB utilities: create OFX-compliant ledger db, schema validation, audit helpers (no COA/metadata logic)
+│   │   ├── reconciliation_log.py                # Table/model for reconciliation log: trade_id, status, compare_fields, sync_run_id, API hash, versioning.
 │   │   ├── tbot_ledger_coa_template.json        # Editable COA hierarchy/template (codes/names/structure, referenced and modified via coa.html; includes all holdings, float, tax, payroll reserve, and audit log fields 
 │   │   ├── tbot_ledger_schema.sql               # SQL schema file for bot ledger DB (transactions, double-entry, audit, summary tables)
 │   │   └── README_COA.md                        # Documentation: COA/ledger schema update, UI editing instructions, compliance notes
@@ -202,6 +204,7 @@ rigd_tbot/
 │   │       │   └── error_tracebacks.log		        					# Full Python tracebacks for all uncaught exceptions (with timestamps)
 │   │       │
 │   │       ├── ledgers/  										                                    # created during the provisioning process
+│   │       │   ├── coa_mapping_table.json                                                          # persistent json file for saving COA ledger mapping.
 │   │       │   ├── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA_v1.0.0.db    	# Chart of Accounts (COA) for bot ledger, schema version v1.0.0
 │   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db        	# OFX-compliant ledger for live trading data per broker
 │   │       │
@@ -326,6 +329,7 @@ rigd_tbot/
 │   │   ├── test_broker_trade_stub.py               # DEV/CI TEST. Sends randomized test trades to broker adapters, checks order flow and logging. Never launched in production.
 │   │   ├── test_coa_consistency.py                 # DEV/CI TEST. Confirms COA JSON/schema matches, validates COA integration with utils_coa.py. Never launched in production.
 │   │   ├── test_coa_web_endpoints.py               # DEV/CI TEST. End-to-end API/UI tests for COA web endpoints (/coa, /coa/api, /coa/export). Never launched in production.
+│   │   ├── test_coa_mapping.py                     # Automated tests: mapping assignment, learning, rollback/versioning, ambiguous/edge case handling.
 │   │   ├── test_holdings_manager.py       		# Unit/integration tests for holdings logic.
 │   │   ├── test_holdings_web_endpoints.py 		# Tests for new Flask blueprint.
 │   │   ├── test_env_bot.py                         # DEV/CI TEST. Verifies .env_bot config, required variables, and structure. Never launched in production.
@@ -407,8 +411,9 @@ rigd_tbot/
     │   ├── __init__.py                         # Registers all Flask blueprints (main entry)
     │   ├── account_web.py                      # User account/profile endpoints (view/update account details)
     │   ├── coa_web.py                          # COA endpoints: view, edit, export; calls utils_coa_web.py, config_encryption.py. Never launches any worker/watcher.
+    │   ├── coa_mapping_web.py                  # Flask web endpoints for mapping table UI: manage, assign, export/import, audit, rollback.
     │   ├── configuration_web.py                # Handles configuration route: displays, saves, and provisions config; calls config_encryption, key_manager, security_users. Never launches any worker/watcher.
-    │   ├── holdings_web.py              # Flask blueprint: UI endpoints for holdings management, config, and status. -  All core audit, allocation, and compliance logic is enforced here.
+    │   ├── holdings_web.py                     # Flask blueprint: UI endpoints for holdings management, config, and status. -  All core audit, allocation, and compliance logic is enforced here.
     │   ├── ledger_web.py		                # Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs. Only admin users can perform edits or reconciliations. Never launches any worker/watcher.
     │   ├── login_web.py                        # User login/logout/session; calls auth_web.py, security_users.py, session_manager.py. Never launches any worker/watcher.
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state. Never launches any worker/watcher.
@@ -443,9 +448,10 @@ rigd_tbot/
     └── templates/                              # Jinja2 HTML UI templates (rendered for user)
         ├── account.html                        # User account/profile page
         ├── coa.html                            # Human-readable web form/table for COA viewing and editing (editable if RBAC allows)
+        ├── coa_mapping.html                    # Web UI for mapping table management and transaction assignment (flagged, history, audit log).
         ├── configuration.html                  # Web form for updating email, API, and broker credential configuration via web UI 
         ├── edit_user.html                      # Edit individual user details (admin only)
-        ├── holdings.html                 # Jinja2 page for managing ETFs, float %, tax %, payroll %, rebalance interval, current status, manual controls. - This is a required core page for compliance; never optional if holdings module is present.
+        ├── holdings.html                       # Jinja2 page for managing ETFs, float %, tax %, payroll %, rebalance interval, current status, manual controls. - This is a required core page for compliance; never optional if holdings module is present.
         ├── index.html                          # Login page
         ├── ledger.html			                # Human-readable web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies
         ├── logs.html                           # Log viewer (view bot/system logs)
