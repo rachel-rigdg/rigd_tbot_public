@@ -74,7 +74,7 @@ def ledger_reconcile():
         # FIXED: Use COA loader from utils_coa_web to populate dropdown correctly
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = [(acct["code"], acct["name"]) for acct in coa_data.get("accounts_flat", [])]
-        print("COA ACCOUNTS:", coa_accounts)  # DEBUG OUTPUT: Remove after confirming
+        import logging; logging.warning("COA ACCOUNTS: %s", coa_accounts)
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
