@@ -451,3 +451,164 @@ Enforcement is built into the export, ledger, and audit modules.
 All supporting documentation (transfer logs, receipts, audit files) must be retained for a minimum of seven years or as required by law.
 
 Any violation or bypass of this protocol (manual or automated) will be flagged as a compliance breach and subject to immediate investigation.
+
+--------------------------------------------------------------------------------
+Section X: Broker Ledger Sync and Reconciliation System Specification
+--------------------------------------------------------------------------------
+
+SCOPE: Applies to all broker adapters and the accounting/ledger subsystem.  
+PURPOSE: To enable one-click, auditable, double-entry-compliant broker transaction import, sync, and reconciliation for all supported brokers (Alpaca, IBKR, etc), and to guarantee ledger integrity for tax/audit/compliance.
+
+-------------------------------------------------------------------------------
+1. BROKER SYNC: FUNCTIONAL OVERVIEW
+-------------------------------------------------------------------------------
+- *Objective:* 
+  - Download all available trades/fills and cash transactions for the active bot broker account.
+  - Import and reconcile each transaction into the bot ledger DB (`trades` and/or `ledger_entries`).
+  - Mark/reconcile each matched trade; log and alert on all mismatches or missing entries.
+  - Ensure idempotency: re-syncs do not create duplicates, and all broker-side updates (cancels, corrections, reversals) are reflected.
+
+-------------------------------------------------------------------------------
+2. SYSTEM COMPONENTS AND ROLES
+-------------------------------------------------------------------------------
+- **A. Broker Adapter (`broker_api.BrokerAdapter` + plugins):**
+    - Must implement:
+      - `fetch_all_trades(start_date, end_date=None) -> List[dict]`
+      - `fetch_cash_activity(start_date, end_date=None) -> List[dict]`
+    - Each returned dict must include all standard fields: trade_id, symbol, action, qty, price, fee/fees, datetime, status, etc.
+    - **Adapters must fully handle broker-side pagination, continuation tokens, and API rate limits (retry, exponential backoff, etc).** All available historical data for the requested window must be fetched, regardless of result count or server paging.
+    - All syncs must log which API credential was used (or a hash thereof) with each sync event for audit and debugging.
+
+- **B. Sync Orchestrator (`sync_broker_ledger`):**
+    - Calls the above plugin functions.
+    - Deduplicates via unique trade_id.
+    - Maps and upserts into the bot ledger tables.
+    - Logs all actions to `audit_trail` and `reconciliation_log`.
+    - Sync operations may be triggered manually via web UI, or scheduled for automatic execution (e.g., nightly). The default implementation must support both, with all logs/audit entries identical regardless of trigger method.
+
+- **C. Reconciliation Engine:**
+    - Scans bot ledger for all trades within the broker’s returned range.
+    - For every broker trade:
+        - If trade_id exists in ledger, mark as "ok" and update as needed.
+        - If missing, import as "broker-only" (mismatch, requires review).
+        - If in ledger but not in broker export, flag as "local-only" (potential error, requires review).
+    - **All reconciliation results are written to the `reconciliation_log` table, which must include at minimum:**  
+      `trade_id`, `status` (`ok`, `mismatch`, `local-only`, `broker-only`, `resolved`), `compare_fields` (summary of compared fields and any differences), `sync_run_id`, `timestamp_utc`, and a cryptographic hash of the broker-provided record for provenance.
+
+-------------------------------------------------------------------------------
+3. TRANSACTION & FIELD MAPPING
+-------------------------------------------------------------------------------
+- **Alpaca (example):**
+    - API: `GET /v2/orders` and `GET /v2/account/activities`
+    - Map:
+        - trade_id/order_id → trade_id
+        - symbol            → symbol
+        - side              → action ("buy"/"sell" → "long"/"short", etc)
+        - filled_qty        → quantity
+        - filled_avg_price  → price
+        - filled_at         → datetime_utc
+        - filled_fee        → fee/fees (if available)
+        - status            → status ("filled", "cancelled", etc)
+    - All cash activity (deposits, withdrawals, dividends, fees) are mapped to corresponding action/account in ledger.
+    - **All broker-provided timestamps must be stored both as UTC (`datetime_utc`) and the original broker-reported local/exchange time, in `json_metadata`.**
+
+- **Fees Handling:**
+    - Always extract both `fee` and `fees` fields, map to bot schema (see existing robust fee/fees logic).
+    - Commission/fee breakdowns (if available) are stored in json_metadata for audit.
+
+- **Partial Fills & Corrections:**
+    - All trades with partial fills must be aggregated under the original trade_id unless the broker’s system issues unique IDs for each fill (in which case each is imported as a unique record, with parent linkage noted in metadata).
+    - Corrections/amendments and broker-side cancels must always update the status and details in the bot ledger and be audit-logged as such.
+
+- **Required/Optional Fields:**
+    - trade_id (required, unique)
+    - symbol, action, quantity, price, total_value, fee/fees, datetime_utc, status
+    - All other broker-provided metadata stored in `json_metadata`.
+    - If available, each imported record should store a hash or signature of the raw broker API response for forensic traceability.
+
+-------------------------------------------------------------------------------
+4. SYNC WORKFLOW (PSEUDOCODE)
+-------------------------------------------------------------------------------
+
+def sync_broker_ledger(start_date=None, end_date=None):
+# 1. Load broker adapter
+broker = get_active_broker()
+# 2. Define sync range (default: last 30 days)
+if not start_date: start_date = now() - timedelta(days=30)
+# 3. Fetch all broker trades and cash activity (with paging, rate-limit/backoff, etc)
+trades = broker.fetch_all_trades(start_date, end_date)
+cash_activity = broker.fetch_cash_activity(start_date, end_date)
+# 4. Merge all (for unified processing)
+all_records = trades + cash_activity
+# 5. For each record:
+for rec in all_records:
+    trade_id = rec["trade_id"]
+    # 5a. Check if trade_id exists in ledger
+    existing = lookup_ledger_entry_by_trade_id(trade_id)
+    if existing:
+        # Compare all key fields (action, qty, price, fee, etc)
+        if not entries_equal(existing, rec):
+            # Update ledger with latest broker info
+            update_ledger_entry(existing["id"], rec)
+            log_audit("updated", trade_id)
+        else:
+            continue
+    else:
+        # Insert as new entry (status: ok/mismatch)
+        insert_ledger_entry(rec)
+        log_audit("imported", trade_id)
+# 6. Flag ledger-only trades (not in broker export) as "local-only"
+for entry in ledger_entries_in_range(start_date, end_date):
+    if entry["trade_id"] not in [r["trade_id"] for r in all_records]:
+        flag_entry_as_local_only(entry)
+# 7. Update reconciliation_log
+update_reconciliation_log(start_date, end_date)
+# 8. Write summary to sync_broker_ledger.log, flash user
+
+-------------------------------------------------------------------------------
+5. ERROR HANDLING AND AUDITABILITY
+-------------------------------------------------------------------------------
+- **All syncs are fully logged:** Every import/update/deletion goes to `audit_trail`.
+- **All API failures:** Retried N times, then logged with error status.
+- **All mismatches:** User notified on next web UI load.
+- **Ledger-only/broker-only discrepancies:** Must be cleared by admin, with audit log.
+- **Every sync and each imported broker record must log the credential used, sync_run_id, and broker-side data provenance (API response hash).**
+
+-------------------------------------------------------------------------------
+6. WEB UI REQUIREMENTS
+-------------------------------------------------------------------------------
+- **Ledger Page (ledger.html):**
+    - "Sync Broker Ledger" button triggers `/ledger/sync` (POST), calls `sync_broker_ledger()`.
+    - After sync: page reloads, shows new/updated trades, flags mismatches.
+    - Status column indicates: "ok", "mismatch", "local-only", "broker-only", "resolved".
+    - Admins may resolve, update, or delete entries as needed.
+    - All reconciliation log entries must be queryable and exportable for compliance review.
+
+-------------------------------------------------------------------------------
+7. IDENTITY & SECURITY
+-------------------------------------------------------------------------------
+- All sync operations require:
+    - Completed provisioning and identity validation.
+    - Only admin users can initiate sync.
+    - All credential/API key use is logged with each sync event.
+
+-------------------------------------------------------------------------------
+8. EXTENSIBILITY
+-------------------------------------------------------------------------------
+- New broker plugins must implement required fetch functions and mapping logic.
+- Field mapping/normalization must be maintained per-broker.
+- Schema updates: new fields must be stored in `json_metadata` if not in core schema.
+- All adapters must implement robust pagination, rate-limiting, and full historical data retrieval for all fetch functions.
+
+-------------------------------------------------------------------------------
+9. TESTING & COMPLIANCE
+-------------------------------------------------------------------------------
+- Automated tests must verify:
+    - All broker trades are present after sync.
+    - No duplicate trade_id exists.
+    - Ledger remains double-entry compliant.
+    - All discrepancies are flagged and auditable.
+    - Pagination, rate-limit handling, and partial fill/correction logic is verified in test coverage.
+    - Reconciliation log is populated as per schema.
+
+================================================================================
