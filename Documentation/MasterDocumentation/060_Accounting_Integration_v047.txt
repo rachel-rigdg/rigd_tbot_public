@@ -452,9 +452,10 @@ All supporting documentation (transfer logs, receipts, audit files) must be reta
 
 Any violation or bypass of this protocol (manual or automated) will be flagged as a compliance breach and subject to immediate investigation.
 
---------------------------------------------------------------------------------
-Section X: Broker Ledger Sync and Reconciliation System Specification
---------------------------------------------------------------------------------
+
+=================================================================================================================
+Broker Ledger Sync and Reconciliation System Specification
+=================================================================================================================
 
 SCOPE: Applies to all broker adapters and the accounting/ledger subsystem.  
 PURPOSE: To enable one-click, auditable, double-entry-compliant broker transaction import, sync, and reconciliation for all supported brokers (Alpaca, IBKR, etc), and to guarantee ledger integrity for tax/audit/compliance.
@@ -485,6 +486,7 @@ PURPOSE: To enable one-click, auditable, double-entry-compliant broker transacti
     - Maps and upserts into the bot ledger tables.
     - Logs all actions to `audit_trail` and `reconciliation_log`.
     - Sync operations may be triggered manually via web UI, or scheduled for automatic execution (e.g., nightly). The default implementation must support both, with all logs/audit entries identical regardless of trigger method.
+    - **All sync/exported artifacts (logs, audit records, reconciliation files) must be versioned with schema and export version.**
 
 - **C. Reconciliation Engine:**
     - Scans bot ledger for all trades within the broker’s returned range.
@@ -494,6 +496,23 @@ PURPOSE: To enable one-click, auditable, double-entry-compliant broker transacti
         - If in ledger but not in broker export, flag as "local-only" (potential error, requires review).
     - **All reconciliation results are written to the `reconciliation_log` table, which must include at minimum:**  
       `trade_id`, `status` (`ok`, `mismatch`, `local-only`, `broker-only`, `resolved`), `compare_fields` (summary of compared fields and any differences), `sync_run_id`, `timestamp_utc`, and a cryptographic hash of the broker-provided record for provenance.
+    - **If broker APIs return pending/incomplete trades (e.g., partial/late/processing), such entries are imported as "pending" and flagged for later sync. Status is updated when final.**
+
+- **D. COA Mapping Table System:**
+    - Maintains a dynamic COA mapping table for all imported broker transactions.
+    - For any unmapped/ambiguous transaction type or detail, the admin may assign the correct COA category via the web UI.
+    - All manual assignments immediately update the mapping table, so future matching transactions are auto-allocated.
+    - Mapping keys may use broker fields (e.g., action, subtype, description, etc).
+    - Every assignment/change is audit-logged with user and timestamp.
+    - Mapping table is admin-editable, exportable/importable, and auto-extends as new transaction types appear.
+    - All unmapped/ambiguous transactions are flagged and queued for admin review.
+    - Over time, the system "learns" optimal GL/COA allocations, minimizing manual intervention and maximizing auditability.
+    - **All changes to mapping rules create a new version or snapshot for rollback/audit.**
+    - **Every mapping table version is uniquely versioned and exportable for external audit, and old versions are retained for at least 7 years or as required by law.**
+
+- **E. Log and Artifact Retention:**
+    - All sync logs, reconciliation logs, audit records, and mapping table versions are retained and/or archived for a minimum of seven years, or as required by law.
+    - Policy for archiving or purging old reconciliation and sync logs: logs older than the retention window may be moved to encrypted cold storage but must not be destroyed.
 
 -------------------------------------------------------------------------------
 3. TRANSACTION & FIELD MAPPING
@@ -573,6 +592,7 @@ update_reconciliation_log(start_date, end_date)
 - **All mismatches:** User notified on next web UI load.
 - **Ledger-only/broker-only discrepancies:** Must be cleared by admin, with audit log.
 - **Every sync and each imported broker record must log the credential used, sync_run_id, and broker-side data provenance (API response hash).**
+- **All logs, audit records, reconciliation files, and mapping table versions are versioned and retained for a minimum of seven years or as required by law. Pending/incomplete syncs are flagged for follow-up and not purged.**
 
 -------------------------------------------------------------------------------
 6. WEB UI REQUIREMENTS
@@ -583,6 +603,10 @@ update_reconciliation_log(start_date, end_date)
     - Status column indicates: "ok", "mismatch", "local-only", "broker-only", "resolved".
     - Admins may resolve, update, or delete entries as needed.
     - All reconciliation log entries must be queryable and exportable for compliance review.
+    - **COA mapping assignments and mapping table are fully manageable via the UI, with flagged unmapped transactions and history/audit log per change.**
+    - **Any change to COA mapping rules automatically snapshots the mapping table for rollback/versioning, and all versions are exportable for external audit.**
+    - **Pending/incomplete broker transactions and related sync log entries are clearly indicated, with follow-up workflow for resolution.**
+    - **UI provides version and schema metadata for all exports and artifacts.**
 
 -------------------------------------------------------------------------------
 7. IDENTITY & SECURITY
@@ -599,6 +623,9 @@ update_reconciliation_log(start_date, end_date)
 - Field mapping/normalization must be maintained per-broker.
 - Schema updates: new fields must be stored in `json_metadata` if not in core schema.
 - All adapters must implement robust pagination, rate-limiting, and full historical data retrieval for all fetch functions.
+- **COA mapping table must support live extension, admin export/import, auto-learning from ledger-edited transactions, and immutable versioning of all mapping rules for compliance rollback/audit.**
+- **Automated and manual edits to COA mapping must be integrated in integration/regression tests.**
+- **Test artifacts and mapping tables are versioned and retained as per retention policy.**
 
 -------------------------------------------------------------------------------
 9. TESTING & COMPLIANCE
@@ -610,5 +637,16 @@ update_reconciliation_log(start_date, end_date)
     - All discrepancies are flagged and auditable.
     - Pagination, rate-limit handling, and partial fill/correction logic is verified in test coverage.
     - Reconciliation log is populated as per schema.
+    - **COA mapping logic is covered in integration/regression tests; test suite must simulate ambiguous transactions and verify mapping table updates, versioning, and audit log accuracy.**
+    - **Test suite must include mock/fuzzed broker data for nonstandard and new broker plugins, as well as mapping table edge-case regression.**
+    - **Automated tests must include schema/export version handling, artifact retention, and follow-up of pending/incomplete transactions and logs.**
+
+-------------------------------------------------------------------------------
+10. VERSIONING AND DATA RETENTION
+-------------------------------------------------------------------------------
+- **All exported artifacts, logs, mapping tables, and reconciliation logs are versioned with schema/export version, and previous versions are retained for no less than 7 years (or as required by law).**
+- **Archival policy must support encrypted cold storage for all artifacts/logs older than the retention window, and no destruction of audit material is allowed without explicit regulatory clearance.**
+- **Artifacts must be tagged with version metadata in both filenames and file contents.**
+- **All audit/retention/archive logic is to be included in regression and compliance testing.**
 
 ================================================================================
