@@ -2,7 +2,7 @@
 Document: 060
 Accounting_Integration
 Version: v047
-Date: UTC:2025-07-19 00:00:00
+Date: UTC:2025-07-23 00:00:00
 ================================================================================
 
 This module mandates alignment of TradeBot with the internal, OFX-compliant accounting and ledger structure. *No external or shared ledger/accounting system may alter, inject, or provision data into the bot’s runtime, ledger, or COA files. All accounting integration is local, explicit, and compliance-locked.*
