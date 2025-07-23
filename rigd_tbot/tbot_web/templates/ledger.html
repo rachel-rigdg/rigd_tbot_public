@@ -20,14 +20,14 @@
         function autoCalcTotal(rowPrefix) {
             var qty = parseFloat(document.querySelector(rowPrefix + ' input[name="quantity"]').value) || 0;
             var price = parseFloat(document.querySelector(rowPrefix + ' input[name="price"]').value) || 0;
-            var fees = parseFloat(document.querySelector(rowPrefix + ' input[name="fees"]').value) || 0;
-            var total = (qty * price) - fees;
+            var fee = parseFloat(document.querySelector(rowPrefix + ' input[name="fee"]').value) || 0;
+            var total = (qty * price) - fee;
             document.querySelector(rowPrefix + ' input[name="total_value"]').value = isNaN(total) ? '' : total.toFixed(2);
         }
         document.addEventListener("DOMContentLoaded", function() {
             // Only apply to add-entry row (first add row)
             var prefix = 'tr.row-top form[action$="add_ledger_entry_route"] ';
-            ['quantity', 'price', 'fees'].forEach(function(field) {
+            ['quantity', 'price', 'fee'].forEach(function(field) {
                 var el = document.querySelector(prefix + 'input[name="' + field + '"]');
                 if (el) {
                     el.addEventListener('input', function() { autoCalcTotal(prefix); });
@@ -69,7 +69,7 @@
                         <th>Action</th>
                         <th>Quantity</th>
                         <th>Price</th>
-                        <th>Fees</th>
+                        <th>Fee</th>
                         <th>Total Value</th>
                         <th>Status</th>
                         <th>Running Balance</th>
@@ -93,19 +93,20 @@
                         <td>
                             <input type="text" name="datetime_utc" value="{{ entry.datetime_utc.split('T')[0] if entry.datetime_utc }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required>
                         </td>
-                        <td><input type="text" name="symbol" value="{{ entry.symbol }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td><input type="text" name="symbol" value="{{ entry.symbol }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
                         <td>
-                            <select name="action" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %} required>
+                            <select name="action" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %}>
+                                <option value="">NONE</option>
                                 <option value="long" {% if entry.action == "long" %}selected{% endif %}>long</option>
                                 <option value="short" {% if entry.action == "short" %}selected{% endif %}>short</option>
                                 <option value="put" {% if entry.action == "put" %}selected{% endif %}>put</option>
                                 <option value="inverse" {% if entry.action == "inverse" %}selected{% endif %}>inverse</option>
                             </select>
                         </td>
-                        <td><input type="text" name="quantity" value="{{ entry.quantity }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
-                        <td><input type="text" name="price" value="{{ entry.price }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
-                        <td><input type="text" name="fees" value="{{ entry.fees }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
-                        <td><input type="text" name="total_value" value="{{ entry.total_value }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %} required></td>
+                        <td><input type="text" name="quantity" value="{{ entry.quantity }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="price" value="{{ entry.price }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="fee" value="{{ entry.fee }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
+                        <td><input type="text" name="total_value" value="{{ entry.total_value }}" {% if entry.status not in ["mismatch", "resolved"] %}readonly{% endif %}></td>
                         <td>
                             {% if entry.status == "mismatch" %}
                                 <span class="status-mismatch">Mismatch</span>
@@ -131,6 +132,7 @@
                         </td>
                         <td>
                             <select name="strategy" {% if entry.status not in ["mismatch", "resolved"] %}disabled{% endif %}>
+                                <option value="">NONE</option>
                                 <option value="open" {% if entry.strategy == "open" %}selected{% endif %}>open</option>
                                 <option value="mid" {% if entry.strategy == "mid" %}selected{% endif %}>mid</option>
                                 <option value="close" {% if entry.strategy == "close" %}selected{% endif %}>close</option>
@@ -168,19 +170,19 @@
                 <tr class="row-top">
                     <form method="post" action="{{ url_for('ledger_web.add_ledger_entry_route') }}">
                     <td><input type="text" name="datetime_utc" placeholder="YYYY-MM-DD" required></td>
-                    <td><input type="text" name="symbol" placeholder="Symbol" required></td>
+                    <td><input type="text" name="symbol" placeholder="Symbol"></td>
                     <td>
-                        <select name="action" required>
-                            <option value="">Select</option>
+                        <select name="action">
+                            <option value="">NONE</option>
                             <option value="long">long</option>
                             <option value="short">short</option>
                             <option value="put">put</option>
                             <option value="inverse">inverse</option>
                         </select>
                     </td>
-                    <td><input type="text" name="quantity" placeholder="Qty" required></td>
-                    <td><input type="text" name="price" placeholder="Price" required></td>
-                    <td><input type="text" name="fees" placeholder="Fees"></td>
+                    <td><input type="text" name="quantity" placeholder="Qty"></td>
+                    <td><input type="text" name="price" placeholder="Price"></td>
+                    <td><input type="text" name="fee" placeholder="Fee"></td>
                     <td><input type="text" name="total_value" placeholder="Total Value"></td>
                     <td></td>
                     <td></td>
@@ -197,7 +199,7 @@
                     </td>
                     <td>
                         <select name="strategy">
-                            <option value="">Select</option>
+                            <option value="">NONE</option>
                             <option value="open">open</option>
                             <option value="mid">mid</option>
                             <option value="close">close</option>

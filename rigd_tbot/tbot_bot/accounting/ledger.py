@@ -15,8 +15,9 @@ def load_internal_ledger():
     db_path = resolve_ledger_db_path(*bot_identity)
     conn = sqlite3.connect(db_path)
     cursor = conn.execute(
-        "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, fees, broker, "
-        "strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
+        "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, "
+        "(CASE WHEN 'fees' IN (SELECT name FROM pragma_table_info('trades')) THEN fees ELSE fee END) AS fees, "
+        "broker, strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
         "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
         "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
         "CASE WHEN approval_status = 'approved' THEN 'ok' ELSE 'mismatch' END AS status, json_metadata "
@@ -80,19 +81,21 @@ def mark_entry_resolved(entry_id):
 def add_ledger_entry(entry_data):
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
-    # Inject backend-only account and broker
     entry_data["broker"] = load_broker_code()
     entry_data["account"] = load_account_number()
-    # Robust backend total_value calculation
     try:
         qty = float(entry_data.get("quantity") or 0)
         price = float(entry_data.get("price") or 0)
-        fees = float(entry_data.get("fees") or 0)
+        # support both fee and fees field names for robustness
+        fees = float(entry_data.get("fees") if "fees" in entry_data else entry_data.get("fee") or 0)
         entry_data["total_value"] = round((qty * price) - fees, 2)
     except Exception:
         entry_data["total_value"] = entry_data.get("total_value") or 0
+    # Map both 'fees' and 'fee' field to 'fee' for schema compatibility
+    if "fees" in entry_data and "fee" not in entry_data:
+        entry_data["fee"] = entry_data["fees"]
     columns = [
-        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
         "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
         "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
@@ -110,19 +113,19 @@ def add_ledger_entry(entry_data):
 def edit_ledger_entry(entry_id, updated_data):
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
-    # Always override backend-only account and broker
     updated_data["broker"] = load_broker_code()
     updated_data["account"] = load_account_number()
-    # Backend-side robust total_value calculation
     try:
         qty = float(updated_data.get("quantity") or 0)
         price = float(updated_data.get("price") or 0)
-        fees = float(updated_data.get("fees") or 0)
+        fees = float(updated_data.get("fees") if "fees" in updated_data else updated_data.get("fee") or 0)
         updated_data["total_value"] = round((qty * price) - fees, 2)
     except Exception:
         updated_data["total_value"] = updated_data.get("total_value") or 0
+    if "fees" in updated_data and "fee" not in updated_data:
+        updated_data["fee"] = updated_data["fees"]
     columns = [
-        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fees", "broker",
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
         "updated_by", "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant",
         "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
@@ -152,9 +155,6 @@ def delete_ledger_entry(entry_id):
 # --- Holdings/Float/Reserve/Tax/Payroll/Rebalance Hooks ---
 
 def post_tax_reserve_entry(amount, datetime_utc, notes=None):
-    """
-    Posts a tax reserve allocation entry to the ledger.
-    """
     entry = {
         "ledger_entry_id": None,
         "datetime_utc": datetime_utc,
@@ -163,7 +163,7 @@ def post_tax_reserve_entry(amount, datetime_utc, notes=None):
         "quantity": None,
         "price": None,
         "total_value": amount,
-        "fees": 0,
+        "fee": 0,
         "broker": load_broker_code(),
         "strategy": "TAX_RESERVE",
         "account": get_account_path("tax_reserve"),
@@ -188,9 +188,6 @@ def post_tax_reserve_entry(amount, datetime_utc, notes=None):
     add_ledger_entry(entry)
 
 def post_payroll_reserve_entry(amount, datetime_utc, notes=None):
-    """
-    Posts a payroll reserve allocation entry to the ledger.
-    """
     entry = {
         "ledger_entry_id": None,
         "datetime_utc": datetime_utc,
@@ -199,7 +196,7 @@ def post_payroll_reserve_entry(amount, datetime_utc, notes=None):
         "quantity": None,
         "price": None,
         "total_value": amount,
-        "fees": 0,
+        "fee": 0,
         "broker": load_broker_code(),
         "strategy": "PAYROLL_RESERVE",
         "account": get_account_path("payroll_reserve"),
@@ -224,9 +221,6 @@ def post_payroll_reserve_entry(amount, datetime_utc, notes=None):
     add_ledger_entry(entry)
 
 def post_float_allocation_entry(amount, datetime_utc, notes=None):
-    """
-    Posts a float allocation entry to the ledger.
-    """
     entry = {
         "ledger_entry_id": None,
         "datetime_utc": datetime_utc,
@@ -235,7 +229,7 @@ def post_float_allocation_entry(amount, datetime_utc, notes=None):
         "quantity": None,
         "price": None,
         "total_value": amount,
-        "fees": 0,
+        "fee": 0,
         "broker": load_broker_code(),
         "strategy": "FLOAT_ALLOCATION",
         "account": get_account_path("float_ledger"),
@@ -260,9 +254,6 @@ def post_float_allocation_entry(amount, datetime_utc, notes=None):
     add_ledger_entry(entry)
 
 def post_rebalance_entry(symbol, amount, action, datetime_utc, notes=None):
-    """
-    Posts a rebalance action entry to the ledger.
-    """
     entry = {
         "ledger_entry_id": None,
         "datetime_utc": datetime_utc,
@@ -271,7 +262,7 @@ def post_rebalance_entry(symbol, amount, action, datetime_utc, notes=None):
         "quantity": None,
         "price": None,
         "total_value": amount,
-        "fees": 0,
+        "fee": 0,
         "broker": load_broker_code(),
         "strategy": "REBALANCE",
         "account": get_account_path("equity"),
