@@ -482,7 +482,8 @@ PURPOSE: To enable one-click, auditable, double-entry-compliant broker transacti
 
 - **B. Sync Orchestrator (`sync_broker_ledger`):**
     - Calls the above plugin functions.
-    - Deduplicates via unique trade_id.
+    - Deduplicates via unique trade_id and all key fields. 
+    - Logs attempted duplicate ingestions and blocks double-entry creation.
     - Maps and upserts into the bot ledger tables.
     - Logs all actions to `audit_trail` and `reconciliation_log`.
     - Sync operations may be triggered manually via web UI, or scheduled for automatic execution (e.g., nightly). The default implementation must support both, with all logs/audit entries identical regardless of trigger method.
@@ -507,8 +508,9 @@ PURPOSE: To enable one-click, auditable, double-entry-compliant broker transacti
     - Mapping table is admin-editable, exportable/importable, and auto-extends as new transaction types appear.
     - All unmapped/ambiguous transactions are flagged and queued for admin review.
     - Over time, the system "learns" optimal GL/COA allocations, minimizing manual intervention and maximizing auditability.
-    - **All changes to mapping rules create a new version or snapshot for rollback/audit.**
-    - **Every mapping table version is uniquely versioned and exportable for external audit, and old versions are retained for at least 7 years or as required by law.**
+    - **All changes to mapping rules create a new version or snapshot for rollback/audit. Each mapping table snapshot/version is exportable for external audit.**
+    - **Deduplication, mapping updates, and all discrepancies are fully audit-logged with user, timestamp, and summary.**
+    - **Automated and manual edits to COA mapping are included in integration/regression tests.**
 
 - **E. Log and Artifact Retention:**
     - All sync logs, reconciliation logs, audit records, and mapping table versions are retained and/or archived for a minimum of seven years, or as required by law.
@@ -592,6 +594,7 @@ update_reconciliation_log(start_date, end_date)
 - **All mismatches:** User notified on next web UI load.
 - **Ledger-only/broker-only discrepancies:** Must be cleared by admin, with audit log.
 - **Every sync and each imported broker record must log the credential used, sync_run_id, and broker-side data provenance (API response hash).**
+- **Any attempted duplicate entry (by trade_id and all key fields) is blocked, logged, and flagged for admin review.**
 - **All logs, audit records, reconciliation files, and mapping table versions are versioned and retained for a minimum of seven years or as required by law. Pending/incomplete syncs are flagged for follow-up and not purged.**
 
 -------------------------------------------------------------------------------
@@ -607,6 +610,9 @@ update_reconciliation_log(start_date, end_date)
     - **Any change to COA mapping rules automatically snapshots the mapping table for rollback/versioning, and all versions are exportable for external audit.**
     - **Pending/incomplete broker transactions and related sync log entries are clearly indicated, with follow-up workflow for resolution.**
     - **UI provides version and schema metadata for all exports and artifacts.**
+    - **Mapping table management UI displays mapping table version history, supports rollback, and allows export for compliance.**
+
+
 
 -------------------------------------------------------------------------------
 7. IDENTITY & SECURITY
@@ -623,9 +629,9 @@ update_reconciliation_log(start_date, end_date)
 - Field mapping/normalization must be maintained per-broker.
 - Schema updates: new fields must be stored in `json_metadata` if not in core schema.
 - All adapters must implement robust pagination, rate-limiting, and full historical data retrieval for all fetch functions.
-- **COA mapping table must support live extension, admin export/import, auto-learning from ledger-edited transactions, and immutable versioning of all mapping rules for compliance rollback/audit.**
-- **Automated and manual edits to COA mapping must be integrated in integration/regression tests.**
-- **Test artifacts and mapping tables are versioned and retained as per retention policy.**
+- **COA mapping table must support live extension, admin export/import, auto-learning from ledger-edited transactions, immutable versioning of all mapping rules, and version rollback for compliance audit.**
+- **Test suite must include mock/fuzzed broker data for nonstandard and new broker plugins, as well as mapping table edge-case regression.**
+
 
 -------------------------------------------------------------------------------
 9. TESTING & COMPLIANCE
