@@ -25,6 +25,21 @@ def load_coa_metadata_and_accounts() -> Dict[str, Any]:
         accounts = json.load(cf)
     return {"metadata": metadata, "accounts": accounts}
 
+# --- Flat list of all (code, name) pairs for dropdowns ---
+def flatten_coa_accounts(accounts, depth=0, out=None):
+    if out is None:
+        out = []
+    for acc in accounts:
+        out.append({"code": acc["code"], "name": acc["name"], "depth": depth})
+        if "children" in acc and acc["children"]:
+            flatten_coa_accounts(acc["children"], depth + 1, out)
+    return out
+
+def load_coa_metadata_and_accounts_flat() -> dict:
+    data = load_coa_metadata_and_accounts()
+    data["accounts_flat"] = flatten_coa_accounts(data["accounts"])
+    return data
+
 # --- Save COA JSON and log change (admin) ---
 def save_coa_json(new_accounts: Any, user: str, diff: str):
     coa_json_path = resolve_coa_json_path()
@@ -129,4 +144,3 @@ def validate_coa_json(accounts: Any):
             check(c)
     for acc in accounts:
         check(acc)
-
