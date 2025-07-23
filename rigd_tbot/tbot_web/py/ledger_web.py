@@ -8,7 +8,8 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.accounting.ledger_utils import calculate_running_balances, get_coa_accounts
+from tbot_bot.accounting.ledger_utils import calculate_running_balances
+from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts  # FIXED: Use correct COA source
 import sqlite3
 
 ledger_web = Blueprint("ledger_web", __name__)
@@ -70,7 +71,9 @@ def ledger_reconcile():
         broker_entries = []
         entries = reconcile_ledgers(internal_ledger, broker_entries)
         balances = calculate_account_balances()
-        coa_accounts = get_coa_accounts()
+        # FIXED: Use COA loader from utils_coa_web to populate dropdown correctly
+        coa_data = load_coa_metadata_and_accounts()
+        coa_accounts = [(acct["code"], acct["name"]) for acct in coa_data.get("accounts_flat", [])]
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
