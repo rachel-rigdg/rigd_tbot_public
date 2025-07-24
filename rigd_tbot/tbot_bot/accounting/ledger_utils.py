@@ -345,6 +345,22 @@ def post_double_entry(entries, mapping_table=None):
         for entry in entries:
             # Apply mapping for debit/credit split
             debit_entry, credit_entry = apply_mapping_rule(entry, mapping_table)
+
+            # Sanitize values: convert dict, list, set to JSON string; convert None to NULL
+            def clean(entry):
+                cleaned = {}
+                for k, v in entry.items():
+                    if isinstance(v, (dict, list, set)):
+                        cleaned[k] = json.dumps(v)
+                    elif v is None:
+                        cleaned[k] = None
+                    else:
+                        cleaned[k] = v
+                return cleaned
+
+            debit_entry = clean(debit_entry)
+            credit_entry = clean(credit_entry)
+
             # Insert debit
             columns = ", ".join(debit_entry.keys())
             placeholders = ", ".join(["?"] * len(debit_entry))
