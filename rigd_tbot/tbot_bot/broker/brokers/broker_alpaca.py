@@ -4,8 +4,9 @@
 import requests
 import csv
 import io
+import hashlib
 from tbot_bot.support.utils_time import utc_now
-from tbot_bot.support.utils_log import log_event  # FIXED: use correct logger
+from tbot_bot.support.utils_log import log_event
 
 class AlpacaBroker:
     def __init__(self, env):
@@ -16,6 +17,7 @@ class AlpacaBroker:
         self.secret_key = env.get("BROKER_SECRET_KEY")
         self.broker_token = env.get("BROKER_TOKEN", "")
         self.base_url = env.get("BROKER_URL")
+        self.credential_hash = hashlib.sha256((self.api_key or "").encode("utf-8") + (self.secret_key or "").encode("utf-8")).hexdigest()
         self.headers = {
             "APCA-API-KEY-ID": self.api_key,
             "APCA-API-SECRET-KEY": self.secret_key
@@ -34,6 +36,7 @@ class AlpacaBroker:
                 timeout=10
             )
             response.raise_for_status()
+            log_event("broker_alpaca", f"API call: {method} {endpoint} | creds: {self.credential_hash}", level="debug")
             return response.json()
         except Exception as e:
             log_event("broker_alpaca", f"Request failed: {e}", level="error")
@@ -109,7 +112,7 @@ class AlpacaBroker:
         trades = self._request("GET", "/v2/orders", params=params)
         unique = {}
         for t in trades:
-            unique[t["id"]] = t  # dedupe by broker trade ID
+            unique[t["id"]] = t
 
         fieldnames = [
             "id", "symbol", "qty", "filled_at", "side", "type", "status", "filled_qty", "filled_avg_price"
@@ -173,3 +176,103 @@ class AlpacaBroker:
             return 1.0
         except Exception:
             return 1.0
+
+    # ================== BROKER SYNC INTERFACE ====================
+
+    def fetch_all_trades(self, start_date, end_date=None):
+        """
+        Returns all filled trades in OFX/ledger-normalized dicts.
+        Handles pagination, rate limits, audit hash, and logs credential use.
+        """
+        params = {
+            "status": "filled",
+            "limit": 100,
+            "after": start_date
+        }
+        if end_date:
+            params["until"] = end_date
+        trades = []
+        next_page_token = None
+        while True:
+            if next_page_token:
+                params["page_token"] = next_page_token
+            resp = self._request("GET", "/v2/orders", params=params)
+            if isinstance(resp, dict) and "orders" in resp:
+                page = resp["orders"]
+            else:
+                page = resp
+            for t in page:
+                t_hash = hashlib.sha256(str(t).encode("utf-8")).hexdigest()
+                trade = {
+                    "trade_id": t.get("id"),
+                    "symbol": t.get("symbol"),
+                    "action": t.get("side"),
+                    "quantity": float(t.get("filled_qty") or t.get("qty") or 0),
+                    "price": float(t.get("filled_avg_price") or 0),
+                    "fee": float(t.get("filled_fee") or 0) if "filled_fee" in t else 0,
+                    "fees": float(t.get("commission" ,0)) if "commission" in t else 0,
+                    "datetime_utc": t.get("filled_at"),
+                    "status": t.get("status"),
+                    "total_value": float(t.get("filled_qty", 0)) * float(t.get("filled_avg_price", 0)),
+                    "json_metadata": {
+                        "raw_broker": t,
+                        "api_hash": t_hash,
+                        "credential_hash": self.credential_hash
+                    }
+                }
+                trades.append(trade)
+            # pagination
+            if isinstance(resp, dict) and "next_page_token" in resp and resp["next_page_token"]:
+                next_page_token = resp["next_page_token"]
+            else:
+                break
+        log_event("broker_alpaca", f"fetch_all_trades complete, {len(trades)} trades. cred_hash={self.credential_hash}", level="info")
+        return trades
+
+    def fetch_cash_activity(self, start_date, end_date=None):
+        """
+        Returns all cash/fee/dividend/transfer activity in OFX/ledger-normalized dicts.
+        """
+        params = {
+            "activity_types": "FILL,CASH,JNLC,JNLS,DIV,MFEE,FEES,TRANS",
+            "after": start_date
+        }
+        if end_date:
+            params["until"] = end_date
+        activities = []
+        next_page_token = None
+        while True:
+            if next_page_token:
+                params["page_token"] = next_page_token
+            resp = self._request("GET", "/v2/account/activities", params=params)
+            if isinstance(resp, dict) and "activities" in resp:
+                page = resp["activities"]
+            else:
+                page = resp
+            for a in page:
+                a_hash = hashlib.sha256(str(a).encode("utf-8")).hexdigest()
+                activity = {
+                    "trade_id": a.get("id") or a.get("activity_id"),
+                    "symbol": a.get("symbol"),
+                    "action": a.get("activity_type"),
+                    "quantity": float(a.get("qty") or 0),
+                    "price": float(a.get("price") or 0),
+                    "fee": float(a.get("fee") or 0),
+                    "fees": float(a.get("commission" ,0)) if "commission" in a else 0,
+                    "datetime_utc": a.get("transaction_time"),
+                    "status": a.get("status"),
+                    "total_value": float(a.get("qty", 0)) * float(a.get("price", 0)),
+                    "json_metadata": {
+                        "raw_broker": a,
+                        "api_hash": a_hash,
+                        "credential_hash": self.credential_hash
+                    }
+                }
+                activities.append(activity)
+            # pagination
+            if isinstance(resp, dict) and "next_page_token" in resp and resp["next_page_token"]:
+                next_page_token = resp["next_page_token"]
+            else:
+                break
+        log_event("broker_alpaca", f"fetch_cash_activity complete, {len(activities)} activity entries. cred_hash={self.credential_hash}", level="info")
+        return activities

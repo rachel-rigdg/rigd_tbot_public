@@ -9,7 +9,7 @@ from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identi
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.accounting.ledger_utils import calculate_running_balances
-from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts  # FIXED: Use correct COA source
+from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts
 import sqlite3
 
 ledger_web = Blueprint("ledger_web", __name__)
@@ -71,10 +71,9 @@ def ledger_reconcile():
         broker_entries = []
         entries = reconcile_ledgers(internal_ledger, broker_entries)
         balances = calculate_account_balances()
-        # FIXED: Use COA loader from utils_coa_web to populate dropdown correctly
+        # Correct: use utils_coa_web for account dropdowns/selections
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = [(acct["code"], acct["name"]) for acct in coa_data.get("accounts_flat", [])]
-        import logging; logging.warning("COA ACCOUNTS: %s", coa_accounts)
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
@@ -113,7 +112,7 @@ def add_ledger_entry_route():
         "quantity": form.get("quantity"),
         "price": form.get("price"),
         "total_value": form.get("total_value"),
-        "fee": form.get("fee", 0.0),  # CHANGED: 'fees' -> 'fee'
+        "fee": form.get("fee", 0.0),
         "account": form.get("account"),
         "strategy": form.get("strategy"),
         "trade_id": form.get("trade_id"),
@@ -122,9 +121,9 @@ def add_ledger_entry_route():
         "jurisdiction": jurisdiction,
         "entity_code": entity_code,
         "language": config.get("LANGUAGE_CODE", "en"),
-        "created_by": current_user.username if hasattr(current_user, "username") else current_user if current_user else "system",
-        "updated_by": current_user.username if hasattr(current_user, "username") else current_user if current_user else "system",
-        "approved_by": current_user.username if hasattr(current_user, "username") else current_user if current_user else "system",
+        "created_by": current_user.username if hasattr(current_user, "username") else (current_user if current_user else "system"),
+        "updated_by": current_user.username if hasattr(current_user, "username") else (current_user if current_user else "system"),
+        "approved_by": current_user.username if hasattr(current_user, "username") else (current_user if current_user else "system"),
         "approval_status": "pending",
         "gdpr_compliant": True,
         "ccpa_compliant": True,
@@ -162,7 +161,7 @@ def edit_ledger_entry_route(entry_id):
         "quantity": form.get("quantity"),
         "price": form.get("price"),
         "total_value": form.get("total_value"),
-        "fee": form.get("fee", 0.0),  # CHANGED: 'fees' -> 'fee'
+        "fee": form.get("fee", 0.0),
         "account": form.get("account"),
         "strategy": form.get("strategy"),
         "trade_id": form.get("trade_id"),
@@ -171,7 +170,7 @@ def edit_ledger_entry_route(entry_id):
         "jurisdiction": jurisdiction,
         "entity_code": entity_code,
         "language": config.get("LANGUAGE_CODE", "en"),
-        "updated_by": current_user.username if hasattr(current_user, "username") else current_user if current_user else "system",
+        "updated_by": current_user.username if hasattr(current_user, "username") else (current_user if current_user else "system"),
         "approval_status": form.get("approval_status", "pending"),
         "gdpr_compliant": True,
         "ccpa_compliant": True,

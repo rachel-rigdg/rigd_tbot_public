@@ -10,8 +10,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import time
 import subprocess
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from tbot_bot.support import path_resolver
+from tbot_bot.support.utils_time import utc_now, parse_time_utc
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
@@ -34,6 +36,7 @@ STATUS_LOGGER_PATH = path_resolver.resolve_runtime_script_path("status_logger.py
 UNIVERSE_ORCHESTRATOR_PATH = path_resolver.resolve_runtime_script_path("universe_orchestrator.py")
 INTEGRATION_TEST_RUNNER_PATH = path_resolver.resolve_runtime_script_path("integration_test_runner.py")
 HOLDINGS_MANAGER_PATH = path_resolver.resolve_runtime_script_path("holdings_manager.py")
+SYNC_BROKER_LEDGER_PATH = path_resolver.resolve_runtime_script_path("sync_broker_ledger.py")
 
 UNIVERSE_TIMESTAMP_PATH = ROOT_DIR / "tbot_bot" / "output" / "screeners" / "symbol_universe.json"
 REBUILD_DELAY_HOURS = 4
@@ -44,10 +47,6 @@ def read_env_var(key, default=None):
     from tbot_bot.config.env_bot import load_env_bot_config
     env = load_env_bot_config()
     return env.get(key, default)
-
-def parse_utc_time(timestr):
-    h, m = map(int, timestr.split(":"))
-    return h, m
 
 def read_bot_state():
     try:
@@ -79,7 +78,6 @@ def is_time_for_universe_rebuild():
         data = json.load(open(UNIVERSE_TIMESTAMP_PATH, "r"))
         build_time_str = data.get("build_timestamp_utc")
         if build_time_str:
-            from datetime import datetime, timezone
             if build_time_str.endswith("Z"):
                 build_time_str = build_time_str.replace("Z", "+00:00")
             build_time = datetime.fromisoformat(build_time_str)
@@ -87,16 +85,44 @@ def is_time_for_universe_rebuild():
             build_time = datetime.utcfromtimestamp(UNIVERSE_TIMESTAMP_PATH.stat().st_mtime)
     except Exception:
         build_time = datetime.utcfromtimestamp(UNIVERSE_TIMESTAMP_PATH.stat().st_mtime)
-    now = datetime.utcnow()
+    now = utc_now()
     market_close_str = read_env_var("MARKET_CLOSE_UTC", "21:00")
-    market_close_hour, market_close_minute = parse_utc_time(market_close_str)
-    today_close = now.replace(hour=market_close_hour, minute=market_close_minute, second=0, microsecond=0)
+    close_time = parse_time_utc(market_close_str)
+    today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
     if now < today_close:
         last_close = today_close - timedelta(days=1)
     else:
         last_close = today_close
     scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
     return now >= scheduled_time and build_time < scheduled_time
+
+# --- BROKER SYNC NIGHTLY LAUNCH LOGIC (timezone-safe) ---
+def get_last_sync_broker_ledger_timestamp():
+    ts_path = CONTROL_DIR / "last_broker_sync_utc.txt"
+    if not ts_path.exists():
+        return None
+    try:
+        return datetime.fromisoformat(ts_path.read_text().strip())
+    except Exception:
+        return None
+
+def set_last_sync_broker_ledger_timestamp(dt: datetime):
+    ts_path = CONTROL_DIR / "last_broker_sync_utc.txt"
+    ts_path.write_text(dt.isoformat())
+
+def is_time_for_broker_sync():
+    now = utc_now()
+    market_close_str = read_env_var("MARKET_CLOSE_UTC", "21:00")
+    sync_delay_min = int(read_env_var("BROKER_SYNC_DELAY_MIN", "30"))
+    close_time = parse_time_utc(market_close_str)
+    today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
+    if now < today_close:
+        sync_time = today_close - timedelta(days=1) + timedelta(minutes=sync_delay_min)
+    else:
+        sync_time = today_close + timedelta(minutes=sync_delay_min)
+    last_sync = get_last_sync_broker_ledger_timestamp()
+    already_synced_today = last_sync and last_sync.date() == now.date() and last_sync > sync_time - timedelta(minutes=5)
+    return now >= sync_time and not already_synced_today
 
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
@@ -119,8 +145,6 @@ def main():
     persistent_ops = [
         ("holdings_manager", HOLDINGS_MANAGER_PATH)
     ]
-
-    last_universe_rebuild = None
 
     persistent_state = None
     is_first_bootstrap = False
@@ -164,7 +188,7 @@ def main():
                 print(f"[tbot_supervisor] Detected shutdown/error state: {state}. Terminating subprocesses and exiting.")
                 break
 
-            # Only launch holdings_manager AFTER provisioning/bootstrapping complete
+            # Only launch holdings_manager and broker_sync AFTER provisioning/bootstrapping complete
             if state not in BOOT_PHASES:
                 for name, path in persistent_ops:
                     if not ensure_singleton(os.path.basename(str(path))):
@@ -172,6 +196,15 @@ def main():
                         processes[name] = launch_subprocess(path)
                     else:
                         print(f"[tbot_supervisor] {name} already running.")
+
+                # ---- BROKER SYNC NIGHTLY (30min after market close, once per day, using timezone utils) ----
+                if is_time_for_broker_sync():
+                    if not ensure_singleton("sync_broker_ledger.py"):
+                        print("[tbot_supervisor] Launching nightly broker sync (sync_broker_ledger.py)...")
+                        launch_subprocess(SYNC_BROKER_LEDGER_PATH)
+                        set_last_sync_broker_ledger_timestamp(utc_now())
+                    else:
+                        print("[tbot_supervisor] Broker sync already running.")
 
             if TEST_MODE_FLAG.exists():
                 print("[tbot_supervisor] Global TEST_MODE flag detected. Launching integration_test_runner.py...")
@@ -209,7 +242,6 @@ def main():
                 if not ensure_singleton("universe_orchestrator.py"):
                     print("[tbot_supervisor] Triggering universe cache rebuild (universe_orchestrator.py)...")
                     processes["universe_orchestrator"] = launch_subprocess(UNIVERSE_ORCHESTRATOR_PATH)
-                    last_universe_rebuild = time.time()
                 else:
                     print("[tbot_supervisor] Universe cache rebuild already running.")
 

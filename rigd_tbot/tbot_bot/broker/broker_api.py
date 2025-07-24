@@ -2,7 +2,7 @@
 # Unified broker interface and trade dispatch router (single-broker mode only, per spec).
 
 from tbot_bot.support.decrypt_secrets import load_broker_credential
-from tbot_bot.support.utils_log import log_event  # FIXED: use support.utils_log
+from tbot_bot.support.utils_log import log_event
 from tbot_bot.config.env_bot import get_bot_config
 
 def get_active_broker():
@@ -31,7 +31,7 @@ def get_active_broker():
         from tbot_bot.broker.brokers.broker_ibkr import IBKRBroker
         return IBKRBroker(broker_credentials)
     elif broker_code == "tradier":
-        from tbot_bot.broker.brokers.broker_tradier import TradierBroker  # FIXED: Use modular pattern
+        from tbot_bot.broker.brokers.broker_tradier import TradierBroker
         return TradierBroker(broker_credentials)
     else:
         raise RuntimeError(f"[broker_api] Unsupported or missing BROKER_CODE: {broker_code}")
@@ -114,6 +114,35 @@ def get_min_order_size(symbol):
         log_event("broker_api", f"get_min_order_size error: {e}", level="error")
         return 1.0
 
-# === NOTE ===
+# ==================== SPEC ENFORCEMENT: BROKER LEDGER SYNC INTERFACE ====================
+
+def fetch_all_trades(start_date, end_date=None):
+    """
+    Returns all filled trades (OFX/ledger-normalized dicts) for the active broker.
+    Calls broker.fetch_all_trades(), logs sync event.
+    """
+    try:
+        broker = get_active_broker()
+        trades = broker.fetch_all_trades(start_date, end_date)
+        log_event("broker_api", f"fetch_all_trades: {len(trades)} trades, start={start_date}, end={end_date}", level="info")
+        return trades
+    except Exception as e:
+        log_event("broker_api", f"fetch_all_trades error: {e}", level="error")
+        return []
+
+def fetch_cash_activity(start_date, end_date=None):
+    """
+    Returns all cash/dividend/fee activity (OFX/ledger-normalized dicts) for the active broker.
+    Calls broker.fetch_cash_activity(), logs sync event.
+    """
+    try:
+        broker = get_active_broker()
+        activity = broker.fetch_cash_activity(start_date, end_date)
+        log_event("broker_api", f"fetch_cash_activity: {len(activity)} entries, start={start_date}, end={end_date}", level="info")
+        return activity
+    except Exception as e:
+        log_event("broker_api", f"fetch_cash_activity error: {e}", level="error")
+        return []
+
 # Only one broker instance is ever active per bot process.
 # Support for multi-broker will require dispatcher changes at orchestration level.

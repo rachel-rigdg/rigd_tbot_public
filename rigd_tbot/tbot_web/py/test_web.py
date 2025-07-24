@@ -88,6 +88,8 @@ def remove_test_flag(test_name: str = None):
 
 # List of all test names (UI will use this order)
 ALL_TESTS = [
+    "broker_sync", 
+    "coa_mapping",   
     "universe_cache",
     "strategy_selfcheck",
     "screener_random",
@@ -147,6 +149,8 @@ def run_individual_test(test_name):
         if any_test_active():
             return jsonify({"result": "already_running"})
         test_map = {
+            "broker_sync": "tbot_bot.test.test_broker_sync",          # <--- NEW
+            "coa_mapping": "tbot_bot.test.test_coa_mapping",          # <--- NEW
             "universe_cache": "tbot_bot.test.test_universe_cache",
             "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
             "screener_random": "tbot_bot.test.test_screener_random",

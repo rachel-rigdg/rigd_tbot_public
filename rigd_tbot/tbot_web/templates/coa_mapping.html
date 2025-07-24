@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}COA Mapping Table{% endblock %}
+
+{% block content %}
+<div class="container coa-mapping-container">
+  <h1>Chart of Accounts Mapping</h1>
+  <form method="post" action="{{ url_for('coa_mapping') }}" id="coa-mapping-form">
+    <table class="coa-mapping-table">
+      <thead>
+        <tr>
+          <th>Broker Code</th>
+          <th>Broker Description</th>
+          <th>Internal Account Code</th>
+          <th>Internal Account Description</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for mapping in mappings %}
+        <tr>
+          <td>
+            <input type="text" name="broker_code_{{ loop.index0 }}" value="{{ mapping.broker_code }}" required />
+          </td>
+          <td>
+            <input type="text" name="broker_desc_{{ loop.index0 }}" value="{{ mapping.broker_desc }}" required />
+          </td>
+          <td>
+            <input type="text" name="internal_code_{{ loop.index0 }}" value="{{ mapping.internal_code }}" required />
+          </td>
+          <td>
+            <input type="text" name="internal_desc_{{ loop.index0 }}" value="{{ mapping.internal_desc }}" required />
+          </td>
+          <td>
+            <button type="submit" name="delete" value="{{ mapping.broker_code }}:{{ mapping.internal_code }}" class="btn btn-danger btn-sm">Delete</button>
+          </td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <!-- Add New Mapping -->
+          <td><input type="text" name="new_broker_code" placeholder="Broker Code" /></td>
+          <td><input type="text" name="new_broker_desc" placeholder="Broker Description" /></td>
+          <td><input type="text" name="new_internal_code" placeholder="Internal Code" /></td>
+          <td><input type="text" name="new_internal_desc" placeholder="Internal Description" /></td>
+          <td>
+            <button type="submit" name="add" value="1" class="btn btn-success btn-sm">Add</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="coa-mapping-actions">
+      <button type="submit" name="save" value="1" class="btn btn-primary">Save Changes</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

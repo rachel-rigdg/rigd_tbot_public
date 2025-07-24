@@ -2,42 +2,43 @@
 
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Ledger Reconciliation</title>
-        <link rel="stylesheet" href="/static/css/base/normalize.css">
-        <link rel="stylesheet" href="/static/css/base/layout.css">
-        <link rel="stylesheet" href="/static/css/shared/forms.css">
-        <link rel="stylesheet" href="/static/css/components/buttons.css">
-        <link rel="stylesheet" href="/static/css/pages/ledger.css">
-        <style>
-        .ledger-table td, .ledger-table th { padding: 4px 6px; }
-        .ledger-table .row-top { background: #f8f8fa; }
-        .ledger-table .row-bottom { background: #f3f3f5; }
-        .ledger-table .action-cell { white-space: nowrap; }
-        </style>
-        <script>
-        function autoCalcTotal(rowPrefix) {
-            var qty = parseFloat(document.querySelector(rowPrefix + ' input[name="quantity"]').value) || 0;
-            var price = parseFloat(document.querySelector(rowPrefix + ' input[name="price"]').value) || 0;
-            var fee = parseFloat(document.querySelector(rowPrefix + ' input[name="fee"]').value) || 0;
-            var total = (qty * price) - fee;
-            document.querySelector(rowPrefix + ' input[name="total_value"]').value = isNaN(total) ? '' : total.toFixed(2);
-        }
-        document.addEventListener("DOMContentLoaded", function() {
+<head>
+    <meta charset="UTF-8">
+    <title>Ledger Reconciliation</title>
+    <link rel="stylesheet" href="/static/css/base/normalize.css">
+    <link rel="stylesheet" href="/static/css/base/layout.css">
+    <link rel="stylesheet" href="/static/css/shared/forms.css">
+    <link rel="stylesheet" href="/static/css/components/buttons.css">
+    <link rel="stylesheet" href="/static/css/pages/ledger.css">
+    <style>
+    .ledger-table td, .ledger-table th { padding: 4px 6px; }
+    .ledger-table .row-top { background: #f8f8fa; }
+    .ledger-table .row-bottom { background: #f3f3f5; }
+    .ledger-table .action-cell { white-space: nowrap; }
+    </style>
+    <script>
+    function autoCalcTotal(rowPrefix) {
+        var qty = parseFloat(document.querySelector(rowPrefix + ' input[name="quantity"]').value) || 0;
+        var price = parseFloat(document.querySelector(rowPrefix + ' input[name="price"]').value) || 0;
+        var fee = parseFloat(document.querySelector(rowPrefix + ' input[name="fee"]').value) || 0;
+        var total = (qty * price) - fee;
+        document.querySelector(rowPrefix + ' input[name="total_value"]').value = isNaN(total) ? '' : total.toFixed(2);
+    }
+    document.addEventListener("DOMContentLoaded", function() {
             // Only apply to add-entry row (first add row)
-            var prefix = 'tr.row-top form[action$="add_ledger_entry_route"] ';
-            ['quantity', 'price', 'fee'].forEach(function(field) {
-                var el = document.querySelector(prefix + 'input[name="' + field + '"]');
-                if (el) {
-                    el.addEventListener('input', function() { autoCalcTotal(prefix); });
-                }
-            });
+        var prefix = 'tr.row-top form[action$="add_ledger_entry_route"] ';
+        ['quantity', 'price', 'fee'].forEach(function(field) {
+            var el = document.querySelector(prefix + 'input[name="' + field + '"]');
+            if (el) {
+                el.addEventListener('input', function() { autoCalcTotal(prefix); });
+            }
         });
-        </script>
-    </head>
+    });
+    </script>
+</head>
 <body>
-    <pre>{{ coa_accounts|safe }}</pre>
+    <!-- Remove debugging output below in production -->
+    {# <pre>{{ coa_accounts|safe }}</pre> #}
 
     <div class="header">
         <h1>Ledger Reconciliation</h1>

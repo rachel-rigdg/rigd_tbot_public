@@ -59,6 +59,15 @@
                     <span class="test-status-indicator" id="status-broker_trade_stub"></span>
                 </div>
                 <div>
+                    <button class="test-btn" id="btn-broker_sync" onclick="runIndividualTest('broker_sync')" {% if test_active %}disabled{% endif %}>Run Broker Sync Test</button>
+                    <span class="test-status-indicator" id="status-broker_sync"></span>
+                </div>
+                <div>
+                    <button class="test-btn" id="btn-coa_mapping" onclick="runIndividualTest('coa_mapping')" {% if test_active %}disabled{% endif %}>Run COA Mapping Test</button>
+                    <span class="test-status-indicator" id="status-coa_mapping"></span>
+                </div>
+                
+                <div>
                     <button class="test-btn" id="btn-backtest_engine" onclick="runIndividualTest('backtest_engine')" {% if test_active %}disabled{% endif %}>Run Backtest Engine Test</button>
                     <span class="test-status-indicator" id="status-backtest_engine"></span>
                 </div>
