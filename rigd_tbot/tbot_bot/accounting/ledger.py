@@ -86,9 +86,38 @@ def mark_entry_resolved(entry_id):
 
 def add_ledger_entry(entry_data):
     """
-    Deprecated. Use post_double_entry() for all compliant posting.
+    Legacy single-entry ledger posting (compat: supports fee/fees fields).
+    DO NOT REMOVE: required for UI and legacy integrations.
     """
-    raise NotImplementedError("add_ledger_entry is disabled. Use post_double_entry with COA mapping for double-entry compliance.")
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    entry_data["broker"] = load_broker_code()
+    entry_data["account"] = load_account_number()
+    try:
+        qty = float(entry_data.get("quantity") or 0)
+        price = float(entry_data.get("price") or 0)
+        fees = float(entry_data.get("fees") if "fees" in entry_data else entry_data.get("fee") or 0)
+        entry_data["total_value"] = round((qty * price) - fees, 2)
+    except Exception:
+        entry_data["total_value"] = entry_data.get("total_value") or 0
+    # Normalize fee/fees for schema compat
+    if "fees" in entry_data and "fee" not in entry_data:
+        entry_data["fee"] = entry_data["fees"]
+    columns = [
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker",
+        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
+        "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
+        "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
+    ]
+    values = [entry_data.get(col) for col in columns]
+    placeholders = ", ".join("?" for _ in columns)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
+        values
+    )
+    conn.commit()
+    conn.close()
 
 def post_ledger_entries_double_entry(entries):
     """
