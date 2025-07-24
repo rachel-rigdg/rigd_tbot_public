@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS trades (
     updated_by TEXT DEFAULT NULL,
     approved_by TEXT DEFAULT NULL,
     approval_status TEXT CHECK(approval_status IN ('pending', 'approved', 'rejected')) DEFAULT 'approved',
+    status TEXT CHECK(status IN ('pending','imported','error','ok','mismatch','resolved')) DEFAULT 'ok',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT NULL,
     gdpr_compliant BOOLEAN DEFAULT 1,
@@ -189,6 +190,7 @@ CREATE TABLE IF NOT EXISTS trades (
     json_metadata TEXT DEFAULT '{}',
     FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
 );
+
 
 -- Table: Events (compliance, audit, info/warning/error)
 CREATE TABLE IF NOT EXISTS events (
