@@ -71,7 +71,6 @@ def ledger_reconcile():
         broker_entries = []
         entries = reconcile_ledgers(internal_ledger, broker_entries)
         balances = calculate_account_balances()
-        # Correct: use utils_coa_web for account dropdowns/selections
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = [(acct["code"], acct["name"]) for acct in coa_data.get("accounts_flat", [])]
     except FileNotFoundError:
@@ -133,6 +132,7 @@ def add_ledger_entry_route():
         "soc2_type": "",
     }
     try:
+        # Always use post_ledger_entries_double_entry, never add_ledger_entry
         post_ledger_entries_double_entry([entry_data])
         flash('Ledger entry added (double-entry compliant).')
     except sqlite3.IntegrityError as e:

@@ -275,3 +275,51 @@ def post_rebalance_entry(symbol, amount, action, datetime_utc, notes=None):
         "json_metadata": "{}"
     }
     post_ledger_entries_double_entry([entry])
+
+def sync_broker_ledger():
+    """
+    Main broker ledger sync orchestration hook. 
+    Fetches broker transactions, maps via COA, posts double-entry, logs reconciliation.
+    """
+    # Import here to avoid circular imports
+    from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
+    from tbot_bot.accounting.ledger_utils import snapshot_ledger_before_sync, validate_double_entry
+    from tbot_bot.accounting.coa_mapping_table import load_mapping_table
+    from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
+
+    bot_identity = get_identity_tuple()
+    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity
+
+    # Snapshot ledger before sync (audit)
+    snapshot_ledger_before_sync()
+
+    # Load current mapping table
+    mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
+
+    # Fetch broker trades and cash activity
+    trades = fetch_all_trades(start_date=None, end_date=None)
+    cash_acts = fetch_cash_activity(start_date=None, end_date=None)
+
+    # Combine all entries for posting
+    all_entries = trades + cash_acts
+
+    # Double-entry post via mapping
+    post_double_entry(all_entries, mapping_table)
+
+    # Validate double-entry after posting
+    validate_double_entry()
+
+    # Log reconciliation for each trade
+    sync_run_id = f"sync_{entity_code}_{jurisdiction_code}_{broker_code}_{bot_id}_{sqlite3.datetime.datetime.utcnow().isoformat()}"
+    for entry in all_entries:
+        log_reconciliation_entry(
+            trade_id=entry.get("trade_id"),
+            status="ok",
+            compare_fields={},
+            sync_run_id=sync_run_id,
+            api_hash=entry.get("json_metadata", {}).get("api_hash", ""),
+            broker=broker_code,
+            raw_record=entry,
+            mapping_version=str(mapping_table.get("version", "")),
+            notes="Imported by sync"
+        )
