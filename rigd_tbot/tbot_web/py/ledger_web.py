@@ -8,7 +8,7 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.accounting.ledger_utils import calculate_running_balances
+from tbot_bot.accounting.ledger.ledger_balance import calculate_running_balances
 from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts
 import sqlite3
 
@@ -66,7 +66,7 @@ def ledger_reconcile():
     if provisioning_guard() or identity_guard():
         return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).", balances=balances, coa_accounts=coa_accounts)
     try:
-        from tbot_bot.accounting.ledger_utils import calculate_account_balances
+        from tbot_bot.accounting.ledger.ledger_balance import calculate_account_balances
         internal_ledger = calculate_running_balances()
         broker_entries = []
         entries = reconcile_ledgers(internal_ledger, broker_entries)

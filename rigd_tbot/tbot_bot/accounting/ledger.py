@@ -4,12 +4,12 @@ import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user  # to get current user for updated_by etc.
-from tbot_bot.accounting.ledger_utils import (
+from tbot_bot.accounting.ledger.ledger_account_map import (
     load_broker_code,
     load_account_number,
     get_account_path,
-    post_double_entry,
 )
+from tbot_bot.accounting.ledger.ledger_double_entry import post_double_entry
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table
 
 def get_identity_tuple():
@@ -307,7 +307,8 @@ def sync_broker_ledger():
     """
     # Import here to avoid circular imports
     from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
-    from tbot_bot.accounting.ledger_utils import snapshot_ledger_before_sync, validate_double_entry
+    from tbot_bot.accounting.ledger.ledger_snapshot import snapshot_ledger_before_sync
+    from tbot_bot.accounting.ledger.ledger_double_entry import validate_double_entry, post_double_entry
     from tbot_bot.accounting.coa_mapping_table import load_mapping_table
     from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
 

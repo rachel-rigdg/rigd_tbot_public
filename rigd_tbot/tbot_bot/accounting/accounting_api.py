@@ -8,7 +8,7 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.config.error_handler_bot import handle_error
 from tbot_bot.accounting.tradebot_exporter import TradeBotExporter
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
-from tbot_bot.accounting.ledger_utils import validate_double_entry
+from tbot_bot.accounting.ledger.ledger_double_entry import validate_double_entry
 
 # Load configuration from .env_bot
 config = get_bot_config()

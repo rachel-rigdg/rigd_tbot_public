@@ -3,7 +3,7 @@
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
 import pytest
-from tbot_bot.accounting.ledger_utils import validate_ledger_schema
+from tbot_bot.accounting.ledger.ledger_db import validate_ledger_schema
 from tbot_bot.support.path_resolver import resolve_control_path
 from pathlib import Path
 import sys

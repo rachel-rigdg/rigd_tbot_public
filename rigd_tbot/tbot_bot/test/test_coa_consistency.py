@@ -14,6 +14,7 @@ from tbot_bot.accounting.coa_utils_ledger import (
 )
 from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path, resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
+from tbot_bot.accounting.ledger.ledger_db import validate_ledger_schema
 
 CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")
@@ -69,6 +70,9 @@ class TestCOAConsistency(unittest.TestCase):
         self.assertIsInstance(metadata, dict)
         self.assertIsInstance(accounts, list)
         validate_coa_structure(accounts)
+        # Now validate the ledger schema as well:
+        result = validate_ledger_schema()
+        self.assertTrue(result)
         safe_print("[test_coa_consistency] Schema validation OK.")
 
     def test_metadata_fields(self):
