@@ -152,6 +152,16 @@ def resolve_coa_audit_log_path(bot_identity: str = None) -> str:
     validate_bot_identity(identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_audit_log.json")
 
+def resolve_coa_mapping_json_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> Path:
+    """
+    Returns the absolute Path to the COA mapping table JSON for this bot identity.
+    """
+    bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
+    validate_bot_identity(bot_identity)
+    mapping_dir = PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers"
+    mapping_dir.mkdir(parents=True, exist_ok=True)
+    return mapping_dir / "coa_mapping_table.json"
+
 def resolve_output_folder_path(bot_identity: str) -> str:
     validate_bot_identity(bot_identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / bot_identity)
@@ -346,6 +356,7 @@ __all__ = [
     "resolve_coa_template_path",
     "resolve_coa_metadata_path",
     "resolve_coa_audit_log_path",
+    "resolve_coa_mapping_json_path",
     "resolve_ledger_schema_path",
     "resolve_coa_schema_path",
     "resolve_universe_cache_path",
