@@ -105,3 +105,12 @@ def snapshot_reconciliation_log():
         conn.row_factory = sqlite3.Row
         cursor = conn.execute("SELECT * FROM reconciliation_log")
         return json.dumps([dict(row) for row in cursor.fetchall()], indent=2)
+
+def ensure_reconciliation_log_initialized():
+    """
+    Idempotent: Ensures reconciliation log table exists before each sync/reconcile.
+    """
+    db_path = _get_db_path()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(RECON_TABLE_SCHEMA)
+        conn.commit()

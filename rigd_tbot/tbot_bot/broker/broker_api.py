@@ -25,13 +25,13 @@ def get_active_broker():
         **config
     }
     if broker_code == "alpaca":
-        from tbot_bot.broker.brokers.broker_alpaca import AlpacaBroker
+        from tbot_bot.broker.brokers.alpaca import AlpacaBroker
         return AlpacaBroker(broker_credentials)
     elif broker_code == "ibkr":
-        from tbot_bot.broker.brokers.broker_ibkr import IBKRBroker
+        from tbot_bot.broker.brokers.ibkr import IBKRBroker
         return IBKRBroker(broker_credentials)
     elif broker_code == "tradier":
-        from tbot_bot.broker.brokers.broker_tradier import TradierBroker
+        from tbot_bot.broker.brokers.tradier import TradierBroker
         return TradierBroker(broker_credentials)
     else:
         raise RuntimeError(f"[broker_api] Unsupported or missing BROKER_CODE: {broker_code}")

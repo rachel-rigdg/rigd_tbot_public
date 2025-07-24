@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
 import os
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 import shutil
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.path_resolver import get_output_path
@@ -18,6 +18,7 @@ from tbot_bot.support.path_resolver import get_output_path
 # Constants
 BACKUP_DIR = "backups"
 BOT_IDENTITY = get_bot_identity()
+RETENTION_DAYS = 7
 
 def get_timestamp():
     return datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -28,12 +29,10 @@ def ensure_backup_dir():
 def backup_ledgers():
     ensure_backup_dir()
     timestamp = get_timestamp()
-    
     ledger_files = {
         "ledger": f"{BOT_IDENTITY}_BOT_ledger.db",
         "coa": f"{BOT_IDENTITY}_BOT_COA.db"
     }
-
     for label, filename in ledger_files.items():
         src = get_output_path("ledgers", filename)
         if os.path.exists(src):
@@ -48,31 +47,52 @@ def zip_session_artifacts():
     timestamp = get_timestamp()
     zip_name = f"{BOT_IDENTITY}_session_backup_{timestamp}.zip"
     zip_path = os.path.join(BACKUP_DIR, zip_name)
-
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         # Logs
         for log_file in ["open.log", "mid.log", "close.log", "unresolved_orders.log", "error_tracebacks.log"]:
             log_path = get_output_path("logs", log_file)
             if os.path.exists(log_path):
                 zipf.write(log_path, arcname=f"logs/{log_file}")
-        
         # Summaries
         summary_file = f"{BOT_IDENTITY}_BOT_daily_summary.json"
         summary_path = get_output_path("summaries", summary_file)
         if os.path.exists(summary_path):
             zipf.write(summary_path, arcname=f"summaries/{summary_file}")
-        
         # Trades
         for ext in ["csv", "json"]:
             trade_file = f"{BOT_IDENTITY}_BOT_trade_history.{ext}"
             trade_path = get_output_path("trades", trade_file)
             if os.path.exists(trade_path):
                 zipf.write(trade_path, arcname=f"trades/{trade_file}")
-
     print(f"[auto_backup] Session data archived → {zip_path}")
+
+def prune_old_backups():
+    """
+    Deletes backups older than RETENTION_DAYS.
+    """
+    ensure_backup_dir()
+    now = datetime.utcnow()
+    for fname in os.listdir(BACKUP_DIR):
+        fpath = os.path.join(BACKUP_DIR, fname)
+        if not os.path.isfile(fpath):
+            continue
+        try:
+            # Extract timestamp from filename pattern: *_YYYYMMDD_HHMMSS*
+            parts = fname.split("_")
+            for i, part in enumerate(parts):
+                if len(part) == 8 and part.isdigit():  # date part
+                    dtstr = "_".join(parts[i:i+2])
+                    fdate = datetime.strptime(dtstr, "%Y%m%d_%H%M%S")
+                    if now - fdate > timedelta(days=RETENTION_DAYS):
+                        os.remove(fpath)
+                        print(f"[auto_backup] Pruned old backup: {fpath}")
+                    break
+        except Exception:
+            continue
 
 def run_auto_backup():
     print("[auto_backup] Starting session backup...")
     backup_ledgers()
     zip_session_artifacts()
+    prune_old_backups()
     print("[auto_backup] Backup complete.")

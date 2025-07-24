@@ -9,8 +9,9 @@ import json
 from datetime import datetime
 from cryptography.fernet import Fernet
 from pathlib import Path
-from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
+from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path, resolve_ledger_snapshot_dir
 from tbot_bot.support.utils_identity import get_bot_identity
+from tbot_bot.accounting.coa_mapping_table import load_mapping_table, apply_mapping_rule
 
 BOT_ID = get_bot_identity()
 
@@ -214,7 +215,7 @@ def calculate_account_balances():
         return {}
 
     key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
-    enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
+    enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "acct_api.json.enc"
     key = key_path.read_bytes()
     cipher = Fernet(key)
     plaintext = cipher.decrypt(enc_path.read_bytes())
@@ -293,3 +294,71 @@ def validate_double_entry():
         if imbalances:
             raise RuntimeError(f"Double-entry imbalance detected for trade_ids: {imbalances}")
     return True
+
+def snapshot_ledger_before_sync():
+    """
+    Atomically snapshot the current ledger DB and relevant logs before any ledger sync.
+    Enforces snapshot with timestamp and version for audit/rollback.
+    """
+    key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
+    enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
+    key = key_path.read_bytes()
+    cipher = Fernet(key)
+    plaintext = cipher.decrypt(enc_path.read_bytes())
+    bot_identity_data = json.loads(plaintext.decode("utf-8"))
+    identity = bot_identity_data.get("BOT_IDENTITY_STRING")
+    entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    snapshot_dir = resolve_ledger_snapshot_dir(entity_code, jurisdiction_code, broker_code, bot_id)
+    os.makedirs(snapshot_dir, exist_ok=True)
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    snapshot_name = f"ledger_snapshot_{timestamp}.db"
+    snapshot_path = os.path.join(snapshot_dir, snapshot_name)
+    with open(db_path, "rb") as src, open(snapshot_path, "wb") as dst:
+        dst.write(src.read())
+    # Optionally: copy reconciliation log, mapping table, etc, as needed
+    return snapshot_path
+
+def post_double_entry(entries, mapping_table=None):
+    """
+    Posts a true double-entry (debit/credit) set for each trade/cash action, using COA mapping.
+    mapping_table: pre-loaded mapping table (dict) or None to reload fresh.
+    Each entry in entries must be a dict with all required fields.
+    Returns list of inserted entry IDs.
+    """
+    if TEST_MODE_FLAG.exists():
+        return []
+
+    key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
+    enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
+    key = key_path.read_bytes()
+    cipher = Fernet(key)
+    plaintext = cipher.decrypt(enc_path.read_bytes())
+    bot_identity_data = json.loads(plaintext.decode("utf-8"))
+    identity = bot_identity_data.get("BOT_IDENTITY_STRING")
+    entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    inserted_ids = []
+    if mapping_table is None:
+        mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
+    with sqlite3.connect(db_path) as conn:
+        for entry in entries:
+            # Apply mapping for debit/credit split
+            debit_entry, credit_entry = apply_mapping_rule(entry, mapping_table)
+            # Insert debit
+            columns = ", ".join(debit_entry.keys())
+            placeholders = ", ".join(["?"] * len(debit_entry))
+            conn.execute(
+                f"INSERT INTO trades ({columns}) VALUES ({placeholders})",
+                tuple(debit_entry.values())
+            )
+            # Insert credit
+            columns = ", ".join(credit_entry.keys())
+            placeholders = ", ".join(["?"] * len(credit_entry))
+            conn.execute(
+                f"INSERT INTO trades ({columns}) VALUES ({placeholders})",
+                tuple(credit_entry.values())
+            )
+            conn.commit()
+            inserted_ids.append((debit_entry.get("trade_id"), credit_entry.get("trade_id")))
+    return inserted_ids

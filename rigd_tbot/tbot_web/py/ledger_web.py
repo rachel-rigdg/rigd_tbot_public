@@ -99,7 +99,7 @@ def resolve_ledger_entry(entry_id):
 def add_ledger_entry_route():
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
-    from tbot_bot.accounting.ledger import add_ledger_entry
+    from tbot_bot.accounting.ledger import post_ledger_entries_double_entry
     form = request.form
     bot_identity = load_bot_identity()
     entity_code, jurisdiction, broker, bot_id = bot_identity.split("_")
@@ -133,8 +133,8 @@ def add_ledger_entry_route():
         "soc2_type": "",
     }
     try:
-        add_ledger_entry(entry_data)
-        flash('Ledger entry added.')
+        post_ledger_entries_double_entry([entry_data])
+        flash('Ledger entry added (double-entry compliant).')
     except sqlite3.IntegrityError as e:
         if "UNIQUE constraint failed: trades.trade_id" in str(e):
             flash("Trade ID already exists. Please use a unique Trade ID.", "error")

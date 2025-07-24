@@ -4,11 +4,11 @@
 import json
 from cryptography.fernet import Fernet
 from pathlib import Path
-
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.config.error_handler_bot import handle_error
 from tbot_bot.accounting.tradebot_exporter import TradeBotExporter
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
+from tbot_bot.accounting.ledger_utils import validate_double_entry
 
 # Load configuration from .env_bot
 config = get_bot_config()
@@ -40,6 +40,8 @@ def export_transactions(transactions, session_tag=""):
 
     try:
         ledger_path = resolve_ledger_db_path(ENTITY, JURISDICTION, BROKER, BOT_ID)
+        # Enforce double-entry validation before any export
+        validate_double_entry()
         exporter = TradeBotExporter(ledger_path=ledger_path, session_tag=session_tag)
         exporter.write_transactions(transactions)
     except Exception as e:

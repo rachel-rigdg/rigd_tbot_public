@@ -12,6 +12,7 @@ from tbot_bot.accounting.coa_mapping_table import (
     export_mapping_table, import_mapping_table
 )
 from tbot_bot.support.utils_identity import get_bot_identity
+from tbot_bot.support.utils_log import log_event
 
 coa_mapping_web = Blueprint("coa_mapping_web", __name__, template_folder="../templates")
 
@@ -36,6 +37,11 @@ def assign_mapping_route():
     }
     reason = data.get("reason", "manual assignment")
     assign_mapping(mapping_rule, user=current_user.username, reason=reason)
+    log_event(
+        "coa_mapping_web",
+        f"Mapping assigned/updated by {current_user.username}: {mapping_rule} (reason: {reason})",
+        level="info"
+    )
     flash("Mapping assigned/updated.", "success")
     return jsonify({"success": True})
 
@@ -45,6 +51,11 @@ def flag_unmapped():
     """Flag an unmapped transaction for admin review."""
     txn = request.get_json() if request.is_json else request.form.to_dict()
     flag_unmapped_transaction(txn, user=current_user.username)
+    log_event(
+        "coa_mapping_web",
+        f"Transaction flagged unmapped by {current_user.username}: {txn}",
+        level="info"
+    )
     return jsonify({"success": True})
 
 @coa_mapping_web.route("/coa_mapping/rollback", methods=["POST"])
@@ -53,6 +64,11 @@ def rollback_mapping():
     """Rollback to a previous mapping table version."""
     version = int(request.form.get("version", 0) or 0)
     if rollback_mapping_version(version):
+        log_event(
+            "coa_mapping_web",
+            f"Mapping table rolled back to version {version} by {current_user.username}",
+            level="info"
+        )
         flash(f"Rolled back to mapping version {version}.", "info")
         return jsonify({"success": True})
     else:
@@ -66,6 +82,11 @@ def export_mapping():
     mapping_json = export_mapping_table()
     identity = get_bot_identity()
     filename = f"coa_mapping_table_{identity}.json"
+    log_event(
+        "coa_mapping_web",
+        f"Mapping table exported by {current_user.username} as {filename}",
+        level="info"
+    )
     return current_app.response_class(
         mapping_json,
         mimetype="application/json",
@@ -83,6 +104,11 @@ def import_mapping():
     try:
         data = file.read().decode("utf-8")
         import_mapping_table(data, user=current_user.username)
+        log_event(
+            "coa_mapping_web",
+            f"Mapping table imported by {current_user.username}.",
+            level="info"
+        )
         flash("Mapping table imported successfully.", "success")
     except Exception as e:
         flash(f"Import failed: {e}", "danger")

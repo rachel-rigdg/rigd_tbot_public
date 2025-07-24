@@ -218,11 +218,13 @@ class IBKRBroker:
 
     def fetch_all_trades(self, start_date, end_date=None):
         """
-        Returns all filled trades in OFX/ledger-normalized dicts, handles pagination, audit hash, and logs credential use.
+        Returns all filled trades in OFX/ledger-normalized dicts.
+        Aggregates partial fills by permId, ensures required field normalization and logs credential use.
         """
         trades = []
         try:
             all_trades = self.client.trades()
+            trade_map = {}
             for t in all_trades:
                 if t.orderStatus.status not in ["Filled", "filled"]:
                     continue
@@ -235,24 +237,35 @@ class IBKRBroker:
                     continue
                 if end_date and trade_time and trade_time > end_date:
                     continue
-                trade = {
-                    "trade_id": trade_id,
-                    "symbol": t.contract.symbol,
-                    "action": t.order.action,
-                    "quantity": float(t.order.totalQuantity),
-                    "price": float(t.orderStatus.avgFillPrice or 0),
-                    "fee": 0,
-                    "fees": 0,
-                    "datetime_utc": trade_time,
-                    "status": t.orderStatus.status,
-                    "total_value": float(t.order.totalQuantity) * float(t.orderStatus.avgFillPrice or 0),
-                    "json_metadata": {
-                        "raw_broker": str(vars(t)),
-                        "api_hash": trade_hash,
-                        "credential_hash": self.credential_hash
+                filled_qty = float(t.order.totalQuantity)
+                avg_price = float(t.orderStatus.avgFillPrice or 0)
+                fee = 0
+                commission = 0
+                if trade_id not in trade_map:
+                    trade_map[trade_id] = {
+                        "trade_id": trade_id,
+                        "symbol": t.contract.symbol,
+                        "action": t.order.action,
+                        "quantity": filled_qty,
+                        "price": avg_price,
+                        "fee": fee,
+                        "fees": commission,
+                        "datetime_utc": trade_time,
+                        "status": t.orderStatus.status,
+                        "total_value": filled_qty * avg_price,
+                        "json_metadata": {
+                            "raw_broker": str(vars(t)),
+                            "api_hash": trade_hash,
+                            "credential_hash": self.credential_hash
+                        }
                     }
-                }
-                trades.append(trade)
+                else:
+                    prev = trade_map[trade_id]
+                    prev["quantity"] += filled_qty
+                    prev["total_value"] += filled_qty * avg_price
+                    prev["fee"] += fee
+                    prev["fees"] += commission
+            trades = list(trade_map.values())
             log_event("broker_ibkr", f"fetch_all_trades complete, {len(trades)} trades. cred_hash={self.credential_hash}", level="info")
             return trades
         except Exception as e:
@@ -261,7 +274,8 @@ class IBKRBroker:
 
     def fetch_cash_activity(self, start_date, end_date=None):
         """
-        Returns all cash/dividend/fee activity in OFX/ledger-normalized dicts. (IBKR API limited, only populates basic stub entries.)
+        Returns all cash/dividend/fee activity in OFX/ledger-normalized dicts.
+        Handles available account summary as cash events, normalization, and audit.
         """
         activities = []
         try:

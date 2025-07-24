@@ -183,6 +183,7 @@ class AlpacaBroker:
         """
         Returns all filled trades in OFX/ledger-normalized dicts.
         Handles pagination, rate limits, audit hash, and logs credential use.
+        Partial fills are aggregated by order ID; all required fields are normalized.
         """
         params = {
             "status": "filled",
@@ -193,6 +194,7 @@ class AlpacaBroker:
             params["until"] = end_date
         trades = []
         next_page_token = None
+        order_fills = {}
         while True:
             if next_page_token:
                 params["page_token"] = next_page_token
@@ -202,36 +204,50 @@ class AlpacaBroker:
             else:
                 page = resp
             for t in page:
+                order_id = t.get("id")
+                filled_qty = float(t.get("filled_qty") or t.get("qty") or 0)
+                filled_price = float(t.get("filled_avg_price") or 0)
+                fee = float(t.get("filled_fee") or 0) if "filled_fee" in t else 0
+                commission = float(t.get("commission", 0)) if "commission" in t else 0
                 t_hash = hashlib.sha256(str(t).encode("utf-8")).hexdigest()
-                trade = {
-                    "trade_id": t.get("id"),
-                    "symbol": t.get("symbol"),
-                    "action": t.get("side"),
-                    "quantity": float(t.get("filled_qty") or t.get("qty") or 0),
-                    "price": float(t.get("filled_avg_price") or 0),
-                    "fee": float(t.get("filled_fee") or 0) if "filled_fee" in t else 0,
-                    "fees": float(t.get("commission" ,0)) if "commission" in t else 0,
-                    "datetime_utc": t.get("filled_at"),
-                    "status": t.get("status"),
-                    "total_value": float(t.get("filled_qty", 0)) * float(t.get("filled_avg_price", 0)),
-                    "json_metadata": {
-                        "raw_broker": t,
-                        "api_hash": t_hash,
-                        "credential_hash": self.credential_hash
+                if order_id not in order_fills:
+                    order_fills[order_id] = {
+                        "trade_id": order_id,
+                        "symbol": t.get("symbol"),
+                        "action": t.get("side"),
+                        "quantity": filled_qty,
+                        "price": filled_price,
+                        "fee": fee,
+                        "fees": commission,
+                        "datetime_utc": t.get("filled_at"),
+                        "status": t.get("status"),
+                        "total_value": filled_qty * filled_price,
+                        "json_metadata": {
+                            "raw_broker": t,
+                            "api_hash": t_hash,
+                            "credential_hash": self.credential_hash
+                        }
                     }
-                }
-                trades.append(trade)
+                else:
+                    # Aggregate fills if partial: sum quantities and values
+                    prev = order_fills[order_id]
+                    prev["quantity"] += filled_qty
+                    prev["total_value"] += filled_qty * filled_price
+                    prev["fee"] += fee
+                    prev["fees"] += commission
             # pagination
             if isinstance(resp, dict) and "next_page_token" in resp and resp["next_page_token"]:
                 next_page_token = resp["next_page_token"]
             else:
                 break
+        trades = list(order_fills.values())
         log_event("broker_alpaca", f"fetch_all_trades complete, {len(trades)} trades. cred_hash={self.credential_hash}", level="info")
         return trades
 
     def fetch_cash_activity(self, start_date, end_date=None):
         """
         Returns all cash/fee/dividend/transfer activity in OFX/ledger-normalized dicts.
+        Handles pagination, required fields, and normalization.
         """
         params = {
             "activity_types": "FILL,CASH,JNLC,JNLS,DIV,MFEE,FEES,TRANS",
@@ -258,7 +274,7 @@ class AlpacaBroker:
                     "quantity": float(a.get("qty") or 0),
                     "price": float(a.get("price") or 0),
                     "fee": float(a.get("fee") or 0),
-                    "fees": float(a.get("commission" ,0)) if "commission" in a else 0,
+                    "fees": float(a.get("commission", 0)) if "commission" in a else 0,
                     "datetime_utc": a.get("transaction_time"),
                     "status": a.get("status"),
                     "total_value": float(a.get("qty", 0)) * float(a.get("price", 0)),

@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import tbot_bot.accounting.ledger as ledger_mod
+from tbot_bot.accounting.ledger_utils import validate_double_entry
 
 def test_sync_broker_ledger_runs_without_error(monkeypatch):
     """
@@ -30,9 +31,17 @@ def test_sync_broker_ledger_idempotent(monkeypatch):
     Optionally, test that running sync twice does not result in duplicate or inconsistent ledger state.
     For real integration, patch DB or check for double insertions as needed.
     """
-    # Could patch DB functions here if a mock DB is available
     try:
         ledger_mod.sync_broker_ledger()
         ledger_mod.sync_broker_ledger()
     except Exception as e:
         pytest.fail(f"Repeated sync_broker_ledger raised an exception: {e}")
+
+def test_double_entry_posting_compliance():
+    """
+    After sync, the ledger must be strictly double-entry balanced for all trades.
+    """
+    try:
+        assert validate_double_entry() is True
+    except Exception as e:
+        pytest.fail(f"Ledger not double-entry balanced after sync: {e}")

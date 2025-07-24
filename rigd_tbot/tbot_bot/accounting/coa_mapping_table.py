@@ -11,33 +11,32 @@ import shutil
 from tbot_bot.support.path_resolver import resolve_coa_mapping_json_path, resolve_ledger_db_path
 from tbot_bot.support.utils_identity import get_bot_identity
 
-# --- Paths ---
-def _get_mapping_path():
-    entity_code, jurisdiction_code, broker_code, bot_id = get_bot_identity().split("_")
+def _get_mapping_path(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None):
+    if not (entity_code and jurisdiction_code and broker_code and bot_id):
+        entity_code, jurisdiction_code, broker_code, bot_id = get_bot_identity().split("_")
     return resolve_coa_mapping_json_path(entity_code, jurisdiction_code, broker_code, bot_id)
 
-def _get_versions_dir():
-    mapping_path = _get_mapping_path()
+def _get_versions_dir(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None):
+    mapping_path = _get_mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     return mapping_path.parent / "coa_mapping_versions"
 
-# --- Core CRUD ---
-def load_mapping_table():
+def load_mapping_table(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None):
     """
     Loads the current mapping table (JSON). If missing, creates new empty table.
     """
-    path = _get_mapping_path()
+    path = _get_mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     if not path.exists():
         table = {"mappings": [], "version": 1, "history": []}
-        save_mapping_table(table)
+        save_mapping_table(table, entity_code, jurisdiction_code, broker_code, bot_id)
         return table
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_mapping_table(table):
+def save_mapping_table(table, entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None):
     """
     Writes the mapping table (JSON) to persistent storage. Creates a version snapshot.
     """
-    path = _get_mapping_path()
+    path = _get_mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     os.makedirs(path.parent, exist_ok=True)
     # Version and timestamp
     now = datetime.utcnow().isoformat()
@@ -52,8 +51,7 @@ def save_mapping_table(table):
     # Write file
     with open(path, "w", encoding="utf-8") as f:
         json.dump(table, f, indent=2)
-    # Save versioned backup
-    versions_dir = _get_versions_dir()
+    versions_dir = _get_versions_dir(entity_code, jurisdiction_code, broker_code, bot_id)
     os.makedirs(versions_dir, exist_ok=True)
     version_file = versions_dir / f"coa_mapping_table_v{table['version']}_{now.replace(':','-')}.json"
     with open(version_file, "w", encoding="utf-8") as f:
@@ -74,13 +72,14 @@ def assign_mapping(mapping_rule, user, reason=None):
     table["change_reason"] = reason or "manual assignment"
     save_mapping_table(table)
 
-def get_mapping_for_transaction(txn):
+def get_mapping_for_transaction(txn, mapping_table=None):
     """
     Look up the COA mapping for a transaction dict (broker/type/subtype/description).
     Returns mapping rule dict or None.
     """
-    table = load_mapping_table()
-    for rule in table["mappings"]:
+    if mapping_table is None:
+        mapping_table = load_mapping_table()
+    for rule in mapping_table.get("mappings", []):
         if all(
             rule.get(k) == txn.get(k)
             for k in ("broker", "type", "subtype", "description")
@@ -129,3 +128,21 @@ def import_mapping_table(json_data, user="import"):
     table["last_updated_by"] = user
     table["change_reason"] = "imported"
     save_mapping_table(table)
+
+def apply_mapping_rule(entry, mapping_table=None):
+    """
+    Returns two OFX/ledger-normalized dicts representing debit and credit double-entry for the provided entry.
+    Mapping table is used to select COA account codes.
+    """
+    if mapping_table is None:
+        mapping_table = load_mapping_table()
+    mapping = get_mapping_for_transaction(entry, mapping_table)
+    debit_entry = entry.copy()
+    credit_entry = entry.copy()
+    # Defaults for demo: override with mapping/account codes as needed.
+    debit_entry["account"] = mapping["debit_account"] if mapping and "debit_account" in mapping else "Uncategorized:Debit"
+    credit_entry["account"] = mapping["credit_account"] if mapping and "credit_account" in mapping else "Uncategorized:Credit"
+    # Set values for double-entry compliance
+    debit_entry["total_value"] = abs(float(debit_entry.get("total_value", 0)))
+    credit_entry["total_value"] = -abs(float(credit_entry.get("total_value", 0)))
+    return debit_entry, credit_entry
