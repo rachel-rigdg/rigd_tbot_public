@@ -37,6 +37,7 @@ UNIVERSE_ORCHESTRATOR_PATH = path_resolver.resolve_runtime_script_path("universe
 INTEGRATION_TEST_RUNNER_PATH = path_resolver.resolve_runtime_script_path("integration_test_runner.py")
 HOLDINGS_MANAGER_PATH = path_resolver.resolve_runtime_script_path("holdings_manager.py")
 SYNC_BROKER_LEDGER_PATH = path_resolver.resolve_runtime_script_path("sync_broker_ledger.py")
+LEDGER_SNAPSHOT_PATH = path_resolver.resolve_runtime_script_path("ledger_snapshot.py")
 
 UNIVERSE_TIMESTAMP_PATH = ROOT_DIR / "tbot_bot" / "output" / "screeners" / "symbol_universe.json"
 REBUILD_DELAY_HOURS = 4
@@ -124,6 +125,35 @@ def is_time_for_broker_sync():
     already_synced_today = last_sync and last_sync.date() == now.date() and last_sync > sync_time - timedelta(minutes=5)
     return now >= sync_time and not already_synced_today
 
+# --- LEDGER SNAPSHOT NIGHTLY LAUNCH LOGIC (identical schedule to broker sync) ---
+def get_last_ledger_snapshot_timestamp():
+    ts_path = CONTROL_DIR / "last_ledger_snapshot_utc.txt"
+    if not ts_path.exists():
+        return None
+    try:
+        return datetime.fromisoformat(ts_path.read_text().strip())
+    except Exception:
+        return None
+
+def set_last_ledger_snapshot_timestamp(dt: datetime):
+    ts_path = CONTROL_DIR / "last_ledger_snapshot_utc.txt"
+    ts_path.write_text(dt.isoformat())
+
+def is_time_for_ledger_snapshot():
+    # Uses the same window as broker sync (30min after close)
+    now = utc_now()
+    market_close_str = read_env_var("MARKET_CLOSE_UTC", "21:00")
+    snapshot_delay_min = int(read_env_var("LEDGER_SNAPSHOT_DELAY_MIN", "30"))
+    close_time = parse_time_utc(market_close_str)
+    today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
+    if now < today_close:
+        snap_time = today_close - timedelta(days=1) + timedelta(minutes=snapshot_delay_min)
+    else:
+        snap_time = today_close + timedelta(minutes=snapshot_delay_min)
+    last_snapshot = get_last_ledger_snapshot_timestamp()
+    already_snapshotted_today = last_snapshot and last_snapshot.date() == now.date() and last_snapshot > snap_time - timedelta(minutes=5)
+    return now >= snap_time and not already_snapshotted_today
+
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
     processes = {}
@@ -205,6 +235,15 @@ def main():
                         set_last_sync_broker_ledger_timestamp(utc_now())
                     else:
                         print("[tbot_supervisor] Broker sync already running.")
+
+                # ---- LEDGER SNAPSHOT NIGHTLY (30min after market close, once per day, using timezone utils) ----
+                if is_time_for_ledger_snapshot():
+                    if not ensure_singleton("ledger_snapshot.py"):
+                        print("[tbot_supervisor] Launching nightly EOD ledger snapshot (ledger_snapshot.py)...")
+                        launch_subprocess(LEDGER_SNAPSHOT_PATH)
+                        set_last_ledger_snapshot_timestamp(utc_now())
+                    else:
+                        print("[tbot_supervisor] Ledger snapshot already running.")
 
             if TEST_MODE_FLAG.exists():
                 print("[tbot_supervisor] Global TEST_MODE flag detected. Launching integration_test_runner.py...")
