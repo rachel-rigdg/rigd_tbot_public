@@ -87,6 +87,13 @@ def get_output_path(category: str = None, filename: str = None, bot_identity: st
         return str(subdir)
     return str(subdir / filename) if filename else str(subdir)
 
+def resolve_ledger_snapshot_dir(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
+    bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
+    validate_bot_identity(bot_identity)
+    snapshot_dir = PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers" / "snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    return str(snapshot_dir)
+
 def resolve_control_path() -> Path:
     return PROJECT_ROOT / "tbot_bot" / "control"
 
@@ -330,9 +337,10 @@ __all__ = [
     "get_schema_path",
     "get_cache_path",
     "get_bot_state_path",
-    "get_enhancements_path"
+    "get_enhancements_path",
     "resolve_output_folder_path",
     "resolve_ledger_db_path",
+    "resolve_ledger_snapshot_dir",
     "resolve_coa_db_path",
     "resolve_coa_json_path",
     "resolve_coa_template_path",
@@ -345,7 +353,7 @@ __all__ = [
     "resolve_universe_unfiltered_path",
     "resolve_universe_partial_path",
     "resolve_universe_log_path",
-    "resolve_universe_logger_path",  # NEW: reporting/universe_logger.py
+    "resolve_universe_logger_path",
     "resolve_screener_blocklist_path",
     "resolve_blocklist_archive_path",
     "resolve_universe_archive_path",
