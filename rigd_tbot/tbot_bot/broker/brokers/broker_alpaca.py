@@ -218,7 +218,7 @@ class AlpacaBroker:
                         "quantity": filled_qty,
                         "price": filled_price,
                         "fee": fee,
-                        "fees": commission,
+                        "fee": commission,
                         "datetime_utc": t.get("filled_at"),
                         "status": t.get("status"),
                         "total_value": filled_qty * filled_price,
@@ -234,7 +234,7 @@ class AlpacaBroker:
                     prev["quantity"] += filled_qty
                     prev["total_value"] += filled_qty * filled_price
                     prev["fee"] += fee
-                    prev["fees"] += commission
+                    prev["fee"] += commission
             # pagination
             if isinstance(resp, dict) and "next_page_token" in resp and resp["next_page_token"]:
                 next_page_token = resp["next_page_token"]
@@ -250,7 +250,7 @@ class AlpacaBroker:
         Handles pagination, required fields, and normalization.
         """
         params = {
-            "activity_types": "FILL,CASH,JNLC,JNLS,DIV,MFEE,FEES,TRANS",
+            "activity_types": "FILL,CASH,JNLC,JNLS,DIV,MFEE,fee,TRANS",
             "after": start_date
         }
         if end_date:
@@ -274,7 +274,7 @@ class AlpacaBroker:
                     "quantity": float(a.get("qty") or 0),
                     "price": float(a.get("price") or 0),
                     "fee": float(a.get("fee") or 0),
-                    "fees": float(a.get("commission", 0)) if "commission" in a else 0,
+                    "fee": float(a.get("commission", 0)) if "commission" in a else 0,
                     "datetime_utc": a.get("transaction_time"),
                     "status": a.get("status"),
                     "total_value": float(a.get("qty", 0)) * float(a.get("price", 0)),

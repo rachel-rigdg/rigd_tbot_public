@@ -33,7 +33,7 @@
     "code": "2000",
     "name": "Liabilities",
     "children": [
-      {"code": "2010", "name": "Broker Payables (Accrued Fees)"},
+      {"code": "2010", "name": "Broker Payables (Accrued fee)"},
       {"code": "2020", "name": "Market Data Payables (Accrued Subscriptions)"}
     ]
   },
@@ -66,10 +66,10 @@
     "code": "5000",
     "name": "Expenses",
     "children": [
-      {"code": "5010", "name": "Broker Fees – Alpaca"},
-      {"code": "5020", "name": "Broker Fees – IBKR"},
-      {"code": "5030", "name": "Broker Fees – Tradier"},
-      {"code": "5040", "name": "Broker Fees – Robinhood"},
+      {"code": "5010", "name": "Broker fee – Alpaca"},
+      {"code": "5020", "name": "Broker fee – IBKR"},
+      {"code": "5030", "name": "Broker fee – Tradier"},
+      {"code": "5040", "name": "Broker fee – Robinhood"},
       {"code": "5050", "name": "Slippage / Execution Losses"},
       {"code": "5060", "name": "API Timeout Penalties"},
       {"code": "5070", "name": "Bot Infrastructure Costs"},

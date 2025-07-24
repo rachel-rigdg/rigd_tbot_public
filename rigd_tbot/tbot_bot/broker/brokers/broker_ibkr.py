@@ -249,7 +249,7 @@ class IBKRBroker:
                         "quantity": filled_qty,
                         "price": avg_price,
                         "fee": fee,
-                        "fees": commission,
+                        "fee": commission,
                         "datetime_utc": trade_time,
                         "status": t.orderStatus.status,
                         "total_value": filled_qty * avg_price,
@@ -264,7 +264,7 @@ class IBKRBroker:
                     prev["quantity"] += filled_qty
                     prev["total_value"] += filled_qty * avg_price
                     prev["fee"] += fee
-                    prev["fees"] += commission
+                    prev["fee"] += commission
             trades = list(trade_map.values())
             log_event("broker_ibkr", f"fetch_all_trades complete, {len(trades)} trades. cred_hash={self.credential_hash}", level="info")
             return trades
@@ -290,7 +290,7 @@ class IBKRBroker:
                     "quantity": float(c.value or 0),
                     "price": 0,
                     "fee": 0,
-                    "fees": 0,
+                    "fee": 0,
                     "datetime_utc": str(datetime.utcnow()),
                     "status": "ok",
                     "total_value": float(c.value or 0),

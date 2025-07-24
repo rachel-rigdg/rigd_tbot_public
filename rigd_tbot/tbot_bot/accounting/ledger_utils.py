@@ -22,7 +22,7 @@ ACCOUNT_MAP = {
     "cash":               "Assets:Brokerage Accounts – Equities:Cash",
     "equity":             "Assets:Brokerage Accounts – Equities",
     "gain":               "Income:Realized Gains",
-    "fee":                "Expenses:Broker Fees",
+    "fee":                "Expenses:Broker fee",
     "slippage":           "Expenses:Slippage / Execution Losses",
     "failures":           "System Integrity:Failures & Rejected Orders",
     "infra":              "Expenses:Bot Infrastructure Costs",
@@ -75,7 +75,7 @@ def validate_ledger_schema():
     Checks that the ledger DB matches the required schema.
     Returns True if compliant, raises on missing schema.
     Skips validation if TEST_MODE active.
-    Accepts 'fee' or 'fees' as valid for the trade fee field.
+    Accepts 'fee' or 'fee' as valid for the trade fee field.
     """
     if TEST_MODE_FLAG.exists():
         # Skip schema validation during TEST_MODE
@@ -103,7 +103,7 @@ def validate_ledger_schema():
         cursor = conn.execute("PRAGMA table_info(trades)")
         required_fields = [
             "id", "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity",
-            "price", "total_value", "fees", "broker", "strategy", "account",
+            "price", "total_value", "fee", "broker", "strategy", "account",
             "trade_id", "entity_code", "created_at", "updated_at", "approved_by",
             "approval_status", "created_by", "gdpr_compliant", "ccpa_compliant",
             "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type",
@@ -111,9 +111,9 @@ def validate_ledger_schema():
         ]
         columns = [row[1] for row in cursor.fetchall()]
         for field in required_fields:
-            if field == "fees":
-                if "fees" not in columns and "fee" not in columns:
-                    raise RuntimeError("Required field 'fees' or 'fee' missing in trades table schema")
+            if field == "fee":
+                if "fee" not in columns and "fee" not in columns:
+                    raise RuntimeError("Required field 'fee' or 'fee' missing in trades table schema")
             else:
                 if field not in columns:
                     raise RuntimeError(f"Required field '{field}' missing in trades table schema")
@@ -122,7 +122,7 @@ def validate_ledger_schema():
 def get_entry_by_id(entry_id):
     """
     Fetch a single ledger entry from trades table by id.
-    Returns dict with both 'fee' and 'fees' fields always present for compatibility.
+    Returns dict with both 'fee' and 'fee' fields always present for compatibility.
     """
     if TEST_MODE_FLAG.exists():
         # Skip ledger reads in TEST_MODE
@@ -142,11 +142,11 @@ def get_entry_by_id(entry_id):
         columns = [c[1] for c in conn.execute("PRAGMA table_info(trades)")]
         entry = dict(zip(columns, row)) if row else None
         if entry is not None:
-            # Normalize: always provide both 'fee' and 'fees'
-            if "fee" in entry and "fees" not in entry:
-                entry["fees"] = entry["fee"]
-            if "fees" in entry and "fee" not in entry:
-                entry["fee"] = entry["fees"]
+            # Normalize: always provide both 'fee' and 'fee'
+            if "fee" in entry and "fee" not in entry:
+                entry["fee"] = entry["fee"]
+            if "fee" in entry and "fee" not in entry:
+                entry["fee"] = entry["fee"]
         return entry
 
 def log_audit_event(action, entry_id, user, before=None, after=None):
@@ -177,7 +177,7 @@ def log_audit_event(action, entry_id, user, before=None, after=None):
 def get_all_ledger_entries():
     """
     Fetch all ledger entries from trades table, returns list of dicts.
-    All entries always have both 'fee' and 'fees' fields for compatibility.
+    All entries always have both 'fee' and 'fee' fields for compatibility.
     """
     if TEST_MODE_FLAG.exists():
         # Skip ledger reads in TEST_MODE
@@ -198,11 +198,11 @@ def get_all_ledger_entries():
         entries = []
         for row in cursor.fetchall():
             entry = dict(zip(columns, row))
-            # Normalize: always provide both 'fee' and 'fees'
-            if "fee" in entry and "fees" not in entry:
-                entry["fees"] = entry["fee"]
-            if "fees" in entry and "fee" not in entry:
-                entry["fee"] = entry["fees"]
+            # Normalize: always provide both 'fee' and 'fee'
+            if "fee" in entry and "fee" not in entry:
+                entry["fee"] = entry["fee"]
+            if "fee" in entry and "fee" not in entry:
+                entry["fee"] = entry["fee"]
             entries.append(entry)
         return entries
 

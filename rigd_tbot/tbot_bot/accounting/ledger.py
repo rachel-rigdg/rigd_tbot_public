@@ -22,7 +22,7 @@ def load_internal_ledger():
     conn = sqlite3.connect(db_path)
     cursor = conn.execute(
         "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, "
-        "(CASE WHEN 'fees' IN (SELECT name FROM pragma_table_info('trades')) THEN fees ELSE fee END) AS fees, "
+        "fee, "
         "broker, strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
         "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
         "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
@@ -40,7 +40,7 @@ def load_internal_ledger():
             "quantity": row[5],
             "price": row[6],
             "total_value": row[7],
-            "fees": row[8],
+            "fee": row[8],
             "broker": row[9],
             "strategy": row[10],
             "account": row[11],
@@ -86,7 +86,7 @@ def mark_entry_resolved(entry_id):
 
 def add_ledger_entry(entry_data):
     """
-    Legacy single-entry ledger posting (compat: supports fee/fees fields).
+    Legacy single-entry ledger posting (compat: supports 'fee' field).
     DO NOT REMOVE: required for UI and legacy integrations.
     """
     bot_identity = get_identity_tuple()
@@ -96,13 +96,10 @@ def add_ledger_entry(entry_data):
     try:
         qty = float(entry_data.get("quantity") or 0)
         price = float(entry_data.get("price") or 0)
-        fees = float(entry_data.get("fees") if "fees" in entry_data else entry_data.get("fee") or 0)
-        entry_data["total_value"] = round((qty * price) - fees, 2)
+        fee = float(entry_data.get("fee") or 0)
+        entry_data["total_value"] = round((qty * price) - fee, 2)
     except Exception:
         entry_data["total_value"] = entry_data.get("total_value") or 0
-    # Normalize fee/fees for schema compat
-    if "fees" in entry_data and "fee" not in entry_data:
-        entry_data["fee"] = entry_data["fees"]
     columns = [
         "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
@@ -137,12 +134,10 @@ def edit_ledger_entry(entry_id, updated_data):
     try:
         qty = float(updated_data.get("quantity") or 0)
         price = float(updated_data.get("price") or 0)
-        fees = float(updated_data.get("fees") if "fees" in updated_data else updated_data.get("fee") or 0)
-        updated_data["total_value"] = round((qty * price) - fees, 2)
+        fee = float(updated_data.get("fee") or 0)
+        updated_data["total_value"] = round((qty * price) - fee, 2)
     except Exception:
         updated_data["total_value"] = updated_data.get("total_value") or 0
-    if "fees" in updated_data and "fee" not in updated_data:
-        updated_data["fee"] = updated_data["fees"]
     columns = [
         "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
