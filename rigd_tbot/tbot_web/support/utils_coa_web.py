@@ -16,11 +16,8 @@ from tbot_bot.support.path_resolver import (
 # --- Load COA metadata and accounts ---
 def load_coa_metadata_and_accounts() -> Dict[str, Any]:
     coa_json_path = resolve_coa_json_path()
-    coa_metadata_path = resolve_coa_metadata_path()
-    if not os.path.exists(coa_json_path) or not os.path.exists(coa_metadata_path):
-        raise FileNotFoundError("COA or metadata file not found.")
-    with open(coa_metadata_path, "r", encoding="utf-8") as mdf:
-        metadata = json.load(mdf)
+    if not os.path.exists(coa_json_path):
+        raise FileNotFoundError("COA file not found.")
     with open(coa_json_path, "r", encoding="utf-8") as cf:
         accounts = json.load(cf)
     # --- ADD FLAT ACCOUNTS LOGIC ---
@@ -33,7 +30,7 @@ def load_coa_metadata_and_accounts() -> Dict[str, Any]:
                 flatten_coa_accounts(acc["children"], depth + 1, out)
         return out
     accounts_flat = flatten_coa_accounts(accounts)
-    return {"metadata": metadata, "accounts": accounts, "accounts_flat": accounts_flat}
+    return {"accounts": accounts, "accounts_flat": accounts_flat}
 
 # --- Save COA JSON and log change (admin) ---
 def save_coa_json(new_accounts: Any, user: str, diff: str):
@@ -73,7 +70,7 @@ def save_coa_json(new_accounts: Any, user: str, diff: str):
 # --- Export as Markdown ---
 def export_coa_markdown(coa_data: Dict[str, Any]) -> str:
     out = []
-    meta = coa_data["metadata"]
+    meta = coa_data.get("metadata", {})
     out.append(f"# Chart of Accounts (COA) — {meta.get('entity_code','')}/{meta.get('jurisdiction_code','')} v{meta.get('coa_version','')}")
     out.append(f"**Currency:** {meta.get('currency_code','')}\n")
     out.append(f"**COA Version:** {meta.get('coa_version','')}")
