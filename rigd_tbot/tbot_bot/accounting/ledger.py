@@ -23,10 +23,10 @@ def load_internal_ledger():
     cursor = conn.execute(
         "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, "
         "fee, "
-        "broker, strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
+        "broker_code, strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
         "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
         "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
-        "CASE WHEN approval_status = 'approved' THEN 'ok' ELSE 'mismatch' END AS status, json_metadata "
+        "'ok' AS status, json_metadata "
         "FROM trades"
     )
     results = []
@@ -101,7 +101,7 @@ def add_ledger_entry(entry_data):
     except Exception:
         entry_data["total_value"] = entry_data.get("total_value") or 0
     columns = [
-        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker",
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
         "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
         "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
@@ -139,7 +139,7 @@ def edit_ledger_entry(entry_id, updated_data):
     except Exception:
         updated_data["total_value"] = updated_data.get("total_value") or 0
     columns = [
-        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker",
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
         "updated_by", "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant",
         "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"

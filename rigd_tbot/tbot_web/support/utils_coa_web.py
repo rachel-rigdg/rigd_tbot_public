@@ -25,7 +25,7 @@ def load_coa_metadata_and_accounts() -> Dict[str, Any]:
         if out is None:
             out = []
         for acc in accounts:
-            out.append({"code": acc["code"], "name": acc["name"], "depth": depth})
+            out.append((acc["code"], acc["name"]))
             if "children" in acc and acc["children"]:
                 flatten_coa_accounts(acc["children"], depth + 1, out)
         return out
@@ -119,7 +119,7 @@ def compute_coa_diff(old: Any, new: Any) -> str:
     ))
     if not diff_lines:
         return "No changes."
-    return "\n".join(diff_lines[:200])  # Cap for UI display
+    return "\n".join(diff_lines[:200])
 
 # --- COA structure validator ---
 def validate_coa_json(accounts: Any):
