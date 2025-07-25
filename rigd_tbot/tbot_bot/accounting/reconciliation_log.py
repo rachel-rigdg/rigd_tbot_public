@@ -50,11 +50,22 @@ def log_reconciliation_entry(
 ):
     """
     Append a reconciliation log entry. compare_fields and raw_record are JSON-serializable dicts.
+    Ensures tuples are converted to lists, and all objects are JSON-serializable.
     """
     db_path = _get_db_path()
     timestamp_utc = datetime.utcnow().isoformat()
-    compare_fields_json = json.dumps(compare_fields or {})
-    raw_record_json = json.dumps(raw_record or {})
+    def make_json_safe(obj):
+        # Convert tuples to lists recursively for JSON safety.
+        if isinstance(obj, tuple):
+            return [make_json_safe(i) for i in obj]
+        elif isinstance(obj, dict):
+            return {k: make_json_safe(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [make_json_safe(i) for i in obj]
+        else:
+            return obj
+    compare_fields_json = json.dumps(make_json_safe(compare_fields or {}))
+    raw_record_json = json.dumps(make_json_safe(raw_record or {}))
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             "INSERT INTO reconciliation_log (trade_id, status, compare_fields, sync_run_id, timestamp_utc, api_hash, mapping_version, broker, raw_record_json, notes) "
