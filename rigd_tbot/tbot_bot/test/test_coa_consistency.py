@@ -1,5 +1,5 @@
 # tbot_bot/test/test_coa_consistency.py
-# Confirms the bot’s COA matches tbot_ledger_coa_template.json and schema; validates correct integration with utils_coa_web.py and coa_utils_ledger.py
+# Confirms the bot’s COA matches tbot_ledger_coa_template.json and schema; validates correct integration with utils_coa_web.py and coa_utils.py
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
 import unittest
@@ -7,14 +7,14 @@ import json
 import os
 import time
 from pathlib import Path
-from tbot_bot.accounting.coa_utils_ledger import (
+from tbot_bot.accounting.coa_utils import (
     load_coa_metadata,
     load_coa_accounts,
     validate_coa_structure
 )
 from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path, resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
-from tbot_bot.accounting.ledger.ledger_db import validate_ledger_schema
+from tbot_bot.accounting.ledger_modules.ledger_db import validate_ledger_schema
 
 MAX_TEST_TIME = 90  # seconds per test
 

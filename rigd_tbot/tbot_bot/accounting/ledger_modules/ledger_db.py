@@ -28,17 +28,20 @@ def validate_ledger_schema(db_path=None, schema_path=None):
     """
     db_path = db_path or get_db_path()
     schema_path = schema_path or resolve_ledger_schema_path()
-    with sqlite3.connect(db_path) as conn:
-        with open(schema_path, "r") as f:
-            schema = f.read()
-        cursor = conn.cursor()
-        # Split schema into statements, skip empty
-        for stmt in schema.split(";"):
-            stmt = stmt.strip()
-            if not stmt:
-                continue
-            try:
-                cursor.execute(f"EXPLAIN {stmt}")
-            except sqlite3.DatabaseError as e:
-                return False
+    try:
+        with sqlite3.connect(db_path) as conn:
+            with open(schema_path, "r") as f:
+                schema = f.read()
+            cursor = conn.cursor()
+            # Split schema into statements, skip empty
+            for stmt in schema.split(";"):
+                stmt = stmt.strip()
+                if not stmt:
+                    continue
+                try:
+                    cursor.execute(f"EXPLAIN {stmt}")
+                except sqlite3.DatabaseError as e:
+                    return False
+    except Exception:
+        return False
     return True

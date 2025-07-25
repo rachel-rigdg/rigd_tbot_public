@@ -34,6 +34,26 @@ def load_coa_accounts() -> List[Dict[str, Any]]:
     with open(coa_json_path, "r", encoding="utf-8") as cf:
         return json.load(cf)
 
+def load_coa_metadata_and_accounts() -> Dict[str, Any]:
+    """Unified loader for test and mapping: returns {'accounts_flat': [...], 'accounts_tree': [...], 'metadata': {...}}"""
+    metadata = load_coa_metadata()
+    accounts_tree = load_coa_accounts()
+    # flatten tree for compatibility
+    def flatten(accs, flat=None):
+        if flat is None:
+            flat = []
+        for acc in accs:
+            flat.append({"code": acc["code"], "name": acc["name"]})
+            if "children" in acc and acc["children"]:
+                flatten(acc["children"], flat)
+        return flat
+    accounts_flat = flatten(accounts_tree)
+    return {
+        "accounts_flat": accounts_flat,
+        "accounts_tree": accounts_tree,
+        "metadata": metadata
+    }
+
 def _get_identity_from_secret():
     key_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
     enc_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
