@@ -341,22 +341,30 @@ rigd_tbot/
 │   ├── test/				                        # Complete automated and manual test suite for all bot modules. All test scripts only read from secrets/keys created by Web UI; never modify config or secrets.
 │   │   ├── integration_test_runner.py              # TEST RUNNER. Launched by main.py in TEST_MODE, or manually/CI. Simulates full bot bootstrap, strategy, and shutdown. Writes only to test logs/artifacts. Never launches or supervises any watcher/worker.
 │   │   ├── test_backtest_engine.py                 # DEV/CI TEST. Validates backtest engine vs. reference metrics, equity curves. Never launched in production.
+│   │   ├── test_broker_sync.py                     # DEV/CI TEST. Validates broker ledger sync logic, idempotency, double-entry enforcement.
 │   │   ├── test_broker_trade_stub.py               # DEV/CI TEST. Sends randomized test trades to broker adapters, checks order flow and logging. Never launched in production.
 │   │   ├── test_coa_consistency.py                 # DEV/CI TEST. Confirms COA JSON/schema matches, validates COA integration with utils_coa.py. Never launched in production.
-│   │   ├── test_coa_web_endpoints.py               # DEV/CI TEST. End-to-end API/UI tests for COA web endpoints (/coa, /coa/api, /coa/export). Never launched in production.
 │   │   ├── test_coa_mapping.py                     # Automated tests: mapping assignment, learning, rollback/versioning, ambiguous/edge case handling.
-│   │   ├── test_holdings_manager.py       		# Unit/integration tests for holdings logic.
-│   │   ├── test_holdings_web_endpoints.py 		# Tests for new Flask blueprint.
+│   │   ├── test_coa_web_endpoints.py               # DEV/CI TEST. End-to-end API/UI tests for COA web endpoints (/coa, /coa/api, /coa/export). Never launched in production.
 │   │   ├── test_env_bot.py                         # DEV/CI TEST. Verifies .env_bot config, required variables, and structure. Never launched in production.
+│   │   ├── test_fallback_logic.py                  # DEV/CI TEST. Tests fallback logic for all strategy and trading modules.
+│   │   ├── test_holdings_manager.py       		# Unit/integration tests for holdings logic, rebalance, float, reserve, and order placement.
+│   │   ├── test_holdings_web_endpoints.py 		# DEV/CI TEST. End-to-end API/UI tests for holdings management web endpoints.
+│   │   ├── test_ledger_concurrency.py              # DEV/CI TEST. Tests concurrent ledger writes and thread locking.
+│   │   ├── test_ledger_corruption.py               # DEV/CI TEST. Tests ledger DB handling under corrupted/unreadable state.
+│   │   ├── test_ledger_double_entry.py             # DEV/CI TEST. Tests double-entry posting, balance, and enforcement logic.
+│   │   ├── test_ledger_migration.py                # DEV/CI TEST. Tests schema migration/versioning for ledgers.
+│   │   ├── test_ledger_reconciliation.py           # DEV/CI TEST. Tests ledger-COA reconciliation and mismatch detection.
 │   │   ├── test_ledger_schema.py                   # DEV/CI TEST. Ensures all ledgers match schema, enforce double-entry and compliance. Never launched in production.
+│   │   ├── test_ledger_write_failure.py            # DEV/CI TEST. Tests error propagation on ledger DB write failures/permissions.
 │   │   ├── test_logging_format.py                  # DEV/CI TEST. Validates structure, content, and completeness of all bot log files. Never launched in production.
 │   │   ├── test_main_bot.py                        # DEV/CI TEST. Asserts session start/stop lifecycle, CLI/web triggers, and state changes. Never launched in production.
+│   │   ├── test_screener_credentials.py            # DEV/CI TEST. Unit and integration tests for screener credential management module, verifying encryption, persistence, and UI integration.
 │   │   ├── test_screener_integration.py            # DEV/CI TEST. Full integration/compatibility test for all screener modules, API secrets, and symbol eligibility. Never launched in production.
 │   │   ├── test_screener_random.py                 # DEV/CI TEST. Tests screener with randomized symbols for eligibility/filtering logic. Never launched in production.
-│   │   ├── test_screener_credentials.py            # DEV/CI TEST. Unit and integration tests for screener credential management module, verifying encryption, persistence, and UI integration.
 │   │   ├── test_strategy_selfcheck.py              # DEV/CI TEST. Runs .self_check() on all strategy modules, validates config/signal paths. Never launched in production.
-│   │   ├── test_strategy_tuner.py                  # DEV/CI TEST. Tests strategy modules with sample tickers; validates entry/exit, thresholds. Never launched in production.
-│   │   └── test_universe_cache.py                  # DEV/CI TEST. Verifies universe cache schema, age, and content. Never launched in production.
+│   │   ├── test_symbol_universe_refresh.py         # DEV/CI TEST. Tests universe orchestrator, build, credential gating, and output JSONs.
+│   │   └──test_universe_cache.py                  # DEV/CI TEST. Verifies universe cache schema, age, and content. Never launched in production.
 │   │
 │   └── trading/			                    # Trade Execution
 │       ├── holdings_manager.py          	# Core logic for ETF purchases, sales, rebalancing, cash top-up, tax and payroll allocations.
