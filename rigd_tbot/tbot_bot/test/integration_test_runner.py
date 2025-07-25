@@ -30,7 +30,7 @@ if env_path.exists():
 
 BOT_IDENTITY = get_bot_identity()
 CONTROL_DIR = resolve_control_path()
-MAX_STRATEGY_TIME = 60  # seconds per strategy
+MAX_TEST_TIME = 90  # seconds per test
 
 ALL_TESTS = [
     "broker_sync",
@@ -148,10 +148,10 @@ def write_log_realtime(proc):
             if not out and not err and proc.poll() is not None:
                 break
             if out:
-                logf.write(out.decode())
+                logf.write(out.decode(errors="replace"))
                 logf.flush()
             if err:
-                logf.write(err.decode())
+                logf.write(err.decode(errors="replace"))
                 logf.flush()
 
 def run_subprocess_with_realtime_log(cmd, **kwargs):
@@ -161,8 +161,18 @@ def run_subprocess_with_realtime_log(cmd, **kwargs):
         stderr=subprocess.PIPE,
         **kwargs
     )
-    write_log_realtime(proc)
-    proc.wait()
+    try:
+        start = time.monotonic()
+        while True:
+            if proc.poll() is not None:
+                break
+            write_log_realtime(proc)
+            if time.monotonic() - start > MAX_TEST_TIME:
+                proc.kill()
+                break
+            time.sleep(0.25)
+    except Exception:
+        proc.kill()
     return proc
 
 def run_single_test_module(flag):
@@ -195,15 +205,25 @@ def run_single_test_module(flag):
     if module:
         print(f"[integration_test_runner] Detected individual test flag: {flag}. Running {module}")
         update_test_status(test_name, "RUNNING")
-        proc = run_subprocess_with_realtime_log(
+        proc = subprocess.Popen(
             ["python3", "-u", "-m", module],
             cwd=PROJECT_ROOT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)}
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
         )
-        if proc.returncode == 0:
-            update_test_status(test_name, "PASSED")
-        else:
-            update_test_status(test_name, "ERRORS")
+        try:
+            proc.wait(timeout=MAX_TEST_TIME)
+            write_log_realtime(proc)
+            if proc.returncode == 0:
+                update_test_status(test_name, "PASSED")
+            else:
+                update_test_status(test_name, "ERRORS")
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            update_test_status(test_name, "TIMEOUT")
+            with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+                logf.write(f"[integration_test_runner] Test {test_name} timed out after {MAX_TEST_TIME} seconds.\n")
     else:
         print(f"[integration_test_runner] Unknown test flag or test module: {flag}")
         update_test_status(test_name, "ERRORS")
@@ -267,14 +287,21 @@ def run_integration_test():
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE
                 )
-                write_log_realtime(proc)
-                proc.wait()
-                if proc.returncode == 0:
-                    update_test_status(test_name, "PASSED")
-                    test_results[test_name] = "PASSED"
-                else:
-                    update_test_status(test_name, "ERRORS")
-                    test_results[test_name] = "ERRORS"
+                try:
+                    proc.wait(timeout=MAX_TEST_TIME)
+                    write_log_realtime(proc)
+                    if proc.returncode == 0:
+                        update_test_status(test_name, "PASSED")
+                        test_results[test_name] = "PASSED"
+                    else:
+                        update_test_status(test_name, "ERRORS")
+                        test_results[test_name] = "ERRORS"
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    update_test_status(test_name, "TIMEOUT")
+                    test_results[test_name] = "TIMEOUT"
+                    with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+                        logf.write(f"[integration_test_runner] Test {test_name} timed out after {MAX_TEST_TIME} seconds.\n")
                 if flag_path.exists():
                     flag_path.unlink()
                 time.sleep(1)
@@ -295,7 +322,6 @@ def run_integration_test():
 
         log_event("integration_test", "Integration test completed.")
 
-        # Write final test results for web UI consumption
         with open(get_output_path("logs", "integration_test_results.json"), "w", encoding="utf-8") as f:
             json.dump(test_results, f, indent=2)
 

@@ -12,7 +12,7 @@
 }
 
 .left-panel {
-    flex: 0 0 300px;
+    flex: 0 0 400px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
