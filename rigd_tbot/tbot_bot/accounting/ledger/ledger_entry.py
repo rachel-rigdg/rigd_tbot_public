@@ -1,54 +1,147 @@
 # tbot_bot/accounting/ledger/ledger_entry.py
 
-import json
-from cryptography.fernet import Fernet
-from pathlib import Path
 import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
-from tbot_bot.support.utils_identity import get_bot_identity
+from tbot_bot.support.decrypt_secrets import load_bot_identity
+from tbot_web.support.auth_web import get_current_user
+from tbot_bot.accounting.ledger.ledger_account_map import load_broker_code, load_account_number
 
-BOT_ID = get_bot_identity()
-CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
-TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+def get_identity_tuple():
+    identity = load_bot_identity()
+    return tuple(identity.split("_"))
 
-def get_entry_by_id(entry_id):
-    if TEST_MODE_FLAG.exists():
-        return None
-    key_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
-    enc_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
-    key = key_path.read_bytes()
-    cipher = Fernet(key)
-    plaintext = cipher.decrypt(enc_path.read_bytes())
-    bot_identity_data = json.loads(plaintext.decode("utf-8"))
-    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity_data.get("BOT_IDENTITY_STRING").split("_")
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
-        columns = [c[1] for c in conn.execute("PRAGMA table_info(trades)")]
-        entry = dict(zip(columns, row)) if row else None
-        if entry is not None:
-            if "fee" in entry and "fee" not in entry:
-                entry["fee"] = entry["fee"]
-        return entry
+def load_internal_ledger():
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.execute(
+        "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, "
+        "fee, "
+        "broker_code, strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
+        "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
+        "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
+        "'ok' AS status, json_metadata "
+        "FROM trades"
+    )
+    results = []
+    for row in cursor.fetchall():
+        results.append({
+            "id": row[0],
+            "ledger_entry_id": row[1],
+            "datetime_utc": row[2],
+            "symbol": row[3],
+            "action": row[4],
+            "quantity": row[5],
+            "price": row[6],
+            "total_value": row[7],
+            "fee": row[8],
+            "broker": row[9],
+            "strategy": row[10],
+            "account": row[11],
+            "trade_id": row[12],
+            "tags": row[13],
+            "notes": row[14],
+            "jurisdiction": row[15],
+            "entity_code": row[16],
+            "language": row[17],
+            "created_by": row[18],
+            "updated_by": row[19],
+            "approved_by": row[20],
+            "approval_status": row[21],
+            "gdpr_compliant": row[22],
+            "ccpa_compliant": row[23],
+            "pipeda_compliant": row[24],
+            "hipaa_sensitive": row[25],
+            "iso27001_tag": row[26],
+            "soc2_type": row[27],
+            "created_at": row[28],
+            "updated_at": row[29],
+            "status": row[30],
+            "json_metadata": row[31],
+        })
+    conn.close()
+    return results
 
-def get_all_ledger_entries():
-    if TEST_MODE_FLAG.exists():
-        return []
-    key_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
-    enc_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
-    key = key_path.read_bytes()
-    cipher = Fernet(key)
-    plaintext = cipher.decrypt(enc_path.read_bytes())
-    bot_identity_data = json.loads(plaintext.decode("utf-8"))
-    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity_data.get("BOT_IDENTITY_STRING").split("_")
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    with sqlite3.connect(db_path) as conn:
-        cursor = conn.execute("SELECT * FROM trades")
-        columns = [c[0] for c in cursor.description]
-        entries = []
-        for row in cursor.fetchall():
-            entry = dict(zip(columns, row))
-            if "fee" in entry and "fee" not in entry:
-                entry["fee"] = entry["fee"]
-            entries.append(entry)
-        return entries
+def mark_entry_resolved(entry_id):
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    current_user = get_current_user()
+    updater = (
+        current_user.username if hasattr(current_user, "username")
+        else current_user if current_user else "system"
+    )
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "UPDATE trades SET approval_status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (updater, entry_id)
+    )
+    conn.commit()
+    conn.close()
+
+def add_ledger_entry(entry_data):
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    entry_data["broker"] = load_broker_code()
+    entry_data["account"] = load_account_number()
+    try:
+        qty = float(entry_data.get("quantity") or 0)
+        price = float(entry_data.get("price") or 0)
+        fee = float(entry_data.get("fee") or 0)
+        entry_data["total_value"] = round((qty * price) - fee, 2)
+    except Exception:
+        entry_data["total_value"] = entry_data.get("total_value") or 0
+    columns = [
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
+        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
+        "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
+        "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
+    ]
+    values = [entry_data.get(col) for col in columns]
+    placeholders = ", ".join("?" for _ in columns)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
+        values
+    )
+    conn.commit()
+    conn.close()
+
+def edit_ledger_entry(entry_id, updated_data):
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    updated_data["broker"] = load_broker_code()
+    updated_data["account"] = load_account_number()
+    try:
+        qty = float(updated_data.get("quantity") or 0)
+        price = float(updated_data.get("price") or 0)
+        fee = float(updated_data.get("fee") or 0)
+        updated_data["total_value"] = round((qty * price) - fee, 2)
+    except Exception:
+        updated_data["total_value"] = updated_data.get("total_value") or 0
+    columns = [
+        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
+        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
+        "updated_by", "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant",
+        "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
+    ]
+    set_clause = ", ".join([f"{col}=?" for col in columns])
+    values = [updated_data.get(col) for col in columns]
+    values.append(entry_id)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        f"UPDATE trades SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        values
+    )
+    conn.commit()
+    conn.close()
+
+def delete_ledger_entry(entry_id):
+    bot_identity = get_identity_tuple()
+    db_path = resolve_ledger_db_path(*bot_identity)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "DELETE FROM trades WHERE id = ?",
+        (entry_id,)
+    )
+    conn.commit()
+    conn.close()

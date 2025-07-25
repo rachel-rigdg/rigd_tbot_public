@@ -78,19 +78,34 @@ rigd_tbot/
 │   ├── __init__.py
 │   │
 │   ├── accounting/                              # Accounting integration, ledger/COA/schema helpers (all logic for bot ledger/COA creation, validation, export)
+│   │   ├── README_COA.md                        # Documentation: COA/ledger schema update, UI editing instructions, compliance notes
 │   │   ├── account_transaction.py               # Builds accounting journal entries for trade export to accounting (never manages/provisions secrets/keys)
 │   │   ├── accounting_api.py                    # Exports finalized trade/report data to accounting system endpoint (post-trade only, no live config)
 │   │   ├── accounting_config.py                 # Validates and creates required output folder structure; enforces ledger/COA existence and schema compliance
-│   │   ├── coa_mapping_table.py                 # COA mapping table: rule storage, lookup, auto-extension, version/snapshot, and learning from manual entries.
+│   │   ├── coa_mapping_table.py                 # COA mapping table: rule storage, lookup, auto-extension, version/snapshot, and learning from manual entries
 │   │   ├── coa_utils.py                         # COA DB utilities: create/import/export/validate COA db (metadata + hierarchy), supports Web UI editing
 │   │   ├── init_coa_db.py                       # Bootstrap script: initializes a new COA DB using tbot_ledger_coa_template.json as hierarchy/template (called only at provisioning/reset)
 │   │   ├── init_ledger_db.py                    # Bootstrap script: initializes a new bot ledger DB file using tbot_ledger_schema.sql (called only at provisioning/reset)
-│   │   ├── ledger_utils.py                      # Ledger DB utilities: create OFX-compliant ledger db, schema validation, audit helpers (no COA/metadata logic)
-│   │   ├── reconciliation_log.py                # Table/model for reconciliation log: trade_id, status, compare_fields, sync_run_id, API hash, versioning.
-│   │   ├── tbot_ledger_coa_template.json        # Editable COA hierarchy/template (codes/names/structure, referenced and modified via coa.html; includes all holdings, float, tax, payroll reserve, and audit log fields 
+│   │   ├── reconciliation_log.py                # Table/model for reconciliation log: trade_id, status, compare_fields, sync_run_id, API hash, versioning
+│   │   ├── tbot_ledger_coa_template.json        # Editable COA hierarchy/template (codes/names/structure, referenced and modified via coa.html; includes all holdings, float, tax, payroll reserve, and audit log fields)
 │   │   ├── tbot_ledger_schema.sql               # SQL schema file for bot ledger DB (transactions, double-entry, audit, summary tables)
-│   │   └── README_COA.md                        # Documentation: COA/ledger schema update, UI editing instructions, compliance notes
-│   │
+│   │   ├── ledger_utils.py                      # (LEGACY) Ledger DB helpers—deprecated, use ledger/* modules
+│   │   ├── ledger.py                            # (LEGACY) Unified ledger API—deprecated, use ledger/* modules
+│   │   │ 
+│   │   └── ledger/                              # All production ledger logic (modular, testable, double-entry, audit-compliant)
+│   │       ├── ledger_account_map.py            # Loads broker/account IDs, COA account keys, and logical account path lookups
+│   │       ├── ledger_audit.py                  # Audit logging (writes to audit_trail table)
+│   │       ├── ledger_balance.py                # Computes per-account and running balances
+│   │       ├── ledger_core.py                   # Reserved for low-level shared/core ledger logic
+│   │       ├── ledger_db.py                     # Schema validation, connection management, identity verification
+│   │       ├── ledger_double_entry.py           # Double-entry posting and validation, debit/credit enforcement
+│   │       ├── ledger_edit.py                   # Entry editing, updating, deleting, resolving (audit tracked)
+│   │       ├── ledger_entry.py                  # Entry creation (legacy + compat), bulk fetch/load_internal_ledger
+│   │       ├── ledger_hooks.py                  # Tax, payroll, float, rebalance, and reserve entry hooks
+│   │       ├── ledger_misc.py                   # Miscellaneous ledger helpers/utilities
+│   │       ├── ledger_snapshot.py               # Snapshots ledger db for rollback/backup before sync or destructive ops
+│   │       └── ledger_sync.py                   # Orchestrates broker sync, posting, reconciliation, and logging
+│   │ 
 │   ├── backtest/                                # Backtesting, simulation, and research
 │   │   ├── backtest_engine.py                   # Strategy replay and simulation engine
 │   │   ├── load_historical_data.py              # Loads CSV/OHLCV/tick data for backtesting

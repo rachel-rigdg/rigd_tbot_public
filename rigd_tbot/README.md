@@ -1,5 +1,5 @@
 ==============================
-Objective (UPDATED, v045-compliant)
+Objective 
 ==============================
 
 TradeBot (TBot) is a fully automated intraday trading system that executes bi-directional trades using long equity for bullish signals and inverse ETFs or long puts for bearish signals, strictly determined by `SHORT_TYPE_*` values in `.env_bot`. All broker integrations must support long equity and at least one approved bearish instrument (long put or inverse ETF) for every assignment.
