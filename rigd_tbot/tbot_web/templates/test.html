@@ -18,7 +18,6 @@
             <button id="trigger-btn" class="trigger-btn test-btn" onclick="runAllTests()" {% if test_active %}disabled{% endif %}>Run All Tests</button>
             <div style="margin-bottom: 0.8em;"></div>
             <div class="test-list">
-                <div><button class="test-btn" id="btn-universe_cache" onclick="runIndividualTest('universe_cache')" {% if test_active %}disabled{% endif %}>Run Universe Cache Test</button><span class="test-status-indicator" id="status-universe_cache"></span></div>
                 <div><button class="test-btn" id="btn-strategy_selfcheck" onclick="runIndividualTest('strategy_selfcheck')" {% if test_active %}disabled{% endif %}>Run Strategy Self-Check Test</button><span class="test-status-indicator" id="status-strategy_selfcheck"></span></div>
                 <div><button class="test-btn" id="btn-screener_random" onclick="runIndividualTest('screener_random')" {% if test_active %}disabled{% endif %}>Run Screener Random Test</button><span class="test-status-indicator" id="status-screener_random"></span></div>
                 <div><button class="test-btn" id="btn-screener_integration" onclick="runIndividualTest('screener_integration')" {% if test_active %}disabled{% endif %}>Run Screener Integration Test</button><span class="test-status-indicator" id="status-screener_integration"></span></div>
@@ -40,6 +39,7 @@
                 <div><button class="test-btn" id="btn-ledger_concurrency" onclick="runIndividualTest('ledger_concurrency')" {% if test_active %}disabled{% endif %}>Run Ledger Concurrency Test</button><span class="test-status-indicator" id="status-ledger_concurrency"></span></div>
                 <div><button class="test-btn" id="btn-ledger_migration" onclick="runIndividualTest('ledger_migration')" {% if test_active %}disabled{% endif %}>Run Ledger Migration Test</button><span class="test-status-indicator" id="status-ledger_migration"></span></div>
                 <div><button class="test-btn" id="btn-ledger_reconciliation" onclick="runIndividualTest('ledger_reconciliation')" {% if test_active %}disabled{% endif %}>Run Ledger Reconciliation Test</button><span class="test-status-indicator" id="status-ledger_reconciliation"></span></div>
+                <div><button class="test-btn" id="btn-universe_cache" onclick="runIndividualTest('universe_cache')" {% if test_active %}disabled{% endif %}>Run Universe Cache Test</button><span class="test-status-indicator" id="status-universe_cache"></span></div>
             </div>
         </div>
         <div class="right-panel">
