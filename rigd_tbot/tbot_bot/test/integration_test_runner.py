@@ -241,6 +241,14 @@ def run_integration_test():
 
     log_event("integration_test", "Starting integration test runner...")
 
+    # Clear logs before running all tests
+    try:
+        log_path = TEST_LOG_PATH
+        if log_path.exists():
+            log_path.unlink()
+    except Exception:
+        pass
+
     reset_all_status()
 
     config = get_bot_config()

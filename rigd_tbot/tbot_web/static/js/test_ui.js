@@ -89,11 +89,19 @@ function enableButtons() {
     document.querySelectorAll('.test-btn').forEach(btn => btn.disabled = false);
 }
 
+function clearLogs() {
+    const logOutput = document.getElementById('test-log-output');
+    if (logOutput) {
+        logOutput.textContent = '';
+    }
+}
+
 function runAllTests() {
     disableButtons();
     currentTest = "ALL TESTS";
     document.getElementById('running-test-label').textContent = "Running: ALL TESTS";
     allTests.forEach(test => setIndicator(test, ""));
+    clearLogs();
     fetch("/test/trigger", { method: "POST" })
         .then(() => {
             startLogPolling();
@@ -106,6 +114,7 @@ function runIndividualTest(testName) {
     currentTest = testName;
     document.getElementById('running-test-label').textContent = "Running: " + testName;
     setIndicator(testName, "RUNNING");
+    clearLogs();
     fetch("/test/run/" + encodeURIComponent(testName), { method: "POST" })
         .then(response => response.json())
         .then(data => {
