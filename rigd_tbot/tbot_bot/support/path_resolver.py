@@ -258,6 +258,8 @@ def resolve_status_summary_path(bot_identity: str = None) -> str:
     return str(summaries_dir / "status.json")
 
 def resolve_runtime_script_path(script_name: str) -> str:
+    if script_name == "universe_orchestrator.py":
+        return str(PROJECT_ROOT / "tbot_bot" / "screeners" / "universe_orchestrator.py")
     return str(PROJECT_ROOT / "tbot_bot" / "runtime" / script_name)
 
 def resolve_support_script_path(script_name: str) -> str:
@@ -298,9 +300,6 @@ def resolve_trade_logger_path() -> str:
 
 def resolve_status_logger_path() -> str:
     return resolve_runtime_script_path("status_logger.py")
-
-def resolve_symbol_universe_refresh_path() -> str:
-    return resolve_runtime_script_path("symbol_universe_refresh.py")
 
 def resolve_integration_test_runner_path() -> str:
     return resolve_test_script_path("integration_test_runner.py")
