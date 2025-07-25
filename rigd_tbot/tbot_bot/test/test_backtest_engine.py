@@ -28,7 +28,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
 import pytest
-from tbot_bot.backtest.backtest_engine import run_backtest
+from tbot_bot.backtest.backtest_engine import run_backtest as run_backtest_engine
 from tbot_bot.config.env_bot import get_bot_config
 
 @pytest.fixture
@@ -38,7 +38,7 @@ def backtest_config(monkeypatch):
 
 def test_backtest_open(backtest_config):
     safe_print("Running test_backtest_open...")
-    result = run_backtest(
+    result = run_backtest_engine(
         strategy="open",
         start_date="2023-01-01",
         end_date="2023-01-31",
@@ -51,7 +51,7 @@ def test_backtest_open(backtest_config):
 
 def test_backtest_mid(backtest_config):
     safe_print("Running test_backtest_mid...")
-    result = run_backtest(
+    result = run_backtest_engine(
         strategy="mid",
         start_date="2023-01-01",
         end_date="2023-01-31",
@@ -63,7 +63,7 @@ def test_backtest_mid(backtest_config):
 
 def test_backtest_close(backtest_config):
     safe_print("Running test_backtest_close...")
-    result = run_backtest(
+    result = run_backtest_engine(
         strategy="close",
         start_date="2023-01-01",
         end_date="2023-01-31",
@@ -76,7 +76,7 @@ def test_backtest_close(backtest_config):
 def test_invalid_strategy(backtest_config):
     safe_print("Running test_invalid_strategy...")
     try:
-        run_backtest(
+        run_backtest_engine(
             strategy="invalid",
             start_date="2023-01-01",
             end_date="2023-01-31",

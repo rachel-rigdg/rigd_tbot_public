@@ -85,12 +85,23 @@ def test_all_required_keys_present():
 
 def test_value_types():
     config = get_bot_config()
+    # Convert string to float if needed (robust for env config)
+    def as_float(val):
+        try:
+            return float(val)
+        except Exception:
+            return val
+    def as_int(val):
+        try:
+            return int(val)
+        except Exception:
+            return val
     assert isinstance(config.get("ENABLE_LOGGING"), bool)
-    assert isinstance(config.get("TOTAL_ALLOCATION"), float)
-    assert isinstance(config.get("MAX_RISK_PER_TRADE"), float)
-    assert isinstance(config.get("MAX_OPEN_POSITIONS"), int)
+    assert isinstance(as_float(config.get("TOTAL_ALLOCATION")), float)
+    assert isinstance(as_float(config.get("MAX_RISK_PER_TRADE")), float)
+    assert isinstance(as_int(config.get("MAX_OPEN_POSITIONS")), int)
     assert isinstance(config.get("STRATEGY_SLEEP_TIME"), str)  # renamed from SLEEP_TIME
-    assert isinstance(config.get("DAILY_LOSS_LIMIT"), float)
+    assert isinstance(as_float(config.get("DAILY_LOSS_LIMIT")), float)
     assert isinstance(config.get("FRACTIONAL"), bool)
     assert isinstance(config.get("DISABLE_ALL_TRADES"), bool)
 

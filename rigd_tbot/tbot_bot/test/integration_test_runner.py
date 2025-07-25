@@ -16,11 +16,20 @@ from tbot_bot.support.utils_identity import get_bot_identity
 import subprocess
 import os
 
-load_dotenv(dotenv_path=str(get_project_root() / ".env"))
+PROJECT_ROOT = get_project_root()
+
+# PATCH: Always force load .env if present, even for subprocess (web/Flask)
+env_path = Path(PROJECT_ROOT) / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=str(env_path), override=True)
+    with open(env_path, "r") as f:
+        for line in f:
+            if "=" in line and not line.strip().startswith("#"):
+                k, v = line.strip().split("=", 1)
+                os.environ[k] = v
 
 BOT_IDENTITY = get_bot_identity()
 CONTROL_DIR = resolve_control_path()
-PROJECT_ROOT = get_project_root()
 MAX_STRATEGY_TIME = 60  # seconds per strategy
 
 ALL_TESTS = [

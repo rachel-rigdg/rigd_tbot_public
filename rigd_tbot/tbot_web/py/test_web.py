@@ -106,6 +106,18 @@ ALL_TESTS = [
     "holdings_manager"
 ]
 
+def patch_env_from_dotenv():
+    # Always load and export all .env values into os.environ (for subprocess consistency)
+    env_path = Path(PROJECT_ROOT) / ".env"
+    if env_path.exists():
+        from dotenv import load_dotenv
+        load_dotenv(dotenv_path=str(env_path), override=True)
+        with open(env_path, "r") as f:
+            for line in f:
+                if "=" in line and not line.strip().startswith("#"):
+                    k, v = line.strip().split("=", 1)
+                    os.environ[k] = v
+
 @test_web.route("/", methods=["GET"])
 @admin_required
 def test_page():
@@ -124,7 +136,7 @@ def trigger_test_mode():
     with LOCK:
         if any_test_active():
             return jsonify({"result": "already_running"})
-        # Set all statuses to QUEUED before starting
+        patch_env_from_dotenv()
         set_test_status({t: "QUEUED" for t in ALL_TESTS})
         create_test_flag()
         log_path = get_test_log_path()
@@ -148,9 +160,10 @@ def run_individual_test(test_name):
     with LOCK:
         if any_test_active():
             return jsonify({"result": "already_running"})
+        patch_env_from_dotenv()
         test_map = {
-            "broker_sync": "tbot_bot.test.test_broker_sync",          # <--- NEW
-            "coa_mapping": "tbot_bot.test.test_coa_mapping",          # <--- NEW
+            "broker_sync": "tbot_bot.test.test_broker_sync",
+            "coa_mapping": "tbot_bot.test.test_coa_mapping",
             "universe_cache": "tbot_bot.test.test_universe_cache",
             "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
             "screener_random": "tbot_bot.test.test_screener_random",
@@ -169,7 +182,6 @@ def run_individual_test(test_name):
         module = test_map.get(test_name)
         if not module:
             return jsonify({"result": "unknown_test"})
-        # Blank all, then mark this as QUEUED except for this test as RUNNING
         status_dict = {t: "QUEUED" for t in ALL_TESTS}
         status_dict[test_name] = "RUNNING"
         set_test_status(status_dict)

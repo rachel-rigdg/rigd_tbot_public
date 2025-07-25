@@ -53,10 +53,10 @@ if __name__ == "__main__":
 
     TEST_TICKERS = ["AAPL", "MSFT", "TSLA", "AMD", "NVDA", "SPY", "QQQ"]
     executed_sides = defaultdict(set)
-    status = "PASSED"
+    _status = "PASSED"
 
     def run_trade_stub():
-        nonlocal status
+        nonlocal _status
         safe_print("[test_broker_trade_stub] Starting randomized trade validation sequence...")
 
         attempts = 0
@@ -99,16 +99,16 @@ if __name__ == "__main__":
                     successful += 1
                 else:
                     safe_print(f"[test_broker_trade_stub] No trade result returned for {symbol}")
-                    status = "ERRORS"
+                    _status = "ERRORS"
             except Exception as e:
                 err_msg = f"Trade execution error: {e}"
                 safe_print(f"[test_broker_trade_stub] {err_msg}")
-                status = "ERRORS"
+                _status = "ERRORS"
 
             time.sleep(DELAY_BETWEEN_TRADES)
 
         safe_print(f"[test_broker_trade_stub] Trade stub sequence completed: {successful} trades executed.")
-        safe_print(f"[test_broker_trade_stub] FINAL RESULT: {status if status != 'PASSED' or successful < TRADE_COUNT else 'PASSED'}")
+        safe_print(f"[test_broker_trade_stub] FINAL RESULT: {_status if _status != 'PASSED' or successful < TRADE_COUNT else 'PASSED'}")
 
     def run_test():
         run_trade_stub()

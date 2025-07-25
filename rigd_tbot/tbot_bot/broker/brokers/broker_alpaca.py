@@ -249,8 +249,10 @@ class AlpacaBroker:
         Returns all cash/fee/dividend/transfer activity in OFX/ledger-normalized dicts.
         Handles pagination, required fields, and normalization.
         """
+        # Use all valid documented types for max data coverage
+        all_types = "FILL,TRANS,DIV,JNLC,JNLS,MFEE,ACATC,ACATS,CSD,CSR,CSW,INT,WIRE"
         params = {
-            "activity_types": "FILL,CASH,JNLC,JNLS,DIV,MFEE,fee,TRANS",
+            "activity_types": all_types,
             "after": start_date
         }
         if end_date:
@@ -274,7 +276,7 @@ class AlpacaBroker:
                     "quantity": float(a.get("qty") or 0),
                     "price": float(a.get("price") or 0),
                     "fee": float(a.get("fee") or 0),
-                    "fee": float(a.get("commission", 0)) if "commission" in a else 0,
+                    "commission": float(a.get("commission", 0)) if "commission" in a else 0,
                     "datetime_utc": a.get("transaction_time"),
                     "status": a.get("status"),
                     "total_value": float(a.get("qty", 0)) * float(a.get("price", 0)),
@@ -292,3 +294,61 @@ class AlpacaBroker:
                 break
         log_event("broker_alpaca", f"fetch_cash_activity complete, {len(activities)} activity entries. cred_hash={self.credential_hash}", level="info")
         return activities
+
+    def fetch_all_account_activities_raw(self, start_date, end_date=None):
+        """
+        Fetches and returns ALL raw account activities (full JSON) from Alpaca for all valid activity_types, paginated.
+        """
+        all_types = "FILL,TRANS,DIV,JNLC,JNLS,MFEE,ACATC,ACATS,CSD,CSR,CSW,INT,WIRE"
+        params = {
+            "activity_types": all_types,
+            "after": start_date
+        }
+        if end_date:
+            params["until"] = end_date
+        activities = []
+        next_page_token = None
+        while True:
+            if next_page_token:
+                params["page_token"] = next_page_token
+            resp = self._request("GET", "/v2/account/activities", params=params)
+            if isinstance(resp, dict) and "activities" in resp:
+                page = resp["activities"]
+            else:
+                page = resp
+            activities.extend(page)
+            if isinstance(resp, dict) and "next_page_token" in resp and resp["next_page_token"]:
+                next_page_token = resp["next_page_token"]
+            else:
+                break
+        log_event("broker_alpaca", f"fetch_all_account_activities_raw complete, {len(activities)} activity entries. cred_hash={self.credential_hash}", level="info")
+        return activities
+
+    def fetch_all_orders_raw(self, start_date, end_date=None):
+        """
+        Fetches and returns ALL raw orders (full JSON) from Alpaca paginated.
+        """
+        params = {
+            "status": "all",
+            "limit": 100,
+            "after": start_date
+        }
+        if end_date:
+            params["until"] = end_date
+        orders = []
+        next_page_token = None
+        while True:
+            if next_page_token:
+                params["page_token"] = next_page_token
+            resp = self._request("GET", "/v2/orders", params=params)
+            if isinstance(resp, dict) and "orders" in resp:
+                page = resp["orders"]
+            else:
+                page = resp
+            orders.extend(page)
+            if isinstance(resp, dict) and "next_page_token" in resp and resp["next_page_token"]:
+                next_page_token = resp["next_page_token"]
+            else:
+                break
+        log_event("broker_alpaca", f"fetch_all_orders_raw complete, {len(orders)} orders. cred_hash={self.credential_hash}", level="info")
+        return orders

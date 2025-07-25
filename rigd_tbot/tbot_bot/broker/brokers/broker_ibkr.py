@@ -305,3 +305,91 @@ class IBKRBroker:
         except Exception as e:
             log_event("broker_ibkr", f"fetch_cash_activity error: {e}", level="error")
             return []
+
+    # ============ EXTENDED RAW DATA DUMP (NEW) ============
+
+    def fetch_all_trades_raw(self, start_date=None, end_date=None):
+        """
+        Fetches and returns ALL raw trades (ib_insync Trade objects) within date range, paginated if available.
+        """
+        try:
+            all_trades = self.client.trades()
+            raw = []
+            for t in all_trades:
+                trade_time = str(t.log[-1].time) if t.log and t.log[-1].time else None
+                if start_date and trade_time and trade_time < start_date:
+                    continue
+                if end_date and trade_time and trade_time > end_date:
+                    continue
+                raw.append(vars(t))
+            log_event("broker_ibkr", f"fetch_all_trades_raw complete, {len(raw)} entries. cred_hash={self.credential_hash}", level="info")
+            return raw
+        except Exception as e:
+            log_event("broker_ibkr", f"fetch_all_trades_raw error: {e}", level="error")
+            return []
+
+    def fetch_all_account_summary_raw(self):
+        """
+        Returns the full raw account summary as provided by IBKR API (ib_insync TagValue objects).
+        """
+        try:
+            account_summ = self.client.accountSummary()
+            raw = [vars(c) for c in account_summ]
+            log_event("broker_ibkr", f"fetch_all_account_summary_raw complete, {len(raw)} entries. cred_hash={self.credential_hash}", level="info")
+            return raw
+        except Exception as e:
+            log_event("broker_ibkr", f"fetch_all_account_summary_raw error: {e}", level="error")
+            return []
+
+    def fetch_all_orders_raw(self, start_date=None, end_date=None):
+        """
+        Fetches and returns ALL raw open/closed orders (ib_insync Order objects) within date range.
+        """
+        try:
+            all_orders = self.client.orders()
+            raw = []
+            for o in all_orders:
+                order_time = str(o.transmitTime) if hasattr(o, "transmitTime") and o.transmitTime else None
+                if start_date and order_time and order_time < start_date:
+                    continue
+                if end_date and order_time and order_time > end_date:
+                    continue
+                raw.append(vars(o))
+            log_event("broker_ibkr", f"fetch_all_orders_raw complete, {len(raw)} entries. cred_hash={self.credential_hash}", level="info")
+            return raw
+        except Exception as e:
+            log_event("broker_ibkr", f"fetch_all_orders_raw error: {e}", level="error")
+            return []
+
+    def fetch_all_executions_raw(self, start_date=None, end_date=None):
+        """
+        Fetches all executions (fills) with full raw execution detail, filtered by date if provided.
+        """
+        try:
+            executions = self.client.executions()
+            raw = []
+            for exec_report in executions:
+                exec_time = str(exec_report.time) if hasattr(exec_report, "time") else None
+                if start_date and exec_time and exec_time < start_date:
+                    continue
+                if end_date and exec_time and exec_time > end_date:
+                    continue
+                raw.append(vars(exec_report))
+            log_event("broker_ibkr", f"fetch_all_executions_raw complete, {len(raw)} entries. cred_hash={self.credential_hash}", level="info")
+            return raw
+        except Exception as e:
+            log_event("broker_ibkr", f"fetch_all_executions_raw error: {e}", level="error")
+            return []
+
+    def fetch_all_portfolio_raw(self):
+        """
+        Fetches and returns ALL raw portfolio positions as provided by IBKR API.
+        """
+        try:
+            portfolio = self.client.portfolio()
+            raw = [vars(p) for p in portfolio]
+            log_event("broker_ibkr", f"fetch_all_portfolio_raw complete, {len(raw)} entries. cred_hash={self.credential_hash}", level="info")
+            return raw
+        except Exception as e:
+            log_event("broker_ibkr", f"fetch_all_portfolio_raw error: {e}", level="error")
+            return []

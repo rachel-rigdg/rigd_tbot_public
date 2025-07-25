@@ -8,7 +8,7 @@ from tbot_bot.screeners.screener_utils import (
     load_universe_cache,
     UniverseCacheError,
 )
-from tbot_bot.screeners.symbol_universe_refresh import main as refresh_main
+from tbot_bot.screeners.universe_orchestrator import main as refresh_main
 from tbot_bot.support.path_resolver import resolve_universe_cache_path, resolve_control_path, get_output_path
 import os
 from pathlib import Path

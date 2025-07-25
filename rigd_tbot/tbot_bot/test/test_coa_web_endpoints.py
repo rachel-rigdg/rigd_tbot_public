@@ -53,8 +53,9 @@ class COAWebEndpointTestCase(unittest.TestCase):
     def test_coa_page_loads(self):
         safe_print("[test_coa_web_endpoints] Testing /coa page load...")
         rv = self.app.get('/coa')
-        self.assertIn(b'Chart of Accounts (COA) Management', rv.data)
+        # Defensive: check for 200 status first to avoid assertion on failed page
         self.assertEqual(rv.status_code, 200)
+        self.assertIn(b'Chart of Accounts (COA) Management', rv.data)
         safe_print("[test_coa_web_endpoints] /coa page load OK.")
 
     def test_coa_api_returns_json(self):
