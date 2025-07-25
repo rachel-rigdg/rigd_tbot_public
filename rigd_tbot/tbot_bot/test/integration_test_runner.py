@@ -24,6 +24,8 @@ PROJECT_ROOT = get_project_root()
 MAX_STRATEGY_TIME = 60  # seconds per strategy
 
 ALL_TESTS = [
+    "broker_sync",
+    "coa_mapping",
     "universe_cache",
     "strategy_selfcheck",
     "screener_random",
@@ -151,6 +153,8 @@ def run_subprocess_with_realtime_log(cmd, **kwargs):
 def run_single_test_module(flag):
     test_name = flag.name.replace("test_mode_", "").replace(".flag", "")
     test_map = {
+        "broker_sync": "tbot_bot.test.test_broker_sync",
+        "coa_mapping": "tbot_bot.test.test_coa_mapping",
         "universe_cache": "tbot_bot.test.test_universe_cache",
         "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
         "screener_random": "tbot_bot.test.test_screener_random",
@@ -184,29 +188,6 @@ def run_single_test_module(flag):
         update_test_status(test_name, "ERRORS")
     _clear_flag(flag)
 
-def run_strategy_with_timeout(strat):
-    log_event("integration_test", f"Triggering strategy: {strat}")
-    try:
-        proc = run_subprocess_with_realtime_log(
-            [sys.executable, "-c", f"from tbot_bot.strategy.strategy_router import route_strategy; route_strategy(override='{strat}')"],
-            cwd=PROJECT_ROOT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)}
-        )
-        if proc.returncode != 0:
-            print(f"Strategy {strat} failed with return code {proc.returncode}")
-            return "ERRORS"
-        else:
-            print(f"Strategy {strat} executed successfully.")
-            return "PASSED"
-    except subprocess.TimeoutExpired:
-        print(f"Strategy {strat} timed out after {MAX_STRATEGY_TIME} seconds.")
-        log_event("integration_test", f"Strategy {strat} timed out after {MAX_STRATEGY_TIME} seconds")
-        return "ERRORS"
-    except Exception as e:
-        print(f"Strategy {strat} failed with exception: {e}")
-        log_event("integration_test", f"Strategy {strat} failed with exception: {e}")
-        return "ERRORS"
-
 def run_integration_test():
     set_cwd_and_syspath()
     flag = detect_individual_test_flag()
@@ -220,6 +201,8 @@ def run_integration_test():
 
     config = get_bot_config()
     test_map = {
+        "broker_sync": "tbot_bot.test.test_broker_sync",
+        "coa_mapping": "tbot_bot.test.test_coa_mapping",
         "universe_cache": "tbot_bot.test.test_universe_cache",
         "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
         "screener_random": "tbot_bot.test.test_screener_random",
