@@ -53,11 +53,10 @@ BOOTSTRAP_ONLY_LOGS = [
 
 def get_bot_identity(explicit_identity: str = None) -> str:
     if is_first_bootstrap():
-        # If identity is not yet set, allow explicit_identity override only at config time
         return explicit_identity if explicit_identity else None
     identity = explicit_identity if explicit_identity else load_bot_identity(default=None)
     if not identity or not get_bot_identity_string_regex().match(identity):
-        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
+        return None
     return identity
 
 def validate_bot_identity(bot_identity: str) -> None:
@@ -73,10 +72,19 @@ def get_output_path(category: str = None, filename: str = None, bot_identity: st
         logs_dir = PROJECT_ROOT / "tbot_bot" / "output" / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         return str(logs_dir / filename) if filename else str(logs_dir)
-    # Normal bot-identity based output
+    # During bootstrap or if identity not available, use generic logs path
     identity = get_bot_identity(bot_identity)
     if not identity:
-        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
+        # Generic non-identity logs path for early bootstrap, until config is saved
+        if category == "logs":
+            logs_dir = PROJECT_ROOT / "tbot_bot" / "output" / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            return str(logs_dir / filename) if filename else str(logs_dir)
+        else:
+            # Fallback to generic output for non-logs categories
+            generic_dir = PROJECT_ROOT / "tbot_bot" / "output" / (CATEGORIES.get(category, category or "logs"))
+            generic_dir.mkdir(parents=True, exist_ok=True)
+            return str(generic_dir / filename) if filename else str(generic_dir)
     validate_bot_identity(identity)
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
     if category not in CATEGORIES:
