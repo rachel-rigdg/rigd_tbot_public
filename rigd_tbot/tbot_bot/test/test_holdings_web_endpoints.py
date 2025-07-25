@@ -2,11 +2,15 @@
 # Tests for new Flask blueprint.
 
 import pytest
+import time
 from flask import Flask
 from tbot_web.py.holdings_web import holdings_web
 from tbot_bot.support.path_resolver import resolve_control_path
+from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
+
+MAX_TEST_TIME = 90  # seconds per test
 
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_holdings_web_endpoints.flag"
@@ -24,6 +28,12 @@ def safe_print(msg):
         print(msg, flush=True)
     except Exception:
         pass
+    try:
+        log_event("test_holdings_web_endpoints", msg)
+    except Exception:
+        pass
+
+test_start = time.time()
 
 if __name__ == "__main__":
     result = "PASSED"
@@ -35,6 +45,9 @@ if __name__ == "__main__":
         ret = _pytest.main([__file__])
         if ret != 0:
             result = "ERRORS"
+        if (time.time() - test_start) > MAX_TEST_TIME:
+            result = "TIMEOUT"
+            safe_print(f"[test_holdings_web_endpoints.py] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
     except Exception as e:
         result = "ERRORS"
         safe_print(f"[test_holdings_web_endpoints.py] Exception: {e}")

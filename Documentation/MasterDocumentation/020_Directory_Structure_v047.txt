@@ -92,7 +92,7 @@ rigd_tbot/
 │   │   ├── ledger_utils.py                      # (LEGACY) Ledger DB helpers—deprecated, use ledger/* modules
 │   │   ├── ledger.py                            # (LEGACY) Unified ledger API—deprecated, use ledger/* modules
 │   │   │ 
-│   │   └── ledger/                              # All production ledger logic (modular, testable, double-entry, audit-compliant)
+│   │   └── ledger_modules/                              # All production ledger logic (modular, testable, double-entry, audit-compliant)
 │   │       ├── ledger_account_map.py            # Loads broker/account IDs, COA account keys, and logical account path lookups
 │   │       ├── ledger_audit.py                  # Audit logging (writes to audit_trail table)
 │   │       ├── ledger_balance.py                # Computes per-account and running balances

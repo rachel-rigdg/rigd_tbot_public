@@ -4,6 +4,7 @@
 
 import sys
 import unittest
+import time
 from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.path_resolver import resolve_control_path
@@ -11,6 +12,7 @@ from tbot_bot.support.path_resolver import resolve_control_path
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_strategy_selfcheck.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
+MAX_TEST_TIME = 90  # seconds per test
 
 def safe_print(msg):
     try:
@@ -23,6 +25,7 @@ def run_and_log():
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         safe_print("[test_strategy_selfcheck.py] Individual test flag not present. Exiting.")
         sys.exit(0)
+    start = time.time()
     try:
         unittest.main(module=__name__, exit=False)
     except Exception as e:
@@ -31,16 +34,24 @@ def run_and_log():
     finally:
         if Path(TEST_FLAG_PATH).exists():
             Path(TEST_FLAG_PATH).unlink()
+        elapsed = time.time() - start
+        if elapsed > MAX_TEST_TIME:
+            result = "TIMEOUT"
+            safe_print("[test_strategy_selfcheck.py] TIMEOUT")
         safe_print(f"[test_strategy_selfcheck.py] FINAL RESULT: {result}")
 
 class TestStrategySelfCheck(unittest.TestCase):
     def setUp(self):
         if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
             self.skipTest("Individual test flag not present. Exiting.")
+        self._start_time = time.time()
 
     def tearDown(self):
         if Path(TEST_FLAG_PATH).exists():
             Path(TEST_FLAG_PATH).unlink()
+        elapsed = time.time() - getattr(self, '_start_time', 0)
+        if elapsed > MAX_TEST_TIME:
+            safe_print("[test_strategy_selfcheck.py] TIMEOUT")
 
     def test_strategy_selfchecks(self):
         config = get_bot_config()

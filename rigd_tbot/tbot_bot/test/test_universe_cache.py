@@ -3,6 +3,7 @@
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
 import unittest
+import time
 from tbot_bot.screeners.screener_utils import (
     save_universe_cache,
     load_universe_cache,
@@ -19,6 +20,7 @@ CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_universe_cache.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
+MAX_TEST_TIME = 90  # seconds per test
 
 def safe_print(msg):
     try:
@@ -52,17 +54,24 @@ class TestUniverseCache(unittest.TestCase):
             os.remove(self.cache_path)
 
     def test_cache_load_valid(self):
+        start = time.time()
         safe_print("[test_universe_cache] test_cache_load_valid")
         loaded = load_universe_cache()
         self.assertIsInstance(loaded, list)
         self.assertTrue(any(s["symbol"] == "AAPL" for s in loaded))
+        elapsed = time.time() - start
+        assert elapsed <= MAX_TEST_TIME, "TIMEOUT"
 
     def test_cache_filter(self):
+        start = time.time()
         safe_print("[test_universe_cache] test_cache_filter")
         filtered = [s for s in self.dummy_symbols if s["exchange"] == "NASDAQ" and 100 <= s["lastClose"] <= 400 and 2e9 <= s["marketCap"] <= 3e12]
         self.assertEqual(len(filtered), 2)
+        elapsed = time.time() - start
+        assert elapsed <= MAX_TEST_TIME, "TIMEOUT"
 
     def test_cache_stale(self):
+        start = time.time()
         safe_print("[test_universe_cache] test_cache_stale")
         import json
         import datetime
@@ -77,13 +86,18 @@ class TestUniverseCache(unittest.TestCase):
             f.truncate()
         with self.assertRaises(UniverseCacheError):
             load_universe_cache()
+        elapsed = time.time() - start
+        assert elapsed <= MAX_TEST_TIME, "TIMEOUT"
 
     def test_cache_refresh_main(self):
+        start = time.time()
         safe_print("[test_universe_cache] test_cache_refresh_main")
         try:
             refresh_main()
         except SystemExit:
             pass
+        elapsed = time.time() - start
+        assert elapsed <= MAX_TEST_TIME, "TIMEOUT"
 
 def run_test():
     result = unittest.main(module=__name__, exit=False)

@@ -6,6 +6,7 @@ import sys
 import unittest
 import os
 import re
+import time
 from pathlib import Path
 from tbot_bot.support.path_resolver import get_output_path, resolve_control_path
 from tbot_bot.support.utils_log import log_event
@@ -14,6 +15,7 @@ CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_logging_format.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 LOGFILE = get_output_path("logs", "test_mode.log")
+MAX_TEST_TIME = 90  # seconds per test
 
 def safe_print(msg):
     try:
@@ -71,9 +73,18 @@ class TestLoggingFormat(unittest.TestCase):
                         )
 
 def run_test():
-    import unittest as _unittest
-    ret = _unittest.main([__file__])
-    result = "PASSED" if ret == 0 else "ERRORS"
+    start_time = time.time()
+    try:
+        import unittest as _unittest
+        ret = _unittest.main([__file__])
+        result = "PASSED" if ret == 0 else "ERRORS"
+    except Exception as e:
+        result = "ERRORS"
+        safe_print(f"[test_logging_format.py] Exception: {e}")
+    elapsed = time.time() - start_time
+    if elapsed > MAX_TEST_TIME:
+        safe_print(f"[test_logging_format.py] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
+        result = "ERRORS"
     safe_print(f"[test_logging_format.py] FINAL RESULT: {result}")
     if Path(TEST_FLAG_PATH).exists():
         Path(TEST_FLAG_PATH).unlink()

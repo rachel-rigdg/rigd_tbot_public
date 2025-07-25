@@ -4,6 +4,7 @@
 # STRICT: Test will only exercise /stock/symbol, /stock/profile2, /quote endpoints for Finnhub screener.
 
 import unittest
+import signal
 from tbot_bot.screeners.screeners.alpaca_screener import AlpacaScreener
 from tbot_bot.screeners.screeners.finnhub_screener import FinnhubScreener
 from tbot_bot.screeners.screeners.ibkr_screener import IBKRScreener
@@ -16,6 +17,7 @@ CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_screener_integration.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
+MAX_TEST_TIME = 90  # seconds per test
 
 def safe_print(msg):
     try:
@@ -27,19 +29,28 @@ def safe_print(msg):
     except Exception:
         pass
 
+def timeout_handler(signum, frame):
+    safe_print("[test_screener_integration] TIMEOUT")
+    raise TimeoutError("test_screener_integration timed out")
+
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         safe_print("[test_screener_integration.py] Individual test flag not present. Exiting.")
         sys.exit(0)
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(MAX_TEST_TIME)
 
 class TestScreenerIntegration(unittest.TestCase):
     def setUp(self):
         if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
             self.skipTest("Individual test flag not present. Exiting.")
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(MAX_TEST_TIME)
 
     def tearDown(self):
         if Path(TEST_FLAG_PATH).exists():
             Path(TEST_FLAG_PATH).unlink()
+        signal.alarm(0)
 
     def test_alpaca_screener(self):
         safe_print("[test_screener_integration] Alpaca screener test...")
@@ -66,6 +77,7 @@ def run_test():
     result = unittest.main(module=__name__, exit=False)
     status = "PASSED" if result.result.wasSuccessful() else "ERRORS"
     safe_print(f"[test_screener_integration] FINAL RESULT: {status}.")
+    signal.alarm(0)
 
 if __name__ == "__main__":
     run_test()

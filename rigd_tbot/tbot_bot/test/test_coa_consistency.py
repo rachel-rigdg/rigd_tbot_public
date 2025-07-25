@@ -5,6 +5,7 @@
 import unittest
 import json
 import os
+import time
 from pathlib import Path
 from tbot_bot.accounting.coa_utils_ledger import (
     load_coa_metadata,
@@ -14,6 +15,8 @@ from tbot_bot.accounting.coa_utils_ledger import (
 from tbot_bot.support.path_resolver import resolve_coa_json_path, resolve_coa_metadata_path, resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.accounting.ledger.ledger_db import validate_ledger_schema
+
+MAX_TEST_TIME = 90  # seconds per test
 
 CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")
@@ -57,10 +60,15 @@ class TestCOAConsistency(unittest.TestCase):
         self.coa_metadata_path = resolve_coa_metadata_path()
         assert os.path.exists(self.coa_json_path)
         assert os.path.exists(self.coa_metadata_path)
+        self._test_start_time = time.time()
 
     def tearDown(self):
         if Path(TEST_FLAG_PATH).exists():
             Path(TEST_FLAG_PATH).unlink()
+        # Timeout enforcement at test suite level
+        duration = time.time() - getattr(self, "_test_start_time", 0)
+        if duration > MAX_TEST_TIME:
+            safe_print(f"[test_coa_consistency] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
 
     def test_json_structure_and_validation(self):
         safe_print("[test_coa_consistency] Checking JSON structure and validation...")
@@ -101,8 +109,12 @@ class TestCOAConsistency(unittest.TestCase):
         safe_print("[test_coa_consistency] Metadata fields present.")
 
 def run_test():
+    test_start = time.time()
     result = unittest.main(module=__name__, exit=False)
     status = "PASSED" if result.result.wasSuccessful() else "ERRORS"
+    if (time.time() - test_start) > MAX_TEST_TIME:
+        status = "TIMEOUT"
+        safe_print(f"[test_coa_consistency] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
     safe_print(f"[test_coa_consistency] FINAL RESULT: {status}.")
 
 if __name__ == "__main__":

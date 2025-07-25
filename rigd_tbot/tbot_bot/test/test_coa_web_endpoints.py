@@ -4,12 +4,15 @@
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
 import unittest
+import time
 from flask import Flask
 from tbot_web.py.coa_web import coa_web
 from pathlib import Path
 import sys
 from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
+
+MAX_TEST_TIME = 90  # seconds per test
 
 CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")
@@ -25,6 +28,8 @@ def safe_print(msg):
         log_event("test_coa_web_endpoints", msg, logfile=LOGFILE)
     except Exception:
         pass
+
+test_start = time.time()
 
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
@@ -53,7 +58,6 @@ class COAWebEndpointTestCase(unittest.TestCase):
     def test_coa_page_loads(self):
         safe_print("[test_coa_web_endpoints] Testing /coa page load...")
         rv = self.app.get('/coa')
-        # Defensive: check for 200 status first to avoid assertion on failed page
         self.assertEqual(rv.status_code, 200)
         self.assertIn(b'Chart of Accounts (COA) Management', rv.data)
         safe_print("[test_coa_web_endpoints] /coa page load OK.")
@@ -95,6 +99,9 @@ class COAWebEndpointTestCase(unittest.TestCase):
 def run_test():
     result = unittest.main(module=__name__, exit=False)
     status = "PASSED" if result.result.wasSuccessful() else "ERRORS"
+    if (time.time() - test_start) > MAX_TEST_TIME:
+        status = "TIMEOUT"
+        safe_print(f"[test_coa_web_endpoints] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
     safe_print(f"[test_coa_web_endpoints] FINAL RESULT: {status}.")
 
 if __name__ == "__main__":

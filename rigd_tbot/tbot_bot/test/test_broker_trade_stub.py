@@ -15,6 +15,8 @@ from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.path_resolver import get_output_path, get_project_root, resolve_control_path
 import os
 
+MAX_TEST_TIME = 90  # seconds per test
+
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_broker_trade_stub.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
@@ -61,8 +63,15 @@ if __name__ == "__main__":
 
         attempts = 0
         successful = 0
+        start_time = time.time()
 
         while successful < TRADE_COUNT and attempts < TRADE_COUNT * 3:
+            # Enforce global timeout
+            if (time.time() - start_time) > MAX_TEST_TIME:
+                safe_print(f"[test_broker_trade_stub] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
+                _status = "TIMEOUT"
+                break
+
             attempts += 1
             symbol = random.choice(TEST_TICKERS)
             side = random.choice(["buy", "sell"])

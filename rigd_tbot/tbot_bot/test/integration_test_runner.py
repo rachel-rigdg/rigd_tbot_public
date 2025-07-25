@@ -31,6 +31,7 @@ if env_path.exists():
 BOT_IDENTITY = get_bot_identity()
 CONTROL_DIR = resolve_control_path()
 MAX_TEST_TIME = 90  # seconds per test
+MAX_STRATEGY_TIME = 60  # seconds per strategy
 
 ALL_TESTS = [
     "broker_sync",

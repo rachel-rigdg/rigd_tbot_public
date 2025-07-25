@@ -3,11 +3,14 @@
 # THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
 import pytest
+import time
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
+
+MAX_TEST_TIME = 90  # seconds per test
 
 CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")
@@ -73,6 +76,8 @@ def safe_print(msg):
     except Exception:
         pass
 
+test_start = time.time()
+
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         safe_print("[test_env_bot.py] Individual test flag not present. Exiting.")
@@ -85,7 +90,6 @@ def test_all_required_keys_present():
 
 def test_value_types():
     config = get_bot_config()
-    # Convert string to float if needed (robust for env config)
     def as_float(val):
         try:
             return float(val)
@@ -119,6 +123,9 @@ def run_test():
     import pytest as _pytest
     ret = _pytest.main([__file__])
     status = "PASSED" if ret == 0 else "ERRORS"
+    if (time.time() - test_start) > MAX_TEST_TIME:
+        status = "TIMEOUT"
+        safe_print(f"[test_env_bot.py] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
     if Path(TEST_FLAG_PATH).exists():
         Path(TEST_FLAG_PATH).unlink()
     safe_print(f"[test_env_bot.py] FINAL RESULT: {status}")
