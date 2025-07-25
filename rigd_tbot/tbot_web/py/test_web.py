@@ -167,7 +167,6 @@ def run_individual_test(test_name):
         test_map = {
             "broker_sync": "tbot_bot.test.test_broker_sync",
             "coa_mapping": "tbot_bot.test.test_coa_mapping",
-            "universe_cache": "tbot_bot.test.test_universe_cache",
             "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
             "screener_random": "tbot_bot.test.test_screener_random",
             "screener_integration": "tbot_bot.test.test_screener_integration",
@@ -186,7 +185,8 @@ def run_individual_test(test_name):
             "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
             "ledger_concurrency": "tbot_bot.test.test_ledger_concurrency",
             "ledger_migration": "tbot_bot.test.test_ledger_migration",
-            "ledger_reconciliation": "tbot_bot.test.test_ledger_reconciliation"
+            "ledger_reconciliation": "tbot_bot.test.test_ledger_reconciliation",
+            "universe_cache": "tbot_bot.test.test_universe_cache"
         }
         module = test_map.get(test_name)
         if not module:
