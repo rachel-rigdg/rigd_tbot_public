@@ -1,27 +1,26 @@
 # tbot_bot/accounting/ledger/ledger_balance.py
 
-from .ledger_entry import get_all_ledger_entries
-import sqlite3
-import json
-from cryptography.fernet import Fernet
-from pathlib import Path
-from tbot_bot.support.path_resolver import resolve_ledger_db_path
-from tbot_bot.support.utils_identity import get_bot_identity
+"""
+Balance and running balance computation helpers for the ledger.
+"""
 
-BOT_ID = get_bot_identity()
+from tbot_bot.accounting.ledger.ledger_entry import load_internal_ledger
+from tbot_bot.support.path_resolver import resolve_ledger_db_path
+from tbot_bot.support.decrypt_secrets import load_bot_identity
+from pathlib import Path
+import sqlite3
+
 CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 def calculate_account_balances():
+    """
+    Computes the sum of total_value grouped by account from the trades table.
+    Returns a dict of {account: balance}.
+    """
     if TEST_MODE_FLAG.exists():
         return {}
-    key_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
-    enc_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "secrets" / "acct_api.json.enc"
-    key = key_path.read_bytes()
-    cipher = Fernet(key)
-    plaintext = cipher.decrypt(enc_path.read_bytes())
-    bot_identity_data = json.loads(plaintext.decode("utf-8"))
-    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity_data.get("BOT_IDENTITY_STRING").split("_")
+    entity_code, jurisdiction_code, broker_code, bot_id = load_bot_identity().split("_")
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute(
@@ -31,9 +30,13 @@ def calculate_account_balances():
     return balances
 
 def calculate_running_balances():
+    """
+    Returns list of dicts: each ledger entry with added field 'running_balance'.
+    """
     if TEST_MODE_FLAG.exists():
         return []
-    entries = get_all_ledger_entries()
+    entries = load_internal_ledger()
+    # Sort by datetime_utc ascending, id as tiebreaker
     entries.sort(key=lambda e: (e.get("datetime_utc", ""), e.get("id", 0)))
     running = 0.0
     out = []

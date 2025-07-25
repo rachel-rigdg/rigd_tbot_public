@@ -1,10 +1,16 @@
 # tbot_bot/accounting/ledger/ledger_entry.py
 
+"""
+Legacy single-entry ledger helpers.
+All new posting/editing/deleting must use double-entry and helpers in ledger_double_entry.py / ledger_edit.py.
+"""
+
 import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.accounting.ledger.ledger_account_map import load_broker_code, load_account_number
+from tbot_bot.accounting.ledger.ledger_edit import edit_ledger_entry, delete_ledger_entry  # Use shared helpers
 
 def get_identity_tuple():
     identity = load_bot_identity()
@@ -79,6 +85,10 @@ def mark_entry_resolved(entry_id):
     conn.close()
 
 def add_ledger_entry(entry_data):
+    """
+    Legacy single-entry ledger posting.
+    Use post_ledger_entries_double_entry for all new entries.
+    """
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
     entry_data["broker"] = load_broker_code()
@@ -102,46 +112,6 @@ def add_ledger_entry(entry_data):
     conn.execute(
         f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
         values
-    )
-    conn.commit()
-    conn.close()
-
-def edit_ledger_entry(entry_id, updated_data):
-    bot_identity = get_identity_tuple()
-    db_path = resolve_ledger_db_path(*bot_identity)
-    updated_data["broker"] = load_broker_code()
-    updated_data["account"] = load_account_number()
-    try:
-        qty = float(updated_data.get("quantity") or 0)
-        price = float(updated_data.get("price") or 0)
-        fee = float(updated_data.get("fee") or 0)
-        updated_data["total_value"] = round((qty * price) - fee, 2)
-    except Exception:
-        updated_data["total_value"] = updated_data.get("total_value") or 0
-    columns = [
-        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
-        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
-        "updated_by", "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant",
-        "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
-    ]
-    set_clause = ", ".join([f"{col}=?" for col in columns])
-    values = [updated_data.get(col) for col in columns]
-    values.append(entry_id)
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        f"UPDATE trades SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        values
-    )
-    conn.commit()
-    conn.close()
-
-def delete_ledger_entry(entry_id):
-    bot_identity = get_identity_tuple()
-    db_path = resolve_ledger_db_path(*bot_identity)
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        "DELETE FROM trades WHERE id = ?",
-        (entry_id,)
     )
     conn.commit()
     conn.close()

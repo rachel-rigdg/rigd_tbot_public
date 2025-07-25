@@ -13,7 +13,7 @@ def main():
 
     import logging
     from tbot_bot.accounting.reconciliation_log import ensure_reconciliation_log_initialized
-    from tbot_bot.accounting.ledger import sync_broker_ledger
+    from tbot_bot.accounting.ledger.ledger_sync import sync_broker_ledger
     from tbot_bot.support.utils_log import log_event
     from tbot_bot.accounting.ledger.ledger_snapshot import snapshot_ledger_before_sync
 

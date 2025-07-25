@@ -7,15 +7,25 @@ All transactional logic (posting, mapping, etc.) is handled elsewhere.
 """
 
 import sqlite3
-from tbot_bot.accounting.ledger.ledger_core import get_ledger_db_path
+from tbot_bot.support.path_resolver import resolve_ledger_db_path
+from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user
+
+def get_identity_tuple():
+    identity = load_bot_identity()
+    return tuple(identity.split("_"))
 
 def edit_ledger_entry(entry_id, updated_data):
     """
     Update a ledger entry in the trades table by ID.
     Accepts a dict of fields to update.
     """
-    db_path = get_ledger_db_path()
+    db_path = resolve_ledger_db_path(*get_identity_tuple())
+    current_user = get_current_user()
+    updated_data["updated_by"] = (
+        current_user.username if hasattr(current_user, "username")
+        else current_user if current_user else "system"
+    )
     try:
         qty = float(updated_data.get("quantity") or 0)
         price = float(updated_data.get("price") or 0)
@@ -44,7 +54,7 @@ def delete_ledger_entry(entry_id):
     """
     Delete a ledger entry from the trades table by ID.
     """
-    db_path = get_ledger_db_path()
+    db_path = resolve_ledger_db_path(*get_identity_tuple())
     conn = sqlite3.connect(db_path)
     conn.execute(
         "DELETE FROM trades WHERE id = ?",
