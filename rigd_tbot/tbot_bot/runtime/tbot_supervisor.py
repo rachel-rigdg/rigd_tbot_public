@@ -154,6 +154,31 @@ def is_time_for_ledger_snapshot():
     already_snapshotted_today = last_snapshot and last_snapshot.date() == now.date() and last_snapshot > snap_time - timedelta(minutes=5)
     return now >= snap_time and not already_snapshotted_today
 
+def launch_strategy_if_time(strategy_name, strategy_path, processes):
+    from tbot_bot.config.env_bot import load_env_bot_config
+    env = load_env_bot_config()
+    now = utc_now()
+    open_time = env.get("START_TIME_OPEN", "13:30")
+    mid_time = env.get("START_TIME_MID", "16:00")
+    close_time = env.get("START_TIME_CLOSE", "20:45")
+    # All times UTC as per .env_bot
+    if strategy_name == "strategy_open":
+        target_time = parse_time_utc(open_time)
+    elif strategy_name == "strategy_mid":
+        target_time = parse_time_utc(mid_time)
+    elif strategy_name == "strategy_close":
+        target_time = parse_time_utc(close_time)
+    else:
+        return
+    run_time = now.replace(hour=target_time.hour, minute=target_time.minute, second=0, microsecond=0)
+    # Allow relaunch only if within 60 seconds of the scheduled time, and not already running
+    if abs((now - run_time).total_seconds()) < 60:
+        if not ensure_singleton(os.path.basename(str(strategy_path))):
+            print(f"[tbot_supervisor] Launching {strategy_name} at scheduled time...")
+            processes[strategy_name] = launch_subprocess(strategy_path)
+        else:
+            print(f"[tbot_supervisor] {strategy_name} already running.")
+
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
     processes = {}
@@ -162,9 +187,6 @@ def main():
         ("status_bot", STATUS_BOT_PATH),
         ("watchdog_bot", WATCHDOG_BOT_PATH),
         ("strategy_router", STRATEGY_ROUTER_PATH),
-        ("strategy_open", STRATEGY_OPEN_PATH),
-        ("strategy_mid", STRATEGY_MID_PATH),
-        ("strategy_close", STRATEGY_CLOSE_PATH),
         ("risk_module", RISK_MODULE_PATH),
         ("kill_switch", KILL_SWITCH_PATH),
         ("log_rotation", LOG_ROTATION_PATH),
@@ -174,6 +196,12 @@ def main():
 
     persistent_ops = [
         ("holdings_manager", HOLDINGS_MANAGER_PATH)
+    ]
+
+    strategy_launchers = [
+        ("strategy_open", STRATEGY_OPEN_PATH),
+        ("strategy_mid", STRATEGY_MID_PATH),
+        ("strategy_close", STRATEGY_CLOSE_PATH),
     ]
 
     persistent_state = None
@@ -226,6 +254,10 @@ def main():
                         processes[name] = launch_subprocess(path)
                     else:
                         print(f"[tbot_supervisor] {name} already running.")
+
+                # Scheduled strategy launches (open, mid, close)
+                for strat_name, strat_path in strategy_launchers:
+                    launch_strategy_if_time(strat_name, strat_path, processes)
 
                 # ---- BROKER SYNC NIGHTLY (30min after market close, once per day, using timezone utils) ----
                 if is_time_for_broker_sync():
@@ -291,8 +323,7 @@ def main():
             for name, proc in processes.items():
                 if proc.poll() is not None:
                     print(f"[tbot_supervisor] {name} has died. Restarting...")
-                    # Find path for restart
-                    all_targets = launch_targets + persistent_ops
+                    all_targets = launch_targets + persistent_ops + strategy_launchers
                     restart_path = None
                     for t_name, t_path in all_targets:
                         if t_name == name:

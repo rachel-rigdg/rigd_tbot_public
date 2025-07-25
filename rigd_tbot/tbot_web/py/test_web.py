@@ -187,17 +187,31 @@ def run_individual_test(test_name):
         set_test_status(status_dict)
         create_test_flag(test_name)
         log_path = get_test_log_path()
-        proc = None
-        with open(log_path, "a") as log_file:
-            proc = subprocess.Popen(
-                ["python3", "-u", "-m", module],
-                stdout=log_file,
-                stderr=log_file,
-                bufsize=1,
-                close_fds=True,
-                cwd=str(PROJECT_ROOT),
-                env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
-            )
+
+        def write_subprocess_log(proc, log_file_path):
+            with open(log_file_path, "a", encoding="utf-8") as logf:
+                while True:
+                    out = proc.stdout.readline()
+                    err = proc.stderr.readline()
+                    if not out and not err and proc.poll() is not None:
+                        break
+                    if out:
+                        logf.write(out.decode(errors="replace"))
+                        logf.flush()
+                    if err:
+                        logf.write(err.decode(errors="replace"))
+                        logf.flush()
+
+        proc = subprocess.Popen(
+            ["python3", "-u", "-m", module],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=1,
+            close_fds=True,
+            cwd=str(PROJECT_ROOT),
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+        )
+        threading.Thread(target=write_subprocess_log, args=(proc, log_path), daemon=True).start()
         threading.Thread(target=wait_and_update_status, args=(test_name, proc)).start()
     return jsonify({"result": "started", "test": test_name})
 
