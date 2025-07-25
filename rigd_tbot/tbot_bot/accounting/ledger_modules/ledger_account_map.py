@@ -1,4 +1,4 @@
-# tbot_bot/accounting/ledger/ledger_account_map.py
+# tbot_bot/accounting/ledger_modules/ledger_account_map.py
 
 from cryptography.fernet import Fernet
 from pathlib import Path

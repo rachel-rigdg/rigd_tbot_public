@@ -1,6 +1,6 @@
-# tbot_bot/accounting/ledger/ledger_double_entry.py
+# tbot_bot/accounting/ledger_modules/ledger_double_entry.py
 
-from tbot_bot.accounting.ledger.ledger_account_map import get_account_path
+from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_path
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table, apply_mapping_rule
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity

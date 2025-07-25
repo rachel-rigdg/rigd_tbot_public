@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import tbot_bot.accounting.ledger as ledger_mod
-from tbot_bot.accounting.ledger.ledger_double_entry import validate_double_entry
+from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_double_entry
 
 def test_sync_broker_ledger_runs_without_error(monkeypatch):
     """

@@ -1,8 +1,8 @@
-# tbot_bot/accounting/ledger/ledger_hooks.py
+# tbot_bot/accounting/ledger_modules/ledger_hooks.py
 
-from tbot_bot.accounting.ledger.ledger_account_map import get_account_path, load_broker_code
+from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_path, load_broker_code
 from tbot_web.support.auth_web import get_current_user
-from tbot_bot.accounting.ledger.ledger_double_entry import post_ledger_entries_double_entry
+from tbot_bot.accounting.ledger_modules.ledger_double_entry import post_ledger_entries_double_entry
 
 def post_tax_reserve_entry(amount, datetime_utc, notes=None):
     entry = {

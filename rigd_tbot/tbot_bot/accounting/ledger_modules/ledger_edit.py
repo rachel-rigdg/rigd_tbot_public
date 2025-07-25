@@ -1,4 +1,4 @@
-# tbot_bot/accounting/ledger/ledger_edit.py
+# tbot_bot/accounting/ledger_modules/ledger_edit.py
 
 """
 Ledger edit/update helpers.

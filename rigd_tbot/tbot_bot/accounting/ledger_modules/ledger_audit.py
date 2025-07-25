@@ -1,4 +1,4 @@
-# tbot_bot/accounting/ledger/ledger_audit.py
+# tbot_bot/accounting/ledger_modules/ledger_audit.py
 
 """
 Ledger audit-trail event logger.

@@ -1,4 +1,4 @@
-# tbot_bot/accounting/ledger/ledger_entry.py
+# tbot_bot/accounting/ledger_modules/ledger_entry.py
 
 """
 Legacy single-entry ledger helpers.
@@ -9,8 +9,8 @@ import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user
-from tbot_bot.accounting.ledger.ledger_account_map import load_broker_code, load_account_number
-from tbot_bot.accounting.ledger.ledger_edit import edit_ledger_entry, delete_ledger_entry  # Use shared helpers
+from tbot_bot.accounting.ledger_modules.ledger_account_map import load_broker_code, load_account_number
+from tbot_bot.accounting.ledger_modules.ledger_edit import edit_ledger_entry, delete_ledger_entry  # Use shared helpers
 
 def get_identity_tuple():
     identity = load_bot_identity()

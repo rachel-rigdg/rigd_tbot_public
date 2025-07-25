@@ -1,4 +1,4 @@
-# tbot_bot/accounting/ledger/ledger_db.py
+# tbot_bot/accounting/ledger_modules/ledger_db.py
 
 import os
 import sqlite3

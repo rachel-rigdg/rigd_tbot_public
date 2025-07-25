@@ -1,4 +1,4 @@
-# tbot_bot/accounting/ledger/ledger_misc.py
+# tbot_bot/accounting/ledger_modules/ledger_misc.py
 
 import sqlite3
 import json

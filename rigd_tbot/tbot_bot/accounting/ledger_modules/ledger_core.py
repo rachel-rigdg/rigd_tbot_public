@@ -1,4 +1,4 @@
-# tbot_bot/accounting/ledger/ledger_core.py
+# tbot_bot/accounting/ledger_modules/ledger_core.py
 
 """
 Core ledger DB logic and orchestrators.

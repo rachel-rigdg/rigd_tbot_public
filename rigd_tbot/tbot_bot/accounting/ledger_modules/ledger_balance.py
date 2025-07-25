@@ -1,10 +1,10 @@
-# tbot_bot/accounting/ledger/ledger_balance.py
+# tbot_bot/accounting/ledger_modules/ledger_balance.py
 
 """
 Balance and running balance computation helpers for the ledger.
 """
 
-from tbot_bot.accounting.ledger.ledger_entry import load_internal_ledger
+from tbot_bot.accounting.ledger_modules.ledger_entry import load_internal_ledger
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from pathlib import Path

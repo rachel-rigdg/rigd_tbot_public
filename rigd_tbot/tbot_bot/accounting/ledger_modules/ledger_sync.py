@@ -1,11 +1,11 @@
-# tbot_bot/accounting/ledger/ledger_sync.py
+# tbot_bot/accounting/ledger_modules/ledger_sync.py
 
 from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
-from tbot_bot.accounting.ledger.ledger_snapshot import snapshot_ledger_before_sync
-from tbot_bot.accounting.ledger.ledger_double_entry import validate_double_entry, post_double_entry
+from tbot_bot.accounting.ledger_modules.ledger_snapshot import snapshot_ledger_before_sync
+from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_double_entry, post_double_entry
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table
 from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
-from tbot_bot.accounting.ledger.ledger_entry import get_identity_tuple
+from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 import sqlite3
 
 def sync_broker_ledger():

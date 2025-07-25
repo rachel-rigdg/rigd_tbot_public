@@ -1,4 +1,4 @@
-# tbot_bot/accounting/ledger/ledger_snapshot.py
+# tbot_bot/accounting/ledger_modules/ledger_snapshot.py
 
 import os
 from datetime import datetime
