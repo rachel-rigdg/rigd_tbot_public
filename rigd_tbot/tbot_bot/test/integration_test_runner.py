@@ -48,7 +48,13 @@ ALL_TESTS = [
     "backtest_engine",
     "logging_format",
     "fallback_logic",
-    "holdings_manager"
+    "holdings_manager",
+    "ledger_write_failure",
+    "ledger_double_entry",
+    "ledger_corruption",
+    "ledger_concurrency",
+    "ledger_migration",
+    "ledger_reconciliation"
 ]
 TEST_STATUS_PATH = get_output_path("logs", "test_status.json")
 TEST_LOG_PATH = get_output_path("logs", "test_mode.log")
@@ -177,7 +183,13 @@ def run_single_test_module(flag):
         "backtest_engine": "tbot_bot.test.test_backtest_engine",
         "logging_format": "tbot_bot.test.test_logging_format",
         "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic",
-        "holdings_manager": "tbot_bot.test.test_holdings_manager"
+        "holdings_manager": "tbot_bot.test.test_holdings_manager",
+        "ledger_write_failure": "tbot_bot.test.test_ledger_write_failure",
+        "ledger_double_entry": "tbot_bot.test.test_ledger_double_entry",
+        "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
+        "ledger_concurrency": "tbot_bot.test.test_ledger_concurrency",
+        "ledger_migration": "tbot_bot.test.test_ledger_migration",
+        "ledger_reconciliation": "tbot_bot.test.test_ledger_reconciliation"
     }
     module = test_map.get(test_name)
     if module:
@@ -225,8 +237,16 @@ def run_integration_test():
         "backtest_engine": "tbot_bot.test.test_backtest_engine",
         "logging_format": "tbot_bot.test.test_logging_format",
         "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic",
-        "holdings_manager": "tbot_bot.test.test_holdings_manager"
+        "holdings_manager": "tbot_bot.test.test_holdings_manager",
+        "ledger_write_failure": "tbot_bot.test.test_ledger_write_failure",
+        "ledger_double_entry": "tbot_bot.test.test_ledger_double_entry",
+        "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
+        "ledger_concurrency": "tbot_bot.test.test_ledger_concurrency",
+        "ledger_migration": "tbot_bot.test.test_ledger_migration",
+        "ledger_reconciliation": "tbot_bot.test.test_ledger_reconciliation"
     }
+
+    test_results = {}
 
     try:
         for test_name in ALL_TESTS:
@@ -235,6 +255,7 @@ def run_integration_test():
                 module = test_map.get(test_name)
                 if not module:
                     update_test_status(test_name, "ERRORS")
+                    test_results[test_name] = "ERRORS"
                     continue
                 flag_path = CONTROL_DIR / f"test_mode_{test_name}.flag"
                 with open(flag_path, "w") as f:
@@ -250,13 +271,16 @@ def run_integration_test():
                 proc.wait()
                 if proc.returncode == 0:
                     update_test_status(test_name, "PASSED")
+                    test_results[test_name] = "PASSED"
                 else:
                     update_test_status(test_name, "ERRORS")
+                    test_results[test_name] = "ERRORS"
                 if flag_path.exists():
                     flag_path.unlink()
                 time.sleep(1)
             except Exception as test_exc:
                 update_test_status(test_name, "ERRORS")
+                test_results[test_name] = "ERRORS"
                 tb_str = traceback.format_exc()
                 with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
                     logf.write(f"[integration_test_runner] Test {test_name} crashed:\n{tb_str}\n")
@@ -270,6 +294,10 @@ def run_integration_test():
             print(f"  {key}: {value}")
 
         log_event("integration_test", "Integration test completed.")
+
+        # Write final test results for web UI consumption
+        with open(get_output_path("logs", "integration_test_results.json"), "w", encoding="utf-8") as f:
+            json.dump(test_results, f, indent=2)
 
     except Exception as e:
         tb = traceback.format_exc()

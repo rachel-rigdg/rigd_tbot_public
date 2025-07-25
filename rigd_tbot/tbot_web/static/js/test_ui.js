@@ -3,7 +3,32 @@
 let logPoller = null;
 let statusPoller = null;
 let currentTest = null;
-let allTests = [];
+
+// Keep this in sync with ALL_TESTS in the backend.
+let allTests = [
+    "broker_sync",
+    "coa_mapping",
+    "universe_cache",
+    "strategy_selfcheck",
+    "screener_random",
+    "screener_integration",
+    "main_bot",
+    "ledger_schema",
+    "env_bot",
+    "coa_web_endpoints",
+    "coa_consistency",
+    "broker_trade_stub",
+    "backtest_engine",
+    "logging_format",
+    "fallback_logic",
+    "holdings_manager",
+    "ledger_write_failure",
+    "ledger_double_entry",
+    "ledger_corruption",
+    "ledger_concurrency",
+    "ledger_migration",
+    "ledger_reconciliation"
+];
 
 function startLogPolling() {
     if (logPoller) clearInterval(logPoller);
@@ -17,40 +42,43 @@ function startStatusPolling() {
 
 function stopPolling() {
     if (logPoller) clearInterval(logPoller);
+    logPoller = null;
     if (statusPoller) clearInterval(statusPoller);
+    statusPoller = null;
 }
 
 function fetchLogs() {
     fetch("/test/logs")
-    .then(response => response.json())
-    .then(data => {
-        document.getElementById('test-log-output').textContent = data.logs || '';
-    });
+        .then(response => response.json())
+        .then(data => {
+            const logBox = document.getElementById('test-log-output');
+            if (logBox) logBox.textContent = data.logs || '';
+        });
 }
 
 function fetchTestStatus() {
     fetch("/test/test_status")
-    .then(response => response.json())
-    .then(statusDict => {
-        allTests.forEach(test => {
-            const ind = document.getElementById('test-status-' + test);
-            if (!ind) return;
-            let status = statusDict[test] || "";
-            ind.textContent = status;
-            ind.className = "test-status-indicator";
-            if (status === "RUNNING") ind.classList.add("test-status-running");
-            else if (status === "PASSED") ind.classList.add("test-status-passed");
-            else if (status === "ERRORS") ind.classList.add("test-status-errors");
-        });
+        .then(response => response.json())
+        .then(statusDict => {
+            allTests.forEach(test => {
+                const ind = document.getElementById('status-' + test);
+                if (!ind) return;
+                let status = statusDict[test] || "";
+                ind.textContent = status;
+                ind.className = "test-status-indicator";
+                if (status === "RUNNING") ind.classList.add("test-status-running");
+                else if (status === "PASSED") ind.classList.add("test-status-passed");
+                else if (status === "ERRORS") ind.classList.add("test-status-errors");
+            });
 
-        let isAnyRunning = Object.values(statusDict).some(st => st === "RUNNING");
-        if (!isAnyRunning) {
-            enableButtons();
-            stopPolling();
-            currentTest = null;
-            document.getElementById('running-test-label').textContent = '';
-        }
-    });
+            let isAnyRunning = Object.values(statusDict).some(st => st === "RUNNING");
+            if (!isAnyRunning) {
+                enableButtons();
+                stopPolling();
+                currentTest = null;
+                document.getElementById('running-test-label').textContent = '';
+            }
+        });
 }
 
 function disableButtons() {
@@ -66,7 +94,7 @@ function runAllTests() {
     currentTest = "ALL TESTS";
     document.getElementById('running-test-label').textContent = "Running: ALL TESTS";
     allTests.forEach(test => setIndicator(test, ""));
-    fetch("/test/trigger", {method: "POST"})
+    fetch("/test/trigger", { method: "POST" })
         .then(() => {
             startLogPolling();
             startStatusPolling();
@@ -78,7 +106,7 @@ function runIndividualTest(testName) {
     currentTest = testName;
     document.getElementById('running-test-label').textContent = "Running: " + testName;
     setIndicator(testName, "RUNNING");
-    fetch("/test/run/" + encodeURIComponent(testName), {method: "POST"})
+    fetch("/test/run/" + encodeURIComponent(testName), { method: "POST" })
         .then(response => response.json())
         .then(data => {
             if (data.result === "already_running") {
@@ -99,7 +127,7 @@ function runIndividualTest(testName) {
 }
 
 function setIndicator(test, status) {
-    const ind = document.getElementById('test-status-' + test);
+    const ind = document.getElementById('status-' + test);
     if (!ind) return;
     ind.textContent = status || "";
     ind.className = "test-status-indicator";
@@ -108,8 +136,11 @@ function setIndicator(test, status) {
     else if (status === "ERRORS") ind.classList.add("test-status-errors");
 }
 
-window.onload = function() {
-    allTests = window.allTests || [];
+window.onload = function () {
+    // Optionally pull from window.allTests if injected, but default to above.
+    if (window.allTests && window.allTests.length) {
+        allTests = window.allTests;
+    }
     fetchLogs();
     fetchTestStatus();
     startStatusPolling();

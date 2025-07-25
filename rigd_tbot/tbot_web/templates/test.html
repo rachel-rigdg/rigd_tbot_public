@@ -18,71 +18,28 @@
             <button id="trigger-btn" class="trigger-btn test-btn" onclick="runAllTests()" {% if test_active %}disabled{% endif %}>Run All Tests</button>
             <div style="margin-bottom: 0.8em;"></div>
             <div class="test-list">
-                <div>
-                    <button class="test-btn" id="btn-universe_cache" onclick="runIndividualTest('universe_cache')" {% if test_active %}disabled{% endif %}>Run Universe Cache Test</button>
-                    <span class="test-status-indicator" id="status-universe_cache"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-strategy_selfcheck" onclick="runIndividualTest('strategy_selfcheck')" {% if test_active %}disabled{% endif %}>Run Strategy Self-Check Test</button>
-                    <span class="test-status-indicator" id="status-strategy_selfcheck"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-screener_random" onclick="runIndividualTest('screener_random')" {% if test_active %}disabled{% endif %}>Run Screener Random Test</button>
-                    <span class="test-status-indicator" id="status-screener_random"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-screener_integration" onclick="runIndividualTest('screener_integration')" {% if test_active %}disabled{% endif %}>Run Screener Integration Test</button>
-                    <span class="test-status-indicator" id="status-screener_integration"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-main_bot" onclick="runIndividualTest('main_bot')" {% if test_active %}disabled{% endif %}>Run Main Bot Test</button>
-                    <span class="test-status-indicator" id="status-main_bot"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-ledger_schema" onclick="runIndividualTest('ledger_schema')" {% if test_active %}disabled{% endif %}>Run Ledger Schema Test</button>
-                    <span class="test-status-indicator" id="status-ledger_schema"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-env_bot" onclick="runIndividualTest('env_bot')" {% if test_active %}disabled{% endif %}>Run Env Bot Test</button>
-                    <span class="test-status-indicator" id="status-env_bot"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-coa_web_endpoints" onclick="runIndividualTest('coa_web_endpoints')" {% if test_active %}disabled{% endif %}>Run COA Web Endpoints Test</button>
-                    <span class="test-status-indicator" id="status-coa_web_endpoints"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-coa_consistency" onclick="runIndividualTest('coa_consistency')" {% if test_active %}disabled{% endif %}>Run COA Consistency Test</button>
-                    <span class="test-status-indicator" id="status-coa_consistency"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-broker_trade_stub" onclick="runIndividualTest('broker_trade_stub')" {% if test_active %}disabled{% endif %}>Run Broker Trade Stub Test</button>
-                    <span class="test-status-indicator" id="status-broker_trade_stub"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-broker_sync" onclick="runIndividualTest('broker_sync')" {% if test_active %}disabled{% endif %}>Run Broker Sync Test</button>
-                    <span class="test-status-indicator" id="status-broker_sync"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-coa_mapping" onclick="runIndividualTest('coa_mapping')" {% if test_active %}disabled{% endif %}>Run COA Mapping Test</button>
-                    <span class="test-status-indicator" id="status-coa_mapping"></span>
-                </div>
-                
-                <div>
-                    <button class="test-btn" id="btn-backtest_engine" onclick="runIndividualTest('backtest_engine')" {% if test_active %}disabled{% endif %}>Run Backtest Engine Test</button>
-                    <span class="test-status-indicator" id="status-backtest_engine"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-logging_format" onclick="runIndividualTest('logging_format')" {% if test_active %}disabled{% endif %}>Run Logging Format Test</button>
-                    <span class="test-status-indicator" id="status-logging_format"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-fallback_logic" onclick="runIndividualTest('fallback_logic')" {% if test_active %}disabled{% endif %}>Run Fallback Logic Test</button>
-                    <span class="test-status-indicator" id="status-fallback_logic"></span>
-                </div>
-                <div>
-                    <button class="test-btn" id="btn-holdings_manager" onclick="runIndividualTest('holdings_manager')" {% if test_active %}disabled{% endif %}>Run Holdings Manager Test</button>
-                    <span class="test-status-indicator" id="status-holdings_manager"></span>
-                </div>
+                <div><button class="test-btn" id="btn-universe_cache" onclick="runIndividualTest('universe_cache')" {% if test_active %}disabled{% endif %}>Run Universe Cache Test</button><span class="test-status-indicator" id="status-universe_cache"></span></div>
+                <div><button class="test-btn" id="btn-strategy_selfcheck" onclick="runIndividualTest('strategy_selfcheck')" {% if test_active %}disabled{% endif %}>Run Strategy Self-Check Test</button><span class="test-status-indicator" id="status-strategy_selfcheck"></span></div>
+                <div><button class="test-btn" id="btn-screener_random" onclick="runIndividualTest('screener_random')" {% if test_active %}disabled{% endif %}>Run Screener Random Test</button><span class="test-status-indicator" id="status-screener_random"></span></div>
+                <div><button class="test-btn" id="btn-screener_integration" onclick="runIndividualTest('screener_integration')" {% if test_active %}disabled{% endif %}>Run Screener Integration Test</button><span class="test-status-indicator" id="status-screener_integration"></span></div>
+                <div><button class="test-btn" id="btn-main_bot" onclick="runIndividualTest('main_bot')" {% if test_active %}disabled{% endif %}>Run Main Bot Test</button><span class="test-status-indicator" id="status-main_bot"></span></div>
+                <div><button class="test-btn" id="btn-ledger_schema" onclick="runIndividualTest('ledger_schema')" {% if test_active %}disabled{% endif %}>Run Ledger Schema Test</button><span class="test-status-indicator" id="status-ledger_schema"></span></div>
+                <div><button class="test-btn" id="btn-env_bot" onclick="runIndividualTest('env_bot')" {% if test_active %}disabled{% endif %}>Run Env Bot Test</button><span class="test-status-indicator" id="status-env_bot"></span></div>
+                <div><button class="test-btn" id="btn-coa_web_endpoints" onclick="runIndividualTest('coa_web_endpoints')" {% if test_active %}disabled{% endif %}>Run COA Web Endpoints Test</button><span class="test-status-indicator" id="status-coa_web_endpoints"></span></div>
+                <div><button class="test-btn" id="btn-coa_consistency" onclick="runIndividualTest('coa_consistency')" {% if test_active %}disabled{% endif %}>Run COA Consistency Test</button><span class="test-status-indicator" id="status-coa_consistency"></span></div>
+                <div><button class="test-btn" id="btn-broker_trade_stub" onclick="runIndividualTest('broker_trade_stub')" {% if test_active %}disabled{% endif %}>Run Broker Trade Stub Test</button><span class="test-status-indicator" id="status-broker_trade_stub"></span></div>
+                <div><button class="test-btn" id="btn-broker_sync" onclick="runIndividualTest('broker_sync')" {% if test_active %}disabled{% endif %}>Run Broker Sync Test</button><span class="test-status-indicator" id="status-broker_sync"></span></div>
+                <div><button class="test-btn" id="btn-coa_mapping" onclick="runIndividualTest('coa_mapping')" {% if test_active %}disabled{% endif %}>Run COA Mapping Test</button><span class="test-status-indicator" id="status-coa_mapping"></span></div>
+                <div><button class="test-btn" id="btn-backtest_engine" onclick="runIndividualTest('backtest_engine')" {% if test_active %}disabled{% endif %}>Run Backtest Engine Test</button><span class="test-status-indicator" id="status-backtest_engine"></span></div>
+                <div><button class="test-btn" id="btn-logging_format" onclick="runIndividualTest('logging_format')" {% if test_active %}disabled{% endif %}>Run Logging Format Test</button><span class="test-status-indicator" id="status-logging_format"></span></div>
+                <div><button class="test-btn" id="btn-fallback_logic" onclick="runIndividualTest('fallback_logic')" {% if test_active %}disabled{% endif %}>Run Fallback Logic Test</button><span class="test-status-indicator" id="status-fallback_logic"></span></div>
+                <div><button class="test-btn" id="btn-holdings_manager" onclick="runIndividualTest('holdings_manager')" {% if test_active %}disabled{% endif %}>Run Holdings Manager Test</button><span class="test-status-indicator" id="status-holdings_manager"></span></div>
+                <div><button class="test-btn" id="btn-ledger_write_failure" onclick="runIndividualTest('ledger_write_failure')" {% if test_active %}disabled{% endif %}>Run Ledger Write Failure Test</button><span class="test-status-indicator" id="status-ledger_write_failure"></span></div>
+                <div><button class="test-btn" id="btn-ledger_double_entry" onclick="runIndividualTest('ledger_double_entry')" {% if test_active %}disabled{% endif %}>Run Ledger Double Entry Test</button><span class="test-status-indicator" id="status-ledger_double_entry"></span></div>
+                <div><button class="test-btn" id="btn-ledger_corruption" onclick="runIndividualTest('ledger_corruption')" {% if test_active %}disabled{% endif %}>Run Ledger Corruption Test</button><span class="test-status-indicator" id="status-ledger_corruption"></span></div>
+                <div><button class="test-btn" id="btn-ledger_concurrency" onclick="runIndividualTest('ledger_concurrency')" {% if test_active %}disabled{% endif %}>Run Ledger Concurrency Test</button><span class="test-status-indicator" id="status-ledger_concurrency"></span></div>
+                <div><button class="test-btn" id="btn-ledger_migration" onclick="runIndividualTest('ledger_migration')" {% if test_active %}disabled{% endif %}>Run Ledger Migration Test</button><span class="test-status-indicator" id="status-ledger_migration"></span></div>
+                <div><button class="test-btn" id="btn-ledger_reconciliation" onclick="runIndividualTest('ledger_reconciliation')" {% if test_active %}disabled{% endif %}>Run Ledger Reconciliation Test</button><span class="test-status-indicator" id="status-ledger_reconciliation"></span></div>
             </div>
         </div>
         <div class="right-panel">

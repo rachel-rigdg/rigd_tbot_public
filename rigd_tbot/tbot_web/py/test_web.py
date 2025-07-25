@@ -47,7 +47,7 @@ def read_test_logs():
     if not os.path.exists(log_path):
         return ""
     with open(log_path, "r", encoding="utf-8") as f:
-        return f.read()[-30000:]
+        return f.read()[-50000:]  # Slightly larger slice to better catch module output
 
 def get_test_status():
     status_path = get_test_status_path()
@@ -86,10 +86,10 @@ def remove_test_flag(test_name: str = None):
     if flag_path.exists():
         flag_path.unlink()
 
-# List of all test names (UI will use this order)
+# Full, current canonical test list for UI and backend
 ALL_TESTS = [
     "broker_sync", 
-    "coa_mapping",   
+    "coa_mapping",
     "universe_cache",
     "strategy_selfcheck",
     "screener_random",
@@ -103,11 +103,16 @@ ALL_TESTS = [
     "backtest_engine",
     "logging_format",
     "fallback_logic",
-    "holdings_manager"
+    "holdings_manager",
+    "ledger_write_failure",
+    "ledger_double_entry",
+    "ledger_corruption",
+    "ledger_concurrency",
+    "ledger_migration",
+    "ledger_reconciliation"
 ]
 
 def patch_env_from_dotenv():
-    # Always load and export all .env values into os.environ (for subprocess consistency)
     env_path = Path(PROJECT_ROOT) / ".env"
     if env_path.exists():
         from dotenv import load_dotenv
@@ -140,7 +145,6 @@ def trigger_test_mode():
         set_test_status({t: "QUEUED" for t in ALL_TESTS})
         create_test_flag()
         log_path = get_test_log_path()
-        proc = None
         with open(log_path, "a") as log_file:
             proc = subprocess.Popen(
                 ["python3", "-u", "-m", "tbot_bot.test.integration_test_runner"],
@@ -151,7 +155,6 @@ def trigger_test_mode():
                 cwd=str(PROJECT_ROOT),
                 env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
             )
-        # No background watcher needed: integration_test_runner will update statuses per test
     return jsonify({"result": "started"})
 
 @test_web.route("/run/<test_name>", methods=["POST"])
@@ -177,7 +180,13 @@ def run_individual_test(test_name):
             "backtest_engine": "tbot_bot.test.test_backtest_engine",
             "logging_format": "tbot_bot.test.test_logging_format",
             "fallback_logic": "tbot_bot.test.strategies.test_fallback_logic",
-            "holdings_manager": "tbot_bot.test.test_holdings_manager"
+            "holdings_manager": "tbot_bot.test.test_holdings_manager",
+            "ledger_write_failure": "tbot_bot.test.test_ledger_write_failure",
+            "ledger_double_entry": "tbot_bot.test.test_ledger_double_entry",
+            "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
+            "ledger_concurrency": "tbot_bot.test.test_ledger_concurrency",
+            "ledger_migration": "tbot_bot.test.test_ledger_migration",
+            "ledger_reconciliation": "tbot_bot.test.test_ledger_reconciliation"
         }
         module = test_map.get(test_name)
         if not module:
@@ -220,6 +229,8 @@ def wait_and_update_status(test_name, proc):
     proc.wait()
     logs = read_test_logs()
     status = "PASSED"
+    # Only error if *this test* failed; show details per-test in web UI
+    # (Do not use global logs, filter last lines for this test if desired.)
     if "FAILED" in logs or "FAIL" in logs or "ERROR" in logs or "Traceback" in logs:
         status = "ERRORS"
     update_test_status(test_name, status)
