@@ -1,10 +1,9 @@
-# tbot_bot/accounting/ledger_modules/ledger_double_entry.py
-
 from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_path
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table, apply_mapping_rule
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 import sqlite3
+import json
 
 def post_ledger_entries_double_entry(entries):
     bot_identity = get_identity_tuple()
@@ -16,6 +15,17 @@ def get_identity_tuple():
     identity = load_bot_identity()
     return tuple(identity.split("_"))
 
+def _sanitize_entry(entry):
+    sanitized = {}
+    for k, v in entry.items():
+        if isinstance(v, (dict, list)):
+            sanitized[k] = json.dumps(v)
+        elif v is None:
+            sanitized[k] = None
+        else:
+            sanitized[k] = v
+    return sanitized
+
 def post_double_entry(entries, mapping_table=None):
     bot_identity = get_identity_tuple()
     entity_code, jurisdiction_code, broker_code, bot_id = bot_identity
@@ -26,6 +36,8 @@ def post_double_entry(entries, mapping_table=None):
     with sqlite3.connect(db_path) as conn:
         for entry in entries:
             debit_entry, credit_entry = apply_mapping_rule(entry, mapping_table)
+            debit_entry = _sanitize_entry(debit_entry)
+            credit_entry = _sanitize_entry(credit_entry)
             columns = ", ".join(debit_entry.keys())
             placeholders = ", ".join(["?"] * len(debit_entry))
             conn.execute(

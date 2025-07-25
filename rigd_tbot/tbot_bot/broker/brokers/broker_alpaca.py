@@ -177,6 +177,36 @@ class AlpacaBroker:
         except Exception:
             return 1.0
 
+    def get_price(self, symbol):
+        """
+        Returns current market price for symbol.
+        """
+        try:
+            resp = self._request("GET", f"/v2/stocks/{symbol}/quotes/latest")
+            price = resp.get("quote", {}).get("bp")
+            if price is None:
+                price = resp.get("quote", {}).get("ap")
+            if price is None:
+                price = 0.0
+            return float(price)
+        except Exception:
+            return 0.0
+
+    def get_etf_holdings(self):
+        """
+        Returns dict of ETF holdings: {symbol: market_value}.
+        """
+        try:
+            positions = self.get_positions()
+            etf_positions = {}
+            for pos in positions:
+                sym = pos.get("symbol")
+                if sym and sym.startswith("ETF"):  # crude filter, adjust as needed
+                    etf_positions[sym] = float(pos.get("market_value", 0.0))
+            return etf_positions
+        except Exception:
+            return {}
+
     # ================== BROKER SYNC INTERFACE ====================
 
     def fetch_all_trades(self, start_date, end_date=None):
@@ -218,7 +248,7 @@ class AlpacaBroker:
                         "quantity": filled_qty,
                         "price": filled_price,
                         "fee": fee,
-                        "fee": commission,
+                        "commission": commission,
                         "datetime_utc": t.get("filled_at"),
                         "status": t.get("status"),
                         "total_value": filled_qty * filled_price,
@@ -234,7 +264,7 @@ class AlpacaBroker:
                     prev["quantity"] += filled_qty
                     prev["total_value"] += filled_qty * filled_price
                     prev["fee"] += fee
-                    prev["fee"] += commission
+                    prev["commission"] += commission
             # pagination
             if isinstance(resp, dict) and "next_page_token" in resp and resp["next_page_token"]:
                 next_page_token = resp["next_page_token"]

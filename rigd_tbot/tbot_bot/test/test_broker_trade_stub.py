@@ -55,10 +55,9 @@ if __name__ == "__main__":
 
     TEST_TICKERS = ["AAPL", "MSFT", "TSLA", "AMD", "NVDA", "SPY", "QQQ"]
     executed_sides = defaultdict(set)
-    _status = "PASSED"
+    _status = ["PASSED"]  # Mutable container workaround
 
     def run_trade_stub():
-        nonlocal _status
         safe_print("[test_broker_trade_stub] Starting randomized trade validation sequence...")
 
         attempts = 0
@@ -69,7 +68,7 @@ if __name__ == "__main__":
             # Enforce global timeout
             if (time.time() - start_time) > MAX_TEST_TIME:
                 safe_print(f"[test_broker_trade_stub] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
-                _status = "TIMEOUT"
+                _status[0] = "TIMEOUT"
                 break
 
             attempts += 1
@@ -108,16 +107,16 @@ if __name__ == "__main__":
                     successful += 1
                 else:
                     safe_print(f"[test_broker_trade_stub] No trade result returned for {symbol}")
-                    _status = "ERRORS"
+                    _status[0] = "ERRORS"
             except Exception as e:
                 err_msg = f"Trade execution error: {e}"
                 safe_print(f"[test_broker_trade_stub] {err_msg}")
-                _status = "ERRORS"
+                _status[0] = "ERRORS"
 
             time.sleep(DELAY_BETWEEN_TRADES)
 
         safe_print(f"[test_broker_trade_stub] Trade stub sequence completed: {successful} trades executed.")
-        safe_print(f"[test_broker_trade_stub] FINAL RESULT: {_status if _status != 'PASSED' or successful < TRADE_COUNT else 'PASSED'}")
+        safe_print(f"[test_broker_trade_stub] FINAL RESULT: {_status[0] if _status[0] != 'PASSED' or successful < TRADE_COUNT else 'PASSED'}")
 
     def run_test():
         run_trade_stub()

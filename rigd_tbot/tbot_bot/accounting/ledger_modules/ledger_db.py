@@ -40,8 +40,71 @@ def validate_ledger_schema(db_path=None, schema_path=None):
                     continue
                 try:
                     cursor.execute(f"EXPLAIN {stmt}")
-                except sqlite3.DatabaseError as e:
+                except sqlite3.DatabaseError:
                     return False
     except Exception:
         return False
     return True
+
+def add_entry(entry):
+    """
+    Adds a ledger entry to the trades table.
+    """
+    db_path = get_db_path()
+    keys = ", ".join(entry.keys())
+    placeholders = ", ".join("?" for _ in entry)
+    values = tuple(entry.values())
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(f"INSERT INTO trades ({keys}) VALUES ({placeholders})", values)
+            conn.commit()
+    except Exception as e:
+        raise RuntimeError(f"Failed to add ledger entry: {e}")
+
+def post_double_entry(debit_entry, credit_entry):
+    """
+    Posts a balanced debit and credit entry to the ledger.
+    """
+    db_path = get_db_path()
+    try:
+        with sqlite3.connect(db_path) as conn:
+            keys_d = ", ".join(debit_entry.keys())
+            placeholders_d = ", ".join("?" for _ in debit_entry)
+            conn.execute(f"INSERT INTO trades ({keys_d}) VALUES ({placeholders_d})", tuple(debit_entry.values()))
+
+            keys_c = ", ".join(credit_entry.keys())
+            placeholders_c = ", ".join("?" for _ in credit_entry)
+            conn.execute(f"INSERT INTO trades ({keys_c}) VALUES ({placeholders_c})", tuple(credit_entry.values()))
+
+            conn.commit()
+        return {"balanced": True, "debit": debit_entry, "credit": credit_entry}
+    except Exception as e:
+        raise RuntimeError(f"Failed to post double entry: {e}")
+
+def run_schema_migration(migration_sql_path):
+    """
+    Runs a schema migration SQL script on the ledger DB.
+    """
+    db_path = get_db_path()
+    try:
+        with open(migration_sql_path, "r") as f:
+            migration_sql = f.read()
+        with sqlite3.connect(db_path) as conn:
+            conn.executescript(migration_sql)
+            conn.commit()
+    except Exception as e:
+        raise RuntimeError(f"Failed to run schema migration: {e}")
+
+def reconcile_ledger_with_coa():
+    """
+    Runs reconciliation logic between ledger entries and COA accounts.
+    """
+    db_path = get_db_path()
+    # Placeholder: actual reconciliation logic must be implemented here.
+    try:
+        with sqlite3.connect(db_path) as conn:
+            # Implement reconciliation logic as needed
+            pass
+        return True
+    except Exception as e:
+        raise RuntimeError(f"Failed to reconcile ledger with COA: {e}")

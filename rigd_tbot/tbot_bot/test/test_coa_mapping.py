@@ -4,6 +4,12 @@ import sys
 import time
 import pytest
 from pathlib import Path
+from tbot_bot.accounting.coa_utils import load_coa_metadata_and_accounts
+from tbot_bot.accounting.coa_mapping_table import (
+    load_mapping_table, assign_mapping, get_mapping_for_transaction, rollback_mapping_version
+)
+from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
+from tbot_bot.support.utils_log import log_event
 
 MAX_TEST_TIME = 90  # seconds per test
 
@@ -11,13 +17,6 @@ MAX_TEST_TIME = 90  # seconds per test
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from tbot_bot.support.utils_coa_web import load_coa_metadata_and_accounts
-from tbot_bot.accounting.coa_mapping_table import (
-    load_mapping_table, assign_mapping, get_mapping_for_transaction, rollback_mapping_version
-)
-from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
-from tbot_bot.support.utils_log import log_event
 
 CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")
