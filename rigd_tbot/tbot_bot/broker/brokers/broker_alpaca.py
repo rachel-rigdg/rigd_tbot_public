@@ -201,7 +201,8 @@ class AlpacaBroker:
             etf_positions = {}
             for pos in positions:
                 sym = pos.get("symbol")
-                if sym and sym.startswith("ETF"):  # crude filter, adjust as needed
+                # Accept ETFs as symbols ending with common ETF suffixes
+                if sym and any(sym.endswith(suf) for suf in ("ETF", "ET", "SH", "US")):
                     etf_positions[sym] = float(pos.get("market_value", 0.0))
             return etf_positions
         except Exception:
@@ -278,15 +279,38 @@ class AlpacaBroker:
         """
         Returns all cash/fee/dividend/transfer activity in OFX/ledger-normalized dicts.
         Handles pagination, required fields, and normalization.
+        Falls back to minimal safe activity_types if full set causes error.
         """
-        # Use all valid documented types for max data coverage
-        all_types = "FILL,TRANS,DIV,JNLC,JNLS,MFEE,ACATC,ACATS,CSD,CSR,CSW,INT,WIRE"
-        params = {
-            "activity_types": all_types,
+        all_types_full = "FILL,TRANS,DIV,JNLC,JNLS,MFEE,ACATC,ACATS,CSD,CSR,CSW,INT,WIRE"
+        all_types_safe = "FILL,TRANS,DIV,MFEE,INT,WIRE"
+        params_full = {
+            "activity_types": all_types_full,
             "after": start_date
         }
         if end_date:
-            params["until"] = end_date
+            params_full["until"] = end_date
+
+        try:
+            activities = self._fetch_cash_activity_internal(params_full)
+            return activities
+        except Exception as e:
+            log_event("broker_alpaca", f"fetch_cash_activity full set failed: {e}. Falling back to safe minimal set.", level="warning")
+
+        params_safe = {
+            "activity_types": all_types_safe,
+            "after": start_date
+        }
+        if end_date:
+            params_safe["until"] = end_date
+
+        try:
+            activities = self._fetch_cash_activity_internal(params_safe)
+            return activities
+        except Exception as e:
+            log_event("broker_alpaca", f"fetch_cash_activity safe set failed: {e}. Returning empty list.", level="error")
+            return []
+
+    def _fetch_cash_activity_internal(self, params):
         activities = []
         next_page_token = None
         while True:

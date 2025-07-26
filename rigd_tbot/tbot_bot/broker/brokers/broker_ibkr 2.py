@@ -173,6 +173,7 @@ class IBKRBroker:
             return 1.0
         except Exception:
             return 1.0
+
     def download_trade_ledger_csv(self, start_date=None, end_date=None, output_path=None):
         """
         Downloads executed trades from IBKR and writes a deduplicated CSV to output_path.
@@ -275,36 +276,48 @@ class IBKRBroker:
         """
         Returns all cash/dividend/fee activity in OFX/ledger-normalized dicts.
         Handles available account summary as cash events, normalization, and audit.
+        Includes graceful fallback logic removing unsupported types on errors.
         """
+        activity_types = [
+            "EXECUTION",
+            "COMMISSION",
+            "DIVIDEND",
+            "CORPORATE_ACTION",
+            "INTEREST",
+            "TAX",
+            "TRANSFER",
+            "MISCELLANEOUS_FEES"
+        ]
+        params = {
+            "startDate": start_date,
+            "endDate": end_date or "",
+            "activityTypes": ",".join(activity_types),
+            "maxResults": 1000,
+        }
         activities = []
-        try:
-            account_summ = self.client.accountSummary()
-            # IBKR API: use available data, not full fidelity vs. Alpaca; record basic cash activity
-            activity_id = f"acct_activity_{datetime.utcnow().isoformat()}"
-            for c in account_summ:
-                activities.append({
-                    "trade_id": activity_id,
-                    "symbol": None,
-                    "action": c.tag,
-                    "quantity": float(c.value or 0),
-                    "price": 0,
-                    "fee": 0,
-                    "commission": 0,
-                    "datetime_utc": str(datetime.utcnow()),
-                    "status": "ok",
-                    "total_value": float(c.value or 0),
-                    "json_metadata": {
-                        "raw_broker": str(vars(c)),
-                        "api_hash": hashlib.sha256(str(vars(c)).encode("utf-8")).hexdigest(),
-                        "credential_hash": self.credential_hash
-                    }
-                })
-            log_event("broker_ibkr", f"fetch_cash_activity complete, {len(activities)} entries. cred_hash={self.credential_hash}", level="info")
-            return activities
-        except Exception as e:
-            log_event("broker_ibkr", f"fetch_cash_activity error: {e}", level="error")
-            return []
-        
+        next_token = None
+        while True:
+            if next_token:
+                params["pageToken"] = next_token
+            try:
+                resp = self._request("GET", "/v1/account/activities", params=params)
+            except Exception as e:
+                if len(activity_types) > 1:
+                    removed = activity_types.pop()
+                    params["activityTypes"] = ",".join(activity_types)
+                    log_event("broker_ibkr", f"Activity type '{removed}' caused error, retrying with fallback set", level="warning")
+                    continue
+                else:
+                    log_event("broker_ibkr", f"All fallback attempts failed for fetch_cash_activity: {e}", level="error")
+                    break
+            page_activities = resp.get("activities", [])
+            activities.extend(page_activities)
+            next_token = resp.get("nextPageToken")
+            if not next_token:
+                break
+        log_event("broker_ibkr", f"fetch_cash_activity complete, {len(activities)} entries. cred_hash={self.credential_hash}", level="info")
+        return activities
+
     # ============ EXTENDED RAW DATA DUMP (NEW) ============
 
     def fetch_all_trades_raw(self, start_date=None, end_date=None):
