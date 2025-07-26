@@ -24,8 +24,8 @@ def sync_broker_ledger():
     entity_code, jurisdiction_code, broker_code, bot_id = bot_identity
     snapshot_ledger_before_sync()
     mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
-    trades_raw = fetch_all_trades(start_date=None, end_date=None)
-    cash_acts_raw = fetch_cash_activity(start_date=None, end_date=None)
+    trades_raw = fetch_all_trades(start_date="2025-01-01", end_date=None)
+    cash_acts_raw = fetch_cash_activity(start_date="2025-01-01", end_date=None)
 
     for t in trades_raw + cash_acts_raw:
         if not isinstance(t, dict):

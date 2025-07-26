@@ -4,7 +4,6 @@ import requests
 import hashlib
 from tbot_bot.broker.utils.broker_request import safe_request
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
-from urllib.parse import urlencode
 
 class AlpacaBroker:
     def __init__(self, env):
@@ -191,11 +190,14 @@ class AlpacaBroker:
         activities = []
         next_page_token = None
         while True:
+            curr_params = list(params)
             if next_page_token:
-                params.append(("page_token", next_page_token))
-            resp = self._request("GET", "/v2/account/activities", params=params)
-            page = resp["activities"] if isinstance(resp, dict) and "activities" in resp else resp
+                curr_params.append(("page_token", next_page_token))
+            resp = self._request("GET", "/v2/account/activities", params=curr_params)
+            page = resp if isinstance(resp, list) else resp.get("activities", [])
             for a in page:
+                if not isinstance(a, dict):
+                    continue
                 a_hash = hashlib.sha256(str(a).encode("utf-8")).hexdigest()
                 activity = {
                     "trade_id": a.get("id") or a.get("activity_id"),
