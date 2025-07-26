@@ -62,14 +62,14 @@ class AlpacaBroker:
         except Exception:
             return None
 
-   def place_order(self, symbol=None, side=None, amount=None, order=None):
-    """
-    Places a market order with Alpaca.
-    Usage:
-        - place_order(symbol, side, amount): direct arguments
-        - place_order(order=order_dict): full order dict, keys: symbol, qty, side, [order_type, strategy, ...]
-    Returns the order response dict.
-    """
+    def place_order(self, symbol=None, side=None, amount=None, order=None):
+         """
+        Places a market order with Alpaca.
+        Usage:
+            - place_order(symbol, side, amount): direct arguments
+            - place_order(order=order_dict): full order dict, keys: symbol, qty, side, [order_type, strategy, ...]
+        Returns the order response dict.
+        """
     if order is not None:
         payload = {
             "symbol": order["symbol"],
