@@ -18,7 +18,8 @@ def get_coa_accounts():
     cipher = Fernet(key)
     plaintext = cipher.decrypt(enc_path.read_bytes())
     bot_identity_data = json.loads(plaintext.decode("utf-8"))
-    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity_data.get("BOT_IDENTITY_STRING").split("_")
+    identity = bot_identity_data.get("BOT_IDENTITY_STRING")
+    entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute("SELECT json_extract(account_json, '$.code'), json_extract(account_json, '$.name') FROM coa_accounts")

@@ -7,6 +7,7 @@ from cryptography.fernet import Fernet
 from pathlib import Path
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_identity import get_bot_identity
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 
 BOT_ID = get_bot_identity()
 CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
@@ -33,7 +34,6 @@ def validate_ledger_schema(db_path=None, schema_path=None):
             with open(schema_path, "r") as f:
                 schema = f.read()
             cursor = conn.cursor()
-            # Split schema into statements, skip empty
             for stmt in schema.split(";"):
                 stmt = stmt.strip()
                 if not stmt:
@@ -65,9 +65,13 @@ def add_entry(entry):
             entry["amount"] = abs(val)
     if "side" not in entry or entry["side"] is None:
         entry["side"] = "debit"
-    keys = ", ".join(entry.keys())
-    placeholders = ", ".join("?" for _ in entry)
-    values = tuple(entry.values())
+    # Fill all missing fields from canonical list for schema safety
+    for k in TRADES_FIELDS:
+        if k not in entry:
+            entry[k] = None
+    keys = ", ".join(TRADES_FIELDS)
+    placeholders = ", ".join("?" for _ in TRADES_FIELDS)
+    values = tuple(entry.get(k) for k in TRADES_FIELDS)
     try:
         with sqlite3.connect(db_path) as conn:
             conn.execute(f"INSERT INTO trades ({keys}) VALUES ({placeholders})", values)
@@ -113,10 +117,8 @@ def reconcile_ledger_with_coa():
     Runs reconciliation logic between ledger entries and COA accounts.
     """
     db_path = get_db_path()
-    # Placeholder: actual reconciliation logic must be implemented here.
     try:
         with sqlite3.connect(db_path) as conn:
-            # Implement reconciliation logic as needed
             pass
         return True
     except Exception as e:

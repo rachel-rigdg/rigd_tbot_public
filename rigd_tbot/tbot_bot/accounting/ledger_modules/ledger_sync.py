@@ -7,6 +7,7 @@ from tbot_bot.accounting.coa_mapping_table import load_mapping_table
 from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 import sqlite3
 import json
 
@@ -48,6 +49,15 @@ def sync_broker_ledger():
         cash_acts.append(normalize_trade(c))
 
     all_entries = [e for e in (trades + cash_acts) if isinstance(e, dict)]
+
+    # Ensure all required/optional fields are present for full schema compliance
+    def _fill_defaults(entry):
+        for k in TRADES_FIELDS:
+            if k not in entry:
+                entry[k] = None
+        return entry
+
+    all_entries = [_fill_defaults(e) for e in all_entries]
 
     sanitized_entries = [_sanitize_entry(e) for e in all_entries]
     post_double_entry(sanitized_entries, mapping_table)

@@ -8,6 +8,7 @@ from tbot_bot.accounting.ledger_modules.ledger_entry import load_internal_ledger
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from pathlib import Path
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 import sqlite3
 
 CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
@@ -36,6 +37,11 @@ def calculate_running_balances():
     if TEST_MODE_FLAG.exists():
         return []
     entries = load_internal_ledger()
+    # Ensure all TRADES_FIELDS present
+    for entry in entries:
+        for k in TRADES_FIELDS:
+            if k not in entry:
+                entry[k] = None
     # Sort by datetime_utc ascending, id as tiebreaker
     entries.sort(key=lambda e: (e.get("datetime_utc", ""), e.get("id", 0)))
     running = 0.0

@@ -10,6 +10,7 @@ import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 
 def get_identity_tuple():
     identity = load_bot_identity()
@@ -33,12 +34,7 @@ def edit_ledger_entry(entry_id, updated_data):
         updated_data["total_value"] = round((qty * price) - fee, 2)
     except Exception:
         updated_data["total_value"] = updated_data.get("total_value") or 0
-    columns = [
-        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
-        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction_code", "entity_code", "language",
-        "updated_by", "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant",
-        "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
-    ]
+    columns = TRADES_FIELDS
     set_clause = ", ".join([f"{col}=?" for col in columns])
     values = [updated_data.get(col) for col in columns]
     values.append(entry_id)

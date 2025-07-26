@@ -1,6 +1,7 @@
 # tbot_bot/broker/utils/ledger_normalizer.py
 
 from tbot_bot.support.utils_identity import get_bot_identity
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 
 raw_id = get_bot_identity()
 if isinstance(raw_id, str):
@@ -24,13 +25,14 @@ else:
 def normalize_trade(trade, credential_hash=None):
     # This function must be robust to dicts from any broker and normalize fields.
     if not isinstance(trade, dict):
-        return {}
+        return {k: None for k in TRADES_FIELDS}
 
     mapping = {
         "trade_id": trade.get("id") or trade.get("trade_id") or trade.get("order_id"),
         "symbol": trade.get("symbol") or trade.get("underlying"),
         "side": trade.get("side") or trade.get("action"),
         "quantity": float(trade.get("qty") or trade.get("quantity") or trade.get("filled_qty") or 0),
+        "quantity_type": trade.get("quantity_type"),
         "price": float(trade.get("price") or trade.get("filled_avg_price") or trade.get("fill_price") or 0),
         "fee": float(trade.get("fee", 0)),
         "commission": float(trade.get("commission", 0)),
@@ -44,16 +46,38 @@ def normalize_trade(trade, credential_hash=None):
         "status": trade.get("status", trade.get("order_status", "")),
         "strategy": trade.get("strategy", "UNKNOWN"),
         "account": trade.get("account", "default"),
-        "currency_code": trade.get("currency", "USD"),
-        "broker_code": trade.get("broker", "ALPACA"),
+        "currency_code": trade.get("currency_code") or trade.get("currency", "USD"),
+        "language_code": trade.get("language_code", "en"),
+        "price_currency": trade.get("price_currency"),
+        "fx_rate": trade.get("fx_rate"),
+        "commission_currency": trade.get("commission_currency"),
+        "fee_currency": trade.get("fee_currency"),
+        "accrued_interest": float(trade.get("accrued_interest", 0.0)),
+        "accrued_interest_currency": trade.get("accrued_interest_currency"),
+        "tax": float(trade.get("tax", 0.0)),
+        "tax_currency": trade.get("tax_currency"),
+        "net_amount": trade.get("net_amount"),
+        "settlement_date": trade.get("settlement_date"),
+        "trade_date": trade.get("trade_date"),
+        "description": trade.get("description"),
+        "counterparty": trade.get("counterparty"),
+        "sub_account": trade.get("sub_account"),
+        "broker_code": trade.get("broker_code") or trade.get("broker", "ALPACA"),
         "entity_code": BOT_IDENTITY.get("ENTITY_CODE", "UNKNOWN"),
         "jurisdiction_code": BOT_IDENTITY.get("JURISDICTION_CODE", "UNKNOWN"),
-        "BOT_ID": BOT_IDENTITY.get("BOT_ID", "UNKNOWN"),
+        "bot_id": BOT_IDENTITY.get("BOT_ID", "UNKNOWN"),
         "json_metadata": {
             "raw_broker": trade,
             "api_hash": credential_hash or "n/a"
-        }
+        },
+        "total_value": None,
+        # Fill the rest with None if not present below.
     }
 
     mapping["total_value"] = round(mapping["quantity"] * mapping["price"], 6)
+
+    # Canonicalize output: fill all missing fields
+    for k in TRADES_FIELDS:
+        if k not in mapping:
+            mapping[k] = None
     return mapping

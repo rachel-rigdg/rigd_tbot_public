@@ -33,7 +33,11 @@ def load_broker_code():
     plaintext = cipher.decrypt(enc_path.read_bytes())
     bot_identity_data = json.loads(plaintext.decode("utf-8"))
     identity = bot_identity_data.get("BOT_IDENTITY_STRING")
-    return identity.split("_")[2]
+    # Defensive for schema: return broker_code or empty string
+    try:
+        return identity.split("_")[2]
+    except Exception:
+        return ""
 
 def load_account_number():
     try:
@@ -43,6 +47,7 @@ def load_account_number():
         cipher = Fernet(key)
         plaintext = cipher.decrypt(enc_path.read_bytes())
         acct_api_data = json.loads(plaintext.decode("utf-8"))
-        return acct_api_data.get("ACCOUNT_NUMBER", "") or acct_api_data.get("ACCOUNT_ID", "")
+        # Defensive: handle legacy and new key names
+        return acct_api_data.get("ACCOUNT_NUMBER") or acct_api_data.get("ACCOUNT_ID") or ""
     except Exception:
         return ""

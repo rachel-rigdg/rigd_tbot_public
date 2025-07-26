@@ -4,6 +4,7 @@ from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_pa
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table, apply_mapping_rule
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 import sqlite3
 
 def post_ledger_entries_double_entry(entries):
@@ -43,6 +44,10 @@ def _add_required_fields(entry, entity_code, jurisdiction_code, broker_code, bot
             entry["amount"] = abs(val)
     if "status" not in entry:
         entry["status"] = "ok"
+    # Fill all missing fields to avoid schema errors
+    for k in TRADES_FIELDS:
+        if k not in entry:
+            entry[k] = None
     return entry
 
 def post_double_entry(entries, mapping_table=None):
@@ -57,17 +62,15 @@ def post_double_entry(entries, mapping_table=None):
             debit_entry, credit_entry = apply_mapping_rule(entry, mapping_table)
             debit_entry = _add_required_fields(debit_entry, entity_code, jurisdiction_code, broker_code, bot_id)
             credit_entry = _add_required_fields(credit_entry, entity_code, jurisdiction_code, broker_code, bot_id)
-            columns = ", ".join(debit_entry.keys())
-            placeholders = ", ".join(["?"] * len(debit_entry))
+            columns = TRADES_FIELDS
+            placeholders = ", ".join(["?"] * len(columns))
             conn.execute(
-                f"INSERT INTO trades ({columns}) VALUES ({placeholders})",
-                tuple(debit_entry.values())
+                f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
+                tuple(debit_entry.get(col) for col in columns)
             )
-            columns = ", ".join(credit_entry.keys())
-            placeholders = ", ".join(["?"] * len(credit_entry))
             conn.execute(
-                f"INSERT INTO trades ({columns}) VALUES ({placeholders})",
-                tuple(credit_entry.values())
+                f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
+                tuple(credit_entry.get(col) for col in columns)
             )
             conn.commit()
             inserted_ids.append((debit_entry.get("trade_id"), credit_entry.get("trade_id")))

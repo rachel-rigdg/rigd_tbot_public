@@ -10,7 +10,8 @@ def snapshot_ledger_before_sync():
     """
     Atomically snapshot the current ledger DB before sync/critical operation.
     """
-    entity_code, jurisdiction_code, broker_code, bot_id = load_bot_identity().split("_")
+    identity = load_bot_identity()
+    entity_code, jurisdiction_code, broker_code, bot_id = identity.split("_")
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     snapshot_dir = resolve_ledger_snapshot_dir(entity_code, jurisdiction_code, broker_code, bot_id)
     os.makedirs(snapshot_dir, exist_ok=True)

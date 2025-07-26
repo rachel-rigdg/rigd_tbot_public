@@ -12,6 +12,7 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.accounting.ledger_modules.ledger_account_map import load_broker_code, load_account_number
 from tbot_bot.accounting.ledger_modules.ledger_edit import edit_ledger_entry, delete_ledger_entry  # Use shared helpers
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 
 def get_identity_tuple():
     identity = load_bot_identity()
@@ -26,50 +27,12 @@ def load_internal_ledger():
     db_path = resolve_ledger_db_path(*bot_identity)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    cursor = conn.execute(
-        "SELECT id, ledger_entry_id, datetime_utc, symbol, side, quantity, price, total_value, "
-        "fee, broker_code, strategy, account, trade_id, tags, notes, jurisdiction_code, entity_code, language, "
-        "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
-        "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
-        "'ok' AS status, json_metadata "
-        "FROM trades"
-    )
+    query = "SELECT id, " + ", ".join(TRADES_FIELDS) + " FROM trades"
+    cursor = conn.execute(query)
     results = []
     for row in cursor.fetchall():
-        results.append({
-            "id": row["id"],
-            "ledger_entry_id": row["ledger_entry_id"],
-            "datetime_utc": row["datetime_utc"],
-            "symbol": row["symbol"],
-            "side": row["side"],
-            "quantity": row["quantity"],
-            "price": row["price"],
-            "total_value": row["total_value"],
-            "fee": row["fee"],
-            "broker": row["broker_code"],
-            "strategy": row["strategy"],
-            "account": row["account"],
-            "trade_id": row["trade_id"],
-            "tags": row["tags"],
-            "notes": row["notes"],
-            "jurisdiction_code": row["jurisdiction_code"],
-            "entity_code": row["entity_code"],
-            "language": row["language"],
-            "created_by": row["created_by"],
-            "updated_by": row["updated_by"],
-            "approved_by": row["approved_by"],
-            "approval_status": row["approval_status"],
-            "gdpr_compliant": row["gdpr_compliant"],
-            "ccpa_compliant": row["ccpa_compliant"],
-            "pipeda_compliant": row["pipeda_compliant"],
-            "hipaa_sensitive": row["hipaa_sensitive"],
-            "iso27001_tag": row["iso27001_tag"],
-            "soc2_type": row["soc2_type"],
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"],
-            "status": row["status"],
-            "json_metadata": row["json_metadata"],
-        })
+        d = {k: row[k] for k in row.keys()}
+        results.append(d)
     conn.close()
     return results
 
@@ -105,12 +68,7 @@ def add_ledger_entry(entry_data):
         entry_data["total_value"] = round((qty * price) - fee, 2)
     except Exception:
         entry_data["total_value"] = entry_data.get("total_value") or 0
-    columns = [
-        "ledger_entry_id", "datetime_utc", "symbol", "side", "quantity", "price", "total_value", "fee", "broker_code",
-        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction_code", "entity_code", "language",
-        "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
-        "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
-    ]
+    columns = TRADES_FIELDS
     values = [entry_data.get(col) for col in columns]
     placeholders = ", ".join("?" for _ in columns)
     conn = sqlite3.connect(db_path)
