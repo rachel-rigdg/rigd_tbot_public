@@ -91,7 +91,7 @@ def add_ledger_entry(entry_data):
     """
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
-    entry_data["broker"] = load_broker_code()
+    entry_data["broker_code"] = load_broker_code()
     entry_data["account"] = load_account_number()
     try:
         qty = float(entry_data.get("quantity") or 0)
