@@ -26,6 +26,11 @@ def sync_broker_ledger():
     mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
     trades_raw = fetch_all_trades(start_date=None, end_date=None)
     cash_acts_raw = fetch_cash_activity(start_date=None, end_date=None)
+
+    for t in trades_raw + cash_acts_raw:
+        if not isinstance(t, dict):
+            print("NON-DICT TRADE DETECTED:", type(t), t)
+
     trades = [normalize_trade(t) for t in trades_raw]
     cash_acts = [normalize_trade(c) for c in cash_acts_raw]
     all_entries = trades + cash_acts

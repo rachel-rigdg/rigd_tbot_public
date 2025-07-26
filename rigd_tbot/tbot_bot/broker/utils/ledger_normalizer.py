@@ -7,7 +7,7 @@ BOT_IDENTITY = get_bot_identity()
 def normalize_trade(trade, credential_hash=None):
     # This function must be robust to dicts from any broker and normalize fields.
     if not isinstance(trade, dict):
-        return trade
+        return {}
 
     mapping = {
         "trade_id": trade.get("id") or trade.get("trade_id") or trade.get("order_id"),
