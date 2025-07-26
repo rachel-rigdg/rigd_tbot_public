@@ -148,9 +148,8 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     soc2_type TEXT DEFAULT '',
     extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
-    bot_id TEXT DEFAULT NULL -- <<<<< ADD THIS LINE
+    bot_id TEXT DEFAULT NULL
 );
-
 -- Table: Trades (normalized view, legacy, for bot-internal trade logic)
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,8 +162,8 @@ CREATE TABLE IF NOT EXISTS trades (
     quantity_type TEXT,
     price REAL CHECK(price >= 0.0) NOT NULL,
     total_value REAL NOT NULL,
-    amount REAL NOT NULL, -- Added for double-entry support (signed, credit+/debit-)
-    side TEXT CHECK(side IN ('debit','credit')) NOT NULL, -- Added for double-entry support
+    amount REAL NOT NULL,
+    side TEXT CHECK(side IN ('debit','credit')) NOT NULL,
     commission REAL DEFAULT 0.0 CHECK(commission >= 0.0),
     fee REAL DEFAULT 0.0 CHECK(fee >= 0.0),
     broker_code TEXT NOT NULL REFERENCES brokers(code),
@@ -189,9 +188,25 @@ CREATE TABLE IF NOT EXISTS trades (
     hipaa_sensitive BOOLEAN DEFAULT 0,
     iso27001_tag TEXT DEFAULT '',
     soc2_type TEXT DEFAULT '',
+    currency_code TEXT,
+    language_code TEXT DEFAULT 'en',
+    price_currency TEXT,
+    fx_rate REAL,
+    commission_currency TEXT,
+    fee_currency TEXT,
+    accrued_interest REAL DEFAULT 0.0,
+    accrued_interest_currency TEXT,
+    tax REAL DEFAULT 0.0,
+    tax_currency TEXT,
+    net_amount REAL,
+    settlement_date TEXT,
+    trade_date TEXT,
+    description TEXT,
+    counterparty TEXT,
+    sub_account TEXT,
     extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
-    bot_id TEXT DEFAULT NULL, -- <<<<< ADD THIS LINE
+    bot_id TEXT DEFAULT NULL,
     FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
 );
 
@@ -375,6 +390,3 @@ CREATE INDEX IF NOT EXISTS idx_extstat_broker_date ON external_statements (broke
 CREATE INDEX IF NOT EXISTS idx_exttrans_broker_tradeid ON external_transactions (broker_code, trade_id);
 CREATE INDEX IF NOT EXISTS idx_acct_balances_broker_entity ON account_balances (broker_code, entity_code, currency_code);
 CREATE INDEX IF NOT EXISTS idx_option_contracts_symbol ON option_contracts (symbol, expiration, strike, option_type);
-
--- Cross-table Relationships (for future expansion)
--- (e.g., FOREIGN KEY (entity_code) REFERENCES entities(code) ON DELETE SET NULL, ...)
