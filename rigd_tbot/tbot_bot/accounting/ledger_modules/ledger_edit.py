@@ -35,7 +35,7 @@ def edit_ledger_entry(entry_id, updated_data):
         updated_data["total_value"] = updated_data.get("total_value") or 0
     columns = [
         "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
-        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
+        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction_code", "entity_code", "language",
         "updated_by", "approval_status", "gdpr_compliant", "ccpa_compliant", "pipeda_compliant",
         "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
     ]

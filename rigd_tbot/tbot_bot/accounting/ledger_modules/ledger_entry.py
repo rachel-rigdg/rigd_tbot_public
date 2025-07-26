@@ -23,7 +23,7 @@ def load_internal_ledger():
     cursor = conn.execute(
         "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, "
         "fee, "
-        "broker_code, strategy, account, trade_id, tags, notes, jurisdiction, entity_code, language, "
+        "broker_code, strategy, account, trade_id, tags, notes, jurisdiction_code, entity_code, language, "
         "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
         "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
         "'ok' AS status, json_metadata "
@@ -47,7 +47,7 @@ def load_internal_ledger():
             "trade_id": row[12],
             "tags": row[13],
             "notes": row[14],
-            "jurisdiction": row[15],
+            "jurisdiction_code": row[15],
             "entity_code": row[16],
             "language": row[17],
             "created_by": row[18],
@@ -102,7 +102,7 @@ def add_ledger_entry(entry_data):
         entry_data["total_value"] = entry_data.get("total_value") or 0
     columns = [
         "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
-        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction", "entity_code", "language",
+        "strategy", "account", "trade_id", "tags", "notes", "jurisdiction_code", "entity_code", "language",
         "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
         "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
     ]

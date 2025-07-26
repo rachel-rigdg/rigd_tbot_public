@@ -23,10 +23,10 @@ try:
     plaintext = cipher.decrypt(enc_path.read_bytes())
     bot_identity_data = json.loads(plaintext.decode("utf-8"))
     BOT_IDENTITY = bot_identity_data.get("BOT_IDENTITY_STRING")
-    ENTITY, JURISDICTION, BROKER, BOT_ID = BOT_IDENTITY.split("_")
+    ENTITY, JURISDICTION_CODE, BROKER, BOT_ID = BOT_IDENTITY.split("_")
 except Exception as e:
     BOT_IDENTITY = None
-    ENTITY = JURISDICTION = BROKER = BOT_ID = None
+    ENTITY = JURISDICTION_CODE = BROKER = BOT_ID = None
 
 def export_transactions(transactions, session_tag=""):
     """
@@ -39,7 +39,7 @@ def export_transactions(transactions, session_tag=""):
         return  # Skip export if disabled or identity missing
 
     try:
-        ledger_path = resolve_ledger_db_path(ENTITY, JURISDICTION, BROKER, BOT_ID)
+        ledger_path = resolve_ledger_db_path(ENTITY, JURISDICTION_CODE, BROKER, BOT_ID)
         # Enforce double-entry validation before any export
         validate_double_entry()
         exporter = TradeBotExporter(ledger_path=ledger_path, session_tag=session_tag)
@@ -77,7 +77,7 @@ def propose_external_transfer(transfer_type, amount, currency, notes=""):
         "notes": notes,
         "timestamp_utc": timestamp,
         "entity": ENTITY,
-        "jurisdiction": JURISDICTION,
+        "jurisdiction_code": JURISDICTION_CODE,
         "broker": BROKER
     }
     fname = f"{transfer_type}_{timestamp}.json"

@@ -101,7 +101,7 @@ def add_ledger_entry_route():
     from tbot_bot.accounting.ledger import post_ledger_entries_double_entry
     form = request.form
     bot_identity = load_bot_identity()
-    entity_code, jurisdiction, broker, bot_id = bot_identity.split("_")
+    entity_code, jurisdiction_code, broker, bot_id = bot_identity.split("_")
     current_user = get_current_user()
     config = get_bot_config()
     entry_data = {
@@ -117,7 +117,7 @@ def add_ledger_entry_route():
         "trade_id": form.get("trade_id"),
         "tags": form.get("tags"),
         "notes": form.get("notes"),
-        "jurisdiction": jurisdiction,
+        "jurisdiction_code": jurisdiction_code,
         "entity_code": entity_code,
         "language": config.get("LANGUAGE_CODE", "en"),
         "created_by": current_user.username if hasattr(current_user, "username") else (current_user if current_user else "system"),
@@ -151,7 +151,7 @@ def edit_ledger_entry_route(entry_id):
     from tbot_bot.accounting.ledger import edit_ledger_entry
     form = request.form
     bot_identity = load_bot_identity()
-    entity_code, jurisdiction, broker, bot_id = bot_identity.split("_")
+    entity_code, jurisdiction_code, broker, bot_id = bot_identity.split("_")
     current_user = get_current_user()
     config = get_bot_config()
     updated_data = {
@@ -167,7 +167,7 @@ def edit_ledger_entry_route(entry_id):
         "trade_id": form.get("trade_id"),
         "tags": form.get("tags"),
         "notes": form.get("notes"),
-        "jurisdiction": jurisdiction,
+        "jurisdiction_code": jurisdiction_code,
         "entity_code": entity_code,
         "language": config.get("LANGUAGE_CODE", "en"),
         "updated_by": current_user.username if hasattr(current_user, "username") else (current_user if current_user else "system"),
