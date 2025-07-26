@@ -71,21 +71,14 @@ class AlpacaBroker:
             return self._request("POST", "/v2/orders", data=payload)
 
     def fetch_cash_activity(self, start_date, end_date=None):
-        all_types_full = "FILL,TRANS,DIV,JNLC,JNLS,MFEE,ACATC,ACATS,CSD,CSR,CSW,INT,WIRE"
         all_types_safe = "FILL,TRANS,DIV,MFEE,INT,WIRE"
-        params = {"activity_types": all_types_full, "after": start_date}
+        params = {"activity_types": all_types_safe, "after": start_date}
         if end_date:
             params["until"] = end_date
         try:
             return self._fetch_cash_activity_internal(params)
         except Exception:
-            params = {"activity_types": all_types_safe, "after": start_date}
-            if end_date:
-                params["until"] = end_date
-            try:
-                return self._fetch_cash_activity_internal(params)
-            except Exception:
-                return []
+            return []
 
     def cancel_order(self, order_id):
         return self._request("DELETE", f"/v2/orders/{order_id}")
