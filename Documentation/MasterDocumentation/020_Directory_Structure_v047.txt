@@ -2,7 +2,7 @@
 Document: 020
 Directory_Structure
 Version: v047
-Date: UTC:2025-07-19 00:00:00
+Date: UTC:2025-07-26 00:00:00
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -113,11 +113,22 @@ rigd_tbot/
 │   │   └── plot_results.py                      # Graphs equity curves, trades, and heatmaps
 │   │
 │   ├── broker/                                             # Core broker and strategy execution system
-│   │   ├── broker_api.py                                   # Central broker interface; dispatches order/eligibility calls to broker adapters
-│   │   └── brokers/                                        # Modular per-broker adapters (each encapsulates all API and eligibility logic)
-│   │       ├── __init__.py                                 # Allows dynamic loading/import of broker modules by name
-│   │       ├── alpaca.py                                   # Alpaca broker integration (REST+WebSocket, all trade/risk/fractional logic)
-│   │       └── ibkr.py                                     # Interactive Brokers (IBKR) TWS/Gateway integration (async trading, reconnect, all eligibility)
+│   │   ├── broker_api.py                                   # Central broker interface; dispatches calls to broker adapters dynamically
+│   │   │ 
+│   │   ├── adapters/                                       # Per-broker adapter implementations; fully encapsulate API, order, trade, and eligibility logic
+│   │   │   ├── __init__.py                                 # Enables dynamic import and registration of broker adapters by name
+│   │   │   ├── alpaca.py                                   # Alpaca broker adapter (REST API, order execution, fractional, risk, trade/cash sync)
+│   │   │   ├── ibkr.py                                     # Interactive Brokers adapter (REST API wrappers, order execution, eligibility, trade/cash sync)
+│   │   │   └── tradier.py                                  # Tradier broker adapter (REST API, order execution, eligibility, trade/cash sync)
+│   │   │ 
+│   │   ├── core/                                          # Core broker base classes and interfaces
+│   │   │   ├── base_broker.py                              # Abstract base broker class with shared common logic
+│   │   │   └── broker_interface.py                         # Broker interface enforcing method signatures for adapters
+│   │   │ 
+│   │   └── utils/                                          # Shared utilities for brokers
+│   │       ├── __init__.py                                 # Package init
+│   │       ├── broker_request.py                           # HTTP request helpers with retries and error handling
+│   │       └── ledger_normalizer.py                        # Normalizes trade and cash data from all brokers to unified format
 │   │ 
 │   ├── config/                                 # Local bot config loaders, encryption, and secure settings editors
 │   │   ├── bootstrapping_helper.py		        # Runs core DB initialization scripts (calls tbot_bot/core/scripts/*); checks and sets .bootstrapped flag (called by provisioning_runner.py)

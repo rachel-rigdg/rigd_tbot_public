@@ -22,11 +22,13 @@ Modules Included:
 - Optimization supports grid, bayesian, genetic methods; results versioned in Web UI
 
 2. Detailed Broker API Integration
-- Includes advanced adapters for Alpaca, IBKR, Tradier
-- Handles REST/WebSocket, order lifecycle, retry, error management
-- Implements `.self_check()` with connection, credential validation
-- Supports fallback routing and failover per `.env_bot` toggles
-- Logs all API events for audit; rate limits strictly enforced
+- Fully modularized broker architecture in `broker/adapters/`, with common interfaces defined in `broker/core/` and shared utilities in `broker/utils/`.
+- Advanced broker adapters currently supported: Alpaca, IBKR, Tradier; each encapsulates broker-specific REST/WebSocket interfaces, order lifecycle management, eligibility logic, and trade/cash synchronization.
+- Implements standardized `.self_check()` method in each adapter for connectivity, credential validation, and API availability.
+- Dynamic adapter loading and dispatch via central `broker_api.py` interface.
+- Robust error handling, automatic retry logic, and fallback routing configured by `.env_bot` toggles (`FAILOVER_ENABLED`, etc.).
+- Comprehensive structured audit logging of all broker API events with UTC timestamps; strict enforcement of broker rate limits and quotas.
+
 
 3. Encryption & Key Management Enhancements
 - Key rotation tooling (`tools/rotate_keys.py`)
@@ -613,74 +615,70 @@ Broker_API_Integration Modules
 {CURRENT_VERSION}
 ================================================================================
 Overview:
-Defines broker API integration specifications for Alpaca, IBKR, and Tradier within TradeBot {CURRENT_VERSION}. Enforces unified interface, error handling, compliance, auditability, and now symbol universe caching and efficient screener support per latest requirements.
+Defines the modularized broker API integration specifications for Alpaca, IBKR, and Tradier within TradeBot {CURRENT_VERSION}. Enforces a unified broker interface (`broker_api.py`), dynamic adapter loading, structured error handling, regulatory compliance, auditability, and efficient screener operations via cached symbol universes.
 
 Core Principles:
-- Single active broker per bot instance.
-- API credentials loaded securely from encrypted secrets at bootstrap.
-- No hardcoded credentials or fallback keys.
-- All API communication uses secure HTTPS connections.
-- All broker events logged with UTC timestamps and strategy context.
-- Retry logic capped by `API_RETRY_LIMIT` in `.env_bot`.
-- Self-check ensures connectivity and credential validity.
-- **Screener logic operates from a pre-filtered, pre-cached symbol universe, NOT the full broker or market list at runtime.**
-- **Symbol universe is prepared overnight, filtered by exchange, market cap, price, and exclusions (see "Symbol Universe & Screener" section below).**
+- Single active broker per bot instance, dynamically selected and routed through the central `broker_api.py`.
+- API credentials securely loaded from encrypted secrets at bootstrap; no hardcoded or fallback keys permitted.
+- All broker adapters strictly communicate via secure HTTPS or broker-defined secure channels.
+- Comprehensive structured logging of broker events with UTC timestamps, strategy context, and sanitized data (credentials redacted).
+- Robust retry logic strictly capped by `API_RETRY_LIMIT` from `.env_bot`.
+- Each adapter implements `.self_check()` ensuring API connectivity and credential validity before trading.
+- Screener logic strictly operates from a pre-filtered, pre-cached symbol universe; no full market or broker queries allowed at runtime.
+- Nightly symbol universe caching and filtering by exchange, market cap, price, and exclusions enforced (see "Symbol Universe & Screener" section).
 
-Broker-Specific Details:
+Broker-Specific Adapter Details:
 
-Alpaca:
-- Supports REST and WebSocket.
-- Enables long equity and inverse ETFs.
-- Fractional shares supported if enabled in `.env_bot`.
-- Supports order types: market, limit, stop.
-- Rate-limited per Alpaca API policy; backoff used on 429 errors.
-- **All screener operations use a cached symbol universe, never full API queries.**
+Alpaca (`broker/adapters/alpaca.py`):
+- REST and WebSocket API support.
+- Supports long equity, inverse ETFs, fractional shares if enabled in `.env_bot`.
+- Managed order lifecycle: market, limit, stop orders.
+- Rate limit enforced per Alpaca policies with exponential backoff on 429 errors.
+- Screener operations fully utilize cached symbol universe.
 
-IBKR:
-- Supports TWS/Gateway client with async fallback.
+IBKR (`broker/adapters/ibkr.py`):
+- TWS/Gateway async interface.
 - Supports long equity, inverse ETFs, long puts.
-- Requires client ID and port configured securely.
-- Implements order management, fills, and position sync.
-- Supports delayed market data, real-time updates.
-- Rate limits respected; errors logged and notified.
-- **All screener operations use a cached symbol universe, never full API queries.**
+- Secure client ID and port configuration required.
+- Comprehensive order lifecycle, fills, and position synchronization implemented.
+- Delayed market data, real-time position updates.
+- API rate limits respected, errors systematically logged.
+- Screener operations fully utilize cached symbol universe.
 
-Tradier:
+Tradier (`broker/adapters/tradier.py`):
 - REST-only broker integration.
-- Supports long equity and inverse ETFs.
-- Order lifecycle fully managed via REST API calls.
-- No websocket support.
-- Position sync via polling.
-- Suitable for test or smaller deployments.
-- **All screener operations use a cached symbol universe, never full API queries.**
+- Supports long equity, inverse ETFs; no WebSocket.
+- Fully REST-managed order lifecycle.
+- Position synchronization via polling.
+- Recommended for test and small deployments.
+- Screener operations fully utilize cached symbol universe.
 
-Common Interface Requirements:
-- All brokers must implement:
-  - connect()
-  - submit_order()
-  - cancel_order()
-  - get_positions()
-  - get_account_info()
-  - self_check()
+Modular Broker Interface Requirements (`broker/core/broker_interface.py`):
+All broker adapters must implement:
+- `connect()`
+- `submit_order()`
+- `cancel_order()`
+- `get_positions()`
+- `get_account_info()`
+- `.self_check()`
 
-- Broker adapters reside in `tbot_bot/broker/brokers/`.
-- Broker selection and toggles in `.env_bot`: e.g., `ALPACA_ENABLED=true`.
-- Fallback and failover handled via `FAILOVER_ENABLED` and `FAILOVER_LOG_TAG`.
+- Adapters strictly reside in `tbot_bot/broker/adapters/`.
+- Broker selection toggled via `.env_bot`: e.g., `ALPACA_ENABLED=true`.
+- Fallback and failover functionality configurable (`FAILOVER_ENABLED`, `FAILOVER_LOG_TAG`).
 
 Error Handling & Logging:
-- All broker exceptions caught, logged with detailed context.
-- Fatal connection failures trigger `kill_switch.py`.
-- Partial failures retried per `API_RETRY_LIMIT`.
-- Order rejects recorded in `unresolved_orders.log`.
+- Unified structured logging of all broker exceptions with detailed context.
+- Fatal broker connection failures invoke `kill_switch.py`.
+- Retries systematically enforced per `.env_bot` (`API_RETRY_LIMIT`).
+- Order rejections consistently recorded to `unresolved_orders.log`.
 
 Audit & Compliance:
-- All broker API requests and responses must be logged in a structured, append-only audit format, with all sensitive credentials, PII, and API keys redacted in the logs.
-- Strict enforcement of broker terms of service (TOS) and regulatory policies is required for all integration modules and automated actions.
-- **All holdings, float, tax reserve, payroll reserve, allocation, and rebalance actions are immutably logged in detailed, structured audit logs, including full transaction context (trigger, category, symbol, amount, timestamp, and operator).**
-- Every action performed by the holdings management system—including float management, reserve allocation, and periodic or manual rebalancing—**must post corresponding double-entry transactions to the ledger, using the correct COA categories as specified in the accounting integration docs.**
-- All ledger entries and audit logs are encrypted at rest, strictly append-only, and included in all compliance exports (e.g., OFX, CSV, JSON), ensuring that every automated or manual action is permanently auditable and ready for regulatory or internal review.
-- No holdings or reserve actions may bypass the COA, ledger, or audit log posting workflow under any circumstances; any failure to log or post is treated as a fatal compliance violation.
-
+- Structured, immutable logging of all broker API requests and responses, with sensitive credentials, PII, and API keys fully redacted.
+- Strict adherence to broker TOS and regulatory compliance is mandatory.
+- Holdings, float, tax reserves, payroll reserves, allocations, and rebalance actions immutably recorded in structured audit logs with full context (trigger, category, symbol, amount, timestamp, operator).
+- Each action performed by holdings management posts mandatory double-entry transactions to the ledger aligned with the COA categories specified by the accounting integration documents.
+- Ledger entries and audit logs encrypted at rest, append-only, and included in all compliance exports (OFX, CSV, JSON), maintaining permanent auditability for regulatory and internal review.
+- No holdings or reserve actions may bypass COA, ledger, or audit log posting workflows; violations constitute fatal compliance breaches.
 
 ================================================================================  
 Section: Symbol Universe & Screener Caching  
