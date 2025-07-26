@@ -104,8 +104,9 @@ class TestCOAConsistency(unittest.TestCase):
         safe_print("[test_coa_consistency] Checking metadata fields...")
         coa = load_coa_metadata_and_accounts()
         meta = coa["metadata"]
-        for field in ["currency_code", "entity_code", "jurisdiction_code", "coa_version", "created_at_utc", "last_updated_utc"]:
-            self.assertIn(field, meta)
+        required_fields = ["currency_code", "entity_code", "jurisdiction_code", "coa_version", "created_at_utc", "last_updated_utc"]
+        for field in required_fields:
+            self.assertIn(field, meta, f"Missing metadata field: {field}")
         safe_print("[test_coa_consistency] Metadata fields present.")
 
 def run_test():

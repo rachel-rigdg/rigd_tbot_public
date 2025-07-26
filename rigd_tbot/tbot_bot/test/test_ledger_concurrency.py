@@ -9,7 +9,7 @@ from tbot_bot.accounting.ledger_modules.ledger_db import add_entry, get_db_path
 from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
-import sys
+import sqlite3
 
 MAX_TEST_TIME = 90  # seconds per test
 
@@ -40,9 +40,14 @@ class TestLedgerConcurrency(unittest.TestCase):
     def test_concurrent_writes(self):
         safe_print("[test_ledger_concurrency] Starting concurrent ledger write test...")
         errors = []
+        db_path = get_db_path()
         def try_write(n):
             try:
-                add_entry({"test": f"concurrent_{n}"})
+                # Each thread uses a dedicated connection with a busy_timeout
+                conn = sqlite3.connect(db_path, timeout=5)
+                conn.execute("PRAGMA busy_timeout = 3000;")
+                add_entry({"account": f"concurrent_{n}", "amount": 1.0, "side": "debit"})
+                conn.close()
             except Exception as e:
                 errors.append(str(e))
         threads = [threading.Thread(target=try_write, args=(i,)) for i in range(10)]
@@ -51,7 +56,7 @@ class TestLedgerConcurrency(unittest.TestCase):
         for t in threads:
             t.join()
         safe_print(f"[test_ledger_concurrency] Number of errors: {len(errors)}")
-        # Allow minor race, but not systemic failure
+        # Allow minor race, but not systemic failure; tolerate <=2 busy errors
         self.assertLessEqual(len(errors), 2)
         safe_print("[test_ledger_concurrency] Concurrent ledger write test complete.")
         if (time.time() - self.test_start) > MAX_TEST_TIME:

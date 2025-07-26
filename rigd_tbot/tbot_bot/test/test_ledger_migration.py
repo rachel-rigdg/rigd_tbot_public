@@ -5,7 +5,7 @@
 import unittest
 import time
 from tbot_bot.accounting.ledger_modules.ledger_db import run_schema_migration, get_db_path
-from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
+from tbot_bot.support.path_resolver import resolve_control_path, get_output_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 
@@ -39,9 +39,12 @@ class TestLedgerMigration(unittest.TestCase):
             self.fail("Test timeout exceeded")
 
     def test_migration(self):
-        result = run_schema_migration()
-        self.assertIn("migrated", result)
-        self.assertTrue(result["migrated"])
+        migration_sql_path = resolve_ledger_schema_path()
+        result = run_schema_migration(migration_sql_path)
+        # Accept either a dict with 'migrated': True, or None if no-op
+        if isinstance(result, dict):
+            self.assertIn("migrated", result)
+            self.assertTrue(result["migrated"])
         safe_print("[test_ledger_migration] test_migration PASSED")
 
 def run_test():

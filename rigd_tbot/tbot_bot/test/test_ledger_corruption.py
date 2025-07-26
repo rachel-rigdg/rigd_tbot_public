@@ -44,9 +44,12 @@ class TestLedgerCorruption(unittest.TestCase):
     def test_corruption_detection(self):
         from tbot_bot.accounting.ledger_modules.ledger_db import validate_ledger_schema
         safe_print("[test_ledger_corruption] Validating schema on corrupted db...")
-        with self.assertRaises(Exception):
+        try:
             validate_ledger_schema()
-        safe_print("[test_ledger_corruption] Corruption detected as expected.")
+        except Exception:
+            safe_print("[test_ledger_corruption] Corruption detected as expected.")
+            return
+        self.fail("Corruption was not detected by validate_ledger_schema")
         if (time.time() - self.test_start) > MAX_TEST_TIME:
             safe_print(f"[test_ledger_corruption] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
             self.fail("Test timeout exceeded")

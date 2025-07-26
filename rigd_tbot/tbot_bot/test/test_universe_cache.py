@@ -42,6 +42,23 @@ else:
 
 class TestUniverseCache(unittest.TestCase):
     def setUp(self):
+        # Inject a valid indexed credential file if needed (simulate if not present)
+        # (NOTE: If using real credentials, skip this; this ensures test will not fail for missing indexed keys)
+        from tbot_bot.support import secrets_manager
+        creds_path = secrets_manager.get_screener_credentials_path()
+        if not os.path.exists(creds_path):
+            secrets_manager.save_screener_credentials({
+                "PROVIDER_01": "FINNHUB",
+                "SCREENER_NAME_01": "FINNHUB",
+                "SCREENER_USERNAME_01": "user",
+                "SCREENER_PASSWORD_01": "pw",
+                "SCREENER_URL_01": "https://api.finnhub.io",
+                "SCREENER_API_KEY_01": "apikey",
+                "SCREENER_TOKEN_01": "",
+                "UNIVERSE_ENABLED_01": "true",
+                "TRADING_ENABLED_01": "false",
+                "ENRICHMENT_ENABLED_01": "false"
+            })
         self.dummy_symbols = [
             {"symbol": "AAPL", "exchange": "NASDAQ", "lastClose": 190.5, "marketCap": 2900000000000, "sector": "Tech", "companyName": "Apple Inc."},
             {"symbol": "MSFT", "exchange": "NASDAQ", "lastClose": 310.2, "marketCap": 2500000000000, "sector": "Tech", "companyName": "Microsoft"},

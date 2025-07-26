@@ -162,6 +162,8 @@ CREATE TABLE IF NOT EXISTS trades (
     quantity_type TEXT,
     price REAL CHECK(price >= 0.0) NOT NULL,
     total_value REAL NOT NULL,
+    amount REAL NOT NULL, -- Added for double-entry support (signed, credit+/debit-)
+    side TEXT CHECK(side IN ('debit','credit')) NOT NULL, -- Added for double-entry support
     commission REAL DEFAULT 0.0 CHECK(commission >= 0.0),
     fee REAL DEFAULT 0.0 CHECK(fee >= 0.0),
     broker_code TEXT NOT NULL REFERENCES brokers(code),
@@ -190,7 +192,6 @@ CREATE TABLE IF NOT EXISTS trades (
     json_metadata TEXT DEFAULT '{}',
     FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
 );
-
 
 -- Table: Events (compliance, audit, info/warning/error)
 CREATE TABLE IF NOT EXISTS events (

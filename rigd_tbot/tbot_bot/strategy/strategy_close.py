@@ -248,3 +248,9 @@ def run_close_strategy(screener_class):
         return StrategyResult(skipped=True)
     trades = monitor_closing_trades(signals, start_time)
     return StrategyResult(trades=trades, skipped=False)
+
+def simulate_close(*args, **kwargs):
+    """
+    Stub for backtest/CI/test: returns empty list (no simulated trades).
+    """
+    return []

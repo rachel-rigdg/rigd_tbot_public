@@ -26,7 +26,7 @@ def get_trading_screener_creds():
         and all_creds.get(k, "").strip().upper() == "ALPACA"
     ]
     if not candidates:
-        raise RuntimeError("No ALPACA screener provider enabled for active trading. Please enable in credential admin.")
+        return {}
     idx = candidates[0]
     return {
         key.replace(f"_{idx}", ""): v
@@ -35,19 +35,28 @@ def get_trading_screener_creds():
     }
 
 config = get_bot_config()
-screener_creds = get_trading_screener_creds()
-SCREENER_API_KEY = screener_creds.get("SCREENER_API_KEY", "")
-SCREENER_SECRET_KEY = screener_creds.get("SCREENER_SECRET_KEY", "")
-SCREENER_USERNAME = screener_creds.get("SCREENER_USERNAME", "")
-SCREENER_PASSWORD = screener_creds.get("SCREENER_PASSWORD", "")
-SCREENER_URL = screener_creds.get("SCREENER_URL", "https://data.alpaca.markets")
-SCREENER_TOKEN = screener_creds.get("SCREENER_TOKEN", "")
+screener_creds = None  # Do not load credentials at import time
 
-HEADERS = {
-    "APCA-API-KEY-ID": SCREENER_API_KEY,
-    "APCA-API-SECRET-KEY": SCREENER_SECRET_KEY,
-    "Authorization": f"Bearer {SCREENER_TOKEN}" if SCREENER_TOKEN else ""
-}
+def get_screener_creds_runtime():
+    global screener_creds
+    if screener_creds is None:
+        screener_creds = get_trading_screener_creds()
+    return screener_creds
+
+def get_header_and_vars():
+    creds = get_screener_creds_runtime()
+    SCREENER_API_KEY = creds.get("SCREENER_API_KEY", "")
+    SCREENER_SECRET_KEY = creds.get("SCREENER_SECRET_KEY", "")
+    SCREENER_USERNAME = creds.get("SCREENER_USERNAME", "")
+    SCREENER_PASSWORD = creds.get("SCREENER_PASSWORD", "")
+    SCREENER_URL = creds.get("SCREENER_URL", "https://data.alpaca.markets")
+    SCREENER_TOKEN = creds.get("SCREENER_TOKEN", "")
+    HEADERS = {
+        "APCA-API-KEY-ID": SCREENER_API_KEY,
+        "APCA-API-SECRET-KEY": SCREENER_SECRET_KEY,
+        "Authorization": f"Bearer {SCREENER_TOKEN}" if SCREENER_TOKEN else ""
+    }
+    return HEADERS, SCREENER_USERNAME, SCREENER_PASSWORD, SCREENER_URL
 
 API_TIMEOUT = int(config.get("API_TIMEOUT", 30))
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
@@ -75,6 +84,7 @@ class AlpacaScreener(ScreenerBase):
         Returns list of dicts: [{"symbol":..., "c":..., "o":..., "vwap":...}, ...]
         """
         quotes = []
+        HEADERS, SCREENER_USERNAME, SCREENER_PASSWORD, SCREENER_URL = get_header_and_vars()
         for idx, symbol in enumerate(symbols):
             url_bars = f"{SCREENER_URL.rstrip('/')}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=1"
             auth = (SCREENER_USERNAME, SCREENER_PASSWORD) if SCREENER_USERNAME and SCREENER_PASSWORD else None
@@ -137,7 +147,6 @@ class AlpacaScreener(ScreenerBase):
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
             is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
-            # PATCH: convert to millions for compatibility with screener_filter.py normalization
             mc_millions = mc / 1_000_000 if mc else 0
             price_candidates.append({
                 "symbol": symbol,
@@ -228,7 +237,6 @@ class AlpacaScreener(ScreenerBase):
             mc = universe_cache.get(symbol, {}).get("marketCap", 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
             is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
-            # PATCH: convert to millions for compatibility with screener_filter.py normalization
             mc_millions = mc / 1_000_000 if mc else 0
             price_candidates.append({
                 "symbol": symbol,

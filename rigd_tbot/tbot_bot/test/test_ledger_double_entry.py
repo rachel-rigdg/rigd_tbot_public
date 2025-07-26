@@ -39,16 +39,17 @@ class TestLedgerDoubleEntry(unittest.TestCase):
             self.fail("Test timeout exceeded")
 
     def test_balanced_post(self):
-        debit = {"account": "1000", "amount": 100, "side": "debit"}
-        credit = {"account": "2000", "amount": 100, "side": "credit"}
+        debit = {"account": "1000", "amount": 100.0, "side": "debit"}
+        credit = {"account": "2000", "amount": 100.0, "side": "credit"}
         result = post_double_entry(debit, credit)
         self.assertTrue(result["balanced"])
         self.assertEqual(result["debit"]["amount"], result["credit"]["amount"])
+        self.assertNotEqual(result["debit"]["account"], result["credit"]["account"])
         safe_print("[test_ledger_double_entry] test_balanced_post PASSED")
 
     def test_unbalanced_post(self):
-        debit = {"account": "1000", "amount": 100, "side": "debit"}
-        credit = {"account": "2000", "amount": 50, "side": "credit"}
+        debit = {"account": "1000", "amount": 100.0, "side": "debit"}
+        credit = {"account": "2000", "amount": 50.0, "side": "credit"}
         with self.assertRaises(Exception):
             post_double_entry(debit, credit)
         safe_print("[test_ledger_double_entry] test_unbalanced_post PASSED")

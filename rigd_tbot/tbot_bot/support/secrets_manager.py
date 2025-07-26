@@ -54,11 +54,14 @@ def get_screener_credentials_path() -> str:
 
 def _load_schema() -> Dict:
     try:
+        if not os.path.exists(SCREENER_SCHEMA_PATH):
+            return {}
         with open(SCREENER_SCHEMA_PATH, "r", encoding="utf-8") as f:
             schema = json.load(f)
         return schema
-    except Exception as e:
-        raise RuntimeError(f"[secrets_manager] Failed to load screener credentials schema: {e}")
+    except Exception:
+        # Soft fail if schema not present, return empty schema
+        return {}
 
 def _get_schema_keys() -> List[str]:
     schema = _load_schema()

@@ -1,4 +1,4 @@
-# test/test_screener_credentials.py
+# tbot_bot/test/test_screener_credentials.py
 # Unit tests for TradeBot Screener Credential Management
 # 100% specification-compliant: tests persistent, indexed, multi-provider handling, usage flags (UNIVERSE_ENABLED, TRADING_ENABLED), and audit log writes.
 

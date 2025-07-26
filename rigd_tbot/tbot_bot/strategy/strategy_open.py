@@ -250,3 +250,9 @@ def run_open_strategy(screener_class):
     trades = detect_breakouts(start_time, screener_class)
     log_event("strategy_open", f"Open strategy completed: {len(trades)} trades placed")
     return StrategyResult(trades=trades, skipped=False)
+
+def simulate_open(*args, **kwargs):
+    """
+    Stub for backtest/CI/test: returns empty list (no simulated trades).
+    """
+    return []

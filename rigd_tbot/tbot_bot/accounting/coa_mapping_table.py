@@ -26,11 +26,20 @@ def load_mapping_table(entity_code=None, jurisdiction_code=None, broker_code=Non
     """
     path = _get_mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     if not path.exists():
-        table = {"mappings": [], "version": 1, "history": []}
+        table = {"mappings": [], "version": 1, "history": [], "coa_version": "v1.0.0"}
         save_mapping_table(table, entity_code, jurisdiction_code, broker_code, bot_id)
         return table
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        table = json.load(f)
+    if "coa_version" not in table:
+        table["coa_version"] = "v1.0.0"
+    if "entity_code" not in table or "jurisdiction_code" not in table or "broker_code" not in table:
+        # Add core metadata if missing
+        ec, jc, bc, bid = get_bot_identity().split("_")
+        table["entity_code"] = ec
+        table["jurisdiction_code"] = jc
+        table["broker_code"] = bc
+    return table
 
 def save_mapping_table(table, entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None):
     """
@@ -48,6 +57,14 @@ def save_mapping_table(table, entity_code=None, jurisdiction_code=None, broker_c
         "reason": table.get("change_reason", "update"),
         "snapshot": table.get("mappings", [])
     })
+    # Guarantee required metadata
+    if "coa_version" not in table:
+        table["coa_version"] = "v1.0.0"
+    if "entity_code" not in table or "jurisdiction_code" not in table or "broker_code" not in table:
+        ec, jc, bc, bid = get_bot_identity().split("_")
+        table["entity_code"] = ec
+        table["jurisdiction_code"] = jc
+        table["broker_code"] = bc
     # Write file
     with open(path, "w", encoding="utf-8") as f:
         json.dump(table, f, indent=2)
@@ -116,9 +133,18 @@ def rollback_mapping_version(version):
 
 def export_mapping_table():
     """
-    Export current mapping table as JSON.
+    Export current mapping table as JSON with required metadata.
     """
-    return json.dumps(load_mapping_table(), indent=2)
+    table = load_mapping_table()
+    # Guarantee metadata before export
+    if "coa_version" not in table:
+        table["coa_version"] = "v1.0.0"
+    if "entity_code" not in table or "jurisdiction_code" not in table or "broker_code" not in table:
+        ec, jc, bc, bid = get_bot_identity().split("_")
+        table["entity_code"] = ec
+        table["jurisdiction_code"] = jc
+        table["broker_code"] = bc
+    return json.dumps(table, indent=2)
 
 def import_mapping_table(json_data, user="import"):
     """
@@ -127,6 +153,13 @@ def import_mapping_table(json_data, user="import"):
     table = json.loads(json_data)
     table["last_updated_by"] = user
     table["change_reason"] = "imported"
+    if "coa_version" not in table:
+        table["coa_version"] = "v1.0.0"
+    if "entity_code" not in table or "jurisdiction_code" not in table or "broker_code" not in table:
+        ec, jc, bc, bid = get_bot_identity().split("_")
+        table["entity_code"] = ec
+        table["jurisdiction_code"] = jc
+        table["broker_code"] = bc
     save_mapping_table(table)
 
 def apply_mapping_rule(entry, mapping_table=None):

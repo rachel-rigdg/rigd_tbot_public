@@ -59,3 +59,10 @@ def get_short_instrument(symbol, broker, short_type="Short"):
     else:
         log_debug(f"Unsupported short_type: {short_type}", module="utils_shorts")
         return None
+
+def get_synthetic_short(symbol, broker=None):
+    """
+    Stub for test/backtest and import compatibility.
+    Returns a synthetic short spec (see get_short_instrument).
+    """
+    return get_short_instrument(symbol, broker or "ibkr", short_type="synthetic")

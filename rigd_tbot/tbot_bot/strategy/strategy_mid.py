@@ -227,3 +227,9 @@ def run_mid_strategy(screener_class):
     signals = analyze_vwap_signals(start_time, screener_class)
     trades = execute_mid_trades(signals, start_time)
     return StrategyResult(trades=trades, skipped=False)
+
+def simulate_mid(*args, **kwargs):
+    """
+    Stub for backtest/CI/test: returns empty list (no simulated trades).
+    """
+    return []

@@ -58,4 +58,4 @@ def test_ledger_schema_validation():
         result = validate_ledger_schema()
     except Exception as e:
         pytest.fail(f"Ledger schema validation failed: {e}")
-    assert result is True, "Ledger schema is not valid or compliant."
+    assert result is True, "Ledger schema is not valid or compliant (missing 'amount' and 'side' columns in 'trades' or other schema violation)."

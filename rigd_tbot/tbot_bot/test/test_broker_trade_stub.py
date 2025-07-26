@@ -38,6 +38,13 @@ def set_cwd_and_syspath():
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
 
+# Patch: Soft-import get_synthetic_short for import dependency (instruments.py may require it)
+try:
+    from tbot_bot.trading.utils_shorts import get_synthetic_short
+except ImportError:
+    def get_synthetic_short(*a, **kw):
+        return None
+
 if __name__ == "__main__":
     set_cwd_and_syspath()
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
