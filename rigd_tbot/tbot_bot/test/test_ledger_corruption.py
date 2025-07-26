@@ -4,6 +4,7 @@
 
 import unittest
 import os
+import shutil
 import time
 from pathlib import Path
 from tbot_bot.accounting.ledger_modules.ledger_db import get_db_path
@@ -31,15 +32,23 @@ class TestLedgerCorruption(unittest.TestCase):
         if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
             self.skipTest("Individual test flag not present. Exiting.")
         self.test_start = time.time()
-        self.db_path = Path(get_db_path())
-        if self.db_path.exists():
+        self.real_db_path = Path(get_db_path())
+        self.tmp_db_path = self.real_db_path.parent / "TEST_CORRUPT_LEDGER.db"
+        if self.real_db_path.exists():
+            shutil.copy2(self.real_db_path, self.tmp_db_path)
+            self.db_path = self.tmp_db_path
             with open(self.db_path, "wb") as f:
                 f.write(b"CORRUPTEDDATA")
+            import tbot_bot.accounting.ledger_modules.ledger_db
+            tbot_bot.accounting.ledger_modules.ledger_db.get_db_path = lambda: str(self.db_path)
+        else:
+            self.db_path = self.real_db_path
 
     def tearDown(self):
-        # Optionally restore a valid database or remove corrupted one
         if Path(TEST_FLAG_PATH).exists():
             Path(TEST_FLAG_PATH).unlink()
+        if self.tmp_db_path.exists():
+            self.tmp_db_path.unlink()
 
     def test_corruption_detection(self):
         from tbot_bot.accounting.ledger_modules.ledger_db import validate_ledger_schema
