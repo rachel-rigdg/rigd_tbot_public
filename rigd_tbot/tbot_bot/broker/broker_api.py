@@ -1,148 +1,101 @@
 # tbot_bot/broker/broker_api.py
-# Unified broker interface and trade dispatch router (single-broker mode only, per spec).
+# Unified Broker API entry point. Provides both direct adapter loading and simple functional API.
+# Calls always use current secrets/config for all supported brokers. All other code must use these functions only.
 
-from tbot_bot.support.decrypt_secrets import load_broker_credential
-from tbot_bot.support.utils_log import log_event
+import importlib
+from tbot_bot.support.decrypt_secrets import (
+    decrypt_json,
+    load_broker_credential
+)
 from tbot_bot.config.env_bot import get_bot_config
 
+ADAPTERS = {
+    "ALPACA": "tbot_bot.broker.adapters.alpaca.AlpacaBroker",
+    "IBKR": "tbot_bot.broker.adapters.ibkr.IBKRBroker",
+    "TRADIER": "tbot_bot.broker.adapters.tradier.TradierBroker"
+}
+
+_broker_instance = None
+_broker_env = None
+
+def get_broker_env():
+    global _broker_env
+    if _broker_env is None:
+        try:
+            # Strongest version: combine all config + secrets for max compatibility
+            cred = decrypt_json("broker_credentials")
+            config = get_bot_config()
+            _broker_env = {**cred, **config}
+        except Exception:
+            _broker_env = {}
+    return _broker_env
+
 def get_active_broker():
-    """
-    Returns the initialized broker object based on BROKER_CODE (BROKER_NAME) from broker_credentials.json.enc.
-    Only ONE broker module is loaded per instance.
-    """
-    broker_code = load_broker_credential("BROKER_CODE", "").lower()
-    config = get_bot_config()
-    broker_credentials = {
-        "BROKER_CODE": broker_code,
-        "BROKER_HOST": load_broker_credential("BROKER_HOST", ""),
-        "BROKER_USERNAME": load_broker_credential("BROKER_USERNAME", ""),
-        "BROKER_PASSWORD": load_broker_credential("BROKER_PASSWORD", ""),
-        "BROKER_ACCOUNT_NUMBER": load_broker_credential("BROKER_ACCOUNT_NUMBER", ""),
-        "BROKER_API_KEY": load_broker_credential("BROKER_API_KEY", ""),
-        "BROKER_SECRET_KEY": load_broker_credential("BROKER_SECRET_KEY", ""),
-        "BROKER_URL": load_broker_credential("BROKER_URL", ""),
-        "BROKER_TOKEN": load_broker_credential("BROKER_TOKEN", ""),
-        **config
-    }
-    if broker_code == "alpaca":
-        from tbot_bot.broker.brokers.broker_alpaca import AlpacaBroker
-        return AlpacaBroker(broker_credentials)
-    elif broker_code == "ibkr":
-        from tbot_bot.broker.brokers.broker_ibkr import IBKRBroker
-        return IBKRBroker(broker_credentials)
-    elif broker_code == "tradier":
-        from tbot_bot.broker.brokers.broker_tradier import TradierBroker
-        return TradierBroker(broker_credentials)
-    else:
-        raise RuntimeError(f"[broker_api] Unsupported or missing BROKER_CODE: {broker_code}")
+    global _broker_instance
+    if _broker_instance is not None:
+        return _broker_instance
+
+    env = get_broker_env()
+    broker_code = (env.get("BROKER_CODE") or load_broker_credential("BROKER_CODE", "") or "").upper()
+    if broker_code not in ADAPTERS:
+        raise RuntimeError(f"[broker_api] Unknown or unset BROKER_CODE: {broker_code}")
+
+    mod_path, cls_name = ADAPTERS[broker_code].rsplit(".", 1)
+    module = importlib.import_module(mod_path)
+    broker_cls = getattr(module, cls_name)
+    _broker_instance = broker_cls(env)
+    return _broker_instance
 
 def place_order(order):
-    """Submits an order via the active broker."""
-    try:
-        broker = get_active_broker()
-        return broker.submit_order(order)
-    except Exception as e:
-        log_event("broker_api", f"Order failed: {e}", level="error")
-        return {"error": str(e)}
+    broker = get_active_broker()
+    return broker.place_order(order=order)
 
 def cancel_order(order_id):
-    """Cancels an order by ID via the active broker."""
-    try:
-        broker = get_active_broker()
-        return broker.cancel_order(order_id)
-    except Exception as e:
-        log_event("broker_api", f"Cancel error: {e}", level="error")
-        return {"error": str(e)}
+    broker = get_active_broker()
+    return broker.cancel_order(order_id)
 
 def close_position(order):
-    """Closes a position for the given symbol via the active broker."""
-    try:
-        broker = get_active_broker()
-        return broker.close_position(order["symbol"])
-    except Exception as e:
-        log_event("broker_api", f"Close position error: {e}", level="error")
-        return {"error": str(e)}
+    broker = get_active_broker()
+    return broker.close_position(order["symbol"])
 
 def get_account_info():
-    """Returns account info for the active broker."""
-    try:
-        broker = get_active_broker()
-        return broker.get_account_info()
-    except Exception as e:
-        log_event("broker_api", f"Account info error: {e}", level="error")
-        return {"error": str(e)}
+    broker = get_active_broker()
+    return broker.get_account_info()
 
 def get_positions():
-    """Returns all open positions for the active broker."""
-    try:
-        broker = get_active_broker()
-        return broker.get_positions()
-    except Exception as e:
-        log_event("broker_api", f"Get positions error: {e}", level="error")
-        return {"error": str(e)}
+    broker = get_active_broker()
+    return broker.get_positions()
 
 def is_symbol_tradable(symbol):
-    """Returns True if symbol is tradable on the active broker."""
-    try:
-        broker = get_active_broker()
-        return broker.is_symbol_tradable(symbol)
-    except Exception as e:
-        log_event("broker_api", f"is_symbol_tradable error: {e}", level="error")
-        return False
-
-# ========== SPEC ENFORCEMENT BELOW ==========
+    broker = get_active_broker()
+    return broker.is_symbol_tradable(symbol)
 
 def supports_fractional(symbol):
-    """
-    Returns True if the current broker supports fractional for symbol.
-    """
-    try:
-        broker = get_active_broker()
-        return broker.supports_fractional(symbol)
-    except Exception as e:
-        log_event("broker_api", f"supports_fractional error: {e}", level="error")
-        return False
+    broker = get_active_broker()
+    return broker.supports_fractional(symbol)
 
 def get_min_order_size(symbol):
-    """
-    Returns the minimum order size for the symbol for the current broker.
-    """
-    try:
-        broker = get_active_broker()
-        return broker.get_min_order_size(symbol)
-    except Exception as e:
-        log_event("broker_api", f"get_min_order_size error: {e}", level="error")
-        return 1.0
-
-# ==================== SPEC ENFORCEMENT: BROKER LEDGER SYNC INTERFACE ====================
+    broker = get_active_broker()
+    return broker.get_min_order_size(symbol)
 
 def fetch_all_trades(start_date, end_date=None):
-    """
-    Returns all filled trades (OFX/ledger-normalized dicts) for the active broker.
-    Calls broker.fetch_all_trades(), logs sync event.
-    """
-    try:
-        broker = get_active_broker()
-        trades = broker.fetch_all_trades(start_date, end_date)
-        log_event("broker_api", f"fetch_all_trades: {len(trades)} trades, start={start_date}, end={end_date}", level="info")
-        return trades
-    except Exception as e:
-        log_event("broker_api", f"fetch_all_trades error: {e}", level="error")
-        return []
+    broker = get_active_broker()
+    return broker.fetch_all_trades(start_date, end_date)
 
 def fetch_cash_activity(start_date, end_date=None):
-    """
-    Returns all cash/dividend/fee activity (OFX/ledger-normalized dicts) for the active broker.
-    Calls broker.fetch_cash_activity(), logs sync event.
-    """
-    try:
-        broker = get_active_broker()
-        activity = broker.fetch_cash_activity(start_date, end_date)
-        log_event("broker_api", f"fetch_cash_activity: {len(activity)} entries, start={start_date}, end={end_date}", level="info")
-        return activity
-    except Exception as e:
-        log_event("broker_api", f"fetch_cash_activity error: {e}", level="error")
-        return []
+    broker = get_active_broker()
+    return broker.fetch_cash_activity(start_date, end_date)
 
-# Only one broker instance is ever active per bot process.
-# Support for multi-broker will require dispatcher changes at orchestration level.
+__all__ = [
+    "get_active_broker",
+    "place_order",
+    "cancel_order",
+    "close_position",
+    "get_account_info",
+    "get_positions",
+    "is_symbol_tradable",
+    "supports_fractional",
+    "get_min_order_size",
+    "fetch_all_trades",
+    "fetch_cash_activity"
+]

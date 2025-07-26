@@ -63,33 +63,34 @@ class AlpacaBroker:
             return None
 
     def place_order(self, symbol=None, side=None, amount=None, order=None):
-         """
+        """
         Places a market order with Alpaca.
         Usage:
             - place_order(symbol, side, amount): direct arguments
             - place_order(order=order_dict): full order dict, keys: symbol, qty, side, [order_type, strategy, ...]
         Returns the order response dict.
         """
-    if order is not None:
-        payload = {
-            "symbol": order["symbol"],
-            "qty": order["qty"],
-            "side": order["side"],
-            "type": order.get("order_type", "market"),
-            "time_in_force": "day",
-            "extended_hours": False
-        }
-    else:
-        payload = {
-            "symbol": symbol,
-            "qty": amount,
-            "side": side,
-            "type": "market",
-            "time_in_force": "day",
-            "extended_hours": False
-        }
-    return self._request("POST", "/v2/orders", data=payload)
-
+        if order is not None:
+            payload = {
+                "symbol": order["symbol"],
+                "qty": order["qty"],
+                "side": order["side"],
+                "type": order.get("order_type", "market"),
+                "time_in_force": "day",
+                "extended_hours": False
+            }
+        else:
+            payload = {
+                "symbol": symbol,
+                "qty": amount,
+                "side": side,
+                "type": "market",
+                "time_in_force": "day",
+                "extended_hours": False
+            }
+        return self._request("POST", "/v2/orders", data=payload)
+    
+    
     def cancel_order(self, order_id):
         return self._request("DELETE", f"/v2/orders/{order_id}")
 
