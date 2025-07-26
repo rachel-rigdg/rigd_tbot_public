@@ -147,7 +147,8 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     iso27001_tag TEXT DEFAULT '',
     soc2_type TEXT DEFAULT '',
     extra_fields TEXT DEFAULT '{}',
-    json_metadata TEXT DEFAULT '{}'
+    json_metadata TEXT DEFAULT '{}',
+    bot_id TEXT DEFAULT NULL -- <<<<< ADD THIS LINE
 );
 
 -- Table: Trades (normalized view, legacy, for bot-internal trade logic)
@@ -190,6 +191,7 @@ CREATE TABLE IF NOT EXISTS trades (
     soc2_type TEXT DEFAULT '',
     extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
+    bot_id TEXT DEFAULT NULL, -- <<<<< ADD THIS LINE
     FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
 );
 
