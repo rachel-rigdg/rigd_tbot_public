@@ -14,12 +14,17 @@ from tbot_bot.accounting.ledger_modules.ledger_edit import edit_ledger_entry, de
 
 def get_identity_tuple():
     identity = load_bot_identity()
-    return tuple(identity.split("_"))
+    # Defensive: ensure length=4, fill missing with defaults
+    parts = identity.split("_") if identity else []
+    while len(parts) < 4:
+        parts.append("")
+    return tuple(parts[:4])
 
 def load_internal_ledger():
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
     conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
     cursor = conn.execute(
         "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, "
         "fee, "
@@ -32,38 +37,38 @@ def load_internal_ledger():
     results = []
     for row in cursor.fetchall():
         results.append({
-            "id": row[0],
-            "ledger_entry_id": row[1],
-            "datetime_utc": row[2],
-            "symbol": row[3],
-            "action": row[4],
-            "quantity": row[5],
-            "price": row[6],
-            "total_value": row[7],
-            "fee": row[8],
-            "broker": row[9],
-            "strategy": row[10],
-            "account": row[11],
-            "trade_id": row[12],
-            "tags": row[13],
-            "notes": row[14],
-            "jurisdiction_code": row[15],
-            "entity_code": row[16],
-            "language": row[17],
-            "created_by": row[18],
-            "updated_by": row[19],
-            "approved_by": row[20],
-            "approval_status": row[21],
-            "gdpr_compliant": row[22],
-            "ccpa_compliant": row[23],
-            "pipeda_compliant": row[24],
-            "hipaa_sensitive": row[25],
-            "iso27001_tag": row[26],
-            "soc2_type": row[27],
-            "created_at": row[28],
-            "updated_at": row[29],
-            "status": row[30],
-            "json_metadata": row[31],
+            "id": row["id"],
+            "ledger_entry_id": row["ledger_entry_id"],
+            "datetime_utc": row["datetime_utc"],
+            "symbol": row["symbol"],
+            "action": row["action"],
+            "quantity": row["quantity"],
+            "price": row["price"],
+            "total_value": row["total_value"],
+            "fee": row["fee"],
+            "broker": row["broker_code"],
+            "strategy": row["strategy"],
+            "account": row["account"],
+            "trade_id": row["trade_id"],
+            "tags": row["tags"],
+            "notes": row["notes"],
+            "jurisdiction_code": row["jurisdiction_code"],
+            "entity_code": row["entity_code"],
+            "language": row["language"],
+            "created_by": row["created_by"],
+            "updated_by": row["updated_by"],
+            "approved_by": row["approved_by"],
+            "approval_status": row["approval_status"],
+            "gdpr_compliant": row["gdpr_compliant"],
+            "ccpa_compliant": row["ccpa_compliant"],
+            "pipeda_compliant": row["pipeda_compliant"],
+            "hipaa_sensitive": row["hipaa_sensitive"],
+            "iso27001_tag": row["iso27001_tag"],
+            "soc2_type": row["soc2_type"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "status": row["status"],
+            "json_metadata": row["json_metadata"],
         })
     conn.close()
     return results
