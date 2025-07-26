@@ -7,12 +7,6 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 import sqlite3
 
-def post_ledger_entries_double_entry(entries):
-    bot_identity = get_identity_tuple()
-    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity
-    mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
-    return post_double_entry(entries, mapping_table)
-
 def get_identity_tuple():
     identity = load_bot_identity()
     return tuple(identity.split("_"))
@@ -23,31 +17,29 @@ def _add_required_fields(entry, entity_code, jurisdiction_code, broker_code, bot
     entry["jurisdiction_code"] = jurisdiction_code
     entry["broker_code"] = broker_code
     entry["bot_id"] = bot_id
-    if "fee" not in entry:
+    if "fee" not in entry or entry["fee"] is None:
         entry["fee"] = 0.0
-    if "commission" not in entry:
+    if "commission" not in entry or entry["commission"] is None:
         entry["commission"] = 0.0
-    if "trade_id" not in entry:
+    if "action" not in entry or entry["action"] is None:
+        # Default safe fallback action, avoid NOT NULL constraint failure
+        entry["action"] = "other"
+    if "trade_id" not in entry or entry["trade_id"] is None:
         entry["trade_id"] = f"{broker_code}_{bot_id}_{hash(frozenset(entry.items()))}"
-    if "total_value" not in entry:
+    if "total_value" not in entry or entry["total_value"] is None:
         entry["total_value"] = 0.0
     if "amount" not in entry or entry["amount"] is None:
         try:
             val = float(entry.get("total_value", 0.0))
         except Exception:
             val = 0.0
-        # Debit should be positive, credit negative; side must be present from mapping
         side = entry.get("side", "").lower()
         if side == "credit":
             entry["amount"] = -abs(val)
         else:
             entry["amount"] = abs(val)
-    if "status" not in entry:
+    if "status" not in entry or entry["status"] is None:
         entry["status"] = "ok"
-    # Fill all missing fields to avoid schema errors
-    for k in TRADES_FIELDS:
-        if k not in entry:
-            entry[k] = None
     return entry
 
 def post_double_entry(entries, mapping_table=None):
