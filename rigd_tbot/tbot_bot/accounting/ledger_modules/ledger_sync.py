@@ -4,6 +4,7 @@ from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_doub
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table
 from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
+from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 import sqlite3
 import json
 
@@ -23,8 +24,10 @@ def sync_broker_ledger():
     entity_code, jurisdiction_code, broker_code, bot_id = bot_identity
     snapshot_ledger_before_sync()
     mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
-    trades = fetch_all_trades(start_date=None, end_date=None)
-    cash_acts = fetch_cash_activity(start_date=None, end_date=None)
+    trades_raw = fetch_all_trades(start_date=None, end_date=None)
+    cash_acts_raw = fetch_cash_activity(start_date=None, end_date=None)
+    trades = [normalize_trade(t) for t in trades_raw]
+    cash_acts = [normalize_trade(c) for c in cash_acts_raw]
     all_entries = trades + cash_acts
     sanitized_entries = [_sanitize_entry(e) for e in all_entries]
     post_double_entry(sanitized_entries, mapping_table)

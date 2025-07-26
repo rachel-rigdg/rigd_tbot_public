@@ -6,6 +6,7 @@ All new posting/editing/deleting must use double-entry and helpers in ledger_dou
 """
 
 import sqlite3
+import json
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user
@@ -26,9 +27,8 @@ def load_internal_ledger():
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.execute(
-        "SELECT id, ledger_entry_id, datetime_utc, symbol, action, quantity, price, total_value, "
-        "fee, "
-        "broker_code, strategy, account, trade_id, tags, notes, jurisdiction_code, entity_code, language, "
+        "SELECT id, ledger_entry_id, datetime_utc, symbol, side, quantity, price, total_value, "
+        "fee, broker_code, strategy, account, trade_id, tags, notes, jurisdiction_code, entity_code, language, "
         "created_by, updated_by, approved_by, approval_status, gdpr_compliant, ccpa_compliant, "
         "pipeda_compliant, hipaa_sensitive, iso27001_tag, soc2_type, created_at, updated_at, "
         "'ok' AS status, json_metadata "
@@ -41,7 +41,7 @@ def load_internal_ledger():
             "ledger_entry_id": row["ledger_entry_id"],
             "datetime_utc": row["datetime_utc"],
             "symbol": row["symbol"],
-            "action": row["action"],
+            "side": row["side"],
             "quantity": row["quantity"],
             "price": row["price"],
             "total_value": row["total_value"],
@@ -101,12 +101,12 @@ def add_ledger_entry(entry_data):
     try:
         qty = float(entry_data.get("quantity") or 0)
         price = float(entry_data.get("price") or 0)
-        fee = float(entry_data.get("fee") or 0)
+        fee = float(entry_data.get("fee", 0))
         entry_data["total_value"] = round((qty * price) - fee, 2)
     except Exception:
         entry_data["total_value"] = entry_data.get("total_value") or 0
     columns = [
-        "ledger_entry_id", "datetime_utc", "symbol", "action", "quantity", "price", "total_value", "fee", "broker_code",
+        "ledger_entry_id", "datetime_utc", "symbol", "side", "quantity", "price", "total_value", "fee", "broker_code",
         "strategy", "account", "trade_id", "tags", "notes", "jurisdiction_code", "entity_code", "language",
         "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
         "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "json_metadata"
