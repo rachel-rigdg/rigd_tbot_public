@@ -63,8 +63,16 @@ def ledger_reconcile():
     entries = []
     balances = {}
     coa_accounts = []
+    coa_accounts_lookup = {}
     if provisioning_guard() or identity_guard():
-        return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).", balances=balances, coa_accounts=coa_accounts)
+        return render_template(
+            'ledger.html',
+            entries=entries,
+            error="Ledger access not available (provisioning or identity incomplete).",
+            balances=balances,
+            coa_accounts=coa_accounts,
+            coa_accounts_lookup=coa_accounts_lookup,
+        )
     try:
         from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_account_balances
         internal_ledger = calculate_running_balances()
@@ -73,17 +81,28 @@ def ledger_reconcile():
         balances = calculate_account_balances()
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = [(acct["code"], acct["name"]) for acct in coa_data.get("accounts_flat", [])]
+        # Full flat object for enhanced rendering or lookup
+        coa_accounts_lookup = {acct["code"]: acct for acct in coa_data.get("accounts_flat", [])}
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
         balances = {}
         coa_accounts = []
+        coa_accounts_lookup = {}
     except Exception as e:
         error = f"Ledger error: {e}"
         entries = []
         balances = {}
         coa_accounts = []
-    return render_template('ledger.html', entries=entries, error=error, balances=balances, coa_accounts=coa_accounts)
+        coa_accounts_lookup = {}
+    return render_template(
+        'ledger.html',
+        entries=entries,
+        error=error,
+        balances=balances,
+        coa_accounts=coa_accounts,
+        coa_accounts_lookup=coa_accounts_lookup,
+    )
 
 @ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
