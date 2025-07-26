@@ -2,7 +2,24 @@
 
 from tbot_bot.support.utils_identity import get_bot_identity
 
-BOT_IDENTITY = get_bot_identity()
+raw_id = get_bot_identity()
+if isinstance(raw_id, str):
+    parts = raw_id.split("_")
+    BOT_IDENTITY = {
+        "ENTITY_CODE": parts[0] if len(parts) > 0 else "UNKNOWN",
+        "JURISDICTION_CODE": parts[1] if len(parts) > 1 else "UNKNOWN",
+        "BROKER_CODE": parts[2] if len(parts) > 2 else "UNKNOWN",
+        "BOT_ID": parts[3] if len(parts) > 3 else "UNKNOWN"
+    }
+elif isinstance(raw_id, dict):
+    BOT_IDENTITY = raw_id
+else:
+    BOT_IDENTITY = {
+        "ENTITY_CODE": "UNKNOWN",
+        "JURISDICTION_CODE": "UNKNOWN",
+        "BROKER_CODE": "UNKNOWN",
+        "BOT_ID": "UNKNOWN"
+    }
 
 def normalize_trade(trade, credential_hash=None):
     # This function must be robust to dicts from any broker and normalize fields.
