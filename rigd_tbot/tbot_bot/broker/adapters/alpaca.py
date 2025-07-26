@@ -71,7 +71,12 @@ class AlpacaBroker:
             return self._request("POST", "/v2/orders", data=payload)
 
     def fetch_cash_activity(self, start_date, end_date=None):
-        all_types_safe = "FILL,TRANS,DIV,MFEE,INT,WIRE"
+        all_types_safe = (
+            "FILL,TRANS,DIV,DIVCGL,DIVCGS,DIVFEE,DIVFT,DIVNRA,DIVROC,DIVTW,DIVTXEX,"
+            "INT,INTNRA,INTTW,ACATC,ACATS,CSD,CSR,CSW,JNLC,JNLS,JNL,MISC,MA,NC,OPASN,"
+             "OPEXP,OPXRC,PTC,PTR,REORG,SC,SSO,SSP"
+        )
+
         params = {"activity_types": all_types_safe.strip(), "after": start_date}
         if end_date:
             params["until"] = end_date
