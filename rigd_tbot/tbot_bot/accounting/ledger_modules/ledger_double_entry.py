@@ -30,10 +30,20 @@ def _add_required_fields(entry, entity_code, jurisdiction_code, broker_code, bot
         entry["trade_id"] = f"{broker_code}_{bot_id}_{hash(frozenset(entry.items()))}"
     if "total_value" not in entry:
         entry["total_value"] = 0.0
+    if "amount" not in entry or entry["amount"] is None:
+        try:
+            val = float(entry.get("total_value", 0.0))
+        except Exception:
+            val = 0.0
+        # Debit should be positive, credit negative; side must be present from mapping
+        side = entry.get("side", "").lower()
+        if side == "credit":
+            entry["amount"] = -abs(val)
+        else:
+            entry["amount"] = abs(val)
     if "status" not in entry:
         entry["status"] = "ok"
     return entry
-
 
 def post_double_entry(entries, mapping_table=None):
     bot_identity = get_identity_tuple()

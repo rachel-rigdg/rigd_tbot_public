@@ -51,6 +51,20 @@ def add_entry(entry):
     Adds a ledger entry to the trades table.
     """
     db_path = get_db_path()
+    entry = dict(entry)
+    # Ensure amount and side fields are present for double-entry compliance
+    if "amount" not in entry or entry["amount"] is None:
+        try:
+            val = float(entry.get("total_value", 0.0))
+        except Exception:
+            val = 0.0
+        side = entry.get("side", "").lower()
+        if side == "credit":
+            entry["amount"] = -abs(val)
+        else:
+            entry["amount"] = abs(val)
+    if "side" not in entry or entry["side"] is None:
+        entry["side"] = "debit"
     keys = ", ".join(entry.keys())
     placeholders = ", ".join("?" for _ in entry)
     values = tuple(entry.values())
