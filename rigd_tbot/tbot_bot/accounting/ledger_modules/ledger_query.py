@@ -4,6 +4,81 @@ import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 
+def fetch_grouped_trades(by="group_id", limit=1000, collapse=False):
+    """
+    Returns trades grouped by group_id or trade_id.
+    If collapse=True, only the first trade of each group is returned.
+    """
+    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    if by not in ("group_id", "trade_id"):
+        by = "group_id"
+    with sqlite3.connect(db_path) as conn:
+        if collapse:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM trades t1
+                WHERE id = (
+                    SELECT MIN(id) FROM trades t2 WHERE t2.{by} = t1.{by}
+                )
+                AND {by} IS NOT NULL
+                ORDER BY t1.id ASC
+                LIMIT ?
+                """,
+                (limit,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM trades
+                WHERE {by} IS NOT NULL
+                ORDER BY {by}, id
+                LIMIT ?
+                """,
+                (limit,)
+            ).fetchall()
+        cols = [desc[0] for desc in conn.execute("PRAGMA table_info(trades)")]
+        return [dict(zip(cols, row)) for row in rows]
+
+def fetch_trade_group_by_id(group_id):
+    """
+    Fetch all trades with the given group_id, ordered by id.
+    """
+    if not group_id:
+        return []
+    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM trades
+            WHERE group_id = ?
+            ORDER BY id ASC
+            """,
+            (group_id,)
+        ).fetchall()
+        cols = [desc[0] for desc in conn.execute("PRAGMA table_info(trades)")]
+        return [dict(zip(cols, row)) for row in rows]
+
+def search_trades(search_term=None, sort_by="datetime_utc", sort_desc=True, limit=1000):
+    """
+    Search trades, supports sorting and limit.
+    """
+    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    order_dir = "DESC" if sort_desc else "ASC"
+    query = f"SELECT * FROM trades"
+    params = []
+    if search_term:
+        query += " WHERE symbol LIKE ? OR trade_id LIKE ? OR notes LIKE ?"
+        params += [f"%{search_term}%"] * 3
+    query += f" ORDER BY {sort_by} {order_dir} LIMIT ?"
+    params.append(limit)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+        cols = [desc[0] for desc in conn.execute("PRAGMA table_info(trades)")]
+        return [dict(zip(cols, row)) for row in rows]
+
 def get_trades_by_group_id(group_id):
     """
     Fetch all trades with the given group_id, ordered by id.
