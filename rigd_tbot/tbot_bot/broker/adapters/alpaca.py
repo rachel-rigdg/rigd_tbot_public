@@ -4,6 +4,7 @@ import requests
 import hashlib
 from tbot_bot.broker.utils.broker_request import safe_request
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
+from urllib.parse import urlencode
 
 class AlpacaBroker:
     def __init__(self, env):
@@ -71,15 +72,11 @@ class AlpacaBroker:
             return self._request("POST", "/v2/orders", data=payload)
 
     def fetch_cash_activity(self, start_date, end_date=None):
-        all_types_safe = (
-            "FILL,TRANS,DIV,DIVCGL,DIVCGS,DIVFEE,DIVFT,DIVNRA,DIVROC,DIVTW,DIVTXEX,"
-            "INT,INTNRA,INTTW,ACATC,ACATS,CSD,CSR,CSW,JNLC,JNLS,JNL,MISC,MA,NC,OPASN,"
-             "OPEXP,OPXRC,PTC,PTR,REORG,SC,SSO,SSP"
-        )
-
-        params = {"activity_types": all_types_safe.strip(), "after": start_date}
+        types = ["FILL", "TRANS", "DIV", "INT"]
+        params = [("activity_types", t) for t in types]
+        params.append(("after", start_date))
         if end_date:
-            params["until"] = end_date
+            params.append(("until", end_date))
         try:
             return self._fetch_cash_activity_internal(params)
         except Exception:
@@ -195,7 +192,7 @@ class AlpacaBroker:
         next_page_token = None
         while True:
             if next_page_token:
-                params["page_token"] = next_page_token
+                params.append(("page_token", next_page_token))
             resp = self._request("GET", "/v2/account/activities", params=params)
             page = resp["activities"] if isinstance(resp, dict) and "activities" in resp else resp
             for a in page:
