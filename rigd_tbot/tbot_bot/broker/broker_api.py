@@ -48,7 +48,12 @@ def get_active_broker():
 
 def place_order(order):
     broker = get_active_broker()
-    return broker.place_order(order=order)
+    if hasattr(broker, "place_order"):
+        return broker.place_order(order=order)
+    elif hasattr(broker, "submit_order"):
+        return broker.submit_order(order)
+    else:
+        raise AttributeError(f"{broker.__class__.__name__} has neither place_order nor submit_order method.")
 
 def cancel_order(order_id):
     broker = get_active_broker()

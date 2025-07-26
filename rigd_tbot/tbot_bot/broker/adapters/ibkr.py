@@ -49,15 +49,19 @@ class IBKRBroker(BrokerInterface):
         except Exception:
             return None
 
+    def submit_order(self, order):
+        payload = {
+            "symbol": order["symbol"],
+            "qty": order["qty"],
+            "side": order["side"],
+            "type": order.get("order_type", "market"),
+            "tif": order.get("time_in_force", "DAY")
+        }
+        return self._request("POST", f"/v1/accounts/{self.account_id}/orders", data=payload)
+
     def place_order(self, symbol=None, side=None, amount=None, order=None):
         if order is not None:
-            payload = {
-                "symbol": order["symbol"],
-                "qty": order["qty"],
-                "side": order["side"],
-                "type": order.get("order_type", "market"),
-                "tif": order.get("time_in_force", "DAY")
-            }
+            return self.submit_order(order)
         else:
             payload = {
                 "symbol": symbol,
@@ -66,7 +70,7 @@ class IBKRBroker(BrokerInterface):
                 "type": "market",
                 "tif": "DAY"
             }
-        return self._request("POST", f"/v1/accounts/{self.account_id}/orders", data=payload)
+            return self._request("POST", f"/v1/accounts/{self.account_id}/orders", data=payload)
 
     def cancel_order(self, order_id):
         return self._request("DELETE", f"/v1/accounts/{self.account_id}/orders/{order_id}")

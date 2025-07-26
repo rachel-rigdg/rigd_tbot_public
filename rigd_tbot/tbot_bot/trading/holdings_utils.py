@@ -101,6 +101,14 @@ def round_down_shares(amt, price):
 def compute_rebalance_orders(current_holdings, etf_targets, account_value):
     """Returns list of rebalance actions: [{'symbol': 'SCHD', 'action': 'buy', 'amount': 500.0}, ...]"""
     rebalance_orders = []
+    # Ensure current_holdings is dict, not list
+    if isinstance(current_holdings, list):
+        # Convert list of holdings dicts to symbol:value dict
+        holdings_dict = {}
+        for h in current_holdings:
+            if isinstance(h, dict) and "symbol" in h and "market_value" in h:
+                holdings_dict[h["symbol"]] = float(h.get("market_value", 0.0))
+        current_holdings = holdings_dict
     for symbol, target_pct in etf_targets.items():
         target_value = account_value * (target_pct / 100)
         current_value = current_holdings.get(symbol, 0.0)

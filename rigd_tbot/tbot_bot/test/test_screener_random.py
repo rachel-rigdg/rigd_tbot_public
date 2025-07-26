@@ -9,6 +9,7 @@ from tbot_bot.screeners.screeners.alpaca_screener import AlpacaScreener
 from tbot_bot.screeners.screeners.finnhub_screener import FinnhubScreener
 from tbot_bot.screeners.screeners.ibkr_screener import IBKRScreener
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
@@ -50,6 +51,24 @@ SAMPLE_SYMBOLS = [
 def random_symbols(n=5):
     return random.sample(SAMPLE_SYMBOLS, min(n, len(SAMPLE_SYMBOLS)))
 
+def get_enabled_screeners():
+    creds = load_screener_credentials()
+    enabled = []
+    # Generic format: PROVIDER_xx with TRADING_ENABLED_xx == TRUE
+    for key, val in creds.items():
+        if key.startswith("PROVIDER_"):
+            idx = key.split("_")[-1]
+            enabled_flag = creds.get(f"TRADING_ENABLED_{idx}", "false").upper() == "TRUE"
+            provider = val.strip().upper()
+            if enabled_flag:
+                if provider == "ALPACA":
+                    enabled.append(AlpacaScreener)
+                elif provider == "FINNHUB":
+                    enabled.append(FinnhubScreener)
+                elif provider == "IBKR":
+                    enabled.append(IBKRScreener)
+    return enabled
+
 class TestScreenerRandom(unittest.TestCase):
     def setUp(self):
         if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
@@ -65,7 +84,11 @@ class TestScreenerRandom(unittest.TestCase):
     def test_random_symbol_filtering(self):
         safe_print("[test_screener_random] Running test_random_symbol_filtering...")
         config = get_bot_config()
-        for screener_cls in [FinnhubScreener, AlpacaScreener, IBKRScreener]:
+        enabled_screeners = get_enabled_screeners()
+        if not enabled_screeners:
+            safe_print("[test_screener_random] No screeners enabled in credentials, skipping.")
+            self.skipTest("No screeners enabled in credentials.")
+        for screener_cls in enabled_screeners:
             screener = screener_cls(config=config)
             symbols = random_symbols(10)
             if hasattr(screener, 'filter_symbols'):

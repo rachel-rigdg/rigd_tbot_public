@@ -1,7 +1,5 @@
 # tbot_bot/broker/adapters/alpaca.py
 
-
-
 import requests
 import hashlib
 from tbot_bot.broker.utils.broker_request import safe_request
@@ -57,6 +55,37 @@ class AlpacaBroker:
             "extended_hours": False
         }
         return self._request("POST", "/v2/orders", data=payload)
+
+    def place_order(self, symbol=None, side=None, amount=None, order=None):
+        if order is not None:
+            return self.submit_order(order)
+        else:
+            payload = {
+                "symbol": symbol,
+                "qty": amount,
+                "side": side,
+                "type": "market",
+                "time_in_force": "day",
+                "extended_hours": False
+            }
+            return self._request("POST", "/v2/orders", data=payload)
+
+    def fetch_cash_activity(self, start_date, end_date=None):
+        all_types_full = "FILL,TRANS,DIV,JNLC,JNLS,MFEE,ACATC,ACATS,CSD,CSR,CSW,INT,WIRE"
+        all_types_safe = "FILL,TRANS,DIV,MFEE,INT,WIRE"
+        params = {"activity_types": all_types_full, "after": start_date}
+        if end_date:
+            params["until"] = end_date
+        try:
+            return self._fetch_cash_activity_internal(params)
+        except Exception:
+            params = {"activity_types": all_types_safe, "after": start_date}
+            if end_date:
+                params["until"] = end_date
+            try:
+                return self._fetch_cash_activity_internal(params)
+            except Exception:
+                return []
 
     def cancel_order(self, order_id):
         return self._request("DELETE", f"/v2/orders/{order_id}")
@@ -161,13 +190,6 @@ class AlpacaBroker:
             else:
                 break
         return list(order_fills.values())
-
-    def fetch_cash_activity(self, start_date, end_date=None):
-        all_types = "FILL,TRANS,DIV,JNLC,JNLS,MFEE,ACATC,ACATS,CSD,CSR,CSW,INT,WIRE"
-        params = {"activity_types": all_types, "after": start_date}
-        if end_date:
-            params["until"] = end_date
-        return self._fetch_cash_activity_internal(params)
 
     def _fetch_cash_activity_internal(self, params):
         activities = []

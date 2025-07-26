@@ -8,6 +8,7 @@ import signal
 from tbot_bot.screeners.screeners.alpaca_screener import AlpacaScreener
 from tbot_bot.screeners.screeners.finnhub_screener import FinnhubScreener
 from tbot_bot.screeners.screeners.ibkr_screener import IBKRScreener
+from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from pathlib import Path
 import sys
@@ -33,6 +34,23 @@ def timeout_handler(signum, frame):
     safe_print("[test_screener_integration] TIMEOUT")
     raise TimeoutError("test_screener_integration timed out")
 
+def get_enabled_screeners():
+    creds = load_screener_credentials()
+    enabled = []
+    for key, val in creds.items():
+        if key.startswith("PROVIDER_"):
+            idx = key.split("_")[-1]
+            enabled_flag = creds.get(f"TRADING_ENABLED_{idx}", "false").upper() == "TRUE"
+            provider = val.strip().upper()
+            if enabled_flag:
+                if provider == "ALPACA":
+                    enabled.append(("Alpaca", AlpacaScreener))
+                elif provider == "FINNHUB":
+                    enabled.append(("Finnhub", FinnhubScreener))
+                elif provider == "IBKR":
+                    enabled.append(("IBKR", IBKRScreener))
+    return enabled
+
 if __name__ == "__main__":
     if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
         safe_print("[test_screener_integration.py] Individual test flag not present. Exiting.")
@@ -46,32 +64,22 @@ class TestScreenerIntegration(unittest.TestCase):
             self.skipTest("Individual test flag not present. Exiting.")
         signal.signal(signal.SIGALRM, timeout_handler)
         signal.alarm(MAX_TEST_TIME)
+        self.enabled_screeners = get_enabled_screeners()
+        if not self.enabled_screeners:
+            self.skipTest("No screeners enabled in credentials.")
 
     def tearDown(self):
         if Path(TEST_FLAG_PATH).exists():
             Path(TEST_FLAG_PATH).unlink()
         signal.alarm(0)
 
-    def test_alpaca_screener(self):
-        safe_print("[test_screener_integration] Alpaca screener test...")
-        screener = AlpacaScreener()
-        candidates = screener.run_screen()
-        self.assertIsInstance(candidates, list)
-        safe_print("[test_screener_integration] Alpaca screener PASSED.")
-
-    def test_finnhub_screener(self):
-        safe_print("[test_screener_integration] Finnhub screener test...")
-        screener = FinnhubScreener()
-        candidates = screener.run_screen()
-        self.assertIsInstance(candidates, list)
-        safe_print("[test_screener_integration] Finnhub screener PASSED.")
-
-    def test_ibkr_screener(self):
-        safe_print("[test_screener_integration] IBKR screener test...")
-        screener = IBKRScreener()
-        candidates = screener.run_screen()
-        self.assertIsInstance(candidates, list)
-        safe_print("[test_screener_integration] IBKR screener PASSED.")
+    def test_enabled_screeners(self):
+        for name, screener_cls in self.enabled_screeners:
+            safe_print(f"[test_screener_integration] {name} screener test...")
+            screener = screener_cls()
+            candidates = screener.run_screen()
+            self.assertIsInstance(candidates, list)
+            safe_print(f"[test_screener_integration] {name} screener PASSED.")
 
 def run_test():
     result = unittest.main(module=__name__, exit=False)

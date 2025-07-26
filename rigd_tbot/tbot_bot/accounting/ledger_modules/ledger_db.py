@@ -73,35 +73,12 @@ def _schema_has_amount_side(db_path):
     except Exception:
         return False
 
-def post_double_entry(debit_entry, credit_entry):
+def post_double_entry(entries, mapping_table=None):
     """
-    Posts a balanced debit and credit entry to the ledger.
-    Enforces presence of amount+side. Adds placeholder if missing in schema.
+    Posts balanced double-entry records using the double entry helper module.
     """
-    db_path = get_db_path()
-    has_amount_side = _schema_has_amount_side(db_path)
-    try:
-        with sqlite3.connect(db_path) as conn:
-            d_entry = dict(debit_entry)
-            c_entry = dict(credit_entry)
-            if not has_amount_side:
-                # fallback for legacy schema: add dummy values to satisfy field count
-                d_entry.setdefault("amount", d_entry.get("total_value", 0))
-                d_entry.setdefault("side", "debit")
-                c_entry.setdefault("amount", c_entry.get("total_value", 0))
-                c_entry.setdefault("side", "credit")
-            keys_d = ", ".join(d_entry.keys())
-            placeholders_d = ", ".join("?" for _ in d_entry)
-            conn.execute(f"INSERT INTO trades ({keys_d}) VALUES ({placeholders_d})", tuple(d_entry.values()))
-
-            keys_c = ", ".join(c_entry.keys())
-            placeholders_c = ", ".join("?" for _ in c_entry)
-            conn.execute(f"INSERT INTO trades ({keys_c}) VALUES ({placeholders_c})", tuple(c_entry.values()))
-
-            conn.commit()
-        return {"balanced": True, "debit": d_entry, "credit": c_entry}
-    except Exception as e:
-        raise RuntimeError(f"Failed to post double entry: {e}")
+    from tbot_bot.accounting.ledger_modules.ledger_double_entry import post_double_entry as double_entry_helper
+    return double_entry_helper(entries, mapping_table)
 
 def run_schema_migration(migration_sql_path):
     """
