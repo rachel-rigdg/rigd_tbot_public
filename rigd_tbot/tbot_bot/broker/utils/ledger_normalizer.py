@@ -34,31 +34,34 @@ ACTION_MAP = {
     "exercise": "exercise",
     "expire": "expire",
     "reorg": "reorg",
-    # fallback mapping for common synonyms
     "purchase": "long",
     "exit": "short",
     "close": "short",
     "open": "long",
-    # add others as needed
 }
 
 def normalize_trade(trade, credential_hash=None):
-    # This function must be robust to dicts from any broker and normalize fields.
     if not isinstance(trade, dict):
         return {k: None for k in TRADES_FIELDS}
 
     raw_action = trade.get("action") or trade.get("side") or None
     canonical_action = None
+    side_value = None
     if raw_action:
         raw_action_lower = str(raw_action).lower()
         canonical_action = ACTION_MAP.get(raw_action_lower)
-    # If not mapped and raw_action exists but not in allowed actions, set None (will fail schema)
-    # It's safer to explicitly set to None or log error upstream.
-    
+        # Only set side if it is debit or credit, else None (let mapping handle)
+        if raw_action_lower in ("debit", "credit"):
+            side_value = raw_action_lower
+        else:
+            side_value = None
+    else:
+        raw_action_lower = None
+
     mapping = {
         "trade_id": trade.get("id") or trade.get("trade_id") or trade.get("order_id"),
         "symbol": trade.get("symbol") or trade.get("underlying"),
-        "side": raw_action_lower if raw_action else None,
+        "side": side_value,
         "action": canonical_action,
         "quantity": float(trade.get("qty") or trade.get("quantity") or trade.get("filled_qty") or 0),
         "quantity_type": trade.get("quantity_type"),
@@ -103,7 +106,6 @@ def normalize_trade(trade, credential_hash=None):
 
     mapping["total_value"] = round(mapping["quantity"] * mapping["price"], 6)
 
-    # Canonicalize output: fill all missing fields
     for k in TRADES_FIELDS:
         if k not in mapping:
             mapping[k] = None

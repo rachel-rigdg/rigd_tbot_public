@@ -63,7 +63,19 @@ def sync_broker_ledger():
             entry["action"] = action.lower()
         return entry
 
-    all_entries = [_fill_defaults(e) for e in all_entries]
+    # Deduplication: (trade_id, side) tuple must be unique
+    seen = set()
+    deduped_entries = []
+    for e in all_entries:
+        tid = e.get("trade_id")
+        side = e.get("side")
+        key = (tid, side)
+        if tid and side and key in seen:
+            continue
+        seen.add(key)
+        deduped_entries.append(e)
+
+    all_entries = [_fill_defaults(e) for e in deduped_entries]
 
     sanitized_entries = [_sanitize_entry(e) for e in all_entries]
     post_double_entry(sanitized_entries, mapping_table)

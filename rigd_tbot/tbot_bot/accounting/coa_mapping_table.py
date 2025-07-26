@@ -165,17 +165,17 @@ def import_mapping_table(json_data, user="import"):
 def apply_mapping_rule(entry, mapping_table=None):
     """
     Returns two OFX/ledger-normalized dicts representing debit and credit double-entry for the provided entry.
-    Mapping table is used to select COA account codes.
+    Mapping table is used to select COA account codes and assign side='debit' or 'credit'.
     """
     if mapping_table is None:
         mapping_table = load_mapping_table()
     mapping = get_mapping_for_transaction(entry, mapping_table)
     debit_entry = entry.copy()
     credit_entry = entry.copy()
-    # Defaults for demo: override with mapping/account codes as needed.
     debit_entry["account"] = mapping["debit_account"] if mapping and "debit_account" in mapping else "Uncategorized:Debit"
     credit_entry["account"] = mapping["credit_account"] if mapping and "credit_account" in mapping else "Uncategorized:Credit"
-    # Set values for double-entry compliance
     debit_entry["total_value"] = abs(float(debit_entry.get("total_value", 0)))
     credit_entry["total_value"] = -abs(float(credit_entry.get("total_value", 0)))
+    debit_entry["side"] = "debit"
+    credit_entry["side"] = "credit"
     return debit_entry, credit_entry

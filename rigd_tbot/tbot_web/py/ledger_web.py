@@ -2,7 +2,7 @@
 
 import csv
 import io
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from pathlib import Path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
@@ -10,6 +10,9 @@ from tbot_web.support.auth_web import get_current_user
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_running_balances
 from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts
+from tbot_bot.accounting.ledger_modules.ledger_query import fetch_grouped_trades, fetch_trade_group_by_id, search_trades
+from tbot_bot.accounting.ledger_modules.ledger_grouping import collapse_expand_group
+from tbot_bot.accounting.ledger_modules.ledger_deduplication import check_duplicates
 import sqlite3
 
 ledger_web = Blueprint("ledger_web", __name__)
@@ -43,20 +46,6 @@ def identity_guard():
         flash("Bot identity not available, please complete configuration.")
         return True
 
-def reconcile_ledgers(internal, broker):
-    result = []
-    broker_lookup = {(row.get('datetime_utc'), row.get('symbol'), row.get('action'), row.get('total_value')) for row in broker}
-    for entry in internal:
-        key = (entry.get('datetime_utc'), entry.get('symbol'), entry.get('action'), entry.get('total_value'))
-        if entry.get('resolved'):
-            status = "resolved"
-        elif key in broker_lookup:
-            status = "ok"
-        else:
-            status = "mismatch"
-        result.append({**entry, "status": status})
-    return result
-
 @ledger_web.route('/ledger/reconcile', methods=['GET', 'POST'])
 def ledger_reconcile():
     error = None
@@ -67,12 +56,11 @@ def ledger_reconcile():
         return render_template('ledger.html', entries=entries, error="Ledger access not available (provisioning or identity incomplete).", balances=balances, coa_accounts=coa_accounts)
     try:
         from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_account_balances
-        internal_ledger = calculate_running_balances()
-        broker_entries = []
-        entries = reconcile_ledgers(internal_ledger, broker_entries)
         balances = calculate_account_balances()
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = coa_data.get("accounts_flat", [])
+        # Default sort order: datetime_utc desc
+        entries = fetch_grouped_trades(sort_by="datetime_utc", sort_desc=True)
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
@@ -84,6 +72,39 @@ def ledger_reconcile():
         balances = {}
         coa_accounts = []
     return render_template('ledger.html', entries=entries, error=error, balances=balances, coa_accounts=coa_accounts)
+
+@ledger_web.route('/ledger/group/<group_id>', methods=['GET'])
+def ledger_group_detail(group_id):
+    if provisioning_guard() or identity_guard():
+        return redirect(url_for('main.root_router'))
+    try:
+        group = fetch_trade_group_by_id(group_id)
+        return jsonify(group)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 404
+
+@ledger_web.route('/ledger/collapse_expand/<group_id>', methods=['POST'])
+def ledger_collapse_expand(group_id):
+    if provisioning_guard() or identity_guard():
+        return jsonify({"error": "Not permitted"}), 403
+    try:
+        result = collapse_expand_group(group_id)
+        return jsonify({"result": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@ledger_web.route('/ledger/search', methods=['GET'])
+def ledger_search():
+    if provisioning_guard() or identity_guard():
+        return jsonify({"error": "Not permitted"}), 403
+    query = request.args.get('q', '').strip()
+    sort_by = request.args.get('sort_by', 'datetime_utc')
+    sort_desc = request.args.get('sort_desc', '1') == '1'
+    try:
+        results = search_trades(query=query, sort_by=sort_by, sort_desc=sort_desc)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
@@ -220,4 +241,5 @@ def ledger_sync():
         flash("Broker ledger synced successfully.")
     except Exception as e:
         flash(f"Broker ledger sync failed: {e}")
-    return redirect(url_for('ledger_web.ledger_reconcile'))
+    return redirect(url_for('ledger_web.ledger_reconcile')
+)

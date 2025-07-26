@@ -77,16 +77,20 @@ def post_double_entry(entries, mapping_table=None):
             debit_entry, credit_entry = apply_mapping_rule(entry, mapping_table)
             debit_entry = _add_required_fields(debit_entry, entity_code, jurisdiction_code, broker_code, bot_id)
             credit_entry = _add_required_fields(credit_entry, entity_code, jurisdiction_code, broker_code, bot_id)
-            columns = TRADES_FIELDS
-            placeholders = ", ".join(["?"] * len(columns))
-            conn.execute(
-                f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
-                tuple(debit_entry.get(col) for col in columns)
-            )
-            conn.execute(
-                f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
-                tuple(credit_entry.get(col) for col in columns)
-            )
+            # Deduplication logic: (trade_id, side) unique constraint
+            for side_entry in [debit_entry, credit_entry]:
+                cur = conn.execute(
+                    "SELECT 1 FROM trades WHERE trade_id = ? AND side = ?",
+                    (side_entry.get("trade_id"), side_entry.get("side")),
+                )
+                if cur.fetchone():
+                    continue  # Skip duplicate
+                columns = TRADES_FIELDS
+                placeholders = ", ".join(["?"] * len(columns))
+                conn.execute(
+                    f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})",
+                    tuple(side_entry.get(col) for col in columns)
+                )
             conn.commit()
             inserted_ids.append((debit_entry.get("trade_id"), credit_entry.get("trade_id")))
     return inserted_ids
