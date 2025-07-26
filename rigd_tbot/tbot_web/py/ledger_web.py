@@ -72,7 +72,7 @@ def ledger_reconcile():
         entries = reconcile_ledgers(internal_ledger, broker_entries)
         balances = calculate_account_balances()
         coa_data = load_coa_metadata_and_accounts()
-        coa_accounts = coa_data.get("accounts_flat", [])  # <-- FIXED LINE
+        coa_accounts = coa_data.get("accounts_flat", [])
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
@@ -84,7 +84,6 @@ def ledger_reconcile():
         balances = {}
         coa_accounts = []
     return render_template('ledger.html', entries=entries, error=error, balances=balances, coa_accounts=coa_accounts)
-
 
 @ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
@@ -132,6 +131,11 @@ def add_ledger_entry_route():
         "iso27001_tag": "",
         "soc2_type": "",
     }
+    # Ensure amount is set, using total_value (as signed credit/debit logic can be extended later)
+    try:
+        entry_data["amount"] = float(entry_data.get("total_value") or 0)
+    except Exception:
+        entry_data["amount"] = 0.0
     try:
         # Always use post_ledger_entries_double_entry, never add_ledger_entry
         post_ledger_entries_double_entry([entry_data])
@@ -180,6 +184,11 @@ def edit_ledger_entry_route(entry_id):
         "iso27001_tag": "",
         "soc2_type": "",
     }
+    # Ensure amount is set, using total_value (as signed credit/debit logic can be extended later)
+    try:
+        updated_data["amount"] = float(updated_data.get("total_value") or 0)
+    except Exception:
+        updated_data["amount"] = 0.0
     try:
         edit_ledger_entry(entry_id, updated_data)
         flash('Ledger entry updated.')
