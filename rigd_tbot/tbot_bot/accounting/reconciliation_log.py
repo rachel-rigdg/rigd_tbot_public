@@ -51,7 +51,19 @@ def log_reconciliation_entry(
     """
     Append a reconciliation log entry. compare_fields and raw_record are JSON-serializable dicts.
     Ensures tuples are converted to lists, and all objects are JSON-serializable.
+    Also prints types/values for debugging.
     """
+    print("RECON ENTRY types:",
+          "trade_id:", type(trade_id),
+          "status:", type(status),
+          "compare_fields:", type(compare_fields),
+          "sync_run_id:", type(sync_run_id),
+          "api_hash:", type(api_hash),
+          "broker:", type(broker),
+          "raw_record:", type(raw_record),
+          "mapping_version:", type(mapping_version),
+          "notes:", type(notes))
+    print("RECON raw_record:", raw_record)
     db_path = _get_db_path()
     timestamp_utc = datetime.utcnow().isoformat()
     def make_json_safe(obj):
