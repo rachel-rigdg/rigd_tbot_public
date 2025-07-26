@@ -50,11 +50,17 @@ def sync_broker_ledger():
 
     all_entries = [e for e in (trades + cash_acts) if isinstance(e, dict)]
 
-    # Ensure all required/optional fields are present for full schema compliance
     def _fill_defaults(entry):
         for k in TRADES_FIELDS:
-            if k not in entry:
+            if k not in entry or entry[k] is None:
                 entry[k] = None
+        # Ensure 'action' is valid per ledger schema
+        valid_actions = ('long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg', 'other')
+        action = entry.get("action")
+        if not action or action.lower() not in valid_actions:
+            entry["action"] = "other"
+        else:
+            entry["action"] = action.lower()
         return entry
 
     all_entries = [_fill_defaults(e) for e in all_entries]
@@ -64,8 +70,8 @@ def sync_broker_ledger():
     validate_double_entry()
     sync_run_id = f"sync_{entity_code}_{jurisdiction_code}_{broker_code}_{bot_id}_{sqlite3.datetime.datetime.utcnow().isoformat()}"
     for entry in all_entries:
-        trade_id = entry["trade_id"] if isinstance(entry, dict) and "trade_id" in entry else None
-        jm = entry.get("json_metadata") if isinstance(entry, dict) else None
+        trade_id = entry.get("trade_id")
+        jm = entry.get("json_metadata")
         if not isinstance(jm, dict):
             print("json_metadata is not a dict! type=", type(jm), "value=", jm)
             api_hash = ""

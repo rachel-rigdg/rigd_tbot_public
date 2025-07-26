@@ -7,9 +7,29 @@ from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 import sqlite3
 
+def post_ledger_entries_double_entry(entries):
+    bot_identity = get_identity_tuple()
+    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity
+    mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
+    return post_double_entry(entries, mapping_table)
+
 def get_identity_tuple():
     identity = load_bot_identity()
     return tuple(identity.split("_"))
+
+def _map_action(action):
+    # Map broker actions to ledger schema actions
+    if not action or not isinstance(action, str):
+        return "other"
+    action_lower = action.lower()
+    if action_lower in ("buy", "long"):
+        return "long"
+    if action_lower in ("sell", "short"):
+        return "short"
+    if action_lower in ("put", "call", "assignment", "exercise", "expire", "reorg", "inverse"):
+        return action_lower
+    # Default fallback
+    return "other"
 
 def _add_required_fields(entry, entity_code, jurisdiction_code, broker_code, bot_id):
     entry = dict(entry)
@@ -21,10 +41,7 @@ def _add_required_fields(entry, entity_code, jurisdiction_code, broker_code, bot
         entry["fee"] = 0.0
     if "commission" not in entry or entry["commission"] is None:
         entry["commission"] = 0.0
-    if "action" not in entry or entry["action"] is None:
-        # Default safe fallback action, avoid NOT NULL constraint failure
-        entry["action"] = "other"
-    if "trade_id" not in entry or entry["trade_id"] is None:
+    if "trade_id" not in entry or not entry["trade_id"]:
         entry["trade_id"] = f"{broker_code}_{bot_id}_{hash(frozenset(entry.items()))}"
     if "total_value" not in entry or entry["total_value"] is None:
         entry["total_value"] = 0.0
@@ -33,13 +50,19 @@ def _add_required_fields(entry, entity_code, jurisdiction_code, broker_code, bot
             val = float(entry.get("total_value", 0.0))
         except Exception:
             val = 0.0
-        side = entry.get("side", "").lower()
-        if side == "credit":
+        side = entry.get("side", "")
+        if isinstance(side, str) and side.lower() == "credit":
             entry["amount"] = -abs(val)
         else:
             entry["amount"] = abs(val)
-    if "status" not in entry or entry["status"] is None:
+    # Map action to allowed schema values
+    entry["action"] = _map_action(entry.get("action"))
+    if "status" not in entry or not entry["status"]:
         entry["status"] = "ok"
+    # Fill all missing fields to avoid schema errors
+    for k in TRADES_FIELDS:
+        if k not in entry or entry[k] is None:
+            entry[k] = None
     return entry
 
 def post_double_entry(entries, mapping_table=None):
