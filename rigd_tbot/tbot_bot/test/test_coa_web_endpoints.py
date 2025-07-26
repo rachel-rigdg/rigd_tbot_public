@@ -1,7 +1,4 @@
 # tbot_bot/test/test_coa_web_endpoints.py
-# Integration/endpoint test for COA Web UI endpoints (/coa, /coa/api, /coa/export), compliant with RIGD TradeBot specifications.
-# All web endpoint and CI tests must reside in tbot_bot/test/ per current directory structure.
-# THIS TEST MUST NEVER ATTEMPT TO DIRECTLY LAUNCH OR SUPERVISE WORKERS/WATCHERS.
 
 import unittest
 import time
@@ -58,10 +55,15 @@ class COAWebEndpointTestCase(unittest.TestCase):
     def test_coa_page_loads(self):
         safe_print("[test_coa_web_endpoints] Testing /coa page load...")
         rv = self.app.get('/coa')
-        # Accept 200 or 500 if broken url_for; always allow error if dashboard link is absent
+        # Accept 200 or 500 if broken url_for; allow error if dashboard link absent, but accept both possible endpoint names
         self.assertIn(rv.status_code, (200, 500))
         if rv.status_code == 200:
             self.assertIn(b'Chart of Accounts (COA) Management', rv.data)
+        if rv.status_code == 500:
+            # Check error is due to url_for (broken endpoint), not another root cause
+            self.assertTrue(
+                b"BuildError" in rv.data or b"url_for" in rv.data or b"main_page" in rv.data or b"main.main_page" in rv.data
+            )
         safe_print("[test_coa_web_endpoints] /coa page load OK.")
 
     def test_coa_api_returns_json(self):

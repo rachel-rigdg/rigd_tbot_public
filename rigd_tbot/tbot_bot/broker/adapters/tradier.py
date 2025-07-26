@@ -1,6 +1,5 @@
 # tbot_bot/broker/adapters/tradier.py
 
-
 import hashlib
 from tbot_bot.broker.core.broker_interface import BrokerInterface
 from tbot_bot.broker.utils.broker_request import safe_request
@@ -36,7 +35,21 @@ class TradierBroker(BrokerInterface):
 
     def get_positions(self):
         resp = self._request("GET", f"/v1/accounts/{self.account_id}/positions")
-        return resp.get("positions", {}).get("position", [])
+        positions = resp.get("positions", {}).get("position", [])
+        # Always return a list of dicts, not a single dict
+        if isinstance(positions, dict):
+            positions = [positions]
+        normalized_positions = []
+        for pos in positions:
+            normalized_positions.append({
+                "symbol": pos.get("symbol"),
+                "qty": float(pos.get("quantity") or 0),
+                "market_value": float(pos.get("market_value") or 0),
+                "unrealized_pl": float(pos.get("unrealized_pl", 0)),
+                "purchase_price": float(pos.get("cost_basis", 0)),
+                "currency": pos.get("currency", "USD"),
+            })
+        return normalized_positions
 
     def get_position(self, symbol):
         positions = self.get_positions()
@@ -56,6 +69,20 @@ class TradierBroker(BrokerInterface):
         }
         return self._request("POST", f"/v1/accounts/{self.account_id}/orders", data=payload)
 
+    def place_order(self, symbol=None, side=None, amount=None, order=None):
+        if order is not None:
+            return self.submit_order(order)
+        else:
+            payload = {
+                "class": "equity",
+                "symbol": symbol,
+                "side": side,
+                "quantity": amount,
+                "type": "market",
+                "duration": "day"
+            }
+            return self._request("POST", f"/v1/accounts/{self.account_id}/orders", data=payload)
+
     def cancel_order(self, order_id):
         return self._request("DELETE", f"/v1/accounts/{self.account_id}/orders/{order_id}")
 
@@ -63,10 +90,10 @@ class TradierBroker(BrokerInterface):
         pos = self.get_position(symbol)
         if not pos:
             return {"message": f"No position to close for {symbol}"}
-        side = "sell" if float(pos.get("quantity", 0)) > 0 else "buy"
+        side = "sell" if float(pos.get("qty", 0)) > 0 else "buy"
         order = {
             "symbol": symbol,
-            "qty": abs(float(pos.get("quantity", 0))),
+            "qty": abs(float(pos.get("qty", 0))),
             "side": side,
             "order_type": "market"
         }
@@ -106,12 +133,13 @@ class TradierBroker(BrokerInterface):
 
     def get_etf_holdings(self):
         positions = self.get_positions()
-        etf_positions = []
+        etf_holdings = {}
         for pos in positions:
             sym = pos.get("symbol", "")
+            mv = float(pos.get("market_value", 0.0))
             if sym and (sym.endswith("ETF") or sym.endswith("ET") or sym.endswith("SH") or sym.endswith("US")):
-                etf_positions.append(pos)
-        return etf_positions
+                etf_holdings[sym] = mv
+        return etf_holdings
 
     def fetch_all_trades(self, start_date, end_date=None):
         params = {"start": start_date}

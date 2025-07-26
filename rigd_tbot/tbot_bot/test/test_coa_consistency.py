@@ -44,11 +44,11 @@ def load_coa_metadata_and_accounts():
     return {"metadata": metadata, "accounts": accounts}
 
 def validate_coa_json(accounts):
-    # Basic placeholder: ensure it's a list and every item is a dict with required keys
+    # Ensure it's a list and every item is a dict with required keys per actual COA structure
     assert isinstance(accounts, list)
     for acc in accounts:
         assert isinstance(acc, dict)
-        for key in ["account_code", "description", "type"]:
+        for key in ["code", "name"]:  # match your JSON and template, not legacy fields
             assert key in acc
 
 class TestCOAConsistency(unittest.TestCase):

@@ -126,12 +126,13 @@ class IBKRBroker(BrokerInterface):
     def get_etf_holdings(self):
         try:
             positions = self.get_positions()
-            etf_positions = {}
+            etf_holdings = {}
             for pos in positions:
                 sym = pos.get("symbol")
+                mv = float(pos.get("market_value", 0.0))
                 if sym and any(sym.endswith(suf) for suf in ("ETF", "ET", "SH", "US")):
-                    etf_positions[sym] = pos.get("market_value", 0.0)
-            return etf_positions
+                    etf_holdings[sym] = mv
+            return etf_holdings
         except Exception:
             return {}
 

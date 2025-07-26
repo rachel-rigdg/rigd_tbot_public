@@ -131,12 +131,13 @@ class AlpacaBroker:
 
     def get_etf_holdings(self):
         positions = self.get_positions()
-        etf_positions = []
+        etf_holdings = {}
         for pos in positions:
             sym = pos.get("symbol")
+            mv = float(pos.get("market_value", 0.0))
             if sym and any(sym.endswith(suf) for suf in ("ETF", "ET", "SH", "US")):
-                etf_positions.append(pos)
-        return etf_positions
+                etf_holdings[sym] = mv
+        return etf_holdings
 
     def fetch_all_trades(self, start_date, end_date=None):
         params = {
