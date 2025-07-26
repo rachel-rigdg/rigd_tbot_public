@@ -10,7 +10,7 @@ class AlpacaBroker:
         self.api_key = env.get("BROKER_API_KEY")
         self.secret_key = env.get("BROKER_SECRET_KEY")
         self.broker_token = env.get("BROKER_TOKEN", "")
-        self.base_url = env.get("BROKER_URL")
+        self.base_url = env.get("BROKER_URL").rstrip("/")
         self.credential_hash = hashlib.sha256(
             (self.api_key or "").encode("utf-8") + (self.secret_key or "").encode("utf-8")
         ).hexdigest()
@@ -72,7 +72,7 @@ class AlpacaBroker:
 
     def fetch_cash_activity(self, start_date, end_date=None):
         all_types_safe = "FILL,TRANS,DIV,MFEE,INT,WIRE"
-        params = {"activity_types": all_types_safe, "after": start_date}
+        params = {"activity_types": all_types_safe.strip(), "after": start_date}
         if end_date:
             params["until"] = end_date
         try:
