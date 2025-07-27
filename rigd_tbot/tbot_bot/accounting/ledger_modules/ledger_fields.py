@@ -24,7 +24,14 @@ LEDGER_ENTRIES_FIELDS = [
     "trade_date", "description", "counterparty", "strategy", "tags", "notes", "jurisdiction_code", "entity_code",
     "language_code", "created_by", "updated_by", "approved_by", "approval_status", "created_at", "updated_at",
     "gdpr_compliant", "ccpa_compliant", "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type",
-    "extra_fields", "json_metadata", "bot_id"
+    "extra_fields", "json_metadata", "raw_broker_json", "bot_id"
+]
+
+RECONCILIATION_LOG_FIELDS = [
+    "id", "trade_id", "entity_code", "jurisdiction_code", "broker_code", "broker", "error_code", "account_id",
+    "statement_date", "ledger_balance", "ledger_entry_id", "broker_balance", "delta", "status", "resolution",
+    "resolved_by", "resolved_at", "raw_record", "notes", "recon_type", "raw_record_json", "compare_fields",
+    "json_metadata", "timestamp_utc", "sync_run_id", "api_hash", "imported_at", "updated_at", "user_action", "mapping_version"
 ]
 
 # Allowed action values for normalized trade actions

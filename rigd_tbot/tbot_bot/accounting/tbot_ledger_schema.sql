@@ -380,6 +380,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_log (
     raw_record TEXT,
     notes TEXT,
     recon_type TEXT,
+    raw_record_json TEXT DEFAULT '{}',
     compare_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
     timestamp_utc TEXT,

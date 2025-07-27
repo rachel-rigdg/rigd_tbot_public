@@ -1,7 +1,6 @@
 # tbot_bot/accounting/reconciliation_log.py
 # Reconciliation log table/model for broker ledger sync and reconciliation system.
-# Records: trade_id, status, compare_fields, sync_run_id, timestamp_utc, api_hash, mapping_version, and related metadata.
-# All changes are append-only. No deletions or overwrites.
+# Records all reconciliation log fields per full spec. All changes are append-only. No deletions or overwrites.
 
 import os
 import sqlite3
@@ -14,16 +13,35 @@ from tbot_bot.support.utils_identity import get_bot_identity
 RECON_TABLE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS reconciliation_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trade_id TEXT NOT NULL,
-    status TEXT NOT NULL, -- ok, mismatch, local-only, broker-only, resolved
-    compare_fields TEXT,  -- JSON summary of compared fields/diffs
-    sync_run_id TEXT NOT NULL,
-    timestamp_utc TEXT NOT NULL,
-    api_hash TEXT, -- hash of the broker API record for provenance
-    mapping_version TEXT, -- optional, for mapping rule snapshot/version
-    broker TEXT NOT NULL,
-    raw_record_json TEXT,
-    notes TEXT
+    trade_id TEXT,
+    entity_code TEXT NOT NULL,
+    jurisdiction_code TEXT NOT NULL,
+    broker_code TEXT NOT NULL,
+    broker TEXT,
+    error_code TEXT,
+    account_id TEXT,
+    statement_date TEXT,
+    ledger_balance REAL,
+    ledger_entry_id TEXT,
+    broker_balance REAL,
+    delta REAL,
+    status TEXT CHECK(status IN ('pending', 'matched', 'mismatched', 'resolved')),
+    resolution TEXT,
+    resolved_by TEXT,
+    resolved_at TEXT,
+    raw_record TEXT,
+    notes TEXT,
+    recon_type TEXT,
+    raw_record_json TEXT DEFAULT '{}',
+    compare_fields TEXT DEFAULT '{}',
+    json_metadata TEXT DEFAULT '{}',
+    timestamp_utc TEXT,
+    sync_run_id TEXT,
+    api_hash TEXT,
+    imported_at TEXT,
+    updated_at TEXT,
+    user_action TEXT,
+    mapping_version TEXT
 );
 """
 
@@ -46,28 +64,37 @@ def log_reconciliation_entry(
     broker,
     raw_record,
     mapping_version=None,
-    notes=None
+    notes=None,
+    entity_code=None,
+    jurisdiction_code=None,
+    broker_code=None,
+    error_code=None,
+    account_id=None,
+    statement_date=None,
+    ledger_balance=None,
+    ledger_entry_id=None,
+    broker_balance=None,
+    delta=None,
+    resolution=None,
+    resolved_by=None,
+    resolved_at=None,
+    raw_record_text=None,
+    recon_type=None,
+    json_metadata=None,
+    imported_at=None,
+    updated_at=None,
+    user_action=None
 ):
     """
-    Append a reconciliation log entry. compare_fields and raw_record are JSON-serializable dicts.
-    Ensures tuples are converted to lists, and all objects are JSON-serializable.
-    Also prints types/values for debugging.
+    Append a reconciliation log entry. Autofill codes from bot_identity if not provided.
+    All fields are supported, but most can be None/blank.
     """
-    print("RECON ENTRY types:",
-          "trade_id:", type(trade_id),
-          "status:", type(status),
-          "compare_fields:", type(compare_fields),
-          "sync_run_id:", type(sync_run_id),
-          "api_hash:", type(api_hash),
-          "broker:", type(broker),
-          "raw_record:", type(raw_record),
-          "mapping_version:", type(mapping_version),
-          "notes:", type(notes))
-    print("RECON raw_record:", raw_record)
+    if not (entity_code and jurisdiction_code and broker_code):
+        identity = get_bot_identity()
+        entity_code, jurisdiction_code, broker_code, _ = identity.split("_")
     db_path = _get_db_path()
     timestamp_utc = datetime.utcnow().isoformat()
     def make_json_safe(obj):
-        # Convert tuples to lists recursively for JSON safety.
         if isinstance(obj, tuple):
             return [make_json_safe(i) for i in obj]
         elif isinstance(obj, dict):
@@ -78,30 +105,53 @@ def log_reconciliation_entry(
             return obj
     compare_fields_json = json.dumps(make_json_safe(compare_fields or {}))
     raw_record_json = json.dumps(make_json_safe(raw_record or {}))
+    json_metadata_json = json.dumps(json_metadata or {})
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO reconciliation_log (trade_id, status, compare_fields, sync_run_id, timestamp_utc, api_hash, mapping_version, broker, raw_record_json, notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO reconciliation_log (
+                trade_id, entity_code, jurisdiction_code, broker_code, broker, error_code,
+                account_id, statement_date, ledger_balance, ledger_entry_id, broker_balance, delta,
+                status, resolution, resolved_by, resolved_at, raw_record, notes, recon_type,
+                raw_record_json, compare_fields, json_metadata, timestamp_utc, sync_run_id, api_hash,
+                imported_at, updated_at, user_action, mapping_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
             (
                 trade_id,
-                status,
-                compare_fields_json,
-                sync_run_id,
-                timestamp_utc,
-                api_hash,
-                mapping_version or "",
+                entity_code,
+                jurisdiction_code,
+                broker_code,
                 broker,
+                error_code,
+                account_id,
+                statement_date,
+                ledger_balance,
+                ledger_entry_id,
+                broker_balance,
+                delta,
+                status,
+                resolution,
+                resolved_by,
+                resolved_at,
+                raw_record_text,
+                notes,
+                recon_type,
                 raw_record_json,
-                notes or ""
+                compare_fields_json,
+                json_metadata_json,
+                timestamp_utc,
+                sync_run_id,
+                api_hash,
+                imported_at,
+                updated_at,
+                user_action,
+                mapping_version
             )
         )
         conn.commit()
 
 def get_reconciliation_entries(sync_run_id=None, trade_id=None, status=None):
-    """
-    Fetch reconciliation log entries. Supports filtering by sync_run_id, trade_id, or status.
-    Returns a list of dicts.
-    """
     db_path = _get_db_path()
     query = "SELECT * FROM reconciliation_log WHERE 1=1"
     params = []
@@ -120,9 +170,6 @@ def get_reconciliation_entries(sync_run_id=None, trade_id=None, status=None):
         return [dict(row) for row in cursor.fetchall()]
 
 def snapshot_reconciliation_log():
-    """
-    Export all reconciliation log entries as JSON (for audit/export/backup).
-    """
     db_path = _get_db_path()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -130,9 +177,6 @@ def snapshot_reconciliation_log():
         return json.dumps([dict(row) for row in cursor.fetchall()], indent=2)
 
 def ensure_reconciliation_log_initialized():
-    """
-    Idempotent: Ensures reconciliation log table exists before each sync/reconcile.
-    """
     db_path = _get_db_path()
     with sqlite3.connect(db_path) as conn:
         conn.execute(RECON_TABLE_SCHEMA)

@@ -61,7 +61,6 @@ def sync_broker_ledger():
         for k in TRADES_FIELDS:
             if k not in entry or entry[k] is None:
                 entry[k] = None
-        # No further action fixup: normalization guarantees schema-compliance
         return entry
 
     seen = set()
@@ -98,5 +97,8 @@ def sync_broker_ledger():
             broker=broker_code,
             raw_record=entry,
             mapping_version=str(mapping_table.get("version", "")),
-            notes="Imported by sync"
+            notes="Imported by sync",
+            entity_code=entity_code,
+            jurisdiction_code=jurisdiction_code,
+            broker_code=broker_code
         )
