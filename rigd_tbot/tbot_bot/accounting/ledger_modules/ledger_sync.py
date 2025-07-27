@@ -90,7 +90,7 @@ def sync_broker_ledger():
             api_hash = jm.get("api_hash", "")
         log_reconciliation_entry(
             trade_id=trade_id,
-            status="ok",
+            status="matched",
             compare_fields={},
             sync_run_id=sync_run_id,
             api_hash=api_hash,

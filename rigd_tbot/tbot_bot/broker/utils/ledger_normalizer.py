@@ -43,7 +43,7 @@ ACTION_MAP = {
 }
 
 ALLOWED_ACTIONS = (
-    "long", "short", "put", "inverse", "call", "assignment", "exercise", "expire", "reorg"
+    "long", "short", "put", "inverse", "call", "assignment", "exercise", "expire", "reorg", "other"
 )
 
 def normalize_trade(trade, credential_hash=None):
@@ -71,6 +71,18 @@ def normalize_trade(trade, credential_hash=None):
         raw_action_lower = None
         action_invalid = True
         canonical_action = None
+
+    # Drop unmappable or None actions: enforce skip_insert
+    if action_invalid or not canonical_action:
+        mapping = {k: None for k in TRADES_FIELDS}
+        mapping["skip_insert"] = True
+        mapping["json_metadata"] = {
+            "raw_broker": trade,
+            "api_hash": credential_hash or "n/a",
+            "unmapped_action": unmapped_action or raw_action or "missing"
+        }
+        mapping["trade_id"] = trade.get("id") or trade.get("trade_id") or trade.get("order_id")
+        return mapping
 
     mapping = {
         "trade_id": trade.get("id") or trade.get("trade_id") or trade.get("order_id"),
@@ -115,7 +127,7 @@ def normalize_trade(trade, credential_hash=None):
         "json_metadata": {
             "raw_broker": trade,
             "api_hash": credential_hash or "n/a",
-            "unmapped_action": unmapped_action if action_invalid else None
+            "unmapped_action": None
         },
     }
 
@@ -125,10 +137,6 @@ def normalize_trade(trade, credential_hash=None):
         if k not in mapping:
             mapping[k] = None
 
-    # If not valid for DB insertion (action not allowed), must return None to signal skip
-    if action_invalid:
-        mapping["skip_insert"] = True
-    else:
-        mapping["skip_insert"] = False
+    mapping["skip_insert"] = False
 
     return mapping
