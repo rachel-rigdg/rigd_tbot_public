@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS coa_accounts (
     language_code TEXT DEFAULT 'en',
     json_metadata TEXT DEFAULT '{}'
 );
--- Table: Ledger Entries
+
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     datetime_utc TEXT NOT NULL,
@@ -363,7 +363,7 @@ CREATE TABLE IF NOT EXISTS option_contracts (
 -- Table: Reconciliation Log (ledger vs. broker statement)
 CREATE TABLE IF NOT EXISTS reconciliation_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trade_id TEXT, -- <-- ADD THIS LINE
+    trade_id TEXT,
     entity_code TEXT NOT NULL,
     jurisdiction_code TEXT NOT NULL REFERENCES jurisdictions(code),
     broker_code TEXT NOT NULL REFERENCES brokers(code),
@@ -377,6 +377,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_log (
     resolved_by TEXT,
     resolved_at TEXT,
     notes TEXT,
+    compare_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}'
 );
 
