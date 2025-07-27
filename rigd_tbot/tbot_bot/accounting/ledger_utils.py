@@ -12,6 +12,7 @@ from .ledger_modules.ledger_fields import *
 from .ledger_modules.ledger_grouping import *
 from .ledger_modules.ledger_deduplication import *
 from .ledger_modules.ledger_query import *
+from .ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
@@ -19,6 +20,8 @@ from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 def enforce_normalized_trade(trade):
     norm = normalize_trade(trade)
     if norm.get("skip_insert", False):
+        return None
+    if not compliance_filter_ledger_entry(norm):
         return None
     return norm
 

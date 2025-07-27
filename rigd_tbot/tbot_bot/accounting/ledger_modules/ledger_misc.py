@@ -6,6 +6,7 @@ from cryptography.fernet import Fernet
 from pathlib import Path
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.utils_identity import get_bot_identity
+from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 
 def get_coa_accounts():
     CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
@@ -24,4 +25,5 @@ def get_coa_accounts():
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute("SELECT json_extract(account_json, '$.code'), json_extract(account_json, '$.name') FROM coa_accounts")
         accounts = sorted([(row[0], row[1]) for row in cursor.fetchall() if row[0] and row[1]], key=lambda x: x[1])
+    # Compliance filter not directly relevant here, but if ever returning ledger entries, filter via compliance_filter_ledger_entry
     return accounts

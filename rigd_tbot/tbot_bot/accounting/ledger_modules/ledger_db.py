@@ -8,6 +8,7 @@ from pathlib import Path
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 
 BOT_ID = get_bot_identity()
 CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
@@ -52,6 +53,9 @@ def add_entry(entry):
     """
     db_path = get_db_path()
     entry = dict(entry)
+    # Enforce compliance filter before writing entry
+    if not compliance_filter_ledger_entry(entry):
+        return
     # Ensure amount and side fields are present for double-entry compliance
     if "amount" not in entry or entry["amount"] is None:
         try:
@@ -96,7 +100,9 @@ def post_double_entry(entries, mapping_table=None):
     Posts balanced double-entry records using the double entry helper module.
     """
     from tbot_bot.accounting.ledger_modules.ledger_double_entry import post_double_entry as double_entry_helper
-    return double_entry_helper(entries, mapping_table)
+    # Enforce compliance filter on all entries before posting
+    filtered_entries = [e for e in entries if compliance_filter_ledger_entry(e)]
+    return double_entry_helper(filtered_entries, mapping_table)
 
 def run_schema_migration(migration_sql_path):
     """

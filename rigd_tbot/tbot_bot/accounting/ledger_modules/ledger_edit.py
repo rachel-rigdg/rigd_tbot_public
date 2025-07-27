@@ -11,6 +11,7 @@ from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 
 def get_identity_tuple():
     identity = load_bot_identity()
@@ -21,6 +22,10 @@ def edit_ledger_entry(entry_id, updated_data):
     Update a ledger entry in the trades table by ID.
     Accepts a dict of fields to update.
     """
+    filtered = compliance_filter_ledger_entry(updated_data)
+    if filtered is None:
+        return  # Filtered out, do not update
+    updated_data = filtered
     db_path = resolve_ledger_db_path(*get_identity_tuple())
     current_user = get_current_user()
     updated_data["updated_by"] = (

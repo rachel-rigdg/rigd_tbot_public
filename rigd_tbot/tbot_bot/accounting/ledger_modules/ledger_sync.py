@@ -8,6 +8,7 @@ from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 import sqlite3
 import json
 
@@ -50,14 +51,17 @@ def sync_broker_ledger():
         if normalized.get("skip_insert", False):
             print("SKIP INVALID TRADE ACTION:", normalized.get("json_metadata", {}).get("unmapped_action", "unknown"), "| RAW:", t)
             continue
-        # --- FIX: Ensure group_id is always set ---
         if not normalized.get("group_id"):
             normalized["group_id"] = normalized.get("trade_id")
-        # --- SKIP blank/empty trades ---
         if _is_blank_entry(normalized):
             print("SKIP BLANK TRADE ENTRY:", normalized)
             continue
-        trades.append(normalized)
+        # --- Compliance filter ---
+        filtered = compliance_filter_ledger_entry(normalized)
+        if filtered is None:
+            print("SKIP NON-COMPLIANT TRADE ENTRY:", normalized)
+            continue
+        trades.append(filtered)
 
     cash_acts = []
     for c in cash_acts_raw:
@@ -68,14 +72,17 @@ def sync_broker_ledger():
         if normalized.get("skip_insert", False):
             print("SKIP INVALID CASH ACTION:", normalized.get("json_metadata", {}).get("unmapped_action", "unknown"), "| RAW:", c)
             continue
-        # --- FIX: Ensure group_id is always set for cash activity as well ---
         if not normalized.get("group_id"):
             normalized["group_id"] = normalized.get("trade_id")
-        # --- SKIP blank/empty cash entries ---
         if _is_blank_entry(normalized):
             print("SKIP BLANK CASH ENTRY:", normalized)
             continue
-        cash_acts.append(normalized)
+        # --- Compliance filter ---
+        filtered = compliance_filter_ledger_entry(normalized)
+        if filtered is None:
+            print("SKIP NON-COMPLIANT CASH ENTRY:", normalized)
+            continue
+        cash_acts.append(filtered)
 
     all_entries = [e for e in (trades + cash_acts) if isinstance(e, dict)]
 

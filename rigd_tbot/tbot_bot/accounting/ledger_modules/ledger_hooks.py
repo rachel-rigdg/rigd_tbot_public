@@ -4,6 +4,7 @@ from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_pa
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.accounting.ledger_modules.ledger_double_entry import post_ledger_entries_double_entry
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 
 def _build_entry(custom_fields):
     entry = {k: None for k in TRADES_FIELDS}
@@ -42,7 +43,9 @@ def post_tax_reserve_entry(amount, datetime_utc, notes=None):
         "soc2_type": None,
         "json_metadata": "{}"
     })
-    post_ledger_entries_double_entry([entry])
+    filtered_entry = compliance_filter_ledger_entry(entry)
+    if filtered_entry:
+        post_ledger_entries_double_entry([filtered_entry])
 
 def post_payroll_reserve_entry(amount, datetime_utc, notes=None):
     entry = _build_entry({
@@ -76,7 +79,9 @@ def post_payroll_reserve_entry(amount, datetime_utc, notes=None):
         "soc2_type": None,
         "json_metadata": "{}"
     })
-    post_ledger_entries_double_entry([entry])
+    filtered_entry = compliance_filter_ledger_entry(entry)
+    if filtered_entry:
+        post_ledger_entries_double_entry([filtered_entry])
 
 def post_float_allocation_entry(amount, datetime_utc, notes=None):
     entry = _build_entry({
@@ -110,7 +115,9 @@ def post_float_allocation_entry(amount, datetime_utc, notes=None):
         "soc2_type": None,
         "json_metadata": "{}"
     })
-    post_ledger_entries_double_entry([entry])
+    filtered_entry = compliance_filter_ledger_entry(entry)
+    if filtered_entry:
+        post_ledger_entries_double_entry([filtered_entry])
 
 def post_rebalance_entry(symbol, amount, action, datetime_utc, notes=None):
     entry = _build_entry({
@@ -144,4 +151,6 @@ def post_rebalance_entry(symbol, amount, action, datetime_utc, notes=None):
         "soc2_type": None,
         "json_metadata": "{}"
     })
-    post_ledger_entries_double_entry([entry])
+    filtered_entry = compliance_filter_ledger_entry(entry)
+    if filtered_entry:
+        post_ledger_entries_double_entry([filtered_entry])

@@ -21,6 +21,7 @@ from tbot_bot.broker.broker_api import get_active_broker
 from tbot_bot.support.path_resolver import get_bot_state_path
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from tbot_bot.reporting.audit_logger import audit_log_event
+from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 
 log = get_logger(__name__)
 
@@ -83,10 +84,6 @@ def _compliance_preview_or_abort(holdings, etf_targets, account_value):
     return True
 
 def get_holdings_status():
-    """
-    Returns status for the UI table: account value, cash, next rebalance, and ETF holdings rows.
-    Allocation % is always sourced from config. Other data is live if available.
-    """
     broker = get_active_broker()
     account_value = broker.get_account_value()
     cash = broker.get_cash_balance()
@@ -95,10 +92,9 @@ def get_holdings_status():
     etf_targets = parse_etf_allocations(etf_cfg)
     next_rebalance_due = holdings_cfg.get("NEXT_REBALANCE_DUE")
     etf_holdings = []
-    # Always iterate over config allocation symbols
     live = {}
     try:
-        broker_positions = broker.get_etf_positions()  # Must return list of dicts per ETF: symbol, units, purchase_price, market_price, market_value, pl, total_gain_loss
+        broker_positions = broker.get_etf_positions()
         for etf in broker_positions:
             live[etf.get("symbol")] = etf
     except Exception as e:
@@ -160,13 +156,15 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
             if value < 1:
                 continue
             sell_amt = min(deficit, value)
-            broker.place_order(symbol, "sell", sell_amt)
-            deficit -= sell_amt
-            _warn_or_info(f"Topped up cash by selling {sell_amt} of {symbol}")
-            log_event("holdings_float_topup", f"Topped up cash by selling {sell_amt} of {symbol}", level="info", extra={
-                "symbol": symbol, "amount": sell_amt, "reason": "float_topup"
-            })
-            audit_log_event("holdings_float_topup", user=user, reference=symbol, details={"amount": sell_amt, "reason": "float_topup"})
+            sell_order = {"symbol": symbol, "action": "sell", "amount": sell_amt}
+            if compliance_filter_ledger_entry(sell_order):
+                broker.place_order(symbol, "sell", sell_amt)
+                deficit -= sell_amt
+                _warn_or_info(f"Topped up cash by selling {sell_amt} of {symbol}")
+                log_event("holdings_float_topup", f"Topped up cash by selling {sell_amt} of {symbol}", level="info", extra={
+                    "symbol": symbol, "amount": sell_amt, "reason": "float_topup"
+                })
+                audit_log_event("holdings_float_topup", user=user, reference=symbol, details={"amount": sell_amt, "reason": "float_topup"})
             if deficit <= 1:
                 break
 
@@ -186,12 +184,14 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
         total_pct = sum(etf_targets.values())
         for symbol, pct in etf_targets.items():
             alloc_amt = remainder * (pct / total_pct)
-            broker.place_order(symbol, "buy", alloc_amt)
-            _warn_or_info(f"Reinvested {alloc_amt} into {symbol}")
-            log_event("holdings_reinvest", f"Reinvested {alloc_amt} into {symbol}", level="info", extra={
-                "symbol": symbol, "amount": alloc_amt, "reason": "reinvest"
-            })
-            audit_log_event("holdings_reinvest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "reinvest"})
+            buy_order = {"symbol": symbol, "action": "buy", "amount": alloc_amt}
+            if compliance_filter_ledger_entry(buy_order):
+                broker.place_order(symbol, "buy", alloc_amt)
+                _warn_or_info(f"Reinvested {alloc_amt} into {symbol}")
+                log_event("holdings_reinvest", f"Reinvested {alloc_amt} into {symbol}", level="info", extra={
+                    "symbol": symbol, "amount": alloc_amt, "reason": "reinvest"
+                })
+                audit_log_event("holdings_reinvest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "reinvest"})
 
     # === Step 4: Float excess auto-invest logic ===
     float_target_value = account_value * (float_pct / 100)
@@ -201,12 +201,14 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
         total_pct = sum(etf_targets.values())
         for symbol, pct in etf_targets.items():
             alloc_amt = float_excess * (pct / total_pct)
-            broker.place_order(symbol, "buy", alloc_amt)
-            _warn_or_info(f"Invested float excess: {alloc_amt} into {symbol}")
-            log_event("holdings_float_excess_invest", f"Invested float excess: {alloc_amt} into {symbol}", level="info", extra={
-                "symbol": symbol, "amount": alloc_amt, "reason": "float_excess"
-            })
-            audit_log_event("holdings_float_excess_invest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "float_excess"})
+            float_order = {"symbol": symbol, "action": "buy", "amount": alloc_amt}
+            if compliance_filter_ledger_entry(float_order):
+                broker.place_order(symbol, "buy", alloc_amt)
+                _warn_or_info(f"Invested float excess: {alloc_amt} into {symbol}")
+                log_event("holdings_float_excess_invest", f"Invested float excess: {alloc_amt} into {symbol}", level="info", extra={
+                    "symbol": symbol, "amount": alloc_amt, "reason": "float_excess"
+                })
+                audit_log_event("holdings_float_excess_invest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "float_excess"})
 
 def perform_rebalance_cycle(user: str = "holdings_manager"):
     if not _is_bot_initialized():
@@ -230,10 +232,11 @@ def perform_rebalance_cycle(user: str = "holdings_manager"):
 
     orders = compute_rebalance_orders(holdings, etf_targets, account_value)
     for order in orders:
-        broker.place_order(order['symbol'], order['action'], order['amount'])
-        _warn_or_info(f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}")
-        log_event("holdings_rebalance", f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}", level="info", extra=order)
-        audit_log_event("holdings_rebalance", user=user, reference=order['symbol'], details=order)
+        if compliance_filter_ledger_entry(order):
+            broker.place_order(order['symbol'], order['action'], order['amount'])
+            _warn_or_info(f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}")
+            log_event("holdings_rebalance", f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}", level="info", extra=order)
+            audit_log_event("holdings_rebalance", user=user, reference=order['symbol'], details=order)
 
 def manual_holdings_action(action, user="manual"):
     if action == "rebalance":
