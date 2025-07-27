@@ -61,6 +61,9 @@ def add_ledger_entry(entry_data):
     db_path = resolve_ledger_db_path(*bot_identity)
     entry_data["broker_code"] = load_broker_code()
     entry_data["account"] = load_account_number()
+    # --- FIX: Ensure group_id is set ---
+    if not entry_data.get("group_id"):
+        entry_data["group_id"] = entry_data.get("trade_id")
     try:
         qty = float(entry_data.get("quantity") or 0)
         price = float(entry_data.get("price") or 0)

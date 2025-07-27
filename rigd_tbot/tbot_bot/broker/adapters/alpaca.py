@@ -78,7 +78,14 @@ class AlpacaBroker:
             params.append(("until", end_date))
         try:
             acts = self._fetch_cash_activity_internal(params)
-            return [normalize_trade(a, self.credential_hash) for a in acts if isinstance(a, dict)]
+            # --- FIX: Ensure group_id is set for all normalized trades ---
+            normed = []
+            for a in acts:
+                trade = normalize_trade(a, self.credential_hash)
+                if not trade.get("group_id"):
+                    trade["group_id"] = trade.get("trade_id")
+                normed.append(trade)
+            return normed
         except Exception:
             return []
 
@@ -186,7 +193,13 @@ class AlpacaBroker:
             else:
                 break
         # ENSURE FULL NORMALIZATION
-        return [normalize_trade(tf, self.credential_hash) for tf in order_fills.values() if isinstance(tf, dict)]
+        normed_trades = []
+        for tf in order_fills.values():
+            trade = normalize_trade(tf, self.credential_hash)
+            if not trade.get("group_id"):
+                trade["group_id"] = trade.get("trade_id")
+            normed_trades.append(trade)
+        return normed_trades
 
     def _fetch_cash_activity_internal(self, params):
         activities = []
@@ -224,4 +237,10 @@ class AlpacaBroker:
             else:
                 break
         # ENSURE FULL NORMALIZATION
-        return [normalize_trade(act, self.credential_hash) for act in activities if isinstance(act, dict)]
+        normed_acts = []
+        for act in activities:
+            trade = normalize_trade(act, self.credential_hash)
+            if not trade.get("group_id"):
+                trade["group_id"] = trade.get("trade_id")
+            normed_acts.append(trade)
+        return normed_acts

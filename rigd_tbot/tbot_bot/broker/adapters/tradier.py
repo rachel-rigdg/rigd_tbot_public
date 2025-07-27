@@ -147,7 +147,13 @@ class TradierBroker(BrokerInterface):
             params["end"] = end_date
         resp = self._request("GET", f"/v1/accounts/{self.account_id}/history", params=params)
         trades = resp.get("history", {}).get("trade", [])
-        return [normalize_trade(t, self.credential_hash) for t in trades]
+        normed_trades = []
+        for t in trades:
+            trade = normalize_trade(t, self.credential_hash)
+            if not trade.get("group_id"):
+                trade["group_id"] = trade.get("trade_id")
+            normed_trades.append(trade)
+        return normed_trades
 
     def fetch_cash_activity(self, start_date, end_date=None):
         params = {"start": start_date}
@@ -155,4 +161,10 @@ class TradierBroker(BrokerInterface):
             params["end"] = end_date
         resp = self._request("GET", f"/v1/accounts/{self.account_id}/history", params=params)
         activities = resp.get("history", {}).get("cash", [])
-        return [normalize_trade(a, self.credential_hash) for a in activities]
+        normed_acts = []
+        for a in activities:
+            trade = normalize_trade(a, self.credential_hash)
+            if not trade.get("group_id"):
+                trade["group_id"] = trade.get("trade_id")
+            normed_acts.append(trade)
+        return normed_acts

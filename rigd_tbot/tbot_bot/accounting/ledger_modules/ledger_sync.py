@@ -42,6 +42,9 @@ def sync_broker_ledger():
         if normalized.get("skip_insert", False):
             print("SKIP INVALID TRADE ACTION:", normalized.get("json_metadata", {}).get("unmapped_action", "unknown"), "| RAW:", t)
             continue
+        # --- FIX: Ensure group_id is always set ---
+        if not normalized.get("group_id"):
+            normalized["group_id"] = normalized.get("trade_id")
         trades.append(normalized)
 
     cash_acts = []
@@ -53,6 +56,9 @@ def sync_broker_ledger():
         if normalized.get("skip_insert", False):
             print("SKIP INVALID CASH ACTION:", normalized.get("json_metadata", {}).get("unmapped_action", "unknown"), "| RAW:", c)
             continue
+        # --- FIX: Ensure group_id is always set for cash activity as well ---
+        if not normalized.get("group_id"):
+            normalized["group_id"] = normalized.get("trade_id")
         cash_acts.append(normalized)
 
     all_entries = [e for e in (trades + cash_acts) if isinstance(e, dict)]
