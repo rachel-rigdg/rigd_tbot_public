@@ -363,6 +363,7 @@ CREATE TABLE IF NOT EXISTS option_contracts (
 -- Table: Reconciliation Log (ledger vs. broker statement)
 CREATE TABLE IF NOT EXISTS reconciliation_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_id TEXT, -- <-- ADD THIS LINE
     entity_code TEXT NOT NULL,
     jurisdiction_code TEXT NOT NULL REFERENCES jurisdictions(code),
     broker_code TEXT NOT NULL REFERENCES brokers(code),
