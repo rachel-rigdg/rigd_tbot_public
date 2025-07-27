@@ -71,6 +71,7 @@
                 </thead>
                 <tbody id="ledger-tbody">
                 {% for entry in entries %}
+                    {% if entry.symbol or entry.datetime_utc or entry.action or entry.price or entry.quantity or entry.total_value %}
                     <!-- Top group row (expand/collapse) -->
                     <tr class="row-top {{ entry.status }}">
                         <td>
@@ -110,6 +111,7 @@
                             <td></td>
                         </tr>
                         {% endfor %}
+                    {% endif %}
                     {% endif %}
                 {% endfor %}
                 <!-- Add-entry row (split in two lines) -->

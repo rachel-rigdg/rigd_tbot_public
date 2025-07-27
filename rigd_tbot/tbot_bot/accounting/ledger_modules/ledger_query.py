@@ -4,12 +4,21 @@ import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 
+PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "total_value")
+
+def _is_blank_entry(entry):
+    # True if all primary display fields are None/empty
+    return all(
+        entry.get(f) is None or str(entry.get(f)).strip() == "" for f in PRIMARY_FIELDS
+    )
+
 def fetch_grouped_trades(by="group_id", limit=1000, collapse=False, sort_by="datetime_utc", sort_desc=True):
     """
     Returns trades grouped by group_id or trade_id.
     If collapse=True, only the first trade of each group is returned.
     Supports sorting by any column.
     Handles legacy trades with null group_id by mapping group_id = trade_id for display.
+    Filters out entries where all primary display fields are blank.
     """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
@@ -44,7 +53,7 @@ def fetch_grouped_trades(by="group_id", limit=1000, collapse=False, sort_by="dat
             ).fetchall()
         cols = [desc[0] for desc in conn.execute("PRAGMA table_info(trades)")]
         trades = [dict(zip(cols, row)) for row in rows]
-        # --- FIX: Defensive, map group_id = trade_id for entries missing group_id ---
+        # --- Defensive, map group_id = trade_id for entries missing group_id ---
         if len(trades) < limit:
             null_group_rows = conn.execute(
                 f"""
@@ -59,6 +68,8 @@ def fetch_grouped_trades(by="group_id", limit=1000, collapse=False, sort_by="dat
             for t in null_group_trades:
                 t['group_id'] = t.get('trade_id')
             trades.extend(null_group_trades)
+        # --- FILTER: Remove blank entries before returning to UI ---
+        trades = [t for t in trades if not _is_blank_entry(t)]
         return trades
 
 def fetch_trade_group_by_id(group_id):
@@ -84,6 +95,7 @@ def fetch_trade_group_by_id(group_id):
 def search_trades(search_term=None, sort_by="datetime_utc", sort_desc=True, limit=1000):
     """
     Search trades, supports sorting and limit.
+    Filters out entries where all primary display fields are blank.
     """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
@@ -98,7 +110,9 @@ def search_trades(search_term=None, sort_by="datetime_utc", sort_desc=True, limi
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(query, tuple(params)).fetchall()
         cols = [desc[0] for desc in conn.execute("PRAGMA table_info(trades)")]
-        return [dict(zip(cols, row)) for row in rows]
+        trades = [dict(zip(cols, row)) for row in rows]
+        trades = [t for t in trades if not _is_blank_entry(t)]
+        return trades
 
 def get_trades_by_group_id(group_id):
     """

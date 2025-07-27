@@ -11,6 +11,8 @@ from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 import sqlite3
 import json
 
+PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "total_value")
+
 def _sanitize_entry(entry):
     sanitized = {}
     for k, v in entry.items():
@@ -21,6 +23,12 @@ def _sanitize_entry(entry):
         else:
             sanitized[k] = v
     return sanitized
+
+def _is_blank_entry(entry):
+    # True if all primary display fields are None/empty
+    return all(
+        entry.get(f) is None or str(entry.get(f)).strip() == "" for f in PRIMARY_FIELDS
+    )
 
 def sync_broker_ledger():
     bot_identity = get_identity_tuple()
@@ -45,6 +53,10 @@ def sync_broker_ledger():
         # --- FIX: Ensure group_id is always set ---
         if not normalized.get("group_id"):
             normalized["group_id"] = normalized.get("trade_id")
+        # --- SKIP blank/empty trades ---
+        if _is_blank_entry(normalized):
+            print("SKIP BLANK TRADE ENTRY:", normalized)
+            continue
         trades.append(normalized)
 
     cash_acts = []
@@ -59,6 +71,10 @@ def sync_broker_ledger():
         # --- FIX: Ensure group_id is always set for cash activity as well ---
         if not normalized.get("group_id"):
             normalized["group_id"] = normalized.get("trade_id")
+        # --- SKIP blank/empty cash entries ---
+        if _is_blank_entry(normalized):
+            print("SKIP BLANK CASH ENTRY:", normalized)
+            continue
         cash_acts.append(normalized)
 
     all_entries = [e for e in (trades + cash_acts) if isinstance(e, dict)]
