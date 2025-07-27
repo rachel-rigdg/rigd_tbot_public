@@ -48,15 +48,15 @@
             <table class="ledger-table">
                 <thead>
                     <tr>
-                        <th class="sortable" data-col="datetime_utc">Date (UTC)</th>
-                        <th class="sortable" data-col="symbol">Symbol</th>
-                        <th class="sortable" data-col="action">Action</th>
-                        <th class="sortable" data-col="quantity">Quantity</th>
-                        <th class="sortable" data-col="price">Price</th>
-                        <th class="sortable" data-col="fee">Fee</th>
-                        <th class="sortable" data-col="total_value">Total Value</th>
-                        <th class="sortable" data-col="status">Status</th>
-                        <th class="sortable" data-col="running_balance">Running Balance</th>
+                        <th class="sortable" data-col="datetime_utc" onclick="sortLedgerTable('datetime_utc')">Date (UTC)</th>
+                        <th class="sortable" data-col="symbol" onclick="sortLedgerTable('symbol')">Symbol</th>
+                        <th class="sortable" data-col="action" onclick="sortLedgerTable('action')">Action</th>
+                        <th class="sortable" data-col="quantity" onclick="sortLedgerTable('quantity')">Quantity</th>
+                        <th class="sortable" data-col="price" onclick="sortLedgerTable('price')">Price</th>
+                        <th class="sortable" data-col="fee" onclick="sortLedgerTable('fee')">Fee</th>
+                        <th class="sortable" data-col="total_value" onclick="sortLedgerTable('total_value')">Total Value</th>
+                        <th class="sortable" data-col="status" onclick="sortLedgerTable('status')">Status</th>
+                        <th class="sortable" data-col="running_balance" onclick="sortLedgerTable('running_balance')">Running Balance</th>
                     </tr>
                     <tr>
                         <th>Trade ID</th>
@@ -111,7 +111,6 @@
                         {% endfor %}
                     {% endif %}
                 {% endfor %}
-                <!-- Add-entry row (split in two lines) -->
                 <tr class="row-top">
                     <form method="post" action="{{ url_for('ledger_web.add_ledger_entry_route') }}">
                     <td><input type="text" name="datetime_utc" placeholder="YYYY-MM-DD" required></td>
@@ -191,5 +190,34 @@
             </div>
         </div>
     </div>
+    <script>
+        // JS sort routine for client-side sorting by clicking column title
+        function sortLedgerTable(col) {
+            const table = document.querySelector('.ledger-table');
+            const tbody = table.querySelector('tbody');
+            let rows = Array.from(tbody.querySelectorAll('tr.row-top')).filter(row => !row.querySelector('form'));
+            let asc = !table.dataset.sortDir || table.dataset.sortCol !== col ? true : table.dataset.sortDir !== 'asc';
+
+            rows.sort((a, b) => {
+                let av = a.querySelector(`td:nth-child(${getColIdx(col)})`)?.innerText.trim();
+                let bv = b.querySelector(`td:nth-child(${getColIdx(col)})`)?.innerText.trim();
+                if (!isNaN(parseFloat(av)) && !isNaN(parseFloat(bv))) {
+                    av = parseFloat(av); bv = parseFloat(bv);
+                }
+                return asc ? (av > bv ? 1 : av < bv ? -1 : 0) : (av < bv ? 1 : av > bv ? -1 : 0);
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+            table.dataset.sortCol = col;
+            table.dataset.sortDir = asc ? 'asc' : 'desc';
+        }
+        function getColIdx(col) {
+            const mapping = {
+                "datetime_utc": 1, "symbol": 2, "action": 3, "quantity": 4,
+                "price": 5, "fee": 6, "total_value": 7, "status": 8, "running_balance": 9
+            };
+            return mapping[col] || 1;
+        }
+    </script>
 </body>
 </html>

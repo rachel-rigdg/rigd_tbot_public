@@ -12,7 +12,6 @@ def _is_blank_entry(entry):
         entry.get(f) is None or str(entry.get(f)).strip() == "" for f in PRIMARY_FIELDS
     )
 
-# Group/collapse fetches now thin pass-throughs to ledger_grouping.py
 def fetch_grouped_trades(*args, **kwargs):
     return grouping_fetch_grouped_trades(*args, **kwargs)
 

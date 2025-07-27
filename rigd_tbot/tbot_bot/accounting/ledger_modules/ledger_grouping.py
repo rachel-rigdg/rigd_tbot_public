@@ -86,10 +86,15 @@ def collapse_group(trades_group):
 
 def get_collapsed_groups_by_group_id(limit=100, offset=0):
     groups = get_trades_grouped_by_group_id(None, limit, offset)
+    # Always historical order within group
+    for g in groups:
+        g.sort(key=lambda row: row.get("datetime_utc") or "")
     return [collapse_group(g) for g in groups if g]
 
 def get_collapsed_groups_by_trade_id(limit=100, offset=0):
     groups = get_trades_grouped_by_trade_id(None, limit, offset)
+    for g in groups:
+        g.sort(key=lambda row: row.get("datetime_utc") or "")
     return [collapse_group(g) for g in groups if g]
 
 def _get_collapsed_map(db_path, group_ids):
@@ -120,6 +125,7 @@ def fetch_grouped_trades(by="group_id", collapse=True, limit=100, offset=0, show
     for group in groups:
         if not group:
             continue
+        group.sort(key=lambda row: row.get("datetime_utc") or "")  # strict historical order, forensic
         group_id = group[0].get("group_id") if by != "trade_id" else group[0].get("trade_id")
         collapsed_state = collapsed_map.get(group_id, 1)
         force_expand = show_expanded_groups and group_id in show_expanded_groups
@@ -127,7 +133,7 @@ def fetch_grouped_trades(by="group_id", collapse=True, limit=100, offset=0, show
             collapsed = collapse_group(group)
             collapsed["collapsed"] = True
             collapsed["group_id"] = group_id
-            collapsed["sub_entries"] = group  # include for audit, UI can ignore if not needed
+            collapsed["sub_entries"] = group
             result.append(collapsed)
         else:
             for entry in group:
@@ -142,10 +148,13 @@ def fetch_trade_group_by_id(group_id, by="group_id"):
         group = get_trades_grouped_by_trade_id(trade_id=group_id)
     else:
         group = get_trades_grouped_by_group_id(group_id=group_id)
-    # All returned entries are marked as not collapsed
+    # All returned entries are marked as not collapsed and sorted in historical order
     for entry in group[0] if group else []:
         entry["collapsed"] = False
-    return group[0] if group else []
+    if group and group[0]:
+        group[0].sort(key=lambda row: row.get("datetime_utc") or "")
+        return group[0]
+    return []
 
 def collapse_expand_group(group_id, by="group_id", collapsed_state=None):
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()

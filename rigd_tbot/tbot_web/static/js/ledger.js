@@ -10,24 +10,35 @@ function autoCalcTotal(rowPrefix) {
     document.querySelector(rowPrefix + ' input[name="total_value"]').value = isNaN(total) ? '' : total.toFixed(2);
 }
 
-function sortTable(col, desc) {
-    fetch(`/ledger/search?sort_by=${col}&sort_desc=${desc ? "1":"0"}`)
-    .then(res => res.json())
-    .then(data => {
-        // Only render entries with at least one primary field non-empty
-        let filtered = data.filter(entry =>
-            (entry.symbol && String(entry.symbol).trim()) ||
-            (entry.datetime_utc && String(entry.datetime_utc).trim()) ||
-            (entry.action && String(entry.action).trim()) ||
-            (entry.price !== null && entry.price !== "" && entry.price !== "None") ||
-            (entry.quantity !== null && entry.quantity !== "" && entry.quantity !== "None") ||
-            (entry.total_value !== null && entry.total_value !== "" && entry.total_value !== "None")
-        );
-        renderLedgerRows(filtered);
-    })
-    .catch(e => alert("Sort error: " + e));
-    currentSort = {col, desc};
+// CLIENT-SIDE sort only, no backend fetch for sort
+function sortLedgerTable(col) {
+    const table = document.querySelector('.ledger-table');
+    const tbody = table.querySelector('tbody');
+    let rows = Array.from(tbody.querySelectorAll('tr.row-top')).filter(row => !row.querySelector('form'));
+    let asc = !table.dataset.sortDir || table.dataset.sortCol !== col ? true : table.dataset.sortDir !== 'asc';
+
+    rows.sort((a, b) => {
+        let av = a.querySelector(`td:nth-child(${getColIdx(col)})`)?.innerText.trim();
+        let bv = b.querySelector(`td:nth-child(${getColIdx(col)})`)?.innerText.trim();
+        if (!isNaN(parseFloat(av)) && !isNaN(parseFloat(bv))) {
+            av = parseFloat(av); bv = parseFloat(bv);
+        }
+        return asc ? (av > bv ? 1 : av < bv ? -1 : 0) : (av < bv ? 1 : av > bv ? -1 : 0);
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+    table.dataset.sortCol = col;
+    table.dataset.sortDir = asc ? 'asc' : 'desc';
+    currentSort = {col, desc: !asc}; // Set next sort direction for UI
     updateSortIndicators();
+}
+
+function getColIdx(col) {
+    const mapping = {
+        "datetime_utc": 1, "symbol": 2, "action": 3, "quantity": 4,
+        "price": 5, "fee": 6, "total_value": 7, "status": 8, "running_balance": 9
+    };
+    return mapping[col] || 1;
 }
 
 function updateSortIndicators() {
@@ -48,7 +59,6 @@ function renderLedgerRows(data) {
     let tbody = document.getElementById('ledger-tbody');
     tbody.innerHTML = '';
     data.forEach(function(entry) {
-        // Only render if at least one display field is set
         if (
             (entry.symbol && String(entry.symbol).trim()) ||
             (entry.datetime_utc && String(entry.datetime_utc).trim()) ||
@@ -97,7 +107,6 @@ function renderLedgerRows(data) {
 }
 
 document.addEventListener("DOMContentLoaded", function() {
-    // Only apply to add-entry row (first add row)
     var prefix = 'tr.row-top form[action$="add_ledger_entry_route"] ';
     ['quantity', 'price', 'fee'].forEach(function(field) {
         var el = document.querySelector(prefix + 'input[name="' + field + '"]');
@@ -108,8 +117,7 @@ document.addEventListener("DOMContentLoaded", function() {
     document.querySelectorAll('.sortable').forEach(function(th) {
         th.addEventListener('click', function() {
             let col = th.dataset.col;
-            let desc = currentSort.col === col ? !currentSort.desc : true;
-            sortTable(col, desc);
+            sortLedgerTable(col);
         });
     });
     updateSortIndicators();

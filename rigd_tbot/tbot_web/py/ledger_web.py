@@ -69,7 +69,7 @@ def ledger_reconcile():
         balances = calculate_account_balances()
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = coa_data.get("accounts_flat", [])
-        entries = fetch_grouped_trades(sort_by="datetime_utc", sort_desc=True)
+        entries = fetch_grouped_trades()
         entries = [e for e in entries if _is_display_entry(e)]
         print("LEDGER ENTRIES SERVED:", entries)
     except FileNotFoundError:
