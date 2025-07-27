@@ -360,10 +360,11 @@ CREATE TABLE IF NOT EXISTS option_contracts (
     json_metadata TEXT DEFAULT '{}'
 );
 
--- Table: Reconciliation Log (ledger vs. broker statement)
+--- Table: Reconciliation Log (ledger vs. broker statement)
 CREATE TABLE IF NOT EXISTS reconciliation_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     trade_id TEXT,
+    sync_run_id TEXT,
     entity_code TEXT NOT NULL,
     jurisdiction_code TEXT NOT NULL REFERENCES jurisdictions(code),
     broker_code TEXT NOT NULL REFERENCES brokers(code),
@@ -380,6 +381,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_log (
     compare_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}'
 );
+
 
 -- Compound Indexes & Foreign Key Indexes
 
