@@ -13,7 +13,18 @@ function autoCalcTotal(rowPrefix) {
 function sortTable(col, desc) {
     fetch(`/ledger/search?sort_by=${col}&sort_desc=${desc ? "1":"0"}`)
     .then(res => res.json())
-    .then(data => renderLedgerRows(data))
+    .then(data => {
+        // Only render entries with at least one primary field non-empty
+        let filtered = data.filter(entry =>
+            (entry.symbol && String(entry.symbol).trim()) ||
+            (entry.datetime_utc && String(entry.datetime_utc).trim()) ||
+            (entry.action && String(entry.action).trim()) ||
+            (entry.price !== null && entry.price !== "" && entry.price !== "None") ||
+            (entry.quantity !== null && entry.quantity !== "" && entry.quantity !== "None") ||
+            (entry.total_value !== null && entry.total_value !== "" && entry.total_value !== "None")
+        );
+        renderLedgerRows(filtered);
+    })
     .catch(e => alert("Sort error: " + e));
     currentSort = {col, desc};
     updateSortIndicators();
@@ -34,44 +45,52 @@ function toggleCollapse(groupId) {
 }
 
 function renderLedgerRows(data) {
-    // Note: This assumes tbody id="ledger-tbody"
     let tbody = document.getElementById('ledger-tbody');
     tbody.innerHTML = '';
     data.forEach(function(entry) {
-        // Top row (collapsed/expandable)
-        let trTop = document.createElement('tr');
-        trTop.className = "row-top " + (entry.status || "");
-        trTop.innerHTML = `
-            <td>
-                <button class="collapse-btn" onclick="toggleCollapse('${entry.group_id}')">
-                    ${entry.collapsed ? "+" : "-"}
-                </button> ${entry.datetime_utc ? entry.datetime_utc.split('T')[0] : ""}
-            </td>
-            <td>${entry.symbol || ""}</td>
-            <td>${entry.action || ""}</td>
-            <td>${entry.quantity || ""}</td>
-            <td>${entry.price || ""}</td>
-            <td>${entry.fee || ""}</td>
-            <td>${entry.total_value || ""}</td>
-            <td>${entry.status || ""}</td>
-            <td>${entry.running_balance !== undefined ? entry.running_balance : ""}</td>
-        `;
-        tbody.appendChild(trTop);
-        if (!entry.collapsed && entry.sub_entries && entry.sub_entries.length) {
-            entry.sub_entries.forEach(function(sub) {
-                let trSub = document.createElement('tr');
-                trSub.className = "row-bottom " + (sub.status || "");
-                trSub.innerHTML = `
-                    <td>${sub.trade_id || ""}</td>
-                    <td>${sub.account || ""}</td>
-                    <td>${sub.strategy || ""}</td>
-                    <td>${sub.tags || ""}</td>
-                    <td>${sub.notes || ""}</td>
-                    <td colspan="3"></td>
-                    <td></td>
-                `;
-                tbody.appendChild(trSub);
-            });
+        // Only render if at least one display field is set
+        if (
+            (entry.symbol && String(entry.symbol).trim()) ||
+            (entry.datetime_utc && String(entry.datetime_utc).trim()) ||
+            (entry.action && String(entry.action).trim()) ||
+            (entry.price !== null && entry.price !== "" && entry.price !== "None") ||
+            (entry.quantity !== null && entry.quantity !== "" && entry.quantity !== "None") ||
+            (entry.total_value !== null && entry.total_value !== "" && entry.total_value !== "None")
+        ) {
+            let trTop = document.createElement('tr');
+            trTop.className = "row-top " + (entry.status || "");
+            trTop.innerHTML = `
+                <td>
+                    <button class="collapse-btn" onclick="toggleCollapse('${entry.group_id}')">
+                        ${entry.collapsed ? "+" : "-"}
+                    </button> ${entry.datetime_utc ? entry.datetime_utc.split('T')[0] : ""}
+                </td>
+                <td>${entry.symbol || ""}</td>
+                <td>${entry.action || ""}</td>
+                <td>${entry.quantity || ""}</td>
+                <td>${entry.price || ""}</td>
+                <td>${entry.fee || ""}</td>
+                <td>${entry.total_value || ""}</td>
+                <td>${entry.status || ""}</td>
+                <td>${entry.running_balance !== undefined ? entry.running_balance : ""}</td>
+            `;
+            tbody.appendChild(trTop);
+            if (!entry.collapsed && entry.sub_entries && entry.sub_entries.length) {
+                entry.sub_entries.forEach(function(sub) {
+                    let trSub = document.createElement('tr');
+                    trSub.className = "row-bottom " + (sub.status || "");
+                    trSub.innerHTML = `
+                        <td>${sub.trade_id || ""}</td>
+                        <td>${sub.account || ""}</td>
+                        <td>${sub.strategy || ""}</td>
+                        <td>${sub.tags || ""}</td>
+                        <td>${sub.notes || ""}</td>
+                        <td colspan="3"></td>
+                        <td></td>
+                    `;
+                    tbody.appendChild(trSub);
+                });
+            }
         }
     });
     updateSortIndicators();
@@ -86,7 +105,6 @@ document.addEventListener("DOMContentLoaded", function() {
             el.addEventListener('input', function() { autoCalcTotal(prefix); });
         }
     });
-    // Column sorting
     document.querySelectorAll('.sortable').forEach(function(th) {
         th.addEventListener('click', function() {
             let col = th.dataset.col;

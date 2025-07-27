@@ -71,8 +71,8 @@
                 </thead>
                 <tbody id="ledger-tbody">
                 {% for entry in entries %}
-                    {% if entry.symbol or entry.datetime_utc or entry.action or entry.price or entry.quantity or entry.total_value %}
-                    <!-- Top group row (expand/collapse) -->
+                    <!-- FIX: Loosen filter, only require symbol or datetime_utc or action -->
+                    {% if entry.symbol or entry.datetime_utc or entry.action %}
                     <tr class="row-top {{ entry.status }}">
                         <td>
                             <button class="collapse-btn" type="button" onclick="toggleCollapse('{{ entry.group_id }}')">

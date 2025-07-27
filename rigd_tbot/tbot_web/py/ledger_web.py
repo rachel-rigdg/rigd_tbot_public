@@ -46,6 +46,17 @@ def identity_guard():
         flash("Bot identity not available, please complete configuration.")
         return True
 
+def _is_display_entry(entry):
+    # Defensive: only filter out if *all* primary display fields are empty/None
+    return bool(
+        (entry.get("symbol") and str(entry.get("symbol")).strip())
+        or (entry.get("datetime_utc") and str(entry.get("datetime_utc")).strip())
+        or (entry.get("action") and str(entry.get("action")).strip())
+        or (entry.get("price") not in (None, "", "None"))
+        or (entry.get("quantity") not in (None, "", "None"))
+        or (entry.get("total_value") not in (None, "", "None"))
+    )
+
 @ledger_web.route('/ledger/reconcile', methods=['GET', 'POST'])
 def ledger_reconcile():
     error = None
@@ -59,8 +70,9 @@ def ledger_reconcile():
         balances = calculate_account_balances()
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = coa_data.get("accounts_flat", [])
-        # Default sort order: datetime_utc desc
         entries = fetch_grouped_trades(sort_by="datetime_utc", sort_desc=True)
+        # Only show entries where at least one primary display field is non-empty
+        entries = [e for e in entries if _is_display_entry(e)]
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []
@@ -101,7 +113,8 @@ def ledger_search():
     sort_by = request.args.get('sort_by', 'datetime_utc')
     sort_desc = request.args.get('sort_desc', '1') == '1'
     try:
-        results = search_trades(query=query, sort_by=sort_by, sort_desc=sort_desc)
+        results = search_trades(search_term=query, sort_by=sort_by, sort_desc=sort_desc)
+        results = [e for e in results if _is_display_entry(e)]
         return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -152,13 +165,11 @@ def add_ledger_entry_route():
         "iso27001_tag": "",
         "soc2_type": "",
     }
-    # Ensure amount is set, using total_value (as signed credit/debit logic can be extended later)
     try:
         entry_data["amount"] = float(entry_data.get("total_value") or 0)
     except Exception:
         entry_data["amount"] = 0.0
     try:
-        # Always use post_ledger_entries_double_entry, never add_ledger_entry
         post_ledger_entries_double_entry([entry_data])
         flash('Ledger entry added (double-entry compliant).')
     except sqlite3.IntegrityError as e:
@@ -205,7 +216,6 @@ def edit_ledger_entry_route(entry_id):
         "iso27001_tag": "",
         "soc2_type": "",
     }
-    # Ensure amount is set, using total_value (as signed credit/debit logic can be extended later)
     try:
         updated_data["amount"] = float(updated_data.get("total_value") or 0)
     except Exception:
@@ -241,5 +251,4 @@ def ledger_sync():
         flash("Broker ledger synced successfully.")
     except Exception as e:
         flash(f"Broker ledger sync failed: {e}")
-    return redirect(url_for('ledger_web.ledger_reconcile')
-)
+    return redirect(url_for('ledger_web.ledger_reconcile'))
