@@ -2,9 +2,8 @@
 Document: 090
 Web_Interface_and_Dashboard
 Version: v047
-Date: UTC:2025-07-19 00:00:00
+Date: UTC:2025-07-27 00:00:00
 ================================================================================
-
 
 ================================================================================
 Web_Interface_and_Dashboard
@@ -30,6 +29,7 @@ Contents:
 **UI Implementation Requirements:**
 - Every user-facing page/template listed below must load its own dedicated CSS file from `/static/css/pages/`, ensuring precise, isolated styling.
 - No changes to the iframe structure or Jinja2 rendering are permitted.
+- **All ledger, COA, and holdings UI pages (ledger.html, coa.html, holdings.html) must source, reconcile, and display all data exclusively from the modular ledger implementation in `tbot_bot/accounting/ledger_modules/`. Legacy ledger.py and ledger_utils.py are fully deprecated and forbidden for UI or API use.**
 
 **User-Facing Pages, Templates, and Endpoints (REQUIRED):**
 
@@ -37,9 +37,9 @@ Contents:
 - `register.html`                 # Admin/user registration form
 - `main.html`                     # Dashboard container shell
 - `configuration.html`            # Bot/broker/API config form
-- `coa.html`                      # Chart of Accounts (COA) viewer/editor
-- `ledger.html`                   # Ledger entries, uploads, reconciliations, holdings event history panel
-- `holdings.html`                 # **Dedicated holdings management UI:** allocations, float, reserve splits, rebalance, symbol list
+- `coa.html`                      # Chart of Accounts (COA) viewer/editor (modular ledger only)
+- `ledger.html`                   # Ledger entries, uploads, reconciliations, holdings event history panel (modular ledger only)
+- `holdings.html`                 # **Dedicated holdings management UI:** allocations, float, reserve splits, rebalance, symbol list (modular ledger only)
 - `logs.html`                     # Logs panel (read-only)
 - `status.html`                   # Live bot/strategy status and health
 - `settings.html`                 # Bot strategy/runtime settings
@@ -58,8 +58,8 @@ Contents:
 - All changes are RBAC-controlled (admin only), logged, and versioned.
 - UI must clearly surface compliance state, audit history, and trigger full key/secret rotation on any change.
 - All actions route through encrypted holdings secrets and holdings manager API.
-- **Ledger, COA, and holdings UIs must be fully cross-linked:** all holdings operations must show in both `holdings.html` and `ledger.html` as immutable events, mapped to correct COA categories.
-- Backend: Flask blueprint (`holdings_web.py`), RESTful API for all CRUD operations, integrated with audit logging and encrypted config update.
+- **Ledger, COA, and holdings UIs must be fully cross-linked:** all holdings operations must show in both `holdings.html` and `ledger.html` as immutable events, mapped to correct COA categories. **All such cross-linking and event display must use only the modular ledger API (`ledger_modules/`).**
+- Backend: Flask blueprint (`holdings_web.py`), RESTful API for all CRUD operations, integrated with audit logging and encrypted config update. **All persistent holdings data, allocations, and audit events are surfaced in the UI exclusively via `ledger_modules/` logic.**
 - All persistent holdings settings/allocations are read and written exclusively via system API to `holdings_secrets.json.enc` (never direct file writes).
 - UI/blueprint must support upload/export of holdings allocations and full audit history in CSV/JSON/Markdown.
 
@@ -71,15 +71,13 @@ Contents:
 
 ---
 
-**2025-07 Compliance Update:**  
+** Compliance Update:**  
 - Modular per-page CSS (`/static/css/pages/`) is required; cross-page bleed is strictly forbidden.
 - All screener credential logic/UI must use generic indexed format.
-- Holdings/float/reserve management is required and surfaced in both holdings.html and ledger/COA views.
+- Holdings/float/reserve management is required and surfaced in both holdings.html and ledger/COA views via the modular ledger system.
 - All config/credential/holdings changes trigger full-system atomic key/secret rotation with versioned backup, enforced via backend.
 - Audit, RBAC, and security policies are unchanged and strictly enforced.
-
-
-
+- **All ledger, reconciliation, holdings, and COA operations surfaced in the UI are powered only by the modular ledger implementation in `ledger_modules/`; legacy helpers and ledger.py are no longer permitted.**
 
 =============================================================================================================================================
 Real-Time Monitoring Dashboard 
@@ -91,12 +89,12 @@ Real-Time Monitoring Dashboard
 - `templates/index.html`: Login portal; RBAC, rate-limited authentication, audit-logged.
 - `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA, test, users, settings, screener credentials, **holdings**, etc.) using iframes.
 - `templates/status.html`: Displays live bot health, session lifecycle, active strategy state, float metrics, win-rate, cumulative PnL, and risk/defense/kill switch state; data sourced from `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/status.json`.
-- `templates/ledger.html`: Web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies; **must display all holdings events and allocations alongside financial entries for full audit/compliance**.
-- `templates/holdings.html`: **Dedicated UI for holdings management:** view and edit float/top-up, reserve splits, allocations, symbol list, periodic/manual rebalancing, and full audit history of all holdings actions. All changes are versioned, RBAC-controlled, and cryptographically logged.
+- `templates/ledger.html`: Web form and table for viewing, adding, editing, and reconciling ledger entries, with admin-only access to edit or resolve discrepancies; **MUST source all ledger and event data exclusively from `tbot_bot/accounting/ledger_modules/` and display all holdings events, allocations, and float/reserve actions alongside financial entries for full audit/compliance.**
+- `templates/holdings.html`: **Dedicated UI for holdings management:** view and edit float/top-up, reserve splits, allocations, symbol list, periodic/manual rebalancing, and full audit history of all holdings actions. **All holdings data, audit events, and compliance status must be sourced exclusively from the modular ledger (`ledger_modules/`).** All changes are versioned, RBAC-controlled, and cryptographically logged.
 - `templates/logs.html`: Streams all bot logs in real time (open.log, mid.log, close.log, unresolved_orders.log, error_tracebacks.log).
 - `templates/configuration.html`: Secure interface for credentials, email, API/broker config; encrypted at rest. Submits configuration and sets provisioning trigger/flag.
 - `templates/settings.html`: Edit and validate runtime trading parameters (timings, thresholds, risk controls); excludes credentials and COA.
-- `templates/coa.html`: COA management and export UI; displays account hierarchy, metadata, version. Supports Markdown/CSV export, audit diffs, and admin-only edit workflow—all actions logged to `logs/web/coa_edit.log`. **All Web UI logic for COA management and editing must utilize `tbot_web/support/utils_coa_web.py`.**
+- `templates/coa.html`: COA management and export UI; displays account hierarchy, metadata, version. Supports Markdown/CSV export, audit diffs, and admin-only edit workflow—all actions logged to `logs/web/coa_edit.log`. **All COA data and logic are powered exclusively by `ledger_modules/` and surfaced via `tbot_web/support/utils_coa_web.py`.**
 - `templates/screener_credentials.html`: Credential management UI for all screener/universe source credentials. Provides add, edit, rotate, and delete functionalities with field validation and audit logging.
 - `templates/wait.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
 - `templates/test.html`: Dedicated UI page for TEST_MODE trigger and progress monitoring. Allows admin users to start the test sequence and view real-time logs and final test results.
@@ -110,12 +108,12 @@ Real-Time Monitoring Dashboard
 
 **Backend Flask Components (per directory spec):**
 - `py/__init__.py`: Registers Flask blueprints for all routes.
-- `py/coa_web.py`: COA management API. Uses `tbot_web/py/coa_web.py` for JSON/UI logic and `tbot_bot/accounting/coa_utils_ledger.py` for ledger/schema integration. GET/POST endpoints for viewing, exporting (Markdown/CSV/table), and editing COA. Admin-only edits with version bumps and audit logs.
+- `py/coa_web.py`: COA management API. Uses `tbot_web/py/coa_web.py` for JSON/UI logic and `tbot_bot/accounting/ledger_modules/` for all COA/ledger operations. GET/POST endpoints for viewing, exporting (Markdown/CSV/table), and editing COA. Admin-only edits with version bumps and audit logs.
 - `py/configuration_web.py`: Web UI route handling user, email, API, and broker credential configuration via encrypted multi-category config files. Only writes config and provisioning trigger; does *not* execute provisioning logic.
 - `py/settings_web.py`: Loads and validates `.env_bot` trading config; provides API for updates/errors; includes TEST_MODE flag toggle reflecting presence of `test_mode.flag`.
 - `py/status_web.py`: Serves live bot/session status with strategy metrics, system health, win-rate, PnL, float deviation, rebalance triggers, Defense/kill switch states, and alert counts as JSON.
-- `py/ledger_web.py`: Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations. **Must also surface all holdings-related audit events (allocations, float, reserve, top-up, rebalance, etc.) for cross-module traceability.**
-- `py/holdings_web.py`: Dedicated holdings management API.** Provides endpoints for reading/writing holdings config, allocations, float/top-up actions, reserve splits, symbol list edits, periodic/manual rebalancing, and full holdings audit log/history. All changes enforce RBAC (admin only), atomic encrypted updates, and audit logging. Integrates with `holdings_manager.py` and encrypted secrets manager.
+- `py/ledger_web.py`: Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; **MUST read/write all ledger data, event history, and holdings audit events exclusively via `ledger_modules/`.** All changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
+- `py/holdings_web.py`: Dedicated holdings management API. Provides endpoints for reading/writing holdings config, allocations, float/top-up actions, reserve splits, symbol list edits, periodic/manual rebalancing, and full holdings audit log/history. **All CRUD and audit actions are performed exclusively via `ledger_modules/`.** All changes enforce RBAC (admin only), atomic encrypted updates, and audit logging. Integrates with `holdings_manager.py` and encrypted secrets manager.
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
 - `py/start_stop_web.py`: Manages lifecycle controls via `control_start.flag` / `control_stop.flag`, transition verification, and logging.
 - `py/main_web.py`: Central route router; renders main dashboard shell, wait.html, ledger pages, test.html, screener credentials UI, holdings UI, and all iframe endpoints. Does not execute provisioning or bootstrapping; only checks tbot_bot/control/bot_state.txt for UI routing. Supports immediate TEST_MODE execution trigger detection.
@@ -139,13 +137,13 @@ Real-Time Monitoring Dashboard
 - `default_config_loader.py`: Loads config template/defaults for UI forms; never manages secrets or Fernet keys.
 - `security_users.py`: RBAC: role/permission enforcement, user CRUD, Fernet key helpers for user/auth.
 - `session_manager.py`: Handles web session lifecycle, token management, timeouts.
-- `utils_coa_web.py`: COA UI and logic helpers; used by COA endpoints for audit-compliant management.
+- `utils_coa_web.py`: COA UI and logic helpers; all COA operations routed via `ledger_modules/`.
 - `utils_web.py`: Web-only helpers, UI utilities, non-secret logic.
 - **NEW:** `screener_credentials_web.py` support files for credential management integration.
-- **NEW:** `holdings_web.py` and related helpers for holdings management, audit, and compliance.
+- **NEW:** `holdings_web.py` and related helpers for holdings management, audit, and compliance, fully integrated with modular ledger.
 
 **Holdings Management Workflows:**
-- The web UI (holdings.html) allows admin users to view, edit, and audit all holdings allocations, float, reserve splits, top-up, symbol list, and rebalancing events. All actions trigger atomic encrypted update of `holdings_secrets.json.enc`, are versioned, and logged for audit/compliance.
+- The web UI (holdings.html) allows admin users to view, edit, and audit all holdings allocations, float, reserve splits, top-up, symbol list, and rebalancing events. **All audit events, persistent data, and UI display must be sourced via the modular ledger (`ledger_modules/`) and never via legacy ledger.py or ledger_utils.py.**
 - Any change to holdings config, allocations, or symbol lists triggers a full-system atomic key/secret rotation, with backup and audit trail.
 - All holdings operations/events are visible in both `holdings.html` and `ledger.html`, mapped to correct COA categories for accounting compliance.
 - Holdings config and audit history can be exported in CSV/Markdown, with immutable logs kept in output/logs/ and `tbot_bot/storage/backups/`.
@@ -156,16 +154,15 @@ Real-Time Monitoring Dashboard
 - All credential/config/holdings changes (including add/edit/delete/rotate for screener, holdings, or user) trigger atomic key/secret rotation and backup; user is notified in the UI.
 - All templates, CSS, and route structures must remain compliant with `020_Directory_Structure_{CURRENT_VERSION}.txt`.
 
-
 --------------------------------------------------------------------------------
 Flask Blueprint Overview
 --------------------------------------------------------------------------------
 
 - `main_web.py`
   - URL Prefix: `/`
-  - Role: Central router for main dashboard, status, logs, ledger, test UI, account, users, configuration/settings, screener credentials UI, **and holdings management UI**.
+  - Role: Central router for main dashboard, status, logs, ledger, test UI, account, users, configuration/settings, screener credentials UI, and holdings management UI.
   - Loads only when bot_state in [`started`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `stopped`].
-  - Renders `main.html`, `wait.html`, `test.html`, **`holdings.html`**, or error pages based on bot state.
+  - Renders `main.html`, `wait.html`, `test.html`, `holdings.html`, or error pages based on bot state.
 
 - `configuration_web.py`
   - URL Prefix: `/configuration`
@@ -192,23 +189,22 @@ Flask Blueprint Overview
 
 - `ledger_web.py`
   - URL Prefix: `/ledger`
-  - Role: Ledger viewing, reconciliation, editing, and CSV upload API.
+  - Role: Ledger viewing, reconciliation, editing, event history, and CSV upload API. All data and holdings events are powered by modular ledger (`ledger_modules/`).
   - Admin-only access.
   - Accessible when bot is active (not `initialize`, `provisioning`, `bootstrapping`, or error/shutdown).
-  - **Ledger must surface holdings audit events for cross-module compliance.**
+  - Ledger UI and API must surface all holdings-related audit events (allocations, float, reserve, top-up, rebalance, etc.) for cross-module compliance.
 
 - `holdings_web.py`
   - URL Prefix: `/holdings`
-  - **Role: Holdings management API and UI.**
-  - **Enables viewing and editing of float/top-up, reserve splits, allocations, symbol list, rebalancing, and full audit history.**
-  - **Admin-only access, RBAC enforced.**
-  - **Accessible only when bot is active (not `initialize`, `provisioning`, `bootstrapping`, or error/shutdown).**
-  - **Renders `holdings.html`.**
-  - **All changes trigger atomic update and backup of `holdings_secrets.json.enc`.**
+  - Role: Holdings management API and UI—viewing and editing of float/top-up, reserve splits, allocations, symbol list, rebalancing, and full audit history, all powered by modular ledger (`ledger_modules/`).
+  - Admin-only access, RBAC enforced.
+  - Accessible only when bot is active (not `initialize`, `provisioning`, `bootstrapping`, or error/shutdown).
+  - Renders `holdings.html`.
+  - All changes trigger atomic update and backup of `holdings_secrets.json.enc` and are versioned via the ledger.
 
 - `coa_web.py`
   - URL Prefix: `/coa`
-  - Role: Chart of Accounts management API and UI.
+  - Role: Chart of Accounts management API and UI; all operations routed via modular ledger.
   - Admin-only access.
   - Accessible when bot is active.
 
@@ -398,3 +394,67 @@ Session Status Summary Panel
 - At-a-glance triage: mirrors core bot safety/ops.
 - Confirms Defense Mode/Kill Switch/universe cache/holdings compliance events in real time.
 - Audit trail: all state changes, session tags, and events are logged for 7+ days.
+
+
+================================================================================
+Ledger Interface — Search, Sort, and Interactive Features
+================================================================================
+
+**Section: Ledger Interface — Search, Sort, and Interactive Features**
+
+The ledger interface in `ledger.html` is a comprehensive, audit-compliant web UI for managing, viewing, reconciling, and analyzing all ledger entries—including broker trades, cash events, system postings, and all holdings-related operations (allocations, float, reserve, top-up, and rebalancing). The UI leverages the modular ledger API in `tbot_bot/accounting/ledger_modules/`, ensuring all data is sourced from the production ledger and fully aligned with compliance requirements.
+
+**Core UI Features:**
+
+- **Global Search Window:**  
+  - Located at the top of the ledger table.
+  - Allows free-text search across all major ledger fields (date, symbol, action, trade ID, account, tags, notes, etc).
+  - Dynamically filters displayed entries as the user types.
+  - Supports case-insensitive and partial-word matching.
+
+- **Column Sorting:**
+  - All primary columns (Date, Symbol, Action, Quantity, Price, Fee, Total Value, Status, Running Balance) are sortable by clicking the header.
+  - Sorting is performed client-side (via JS) for current page, but can optionally trigger server-side sort via AJAX for large datasets.
+  - Sort indicators (▲▼) show current sort direction; default is by Date (descending, most recent first).
+
+- **Multi-Column and Advanced Filters:**
+  - Secondary filter dropdowns for Action, Status, Account, and Strategy.
+  - Users may restrict visible entries to a specific action (e.g., “long”, “short”, “rebalance”), status (“ok”, “mismatch”, “resolved”), or account.
+  - Supports combined filters for granular drill-down.
+
+- **Holdings Event Visibility and Linking:**
+  - All holdings-related actions (float transfer, reserve allocation, payroll/tax, rebalance, ETF purchase/sale) are displayed in-line with standard trades and cash entries.
+  - Holdings events are visually tagged and hyperlinked for drill-down; clicking a holdings event opens a modal with full event details and cross-links to the corresponding COA and holdings audit views.
+  - Every holdings event includes immutable audit metadata (user, timestamp, event type).
+
+- **Pagination and Page Size:**
+  - Ledger table supports configurable page size (default: 50 rows per page) and paginated navigation.
+  - Fast jump to first/last page; current page number always visible.
+
+- **Export and Download:**
+  - Users may export filtered ledger views to CSV, JSON, or Markdown, including all displayed audit/event metadata.
+  - Export respects current search/sort/filter settings.
+
+- **Audit Trail and History:**
+  - Every edit, reconciliation, or resolution event is versioned and fully audit-logged.
+  - Users may view the full edit/resolution history for any entry by expanding the row or clicking the audit icon.
+
+- **Compliance and RBAC:**
+  - All ledger actions (view, edit, reconcile, export) are RBAC-controlled; only admin users may perform edits or reconciliations.
+  - All UI actions are logged and visible in the audit trail.
+
+**Technical/Implementation Notes:**
+
+- All ledger UI operations—fetch, search, sort, filter, and audit—must call into `ledger_modules/` APIs, never the legacy `ledger.py` or `ledger_utils.py`.
+- The search and sort implementation must scale to large ledgers (>10k entries) by leveraging server-side API endpoints if needed.
+- The search/filter state is reflected in the URL hash or query string for bookmarkable/reportable links.
+- UI state and filter preferences persist across sessions for logged-in users.
+- All frontend logic is contained in `/static/js/ledger.js` and backend routes are in `tbot_web/py/ledger_web.py`.
+- All rendering is performed via `templates/ledger.html` with Jinja2 and client-side JS for dynamic interactions.
+
+**Future-Proofing and Compliance:**
+- The ledger interface is the canonical source for all persistent trade, cash, and holdings events for the bot instance.
+- Search, filter, and export logic must comply with audit, reporting, and versioning standards described in core specs.
+- Any future modules that post to the ledger must follow the same modular, audit-compliant interface and display requirements.
+
+

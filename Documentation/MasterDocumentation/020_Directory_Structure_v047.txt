@@ -101,8 +101,11 @@ rigd_tbot/
 │   │       ├── ledger_double_entry.py           # Double-entry posting and validation, debit/credit enforcement
 │   │       ├── ledger_edit.py                   # Entry editing, updating, deleting, resolving (audit tracked)
 │   │       ├── ledger_entry.py                  # Entry creation (legacy + compat), bulk fetch/load_internal_ledger
+│   │       ├── ledger_fields.py                 # Canonical field lists for all ledger tables; single source of schema truth
+│   │       ├── ledger_grouping.py               # Grouping and rollup logic for UI, reporting, multi-entry operations
 │   │       ├── ledger_hooks.py                  # Tax, payroll, float, rebalance, and reserve entry hooks
 │   │       ├── ledger_misc.py                   # Miscellaneous ledger helpers/utilities
+│   │       ├── ledger_query.py                  # Query helpers: filtered/flexible SQL read API for UI, reporting, and batch tools
 │   │       ├── ledger_snapshot.py               # Snapshots ledger db for rollback/backup before sync or destructive ops
 │   │       └── ledger_sync.py                   # Orchestrates broker sync, posting, reconciliation, and logging
 │   │ 
@@ -399,6 +402,7 @@ rigd_tbot/
     │   ├── js/
     │   │   ├── configuration.js            # Handles configuration form logic, validation, and AJAX submits on configuration.html
     │   │   ├── holdings.js                 # JS for holdings.html: handles management UI, grid logic, AJAX to holdings_web.py, live compliance validation, preview/simulation, and status updates.
+    │   │   ├── ledger.js                         # Frontend JS for ledger page: table rendering, sorting, expand/collapse, UI actions
     │   │   ├── main_ui.js         		    # Handles live dashboard behavior, state polling, and controls config overlay in main.html
     │   │   ├── wait.js            		    # Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
     │   │   ├── universe.js                 # JS for universe.html: updates status fields, fetches/refreshes universe tables, triggers log/status updates; NO filtering logic or direct file writes

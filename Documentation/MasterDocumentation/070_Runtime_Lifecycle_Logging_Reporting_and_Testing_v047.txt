@@ -88,10 +88,10 @@ Phase 1: System Boot Validation
 Phase 2: Session Initialization
 ↓
 - `holdings_manager.py` manages all float, reserve, and long-term holdings logic, maintaining float target, tax reserve, payroll allocations, and persistent portfolio allocations per configuration.
-- Loads all holdings, float, tax, payroll, and allocation settings from the encrypted holdings secrets file (`holdings_config.json.enc`), not from `.env_bot`.
+- Loads all holdings, float, tax, payroll, and allocation settings from the encrypted holdings secrets file (`holdings_secrets.json.enc`), not from `.env_bot`.
 - Runtime parameters for trading operations (e.g., `MAX_TRADES`, `TOTAL_ALLOCATION`) are loaded from `.env_bot` as before.
 - If `DEFENSE_MODE_ACTIVE=true`, apply stricter overrides to risk and allocation parameters.
-- All float, reserve, and allocation adjustments are posted to both the ledger and `holdings_audit.log` with full audit metadata.
+- All float, reserve, allocation, and holdings-related adjustments are posted exclusively to the modular ledger via `ledger_modules/` with full audit metadata; legacy audit logs and helpers are deprecated.
 - `status_bot.py` writes initial bot state to `output/status.json`.
 - Begin strategy cycle.
 
@@ -129,11 +129,12 @@ Phase 5: Session Termination
 - Session complete.
 
 Phase 6: Manual Review / Rebalancing
-- Operator reviews all logs and session summary, including `holdings_audit.log` for float, reserve, and allocation events.
-- All float reconciliations, reserve adjustments, and rebalancing actions are performed exclusively via the Web UI holdings module; accounting is no longer responsible for direct float management.
-- `generate_ofx.py` is used for OFX exports, including all holdings and reserve actions as posted to the ledger.
-- Any manual override or rebalancing action triggers full audit logging and config/secret backup.
+- Operator reviews all logs and session summary, including all holdings, float, reserve, and allocation events as posted in the modular ledger (via `ledger_modules/`); legacy audit logs or helpers are deprecated and forbidden.
+- All float reconciliations, reserve adjustments, and rebalancing actions are performed exclusively via the Web UI holdings module, which records all such actions in the modular ledger for full audit compliance. Accounting is no longer responsible for direct float management or ledger posting.
+- `generate_ofx.py` is used for OFX exports, including all holdings and reserve actions as recorded in the modular ledger (`ledger_modules/`).
+- Any manual override or rebalancing action triggers versioned audit logging via the modular ledger and immediate config/secret backup.
 - Manual reset of defense flags is required after any defense mode event.
+
 
 
 =============================================================================================================================================
@@ -361,19 +362,17 @@ Each entry must include:
 - `error_code`         (if any; e.g., rejection)
 
 ---
-
 **Ledger Routing – Single-Broker Enforcement**
 
-All trades route to the correct ledger using:
+All trades, cash events, and holdings-related actions are posted exclusively via the modular ledger interface, ensuring all entries are routed to the correct per-bot ledger using:
 
 - `ENTITY_CODE`, `JURISDICTION_CODE`, `BROKER_CODE`, `BOT_ID`
-- Suffix: `_BOT_ledger.db`
+- Ledger filename suffix: `_BOT_ledger.db`
 
 Ledger path format:  
-`output/{BOT_IDENTITY}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+`tbot_bot/output/{BOT_IDENTITY}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
 
-*Runtime config controls location and naming—never hardcoded.*
-
+*All path resolution and naming are enforced by runtime config and `path_resolver.py`; no hardcoded paths permitted. Legacy ledger.py/ledger_utils.py are fully deprecated.*
 ---
 
 **Export + Archive Flow**
@@ -403,13 +402,13 @@ Ledger path format:
 
 ---
 
-
 ==========================================================
 Modular Strategy Reporting & Audit Output Specification
 ==========================================================
 
 **Objective:**  
-Support per-strategy, per-session reporting for live audit, optimization, and validation.
+Support per-strategy, per-session reporting for live audit, optimization, and validation.  
+**All logs, summaries, and reporting outputs MUST be generated exclusively via the modular ledger and reporting system (`tbot_bot/accounting/ledger_modules/`, `reporting/`). Legacy helpers and ledger.py are forbidden.**
 
 ---
 
@@ -417,11 +416,12 @@ Support per-strategy, per-session reporting for live audit, optimization, and va
 
 Each strategy **must** generate:
 
-- `open.log`, `mid.log`, `close.log`              # Per-strategy logs, written only by the assigned strategy logic, not any subprocess or worker.
-- `trade_history.json`, `trade_history.csv`        # Trade-by-trade session record.
+- `open.log`, `mid.log`, `close.log`              # Per-strategy logs, written only by the assigned strategy logic (main.py), never by subprocess or worker.
+- `trade_history.json`, `trade_history.csv`        # Trade-by-trade session record, aligned with ledger event records in `ledger_modules/`.
 - `daily_summary.json`                             # PnL, stats, outcomes.
 
-**Fields in all logs/trade records:**
+**Fields in all logs/trade records:**  
+*Fields must be consistent and sourced via modular ledger APIs; no legacy/adhoc log output is permitted.*
 
 - `strategy_name`
 - `signal_trigger_time`
@@ -434,6 +434,9 @@ Each strategy **must** generate:
 - `PnL`
 - `broker`
 - `exit_reason` (stop_loss, timeout, manual, target_hit)
+- `ledger_event_id` (cross-ref to modular ledger event, required)
+- `session_id` (for multi-session audit traceability)
+- `user` (for manual or UI-initiated actions; RBAC enforced)
 
 ---
 
@@ -450,6 +453,8 @@ Each `daily_summary.json` must include:
 - `average_holding_time`
 - `most_profitable_tickers`
 - `worst_tickers`
+- `audit_event_ids` (all relevant modular ledger event/audit IDs)
+- `compliance_flags` (any compliance issues/warnings detected)
 
 ---
 
@@ -459,37 +464,42 @@ Expose core metrics/logs in the dashboard:
 
 - Win rate, PnL, trade count (open/mid/close)
 - Load/display JSON stats on `status.html`
-- overlay PnL/trade charts by session/strategy
+- Overlay PnL/trade charts by session/strategy
+- **All reporting data, summaries, and audit links must be queried through the modular ledger system and never from legacy logs or files.**
+- Any holdings/float/reserve/COA events impacting session stats must be linked and displayed in the UI.
 
 ---
 
 **4. Runtime Validation**
 
-In `env_bot.py`:
+In `env_bot.py` and runtime logic:
 
 - Enforce that keys exist and are valid:
     - `ENABLE_LOGGING=true`
     - `LOG_FORMAT=json` or `csv`
 - Raise fatal error if missing/invalid, with a clear operator message.
+- Runtime checks must confirm modular ledger APIs are in use for all trade/log/summarization events; block run if legacy helpers detected.
 
 ---
 
 **5. Tuning & Optimization**
 
 - `tuning_tracker.py`:
-  - Loads/compares logs across runs.
+  - Loads/compares logs across runs using modular ledger API endpoints.
   - Recommends optimal values for buffers/thresholds (e.g., `STRAT_*_BUFFER`).
-  - Exports table: buffer → win%, avg PnL, duration, block/reject counts, ticker frequency.
+  - Exports table: buffer → win%, avg PnL, duration, block/reject counts, ticker frequency, compliance events.
 
 ---
 
 **Policy & Security:**
 
-- All reporting, logs, and summaries are deterministic, UTC-stamped, and compliant with the required field layout.
+- All reporting, logs, and summaries are deterministic, UTC-stamped, versioned, and compliant with the required field layout.
+- All output and reporting is via modular, audit-compliant interfaces (`ledger_modules/` and reporting modules).
 - No log post-processing outside reporting modules or explicit audit export.
 - Logs/trade records are never imported back into ledgers.
+- Compliance: All reporting and UI stats must be cross-referenced with audit event IDs from the ledger_modules/.
+- Any change to reporting, logging, or ledger APIs must be reflected in this section and the directory spec.
 
----
 ---
 ================================================================================
 TEST_MODE
@@ -614,10 +624,10 @@ All critical bot logic, modules, and outputs must be validated via an explicit, 
 - `test_broker_trade_stub.py`  # Randomized micro-trades, broker order submission/logging/flow
 - `test_screener_random.py`    # Symbol screener, randomized eligibility/filter logic
 - `test_screener_integration.py` # Screener module integration using universe cache and API simulation
-- `test_ledger_schema.py`      # Validates ledgers against COA/schema and double-entry rules
+- `test_ledger_schema.py`      # Validates ledgers against COA/schema and double-entry rules (MUST use `ledger_modules/` API; legacy ledger.py is forbidden)
 - `test_coa_web_endpoints.py`  # Endpoint test for /coa, /coa/api, /coa/export and RBAC
 - `test_coa_consistency.py`    # COA template/snapshot vs runtime, schema integrity, metadata fields
-- `integration_test_runner.py` # Full-session simulation, end-to-end (provisioning, config, trading, shutdown)
+- `integration_test_runner.py` # Full-session simulation, end-to-end (provisioning, config, trading, shutdown, modular ledger/holdings event integration)
 - All new test scripts must implement the per-test flag pattern for direct Web UI and CLI launch
 
 *Planned:*
@@ -638,6 +648,7 @@ All critical bot logic, modules, and outputs must be validated via an explicit, 
 - Loads `.env_bot.test`
 - Launches `main_bot.py`, injects mock historical data, runs `start_bot.py` (dry mode)
 - Confirms: strategy execution order (`STRATEGY_SEQUENCE`), log and output file generation, all triggers/errors, trade/log/export correctness, session integrity
+- Validates that all ledger/COA/holdings events are posted and queried via `ledger_modules/` only
 
 **Web UI & Flag Requirements:**
 - `test_web.py` and `test.html` allow triggering and monitoring of ALL or INDIVIDUAL tests.
@@ -656,20 +667,20 @@ All critical bot logic, modules, and outputs must be validated via an explicit, 
 - `integration_test_runner.py` runs ALL tests if `test_mode.flag` exists; runs ONLY the matching module if `test_mode_<test>.flag` exists.
 - All test outputs route to test-only logs; test failures to stdout/stderr.
 - All test scripts implement safe auto-deletion of their own test flag after completion.
-- integration_test_runner.py writes only to test_mode.log and output artifacts; never launches or supervises other workers/watchers.
+- `integration_test_runner.py` writes only to test_mode.log and output artifacts; never launches or supervises other workers/watchers.
 
 **Version Enforcement:**
 - `test_env_bot.py` must verify `.env_bot["VERSION_TAG"]` matches `VERSION.md` (fatal if mismatch; blocks deployment)
 
 **Required Validation for All Tests:**
-- All output/log/trade/ledger files must match the runtime schema as enforced in `050_Trading_Bot_Core_Specs_v041.txt`
-- All ledger outputs must match required fields in `070_Accounting_Integration_v041.txt`
+- All output/log/trade/ledger files must match the runtime schema as enforced in `030_Trading_Bot_Core_Specs_v047.txt` and directory structure in `020_Directory_Structure_v047.txt`
+- All ledger outputs must match required fields and double-entry rules enforced by `ledger_modules/` (legacy ledger.py/ledger_utils.py not allowed)
 - All reporting and audit files are UTC timestamped, deterministic, and scoped to `{BOT_IDENTITY}`
 
 **Summary:**  
 All code, strategy, config, and provisioning updates are blocked if any test fails. CI/CD must gate on full test pass for any merge/release. Audit logs, trade logs, ledgers, and summaries are validated as part of the integration test suite.  
 UI/CLI may launch and monitor all or any individual test, and each test script requires its own control flag.  
-
+All modular ledger/holdings/COA functionality is required to be validated in automated tests.
 
 ================================================================================
 TESTING, WATCHER/WORKER, AND LOGGING SYSTEM DEFINITIONS
