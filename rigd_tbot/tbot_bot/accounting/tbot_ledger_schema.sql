@@ -365,21 +365,32 @@ CREATE TABLE IF NOT EXISTS reconciliation_log (
     entity_code TEXT NOT NULL,
     jurisdiction_code TEXT NOT NULL REFERENCES jurisdictions(code),
     broker_code TEXT NOT NULL REFERENCES brokers(code),
+    broker TEXT,
+    error_code TEXT,
     account_id TEXT,
     statement_date TEXT,
     ledger_balance REAL,
+    ledger_entry_id TEXT,
     broker_balance REAL,
     delta REAL,
     status TEXT CHECK(status IN ('pending', 'matched', 'mismatched', 'resolved')),
     resolution TEXT,
     resolved_by TEXT,
     resolved_at TEXT,
+    raw_record TEXT,
     notes TEXT,
+    recon_type TEXT,
     compare_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
     timestamp_utc TEXT,
-    sync_run_id TEXT
+    sync_run_id TEXT,
+    api_hash TEXT,
+    imported_at TEXT,
+    updated_at TEXT,
+    user_action TEXT,
+    mapping_version TEXT
 );
+
 
 
 
