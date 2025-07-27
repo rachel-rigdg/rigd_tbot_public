@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from tbot_bot.accounting.ledger_modules.ledger_sync import sync_broker_ledger, _sanitize_entry
 from tbot_bot.accounting.ledger_modules.ledger_db import get_db_path
 from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_double_entry
+from tbot_bot.accounting.ledger_modules import ledger_compliance_filter, ledger_deduplication
 
 MAX_TEST_TIME = 90  # seconds per test
 
@@ -79,19 +80,33 @@ def test_sync_broker_ledger_runs_without_error():
 
 def test_sync_broker_ledger_idempotent(tmp_path):
     orig_db_path = Path(get_db_path())
-    # Duplicate ledger DB for test isolation
     test_db_path = tmp_path / "ledger_test_copy.db"
     if orig_db_path.exists():
         shutil.copyfile(orig_db_path, test_db_path)
     else:
         pytest.skip("Original ledger DB does not exist for duplication.")
 
-    # Patch get_db_path to use test copy
     import tbot_bot.accounting.ledger_modules.ledger_db as ledger_db_module
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(ledger_db_module, "get_db_path", lambda: str(test_db_path))
 
     try:
+        # Fetch trades and cash activities
+        from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
+        trades = fetch_all_trades(start_date="2025-01-01", end_date=None)
+        cash_acts = fetch_cash_activity(start_date="2025-01-01", end_date=None)
+        # Apply compliance filter and deduplication before sync
+        all_entries = trades + cash_acts
+        filtered = ledger_compliance_filter.filter_valid_entries(all_entries)
+        deduped = ledger_deduplication.deduplicate_entries(filtered)
+
+        # Sanitize entries before posting
+        sanitized_entries = [_sanitize_entry(e) for e in deduped]
+
+        # Post filtered and deduplicated entries using double-entry post
+        from tbot_bot.accounting.ledger_modules.ledger_double_entry import post_double_entry
+        post_double_entry(sanitized_entries)
+
         sync_broker_ledger()
     except Exception as e:
         print("[DEBUG] Exception type (first sync):", type(e))
