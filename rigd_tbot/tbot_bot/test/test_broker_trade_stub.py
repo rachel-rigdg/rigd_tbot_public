@@ -64,6 +64,10 @@ if __name__ == "__main__":
     executed_sides = defaultdict(set)
     _status = ["PASSED"]  # Mutable container workaround
 
+    # Import broker instance
+    from tbot_bot.broker.broker_api import get_active_broker
+    broker_instance = get_active_broker()
+
     def run_trade_stub():
         safe_print("[test_broker_trade_stub] Starting randomized trade validation sequence...")
 
@@ -111,6 +115,14 @@ if __name__ == "__main__":
                     executed_sides[symbol].add(side)
                     msg = f"Trade executed: {result}"
                     safe_print(f"[test_broker_trade_stub] {msg}")
+                    # Cancel the order immediately after placing
+                    order_id = result.get("order_id") or result.get("id")
+                    if order_id:
+                        try:
+                            broker_instance.cancel_order(order_id)
+                            safe_print(f"[test_broker_trade_stub] Order {order_id} cancelled.")
+                        except Exception as cancel_e:
+                            safe_print(f"[test_broker_trade_stub] Failed to cancel order {order_id}: {cancel_e}")
                     successful += 1
                 else:
                     safe_print(f"[test_broker_trade_stub] No trade result returned for {symbol}")

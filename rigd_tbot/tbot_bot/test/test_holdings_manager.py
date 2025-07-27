@@ -63,24 +63,28 @@ if __name__ == "__main__":
         sys.exit(0)
 
 @patch("tbot_bot.trading.holdings_manager.load_holdings_secrets")
-def test_perform_holdings_cycle(mock_secrets):
+@patch("tbot_bot.broker.broker_api.get_active_broker")
+def test_perform_holdings_cycle(mock_broker_func, mock_secrets):
     mock_secrets.return_value = {
         "HOLDINGS_FLOAT_TARGET_PCT": 10,
         "HOLDINGS_TAX_RESERVE_PCT": 20,
         "HOLDINGS_PAYROLL_PCT": 10,
         "HOLDINGS_ETF_LIST": "SCHD:50,SCHY:50"
     }
-    broker = MockBroker()
-    initial_cash = broker.cash
+    mock_broker = MockBroker()
+    mock_broker_func.return_value = mock_broker
+    initial_cash = mock_broker.cash
     holdings_manager.perform_holdings_cycle(realized_gains=1000, user="test")
     # No direct broker, so just check that function runs without error
 
 @patch("tbot_bot.trading.holdings_manager.load_holdings_secrets")
-def test_perform_rebalance_cycle(mock_secrets):
+@patch("tbot_bot.broker.broker_api.get_active_broker")
+def test_perform_rebalance_cycle(mock_broker_func, mock_secrets):
     mock_secrets.return_value = {
         "HOLDINGS_ETF_LIST": "SCHD:60,SCHY:40"
     }
-    broker = MockBroker()
+    mock_broker = MockBroker()
+    mock_broker_func.return_value = mock_broker
     holdings_manager.perform_rebalance_cycle(user="test")
     # No direct broker, so just check that function runs without error
 

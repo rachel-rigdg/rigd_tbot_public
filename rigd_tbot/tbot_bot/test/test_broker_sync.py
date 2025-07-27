@@ -4,6 +4,7 @@ import sys
 import time
 import pytest
 from pathlib import Path
+import shutil
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -35,7 +36,7 @@ def isolate_ledger_db(tmp_path, monkeypatch):
     orig_db_path = Path(get_db_path())
     test_db_path = tmp_path / "ledger_test_copy.db"
     if orig_db_path.exists():
-        test_db_path.write_bytes(orig_db_path.read_bytes())
+        shutil.copyfile(orig_db_path, test_db_path)
         monkeypatch.setattr("tbot_bot.accounting.ledger_modules.ledger_db.get_db_path", lambda: str(test_db_path))
     yield
     # tmp_path and db copy cleaned automatically
@@ -77,10 +78,19 @@ def test_sync_broker_ledger_runs_without_error():
         pytest.fail(f"sync_broker_ledger raised: {type(e).__name__}: {e}")
 
 def test_sync_broker_ledger_idempotent(tmp_path):
-    db_path = Path(get_db_path())
-    db_backup = tmp_path / "ledger_backup.db"
-    if db_path.exists():
-        db_backup.write_bytes(db_path.read_bytes())
+    orig_db_path = Path(get_db_path())
+    # Duplicate ledger DB for test isolation
+    test_db_path = tmp_path / "ledger_test_copy.db"
+    if orig_db_path.exists():
+        shutil.copyfile(orig_db_path, test_db_path)
+    else:
+        pytest.skip("Original ledger DB does not exist for duplication.")
+
+    # Patch get_db_path to use test copy
+    import tbot_bot.accounting.ledger_modules.ledger_db as ledger_db_module
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(ledger_db_module, "get_db_path", lambda: str(test_db_path))
+
     try:
         sync_broker_ledger()
     except Exception as e:
@@ -89,8 +99,7 @@ def test_sync_broker_ledger_idempotent(tmp_path):
         import traceback
         traceback.print_exc()
         pytest.fail(f"First sync_broker_ledger raised: {type(e).__name__}: {e}")
-    if db_backup.exists():
-        db_path.write_bytes(db_backup.read_bytes())
+
     try:
         sync_broker_ledger()
     except Exception as e:
@@ -99,6 +108,7 @@ def test_sync_broker_ledger_idempotent(tmp_path):
         import traceback
         traceback.print_exc()
         pytest.fail(f"Second sync_broker_ledger raised: {type(e).__name__}: {e}")
+
     try:
         assert validate_double_entry() is True
     except Exception as e:
@@ -106,6 +116,8 @@ def test_sync_broker_ledger_idempotent(tmp_path):
         import traceback
         traceback.print_exc()
         pytest.fail(f"Ledger not double-entry balanced after repeated syncs: {type(e).__name__}: {e}")
+
+    monkeypatch.undo()
 
 def test_double_entry_posting_compliance():
     try:
