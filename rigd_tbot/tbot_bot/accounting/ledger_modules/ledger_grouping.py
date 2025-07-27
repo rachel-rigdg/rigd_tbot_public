@@ -4,11 +4,20 @@ import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 
+COLLAPSED_TABLE = "trade_group_collapsed"
+
+def _ensure_collapsed_table(db_path):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {COLLAPSED_TABLE} (
+                group_id TEXT PRIMARY KEY,
+                collapsed INTEGER NOT NULL
+            )
+            """
+        )
+
 def get_trades_grouped_by_group_id(group_id=None, limit=100, offset=0):
-    """
-    Returns all trades grouped by group_id (or trade_id if group_id is None).
-    If group_id is specified, returns only that group.
-    """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     results = []
@@ -22,11 +31,11 @@ def get_trades_grouped_by_group_id(group_id=None, limit=100, offset=0):
             if rows:
                 results.append([dict(row) for row in rows])
         else:
-            groups = conn.execute(
-                "SELECT DISTINCT group_id FROM trades ORDER BY MAX(datetime_utc) DESC LIMIT ? OFFSET ?",
+            group_rows = conn.execute(
+                "SELECT group_id, MAX(datetime_utc) as max_dt FROM trades WHERE group_id IS NOT NULL GROUP BY group_id ORDER BY max_dt DESC LIMIT ? OFFSET ?",
                 (limit, offset)
             ).fetchall()
-            for group in groups:
+            for group in group_rows:
                 gid = group["group_id"]
                 rows = conn.execute(
                     "SELECT * FROM trades WHERE group_id = ? ORDER BY datetime_utc ASC",
@@ -36,10 +45,6 @@ def get_trades_grouped_by_group_id(group_id=None, limit=100, offset=0):
     return results
 
 def get_trades_grouped_by_trade_id(trade_id=None, limit=100, offset=0):
-    """
-    Returns all trades grouped by trade_id.
-    If trade_id is specified, returns only that group.
-    """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     results = []
@@ -53,11 +58,11 @@ def get_trades_grouped_by_trade_id(trade_id=None, limit=100, offset=0):
             if rows:
                 results.append([dict(row) for row in rows])
         else:
-            trades = conn.execute(
-                "SELECT DISTINCT trade_id FROM trades ORDER BY MAX(datetime_utc) DESC LIMIT ? OFFSET ?",
+            trade_rows = conn.execute(
+                "SELECT trade_id, MAX(datetime_utc) as max_dt FROM trades WHERE trade_id IS NOT NULL GROUP BY trade_id ORDER BY max_dt DESC LIMIT ? OFFSET ?",
                 (limit, offset)
             ).fetchall()
-            for t in trades:
+            for t in trade_rows:
                 tid = t["trade_id"]
                 rows = conn.execute(
                     "SELECT * FROM trades WHERE trade_id = ? ORDER BY datetime_utc ASC",
@@ -67,10 +72,6 @@ def get_trades_grouped_by_trade_id(trade_id=None, limit=100, offset=0):
     return results
 
 def collapse_group(trades_group):
-    """
-    For a group (list of dicts), return a single dict with rolled-up sums for
-    quantity, total_value, amount, fees, commissions, and a list of sides.
-    """
     if not trades_group:
         return {}
     collapsed = dict(trades_group[0])
@@ -84,41 +85,82 @@ def collapse_group(trades_group):
     return collapsed
 
 def get_collapsed_groups_by_group_id(limit=100, offset=0):
-    """
-    Returns collapsed groups by group_id, each as a single dict (for summary UI).
-    """
     groups = get_trades_grouped_by_group_id(None, limit, offset)
     return [collapse_group(g) for g in groups if g]
 
 def get_collapsed_groups_by_trade_id(limit=100, offset=0):
-    """
-    Returns collapsed groups by trade_id, each as a single dict (for summary UI).
-    """
     groups = get_trades_grouped_by_trade_id(None, limit, offset)
     return [collapse_group(g) for g in groups if g]
 
-# NEW: API for web/app
-def fetch_grouped_trades(by="group_id", collapse=True, limit=100, offset=0):
-    """
-    Unified grouped trades fetcher for API/UI.
-    If collapse=True, returns collapsed group summaries; else, full grouped lists.
-    """
+def _get_collapsed_map(db_path, group_ids):
+    if not group_ids:
+        return {}
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT group_id, collapsed FROM {COLLAPSED_TABLE} WHERE group_id IN ({','.join(['?']*len(group_ids))})",
+            tuple(group_ids)
+        ).fetchall()
+    return {row[0]: row[1] for row in rows}
+
+def fetch_grouped_trades(by="group_id", collapse=True, limit=100, offset=0, show_expanded_groups=None):
+    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    _ensure_collapsed_table(db_path)
+
     if by == "trade_id":
-        return get_collapsed_groups_by_trade_id(limit, offset) if collapse else get_trades_grouped_by_trade_id(None, limit, offset)
-    return get_collapsed_groups_by_group_id(limit, offset) if collapse else get_trades_grouped_by_group_id(None, limit, offset)
+        groups = get_trades_grouped_by_trade_id(None, limit, offset)
+        group_ids = [g[0].get("trade_id") for g in groups if g]
+    else:
+        groups = get_trades_grouped_by_group_id(None, limit, offset)
+        group_ids = [g[0].get("group_id") for g in groups if g]
+
+    collapsed_map = _get_collapsed_map(db_path, group_ids)
+    result = []
+
+    for group in groups:
+        if not group:
+            continue
+        group_id = group[0].get("group_id") if by != "trade_id" else group[0].get("trade_id")
+        collapsed_state = collapsed_map.get(group_id, 1)
+        force_expand = show_expanded_groups and group_id in show_expanded_groups
+        if collapse and collapsed_state and not force_expand:
+            collapsed = collapse_group(group)
+            collapsed["collapsed"] = True
+            collapsed["group_id"] = group_id
+            collapsed["sub_entries"] = group  # include for audit, UI can ignore if not needed
+            result.append(collapsed)
+        else:
+            for entry in group:
+                entry["collapsed"] = False
+                entry["group_id"] = group_id
+                entry["sub_entries"] = []
+            result.extend(group)
+    return result
 
 def fetch_trade_group_by_id(group_id, by="group_id"):
-    """
-    Fetch a single group (full list, not collapsed).
-    """
     if by == "trade_id":
-        return get_trades_grouped_by_trade_id(trade_id=group_id)
-    return get_trades_grouped_by_group_id(group_id=group_id)
+        group = get_trades_grouped_by_trade_id(trade_id=group_id)
+    else:
+        group = get_trades_grouped_by_group_id(group_id=group_id)
+    # All returned entries are marked as not collapsed
+    for entry in group[0] if group else []:
+        entry["collapsed"] = False
+    return group[0] if group else []
 
 def collapse_expand_group(group_id, by="group_id", collapsed_state=None):
-    """
-    Placeholder for toggling collapsed state in persistent store/UI.
-    Not implemented (stateless API).
-    """
-    # Implement with a persistent collapsed state table if desired.
+    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    _ensure_collapsed_table(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute(f"SELECT collapsed FROM {COLLAPSED_TABLE} WHERE group_id = ?", (group_id,))
+        row = cur.fetchone()
+        if row:
+            prev_state = bool(row[0])
+            new_state = int(not prev_state) if collapsed_state is None else int(bool(collapsed_state))
+            cur.execute(f"UPDATE {COLLAPSED_TABLE} SET collapsed = ? WHERE group_id = ?", (new_state, group_id))
+        else:
+            new_state = 0 if collapsed_state is None else int(bool(collapsed_state))
+            cur.execute(f"INSERT INTO {COLLAPSED_TABLE} (group_id, collapsed) VALUES (?, ?)", (group_id, new_state))
+        conn.commit()
     return True

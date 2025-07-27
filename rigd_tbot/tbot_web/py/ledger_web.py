@@ -10,8 +10,8 @@ from tbot_web.support.auth_web import get_current_user
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_running_balances
 from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts
-from tbot_bot.accounting.ledger_modules.ledger_query import fetch_grouped_trades, fetch_trade_group_by_id, search_trades
-from tbot_bot.accounting.ledger_modules.ledger_grouping import collapse_expand_group
+from tbot_bot.accounting.ledger_modules.ledger_grouping import fetch_grouped_trades, fetch_trade_group_by_id, collapse_expand_group
+from tbot_bot.accounting.ledger_modules.ledger_query import search_trades
 from tbot_bot.accounting.ledger_modules.ledger_deduplication import check_duplicates
 import sqlite3
 
@@ -47,7 +47,6 @@ def identity_guard():
         return True
 
 def _is_display_entry(entry):
-    # Defensive: only filter out if *all* primary display fields are empty/None
     return bool(
         (entry.get("symbol") and str(entry.get("symbol")).strip())
         or (entry.get("datetime_utc") and str(entry.get("datetime_utc")).strip())
@@ -71,8 +70,8 @@ def ledger_reconcile():
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = coa_data.get("accounts_flat", [])
         entries = fetch_grouped_trades(sort_by="datetime_utc", sort_desc=True)
-        # Only show entries where at least one primary display field is non-empty
         entries = [e for e in entries if _is_display_entry(e)]
+        print("LEDGER ENTRIES SERVED:", entries)
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
         entries = []

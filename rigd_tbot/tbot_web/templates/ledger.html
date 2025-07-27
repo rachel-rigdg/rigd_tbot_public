@@ -71,8 +71,6 @@
                 </thead>
                 <tbody id="ledger-tbody">
                 {% for entry in entries %}
-                    <!-- FIX: Loosen filter, only require symbol or datetime_utc or action -->
-                    {% if entry.symbol or entry.datetime_utc or entry.action %}
                     <tr class="row-top {{ entry.status }}">
                         <td>
                             <button class="collapse-btn" type="button" onclick="toggleCollapse('{{ entry.group_id }}')">
@@ -111,7 +109,6 @@
                             <td></td>
                         </tr>
                         {% endfor %}
-                    {% endif %}
                     {% endif %}
                 {% endfor %}
                 <!-- Add-entry row (split in two lines) -->
