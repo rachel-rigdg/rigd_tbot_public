@@ -26,3 +26,8 @@ LEDGER_ENTRIES_FIELDS = [
     "gdpr_compliant", "ccpa_compliant", "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type",
     "extra_fields", "json_metadata", "bot_id"
 ]
+
+# Allowed action values for normalized trade actions
+ALLOWED_TRADE_ACTIONS = [
+    "long", "short", "put", "inverse", "call", "assignment", "exercise", "expire", "reorg", "other"
+]

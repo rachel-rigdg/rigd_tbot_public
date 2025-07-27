@@ -8,6 +8,7 @@ from tbot_bot.support.decrypt_secrets import (
     load_broker_credential
 )
 from tbot_bot.config.env_bot import get_bot_config
+from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 
 ADAPTERS = {
     "ALPACA": "tbot_bot.broker.adapters.alpaca.AlpacaBroker",
@@ -85,11 +86,15 @@ def get_min_order_size(symbol):
 
 def fetch_all_trades(start_date, end_date=None):
     broker = get_active_broker()
-    return broker.fetch_all_trades(start_date, end_date)
+    trades = broker.fetch_all_trades(start_date, end_date)
+    # ENFORCE NORMALIZATION ON ALL OUTPUTS
+    return [normalize_trade(t) for t in trades if isinstance(t, dict)]
 
 def fetch_cash_activity(start_date, end_date=None):
     broker = get_active_broker()
-    return broker.fetch_cash_activity(start_date, end_date)
+    acts = broker.fetch_cash_activity(start_date, end_date)
+    # ENFORCE NORMALIZATION ON ALL OUTPUTS
+    return [normalize_trade(c) for c in acts if isinstance(c, dict)]
 
 __all__ = [
     "get_active_broker",

@@ -85,7 +85,6 @@ CREATE TABLE IF NOT EXISTS coa_accounts (
     language_code TEXT DEFAULT 'en',
     json_metadata TEXT DEFAULT '{}'
 );
-
 -- Table: Ledger Entries
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,6 +147,7 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     soc2_type TEXT DEFAULT '',
     extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
+    raw_broker_json TEXT DEFAULT '{}',
     bot_id TEXT DEFAULT NULL
 );
 
@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS trades (
     sub_account TEXT,
     extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
+    raw_broker_json TEXT DEFAULT '{}',
     bot_id TEXT DEFAULT NULL,
     FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
 );

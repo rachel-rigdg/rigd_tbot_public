@@ -34,7 +34,7 @@ def isolate_ledger_db(tmp_path, monkeypatch):
     yield
     # tmp_path and db copy cleaned automatically
 
-def test_all_entries_are_dict():
+def test_all_entries_are_dict_and_normalized():
     from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
     trades = fetch_all_trades(start_date="2025-01-01", end_date=None)
     cash_acts = fetch_cash_activity(start_date="2025-01-01", end_date=None)
@@ -42,6 +42,13 @@ def test_all_entries_are_dict():
     if bad:
         print("[DEBUG] Non-dict broker entries:", bad)
     assert not bad, "Non-dict broker entries present"
+    # Confirm all actions are in normalized allowed set or "other"
+    valid_actions = {'long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg', 'other'}
+    for e in trades + cash_acts:
+        if not isinstance(e, dict):
+            continue
+        action = e.get("action")
+        assert action in valid_actions, f"Unmapped/invalid action: {action}, entry: {e}"
 
 def test_sync_broker_ledger_runs_without_error():
     try:
@@ -61,7 +68,7 @@ def test_sync_broker_ledger_runs_without_error():
         if "422" in str(e) or "Unprocessable Entity" in str(e):
             pytest.xfail(f"Alpaca adapter: known/fallback error (422) encountered: {e}")
         if "CHECK constraint failed: action IN" in str(e):
-            pytest.skip("Test skipped: action field in broker output does not conform to allowed values. Mapping layer update required.")
+            pytest.fail(f"Ledger sync attempted to insert invalid action value. Mapping layer broken: {e}")
         pytest.fail(f"sync_broker_ledger raised an exception: {e}")
 
 def test_sync_broker_ledger_idempotent(tmp_path):
@@ -80,7 +87,7 @@ def test_sync_broker_ledger_idempotent(tmp_path):
         if "422" in str(e) or "Unprocessable Entity" in str(e):
             pytest.xfail(f"Alpaca adapter: known/fallback error (422) encountered: {e}")
         if "CHECK constraint failed: action IN" in str(e):
-            pytest.skip("Test skipped: action field in broker output does not conform to allowed values. Mapping layer update required.")
+            pytest.fail(f"Ledger sync attempted to insert invalid action value. Mapping layer broken: {e}")
         pytest.fail(f"First sync_broker_ledger raised: {e}")
     if db_backup.exists():
         db_path.write_bytes(db_backup.read_bytes())
@@ -95,7 +102,7 @@ def test_sync_broker_ledger_idempotent(tmp_path):
         if "422" in str(e) or "Unprocessable Entity" in str(e):
             pytest.xfail(f"Alpaca adapter: known/fallback error (422) encountered: {e}")
         if "CHECK constraint failed: action IN" in str(e):
-            pytest.skip("Test skipped: action field in broker output does not conform to allowed values. Mapping layer update required.")
+            pytest.fail(f"Ledger sync attempted to insert invalid action value. Mapping layer broken: {e}")
         pytest.fail(f"Second sync_broker_ledger raised: {e}")
     try:
         assert validate_double_entry() is True
@@ -109,6 +116,18 @@ def test_double_entry_posting_compliance():
     except Exception as e:
         print("[DEBUG] Exception in double entry validation:", e)
         pytest.fail(f"Ledger not double-entry balanced after sync: {e}")
+
+def test_no_unmappable_actions_inserted():
+    from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
+    trades = fetch_all_trades(start_date="2025-01-01", end_date=None)
+    cash_acts = fetch_cash_activity(start_date="2025-01-01", end_date=None)
+    # This test asserts no unknown/unmappable action makes it into ledger pipeline
+    allowed = {'long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg', 'other'}
+    for entry in trades + cash_acts:
+        if not isinstance(entry, dict):
+            continue
+        action = entry.get("action")
+        assert action in allowed, f"Disallowed/unmappable action value found: {action}, entry: {entry}"
 
 if __name__ == "__main__":
     timed_pytest_run()

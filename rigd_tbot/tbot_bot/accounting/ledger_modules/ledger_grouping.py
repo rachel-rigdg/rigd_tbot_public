@@ -96,3 +96,29 @@ def get_collapsed_groups_by_trade_id(limit=100, offset=0):
     """
     groups = get_trades_grouped_by_trade_id(None, limit, offset)
     return [collapse_group(g) for g in groups if g]
+
+# NEW: API for web/app
+def fetch_grouped_trades(by="group_id", collapse=True, limit=100, offset=0):
+    """
+    Unified grouped trades fetcher for API/UI.
+    If collapse=True, returns collapsed group summaries; else, full grouped lists.
+    """
+    if by == "trade_id":
+        return get_collapsed_groups_by_trade_id(limit, offset) if collapse else get_trades_grouped_by_trade_id(None, limit, offset)
+    return get_collapsed_groups_by_group_id(limit, offset) if collapse else get_trades_grouped_by_group_id(None, limit, offset)
+
+def fetch_trade_group_by_id(group_id, by="group_id"):
+    """
+    Fetch a single group (full list, not collapsed).
+    """
+    if by == "trade_id":
+        return get_trades_grouped_by_trade_id(trade_id=group_id)
+    return get_trades_grouped_by_group_id(group_id=group_id)
+
+def collapse_expand_group(group_id, by="group_id", collapsed_state=None):
+    """
+    Placeholder for toggling collapsed state in persistent store/UI.
+    Not implemented (stateless API).
+    """
+    # Implement with a persistent collapsed state table if desired.
+    return True

@@ -77,7 +77,8 @@ class AlpacaBroker:
         if end_date:
             params.append(("until", end_date))
         try:
-            return self._fetch_cash_activity_internal(params)
+            acts = self._fetch_cash_activity_internal(params)
+            return [normalize_trade(a, self.credential_hash) for a in acts if isinstance(a, dict)]
         except Exception:
             return []
 
@@ -184,7 +185,8 @@ class AlpacaBroker:
                 next_page_token = resp["next_page_token"]
             else:
                 break
-        return list(order_fills.values())
+        # ENSURE FULL NORMALIZATION
+        return [normalize_trade(tf, self.credential_hash) for tf in order_fills.values() if isinstance(tf, dict)]
 
     def _fetch_cash_activity_internal(self, params):
         activities = []
@@ -221,4 +223,5 @@ class AlpacaBroker:
                 next_page_token = resp["next_page_token"]
             else:
                 break
-        return activities
+        # ENSURE FULL NORMALIZATION
+        return [normalize_trade(act, self.credential_hash) for act in activities if isinstance(act, dict)]

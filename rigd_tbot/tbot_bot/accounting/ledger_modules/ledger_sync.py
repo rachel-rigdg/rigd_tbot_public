@@ -33,20 +33,27 @@ def sync_broker_ledger():
     print("TRADES RAW:", trades_raw)
     print("CASH_ACTS RAW:", cash_acts_raw)
 
-    # Filter for dict only, log and skip all non-dict
     trades = []
     for t in trades_raw:
         if not isinstance(t, dict):
             print("NON-DICT TRADE DETECTED:", type(t), t)
             continue
-        trades.append(normalize_trade(t))
+        normalized = normalize_trade(t)
+        if normalized.get("skip_insert", False):
+            print("SKIP INVALID TRADE ACTION:", normalized.get("json_metadata", {}).get("unmapped_action", "unknown"), "| RAW:", t)
+            continue
+        trades.append(normalized)
 
     cash_acts = []
     for c in cash_acts_raw:
         if not isinstance(c, dict):
             print("NON-DICT CASH ACTIVITY DETECTED:", type(c), c)
             continue
-        cash_acts.append(normalize_trade(c))
+        normalized = normalize_trade(c)
+        if normalized.get("skip_insert", False):
+            print("SKIP INVALID CASH ACTION:", normalized.get("json_metadata", {}).get("unmapped_action", "unknown"), "| RAW:", c)
+            continue
+        cash_acts.append(normalized)
 
     all_entries = [e for e in (trades + cash_acts) if isinstance(e, dict)]
 
@@ -54,16 +61,9 @@ def sync_broker_ledger():
         for k in TRADES_FIELDS:
             if k not in entry or entry[k] is None:
                 entry[k] = None
-        # Ensure 'action' is valid per ledger schema
-        valid_actions = ('long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg', 'other')
-        action = entry.get("action")
-        if not action or action.lower() not in valid_actions:
-            entry["action"] = "other"
-        else:
-            entry["action"] = action.lower()
+        # No further action fixup: normalization guarantees schema-compliance
         return entry
 
-    # Deduplication: (trade_id, side) tuple must be unique
     seen = set()
     deduped_entries = []
     for e in all_entries:

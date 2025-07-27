@@ -38,7 +38,13 @@ ACTION_MAP = {
     "exit": "short",
     "close": "short",
     "open": "long",
+    "fill": None,
+    "partial_fill": None,
 }
+
+ALLOWED_ACTIONS = (
+    "long", "short", "put", "inverse", "call", "assignment", "exercise", "expire", "reorg"
+)
 
 def normalize_trade(trade, credential_hash=None):
     if not isinstance(trade, dict):
@@ -47,16 +53,24 @@ def normalize_trade(trade, credential_hash=None):
     raw_action = trade.get("action") or trade.get("side") or None
     canonical_action = None
     side_value = None
+    action_invalid = False
+    unmapped_action = None
+
     if raw_action:
         raw_action_lower = str(raw_action).lower()
-        canonical_action = ACTION_MAP.get(raw_action_lower)
-        # Only set side if it is debit or credit, else None (let mapping handle)
+        canonical_action = ACTION_MAP.get(raw_action_lower, raw_action_lower)
+        if canonical_action is None or canonical_action not in ALLOWED_ACTIONS:
+            unmapped_action = canonical_action if canonical_action else raw_action_lower
+            action_invalid = True
+            canonical_action = None
         if raw_action_lower in ("debit", "credit"):
             side_value = raw_action_lower
         else:
             side_value = None
     else:
         raw_action_lower = None
+        action_invalid = True
+        canonical_action = None
 
     mapping = {
         "trade_id": trade.get("id") or trade.get("trade_id") or trade.get("order_id"),
@@ -100,7 +114,8 @@ def normalize_trade(trade, credential_hash=None):
         "bot_id": BOT_IDENTITY.get("BOT_ID", "UNKNOWN"),
         "json_metadata": {
             "raw_broker": trade,
-            "api_hash": credential_hash or "n/a"
+            "api_hash": credential_hash or "n/a",
+            "unmapped_action": unmapped_action if action_invalid else None
         },
     }
 
@@ -109,4 +124,11 @@ def normalize_trade(trade, credential_hash=None):
     for k in TRADES_FIELDS:
         if k not in mapping:
             mapping[k] = None
+
+    # If not valid for DB insertion (action not allowed), must return None to signal skip
+    if action_invalid:
+        mapping["skip_insert"] = True
+    else:
+        mapping["skip_insert"] = False
+
     return mapping

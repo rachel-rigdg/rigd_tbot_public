@@ -73,3 +73,24 @@ def remove_duplicate_trades():
             deleted = len(ids_to_delete)
             conn.commit()
     return deleted
+
+def check_duplicates(trade_id, side=None):
+    """
+    Returns count of duplicate (trade_id, side) pairs in the trades table.
+    """
+    if not trade_id:
+        return 0
+    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+    with sqlite3.connect(db_path) as conn:
+        if side:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM trades WHERE trade_id = ? AND side = ?",
+                (trade_id, side)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM trades WHERE trade_id = ?",
+                (trade_id,)
+            ).fetchone()
+        return row[0] if row else 0
