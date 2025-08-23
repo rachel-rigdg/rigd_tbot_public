@@ -1,5 +1,6 @@
 # tbot_bot/accounting/ledger_modules/ledger_double_entry.py
 
+from typing import Optional
 from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_path  # kept for downstream imports
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table, apply_mapping_rule
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
@@ -48,7 +49,7 @@ def get_identity_tuple():
     return tuple(parts[:4])
 
 
-def _map_action(action: str | None) -> str:
+def _map_action(action: Optional[str]) -> str:
     # Map broker actions to ledger schema actions
     if not action or not isinstance(action, str):
         return "other"
