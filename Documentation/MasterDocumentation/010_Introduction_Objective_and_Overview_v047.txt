@@ -28,8 +28,6 @@ This master index provides a comprehensive reference to all TradeBot system spec
 
 Usage Notes:
 - Reference filenames and versions for currency.
-- All content is current as of v045.
-- Old v042/legacy documents are deprecated; do not consult prior indices.
 - If in doubt, defer to the most recent versioned spec above.
 
 ================================================================================
