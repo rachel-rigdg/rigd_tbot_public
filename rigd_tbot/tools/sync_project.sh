@@ -5,7 +5,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/.. && pwd )"
 DEV_PATH="$SCRIPT_DIR"
 
 # === CONFIG ===
-LIVE_PATH="/Volumes/8TB_RAID_01/jobs/TradeBot/Tradebot-001-Live/rigd_tbot"
+LIVE_PATH="/Users/rachelwyndunn/Documents/TradeBot/Tradebot-001-Live/rigd_tbot"
 REMOTE_USER="tbot"
 REMOTE_HOST="45.55.150.216"
 REMOTE_PATH="/home/tbot/rigd_tbot/"
