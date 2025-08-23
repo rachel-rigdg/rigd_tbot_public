@@ -95,25 +95,25 @@ CONTROL_DIR=control
 ENV_BOT_PATH=.env_bot
 
 # Encrypted Credential Keys (Paths relative to project root)
-ENV_KEY_PATH=storage/keys/env.key
-ENV_ENC_KEY_PATH=storage/keys/env_enc.key
-LOGIN_KEY_PATH=storage/keys/login.key
-BROKER_KEY_PATH=storage/keys/broker.key
-SMTP_KEY_PATH=storage/keys/smtp.key
-SCREENER_API_KEY_PATH=storage/keys/screener_api.key
-ACCT_API_KEY_PATH=storage/keys/acct_api.key
-ALERT_KEY_PATH=storage/keys/alert.key
-HOLDINGS_SECRETS_KEY_PATH=storage/keys/holdings_secrets.key
+ENV_KEY_PATH=tbot_bot/storage/keys/env.key
+ENV_ENC_KEY_PATH=tbot_bot/storage/keys/env_enc.key
+LOGIN_KEY_PATH=tbot_bot/storage/keys/login.key
+BROKER_KEY_PATH=tbot_bot/storage/keys/broker.key
+SMTP_KEY_PATH=tbot_bot/storage/keys/smtp.key
+SCREENER_API_KEY_PATH=tbot_bot/storage/keys/screener_api.key
+ACCT_API_KEY_PATH=tbot_bot/storage/keys/acct_api.key
+ALERT_KEY_PATH=tbot_bot/storage/keys/alert.key
+HOLDINGS_SECRETS_KEY_PATH=tbot_bot/storage/keys/holdings_secrets.key
 
 # Encrypted Secrets (Resolved at Runtime)
-BROKER_CREDENTIALS_PATH=storage/secrets/broker_credentials.json.enc
-SMTP_CREDENTIALS_PATH=storage/secrets/smtp_credentials.json.enc
-SCREENER_API_PATH=storage/secrets/screener_api.json.enc
-ACCT_API_CREDENTIALS_PATH=storage/secrets/acct_api_credentials.json.enc
-NETWORK_CONFIG_PATH=storage/secrets/network_config.json.enc
-ALERT_CHANNELS_PATH=storage/secrets/alert_channels.json.enc
-BOT_IDENTITY_PATH=storage/secrets/bot_identity.json.enc
-HOLDINGS_SECRETS_PATH=storage/secrets/holdings_secrets.json.enc
+BROKER_CREDENTIALS_PATH=tbot_bot/storage/secrets/broker_credentials.json.enc
+SMTP_CREDENTIALS_PATH=tbot_bot/storage/secrets/smtp_credentials.json.enc
+SCREENER_API_PATH=tbot_bot/storage/secrets/screener_api.json.enc
+ACCT_API_CREDENTIALS_PATH=tbot_bot/storage/secrets/acct_api_credentials.json.enc
+NETWORK_CONFIG_PATH=tbot_bot/storage/secrets/network_config.json.enc
+ALERT_CHANNELS_PATH=tbot_bot/storage/secrets/alert_channels.json.enc
+BOT_IDENTITY_PATH=tbot_bot/storage/secrets/bot_identity.json.enc
+HOLDINGS_SECRETS_PATH=tbot_bot/storage/secrets/holdings_secrets.json.enc
 
 # Session / Login Controls
 SESSION_TIMEOUT=3000
