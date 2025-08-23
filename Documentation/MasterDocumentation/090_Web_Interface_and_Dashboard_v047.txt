@@ -30,6 +30,8 @@ Contents:
 - Every user-facing page/template listed below must load its own dedicated CSS file from `/static/css/pages/`, ensuring precise, isolated styling.
 - No changes to the iframe structure or Jinja2 rendering are permitted.
 - **All ledger, COA, and holdings UI pages (ledger.html, coa.html, holdings.html) must source, reconcile, and display all data exclusively from the modular ledger implementation in `tbot_bot/accounting/ledger_modules/`. Legacy ledger.py and ledger_utils.py are fully deprecated and forbidden for UI or API use.**
+- Ledger group rows support a persisted collapse/expand state per group. The UI must provide a per‑group toggle and an optional global “Collapse all” control. State is stored server‑side and survives reloads and sessions.
+- Ledger sub‑entries expose an inline **COA Account** selector (RBAC‑guarded) for per‑leg allocation updates. Changes are written via modular ledger APIs, fully audit‑logged, and reflected immediately in balances/reconciliation.
 
 **User-Facing Pages, Templates, and Endpoints (REQUIRED):**
 
@@ -112,7 +114,7 @@ Real-Time Monitoring Dashboard
 - `py/configuration_web.py`: Web UI route handling user, email, API, and broker credential configuration via encrypted multi-category config files. Only writes config and provisioning trigger; does *not* execute provisioning logic.
 - `py/settings_web.py`: Loads and validates `.env_bot` trading config; provides API for updates/errors; includes TEST_MODE flag toggle reflecting presence of `test_mode.flag`.
 - `py/status_web.py`: Serves live bot/session status with strategy metrics, system health, win-rate, PnL, float deviation, rebalance triggers, Defense/kill switch states, and alert counts as JSON.
-- `py/ledger_web.py`: Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; **MUST read/write all ledger data, event history, and holdings audit events exclusively via `ledger_modules/`.** All changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations.
+- `py/ledger_web.py`: Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; **MUST read/write all ledger data, event history, and holdings audit events exclusively via `ledger_modules/`.** All changes are tracked with versioning and audit logs, and only admin users can perform edits or reconciliations. - POST /ledger/collapse_expand/<group_id> (persist/toggle group collapsed state) - POST /ledger/collapse_all (set collapsed state for all groups) - POST /ledger/edit/<entry_id> (RBAC; inline per‑leg COA account update path)
 - `py/holdings_web.py`: Dedicated holdings management API. Provides endpoints for reading/writing holdings config, allocations, float/top-up actions, reserve splits, symbol list edits, periodic/manual rebalancing, and full holdings audit log/history. **All CRUD and audit actions are performed exclusively via `ledger_modules/`.** All changes enforce RBAC (admin only), atomic encrypted updates, and audit logging. Integrates with `holdings_manager.py` and encrypted secrets manager.
 - `py/logs_web.py`: Streams and paginates logs of all types; ensures secure access and audit-compliant log delivery.
 - `py/start_stop_web.py`: Manages lifecycle controls via `control_start.flag` / `control_stop.flag`, transition verification, and logging.
@@ -153,6 +155,10 @@ Real-Time Monitoring Dashboard
 - All endpoints enforce RBAC at both view and action level, with role-based UI controls and full audit logging.
 - All credential/config/holdings changes (including add/edit/delete/rotate for screener, holdings, or user) trigger atomic key/secret rotation and backup; user is notified in the UI.
 - All templates, CSS, and route structures must remain compliant with `020_Directory_Structure_{CURRENT_VERSION}.txt`.
+- Ledger Schema Alignment Update:
+  - group_id is a first‑class field in the Trades schema and MUST be included anywhere TRADES_FIELDS is referenced or enforced. UI grouping and reconciliation rely on this field.
+  - The UI persistence table trade_group_collapsed (fields: group_id PRIMARY KEY, collapsed INTEGER) is used only for display state and carries no accounting meaning.
+
 
 --------------------------------------------------------------------------------
 Flask Blueprint Overview
@@ -443,6 +449,21 @@ The ledger interface in `ledger.html` is a comprehensive, audit-compliant web UI
   - All ledger actions (view, edit, reconcile, export) are RBAC-controlled; only admin users may perform edits or reconciliations.
   - All UI actions are logged and visible in the audit trail.
 
+- **Editable COA Account Allocation (Inline)**
+  - Each expanded ledger group shows its constituent debit/credit legs with an inline Account <select> bound to COA codes.
+  - Submitting an account change updates only that leg’s allocation in the modular ledger, is RBAC‑enforced (admin only), and is audit‑logged (user, UTC timestamp, before/after).
+  - The collapsed/top row displays a representative account (implementation detail: commonly the debit leg), purely for operator context.
+
+- **Persistent Group Collapse/Expand**
+
+  - Group rows default to collapsed; operators can expand individual groups or use a global “Collapse all” control.
+  - The collapse state is persisted server‑side and restored on page load (per group).
+  - Required endpoints:
+    - POST /ledger/collapse_expand/<group_id> — toggle or set explicit {"collapsed_state": 1|0}.
+    - POST /ledger/collapse_all — set all groups: {"collapse": true|false} (or {"collapsed_state": 1|0}).
+  - Storage: dedicated lightweight table for UI state (see “Ledger Schema Alignment Update”).
+
+
 **Technical/Implementation Notes:**
 
 - All ledger UI operations—fetch, search, sort, filter, and audit—must call into `ledger_modules/` APIs, never the legacy `ledger.py` or `ledger_utils.py`.
@@ -451,6 +472,7 @@ The ledger interface in `ledger.html` is a comprehensive, audit-compliant web UI
 - UI state and filter preferences persist across sessions for logged-in users.
 - All frontend logic is contained in `/static/js/ledger.js` and backend routes are in `tbot_web/py/ledger_web.py`.
 - All rendering is performed via `templates/ledger.html` with Jinja2 and client-side JS for dynamic interactions.
+- Group collapse/expand state is persisted via modular ledger grouping helpers; client JS must call the REST endpoints and never manipulate state locally only.
 
 **Future-Proofing and Compliance:**
 - The ledger interface is the canonical source for all persistent trade, cash, and holdings events for the bot instance.

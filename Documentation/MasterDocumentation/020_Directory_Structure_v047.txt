@@ -96,8 +96,10 @@ rigd_tbot/
 │   │       ├── ledger_account_map.py            # Loads broker/account IDs, COA account keys, and logical account path lookups
 │   │       ├── ledger_audit.py                  # Audit logging (writes to audit_trail table)
 │   │       ├── ledger_balance.py                # Computes per-account and running balances
+│   │       ├── ledger_compliance_filter.py 	 # Ledger compliance filter for validating transactions before they are written to the ledger. Used by sync, holdings, and any module that creates/imports ledger entries.
 │   │       ├── ledger_core.py                   # Reserved for low-level shared/core ledger logic
 │   │       ├── ledger_db.py                     # Schema validation, connection management, identity verification
+│   │       ├── ledger_deduplication.py		 # Insures no duplicate transactions
 │   │       ├── ledger_double_entry.py           # Double-entry posting and validation, debit/credit enforcement
 │   │       ├── ledger_edit.py                   # Entry editing, updating, deleting, resolving (audit tracked)
 │   │       ├── ledger_entry.py                  # Entry creation (legacy + compat), bulk fetch/load_internal_ledger
@@ -195,6 +197,9 @@ rigd_tbot/
 │   │   └── vix_gatekeeper.py                     	# Risk enforcement: blocks or disables trading when VIX exceeds threshold (checked before any entry)
 │   │
 │   ├── output/
+│   │   ├── bootstrap/ 
+│   │   │   └── logs/  
+│   │   │
 │   │   ├── logs/                                             # System/global logs (not per-bot; shown in logs.html where specified)
 │   │   │   ├── main_bot.log (or system_logs.log)                    # Main system-level log, bot lifecycle, errors (shown in logs.html)
 │   │   │   ├── heartbeat.log                                        # API/connection heartbeat events (shown in logs.html)
@@ -248,12 +253,14 @@ rigd_tbot/
 │   │   ├── audit_logger.py 			# WORKER. Support structured logs for holdings management actions		(new or extend existing utils_log.py)
 │   │   ├── auto_backup.py                      # WORKER. Compresses and archives output/ after session ends. Only launched by main.py.
 │   │   ├── daily_summary.py                    # WORKER. Builds daily trade summary stats and outcomes. Only launched by main.py.
+│   │   ├── ledger_report.py			# WORKER. Generates ledger-based compliance and COA/holdings reports. Only launched by main.py.
 │   │   ├── log_rotation.py                     # WORKER. Cleans output folder after N days (log file retention). Only launched by main.py.
 │   │   ├── notify_rebalance_requirements.py    # WORKER. Watches for low float; notifies accounting to rebalance. Only launched by main.py.
 │   │   ├── report_router.py                    # WORKER. Routes finalized trade output to logs/accounting system. Only launched by main.py.
 │   │   ├── session_report.py                   # WORKER. Session wrap-up summary (for UI, compliance). Only launched by main.py.
 │   │   ├── status_logger.py                    # WORKER. Syncs live bot state to UI/status.json (optional). Only launched by main.py.
-│   │   └── trade_logger.py                     # WORKER. Records trade data to output/trades. Only launched by main.py.
+│   │   ├── trade_logger.py                     # WORKER. Records trade data to output/trades. Only launched by main.py.
+│   │   └── universe_logger.py			# WORKER. Dedicated UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions - Logs symbol universe snapshots/cache state. Only launched by main.py.
 │   │
 │   ├── runtime/
 │   │   ├── __init__.py
@@ -265,6 +272,7 @@ rigd_tbot/
 │   │   ├── start_bot.py                            # CLI helper only. Writes control_start.flag; does NOT watch for flags or launch processes.
 │   │   ├── status_bot.py                           # WATCHER. Tracks bot health/state, writes status.json, session logs. Only launched by bot_supervisor.py.
 │   │   ├── stop_bot.py                             # CLI helper only. Writes control_stop.flag; does NOT watch for flags or launch processes.
+│   │   ├── sync_broker_ledger.py		    # WORKER. On-demand or scheduled broker→ledger sync task. Can be triggered via Web UI or supervisor; never runs persistently.
 │   │   ├── tbot_supervisor.py                      # CENTRAL SUPERVISOR. Manages all bot phase/state transitions, persistent monitoring, and all subprocess lifecycle. Only one instance allowed; always launched by main.py if present. Handles/waits for and may restart monitor, runtime, or other persistent bot subprocesses. Never runs strategy code directly.
 │   │   └── watchdog_bot.py                         # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
 │   │
@@ -285,14 +293,15 @@ rigd_tbot/
 │   │   ├── provider_base.py                        # Abstract base class/interface for all provider adapters: requires fetch_symbols and fetch_quotes interface
 │   │   ├── provider_registry.py                    # Maps provider strings to adapter classes; single source for dynamic provider loading
 │   │   ├── screener_base.py                        # Abstract screener base: core interface, loads universe, wires modules, calls providers, credential loader
+│   │   ├── screener_core.py			    # Central runtime screener engine: wires screener_base + provider adapters + filters; executes live filtering pipeline, returns passing symbols
 │   │   ├── screener_filter.py                      # Centralized filter/normalization logic: contains ALL filter helpers, normalization, dedupe, NO I/O, NO main, never duplicated
 │   │   ├── screener_utils.py                       # Universe/blocklist load/save, atomic writes, helpers, dedupe, validation, drift/audit utilities
 │   │   ├── symbol_enrichment.py                    # Universe enrichment/build: for each non-blocklisted symbol from symbols_raw.json, fetch/enrich from provider API; write all results to unfiltered.json, apply filter (from screener_filter.py), write passing to partial.json, failures/invalids to blocklist.txt; NO direct writes to final.json, atomic per-symbol, fully resumable
 │   │   ├── symbol_source_loader.py                 # Loads all symbol sources (API-only now), normalizes for universe build
 │   │   ├── universe_orchestrator.py                # Main entrypoint: orchestrates nightly build; triggers symbol_enrichment.py, handles status/logging, NO filtering logic, atomic per-symbol process
+│   │   ├── symbol_universe_raw_builder.py	    # Builds initial raw universe file (symbols_raw.json) by calling provider adapters; no filtering, no enrichment; atomic write, resumable
 │   │   ├── universe_archiver.py                    # Automated archival, retention, restore/rollback utilities for all universes/blocklists (policy-driven)
 │   │   ├── universe_diff.py                        # Diff/compare any two universe/blocklist files (drift, audit, rollback, UI/API integration)
-│   │   ├── universe_logger.py                      # Dedicated UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions
 │   │   ├── universe_rebuild_cli.py                 # CLI to trigger universe/blocklist rebuild, validation, archival, manual recovery/force rebuild
 │   │   ├── universe_refilter.py                    # Re-filter step: reads only unfiltered.json, applies screener_filter.py logic, writes partial.json and final.json, NO blocklist, NO API calls
 │   │   └── universe_validation.py                  # Full validation/QA/drift/field/spec checks for universes/blocklists, dedupe, schema, credential/field presence
@@ -306,14 +315,21 @@ rigd_tbot/
 │   │   │
 │   │   ├── keys/                                   # All Fernet encryption keys, one per secret/config category (NEVER committed) - created during the provisioning process
 │   │   │   ├── .keep                               # Ensures empty keys folder is tracked in git
+│   │   │   ├── acct_api_credentials.key	    # Fernet key for encrypting/decrypting acct_api_credentials.json.enc
 │   │   │   ├── acct_api.key                        # Fernet key for encrypting/decrypting acct_api_credentials.json.enc
+│   │   │   ├── alert_channels.key                  # Fernet key for encrypting/decrypting alert_channels.json.enc
+│   │   │   ├── alert.key                           # (alias/legacy) Fernet key for alert_channels.json.enc
+│   │   │   ├── bot_identity.key                    # Fernet key for encrypting/decrypting bot_identity.json.enc
+│   │   │   ├── broker_credentials.key              # Fernet key for encrypting/decrypting broker_credentials.json.enc
 │   │   │   ├── broker.key                          # Fernet key for encrypting/decrypting broker_credentials.json.enc
-│   │   │   ├── env.key                             # Fernet key for decrypting env.json.enc (general bot config)
 │   │   │   ├── env_bot.key                         # Fernet key for decrypting .env_bot.enc (runtime bot settings)
+│   │   │   ├── env.key                             # Fernet key for decrypting env.json.enc (general bot config)
 │   │   │   ├── holdings_secrets.key                # Fernet key for holdings_secrets.json.enc
 │   │   │   ├── login.key                           # Fernet key for encrypting SYSTEM_USERS.db (login/auth)
+│   │   │   ├── network_config.key                  # Fernet key for encrypting/decrypting network_config.json.enc
 │   │   │   ├── runtime_config.key		            # Fernet key for encrypting/decrypting runtime_config.json.enc (persistent bot runtime config)
 │   │   │   ├── screener_api.key                    # Fernet key for decrypting screener_api.json.enc
+│   │   │   ├── smtp_credentials.key                # Fernet key for encrypting/decrypting smtp_credentials.json.enc
 │   │   │   └── smtp.key                            # Fernet key for decrypting smtp_credentials.json.enc
 │   │   │
 │   │   ├── secrets/				                # All encrypted JSON config files—each unlocked with corresponding Fernet key - created during the provisioning process
@@ -324,8 +340,8 @@ rigd_tbot/
 │   │   │   ├── holdings_secrets.json.enc           # Encrypted holdings config and allocation data (managed by holdings_secrets.py)
 │   │   │   ├── network_config.json.enc   		    # Encrypted network config (hostname, IP, port)
 │   │   │   ├── runtime_config.json.enc		        # Encrypted persistent runtime bot configuration settings
-│   │   │   ├── smtp_credentials.json.enc           # Encrypted SMTP credentials for notifications
-│   │   │   └── screener_api.json.enc               # Encrypted screener API credentials
+│   │   │   ├── screener_api.json.enc               # Encrypted screener API credentials
+│   │   │   └── smtp_credentials.json.enc           # Encrypted SMTP credentials for notifications
 │   │   │
 │   │   └── migration_archives/                     # Historical config/ledger/backup artifacts (for manual recovery/migration)
 │   │
@@ -344,15 +360,17 @@ rigd_tbot/
 │   │   ├── config_fetch.py                     # Loads, validates, and returns the latest live config for key/secret rotation; provides config dicts to provisioning and key_manager logic
 │   │   ├── decrypt_secrets.py                  # Loads/decrypts *.json.enc secrets using Fernet keys from storage/keys/; called by config/runtime modules
 │   │   ├── encrypt_secrets.py                  # Encrypts/rotates all secret/config JSONs in storage/secrets/ using Fernet keys from storage/keys/
-│   │   ├── holdings_secrets.py                 #  module for encrypted holdings config/secrets CRUD and atomic/rollback support
+│   │   ├── holdings_secrets.py                 # Module for encrypted holdings config/secrets CRUD, atomic writes, rollback support, and audit integration - triggers key, secrets rotation/backup
 │   │   ├── path_resolver.py                    # Resolves storage/output/config paths for all modules, based on BOT_IDENTITY and file category; called by all runtime modules for dynamic file routing
+│   │   ├── rotate_keys.py                      # Rotates all Fernet keys in storage/keys/, re-encrypts matching secrets in storage/secrets/, and triggers versioned backup
+│   │   ├── secrets_manager.py                  # Central secrets CRUD/rotation manager; abstracts encrypt/decrypt, validates key–secret pairing, provides high-level API to web/provisioning
 │   │   ├── service_bot.py                      # (Optional) Systemd-compatible daemon: manages TradeBot process as a background service (not required for bootstrap)
 │   │   ├── utils_config.py                     # Loads/validates all bot and environment configuration files (.env, .env_bot, runtime envs) 
 │   │   ├── utils_identity.py                   # Computes/parses BOT_IDENTITY_STRING; manages all identity metadata for file/output routing
 │   │   ├── utils_log.py                        # Provides structured logging for system/trade/web/app events
 │   │   └── utils_time.py                       # Time and scheduling utilities (UTC conversion, timestamps, session windows)
-│   │
-│   ├── test/				                        # Complete automated and manual test suite for all bot modules. All test scripts only read from secrets/keys created by Web UI; never modify config or secrets.
+│   │ 
+│   ├── test/				           # Complete automated and manual test suite for all bot modules. All test scripts only read from secrets/keys created by Web UI; never modify config or secrets.
 │   │   ├── integration_test_runner.py              # TEST RUNNER. Launched by main.py in TEST_MODE, or manually/CI. Simulates full bot bootstrap, strategy, and shutdown. Writes only to test logs/artifacts. Never launches or supervises any watcher/worker.
 │   │   ├── test_backtest_engine.py                 # DEV/CI TEST. Validates backtest engine vs. reference metrics, equity curves. Never launched in production.
 │   │   ├── test_broker_sync.py                     # DEV/CI TEST. Validates broker ledger sync logic, idempotency, double-entry enforcement.
@@ -377,8 +395,9 @@ rigd_tbot/
 │   │   ├── test_screener_integration.py            # DEV/CI TEST. Full integration/compatibility test for all screener modules, API secrets, and symbol eligibility. Never launched in production.
 │   │   ├── test_screener_random.py                 # DEV/CI TEST. Tests screener with randomized symbols for eligibility/filtering logic. Never launched in production.
 │   │   ├── test_strategy_selfcheck.py              # DEV/CI TEST. Runs .self_check() on all strategy modules, validates config/signal paths. Never launched in production.
+│   │   ├── test_strategy_tuner.py                 # DEV/CI TEST. Validates strategy tuning module behavior, parameter adjustments, and performance impact. Never launched in production.
 │   │   ├── test_symbol_universe_refresh.py         # DEV/CI TEST. Tests universe orchestrator, build, credential gating, and output JSONs.
-│   │   └──test_universe_cache.py                  # DEV/CI TEST. Verifies universe cache schema, age, and content. Never launched in production.
+│   │   └── test_universe_cache.py                  # DEV/CI TEST. Verifies universe cache schema, age, and content. Never launched in production.
 │   │
 │   └── trading/			                    # Trade Execution
 │       ├── holdings_manager.py          	# Core logic for ETF purchases, sales, rebalancing, cash top-up, tax and payroll allocations.
@@ -393,7 +412,7 @@ rigd_tbot/
 │       ├── utils_coa.py                        # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa_template.json and supports Web UI editing.
 │       ├── utils_etf.py                        # Resolves ETF and inverse ETF tickers for supported symbols (top 20+ ETFs, as per project specifications).
 │       ├── utils_puts.py                       # Returns put option contract specs for any supported broker.
-│       └── utils_shorts.py                     # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives.
+│       └──utils_shorts.py                     # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives.
 │   
 └── tbot_web/                                   # Web dashboard: bot monitoring, logs, user auth, control, and COA management
     ├── static/                                 # Static frontend resources
@@ -408,6 +427,7 @@ rigd_tbot/
     │   │   ├── universe.js                 # JS for universe.html: updates status fields, fetches/refreshes universe tables, triggers log/status updates; NO filtering logic or direct file writes
     │   │   ├── screener_credentials.js     # JS: Screener credential management UI logic, API calls, masking, field validation
     │   │   ├── test_ui.js                  # JS for test.html: - triggers tests, and displays test results to window on test.html page
+    │   │   ├── status_live.js                  # Polls /status API, updates live status panel (PnL, win rate, defense/kill switch state, holdings compliance) in status.html
     │   │   └── shared_utils.js    		    # Provides shared API helpers and utility functions for frontend JavaScript modules        
     │   │
     │   └── css/
@@ -451,7 +471,7 @@ rigd_tbot/
     │   ├── coa_web.py                          # COA endpoints: view, edit, export; calls utils_coa_web.py, config_encryption.py. Never launches any worker/watcher.
     │   ├── coa_mapping_web.py                  # Flask web endpoints for mapping table UI: manage, assign, export/import, audit, rollback.
     │   ├── configuration_web.py                # Handles configuration route: displays, saves, and provisions config; calls config_encryption, key_manager, security_users. Never launches any worker/watcher.
-    │   ├── holdings_web.py                     # Flask blueprint: UI endpoints for holdings management, config, and status. -  All core audit, allocation, and compliance logic is enforced here.
+    │   ├── holdings_web.py                     # Flask blueprint: UI endpoints for holdings management, config, and status. -  All core audit, allocation, compliance logic, and ledger cross-linking is enforced here.
     │   ├── ledger_web.py		                # Ledger management API providing endpoints for viewing, uploading broker CSVs, reconciling, editing, and resolving ledger entries; all changes are tracked with versioning and audit logs. Only admin users can perform edits or reconciliations. Never launches any worker/watcher.
     │   ├── login_web.py                        # User login/logout/session; calls auth_web.py, security_users.py, session_manager.py. Never launches any worker/watcher.
     │   ├── logout_web.py                       # Handles session termination and logout logic; updates session and user state. Never launches any worker/watcher.
