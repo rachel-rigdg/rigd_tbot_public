@@ -3,17 +3,69 @@
 """
 Central canonical field lists for all ledger-related tables.
 Import these lists everywhere to ensure schema alignment and prevent drift.
+
+NOTE: TRADES_FIELDS order must match the SQLite schema exactly (PRAGMA table_info(trades))
+excluding the autoincrement primary key 'id'.
 """
 
 TRADES_FIELDS = [
-    "ledger_entry_id", "datetime_utc", "symbol", "symbol_full", "action", "side", "quantity", "quantity_type",
-    "price", "total_value", "amount", "commission", "commission_currency", "fee", "fee_currency", "currency_code",
-    "language_code", "price_currency", "fx_rate", "accrued_interest", "accrued_interest_currency", "tax",
-    "tax_currency", "net_amount", "settlement_date", "trade_date", "description", "counterparty", "sub_account",
-    "broker_code", "strategy", "account", "trade_id", "tags", "notes", "jurisdiction_code", "entity_code",
-    "language", "created_by", "updated_by", "approved_by", "approval_status", "gdpr_compliant", "ccpa_compliant",
-    "pipeda_compliant", "hipaa_sensitive", "iso27001_tag", "soc2_type", "extra_fields", "json_metadata", "bot_id",
-    "created_at", "updated_at", "status"
+    # -- must match trades schema columns 1..56 (id omitted) --
+    "ledger_entry_id",
+    "datetime_utc",
+    "symbol",
+    "symbol_full",
+    "action",
+    "quantity",
+    "quantity_type",
+    "price",
+    "total_value",
+    "amount",
+    "side",
+    "commission",
+    "fee",
+    "broker_code",
+    "account",
+    "trade_id",
+    "group_id",                  # critical for grouping/UI
+    "strategy",
+    "tags",
+    "notes",
+    "jurisdiction_code",
+    "entity_code",
+    "language",
+    "created_by",
+    "updated_by",
+    "approved_by",
+    "approval_status",
+    "status",
+    "created_at",
+    "updated_at",
+    "gdpr_compliant",
+    "ccpa_compliant",
+    "pipeda_compliant",
+    "hipaa_sensitive",
+    "iso27001_tag",
+    "soc2_type",
+    "currency_code",
+    "language_code",
+    "price_currency",
+    "fx_rate",
+    "commission_currency",
+    "fee_currency",
+    "accrued_interest",
+    "accrued_interest_currency",
+    "tax",
+    "tax_currency",
+    "net_amount",
+    "settlement_date",
+    "trade_date",
+    "description",
+    "counterparty",
+    "sub_account",
+    "extra_fields",
+    "json_metadata",
+    "raw_broker_json",
+    "bot_id",
 ]
 
 LEDGER_ENTRIES_FIELDS = [
