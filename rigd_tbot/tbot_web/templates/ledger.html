@@ -73,9 +73,20 @@
                 {% for entry in entries %}
                     <tr class="row-top {{ entry.status }}">
                         <td>
-                            <button class="collapse-btn" type="button" onclick="toggleCollapse('{{ entry.group_id }}')">
+                            <!-- pass explicit desired state to preserve button semantics -->
+                            <button class="collapse-btn" type="button"
+                                    onclick="toggleCollapse('{{ entry.group_id }}', {{ 'true' if entry.collapsed else 'false' }})"
+                                    title="{{ 'Expand' if entry.collapsed else 'Collapse' }}">
                                 {{ "+" if entry.collapsed else "-" }}
                             </button>
+                            <!-- new: per-group expand checkbox (checked = expanded) -->
+                            <label style="margin-left:.5rem;">
+                                <input type="checkbox"
+                                       class="toggle-group"
+                                       data-group-id="{{ entry.group_id }}"
+                                       {% if not entry.collapsed %}checked{% endif %}>
+                                expand
+                            </label>
                             {{ entry.datetime_utc.split('T')[0] if entry.datetime_utc }}
                         </td>
                         <td>{{ entry.symbol }}</td>

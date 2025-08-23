@@ -50,10 +50,43 @@ function updateSortIndicators() {
     });
 }
 
-function toggleCollapse(groupId) {
-    fetch(`/ledger/collapse_expand/${groupId}`, {method:"POST"})
-    .then(()=>location.reload());
+// --- Collapse/Expand handling ---
+const COLLAPSE_ENDPOINT_BASE = "/ledger/collapse_expand/";
+
+function postCollapseState(groupId, expanded) {
+    // Server expects collapsed_state: 1/0 (1 = collapsed, 0 = expanded)
+    const collapsed_state = expanded ? 0 : 1;
+    return fetch(COLLAPSE_ENDPOINT_BASE + encodeURIComponent(groupId), {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ collapsed_state })
+    });
 }
+
+// Back-compat for existing +/- button calls
+function toggleCollapse(groupId, wantExpanded = null) {
+    if (wantExpanded === null) {
+        // Old behavior: no explicit state, let server toggle
+        return fetch(COLLAPSE_ENDPOINT_BASE + encodeURIComponent(groupId), { method: "POST" })
+            .then(() => location.reload());
+    } else {
+        return postCollapseState(groupId, wantExpanded).then(() => location.reload());
+    }
+}
+
+// Delegate checkbox changes (checked = expanded)
+document.addEventListener('change', function(ev) {
+    const el = ev.target;
+    if (!el.classList.contains('toggle-group')) return;
+    const gid = el.dataset.groupId;
+    const expanded = el.checked;
+    postCollapseState(gid, expanded)
+        .then(() => location.reload())
+        .catch(err => {
+            console.error('collapse/expand failed', err);
+            alert('Failed to toggle group view. Check logs.');
+        });
+});
 
 function renderLedgerRows(data) {
     let tbody = document.getElementById('ledger-tbody');
@@ -67,13 +100,21 @@ function renderLedgerRows(data) {
             (entry.quantity !== null && entry.quantity !== "" && entry.quantity !== "None") ||
             (entry.total_value !== null && entry.total_value !== "" && entry.total_value !== "None")
         ) {
+            const gid = entry.group_id || entry.trade_id || '';
             let trTop = document.createElement('tr');
             trTop.className = "row-top " + (entry.status || "");
             trTop.innerHTML = `
                 <td>
-                    <button class="collapse-btn" onclick="toggleCollapse('${entry.group_id}')">
+                    <!-- keep old +/- button working -->
+                    <button class="collapse-btn" onclick="toggleCollapse('${gid}', ${entry.collapsed ? 'true' : 'false'})" title="${entry.collapsed ? 'Expand' : 'Collapse'}">
                         ${entry.collapsed ? "+" : "-"}
-                    </button> ${entry.datetime_utc ? entry.datetime_utc.split('T')[0] : ""}
+                    </button>
+                    <!-- new checkbox: checked = expanded -->
+                    <label style="margin-left:.5rem;">
+                      <input type="checkbox" class="toggle-group" data-group-id="${gid}" ${entry.collapsed ? '' : 'checked'} />
+                      expand
+                    </label>
+                    ${entry.datetime_utc ? entry.datetime_utc.split('T')[0] : ""}
                 </td>
                 <td>${entry.symbol || ""}</td>
                 <td>${entry.action || ""}</td>

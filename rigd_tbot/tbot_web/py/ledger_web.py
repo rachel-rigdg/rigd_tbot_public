@@ -128,12 +128,24 @@ def ledger_group_detail(group_id):
 @ledger_web.route('/ledger/collapse_expand/<group_id>', methods=['POST'])
 def ledger_collapse_expand(group_id):
     if provisioning_guard() or identity_guard():
-        return jsonify({"error": "Not permitted"}), 403
+        return jsonify({"ok": False, "error": "Not permitted"}), 403
     try:
-        result = collapse_expand_group(group_id)
-        return jsonify({"result": result})
+        # Accept optional explicit state from the client.
+        # convention: collapsed_state = 1 means "collapsed", 0 means "expanded"
+        data = request.get_json(silent=True) or {}
+        collapsed_state = data.get("collapsed_state", None)
+        if collapsed_state is not None:
+            # normalize to 0/1
+            collapsed_state = 1 if str(collapsed_state).lower() in ("1", "true", "yes") else 0
+            result = collapse_expand_group(group_id, collapsed_state=collapsed_state)
+        else:
+            # no state provided -> toggle
+            result = collapse_expand_group(group_id)
+
+        return jsonify({"ok": True, "result": bool(result), "collapsed_state": collapsed_state})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 
 @ledger_web.route('/ledger/search', methods=['GET'])
