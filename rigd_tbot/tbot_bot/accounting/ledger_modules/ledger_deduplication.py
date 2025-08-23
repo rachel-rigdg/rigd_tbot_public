@@ -3,6 +3,7 @@
 import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
+from typing import List, Dict, Any
 
 def trade_exists(trade_id, side=None):
     """
@@ -94,3 +95,33 @@ def check_duplicates(trade_id, side=None):
                 (trade_id,)
             ).fetchone()
         return row[0] if row else 0
+
+# -------- In-memory de-dup for pre-posting (used by tests & sync) --------
+
+def deduplicate_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    In-memory deduplication of normalized broker entries before posting.
+    Keeps the first occurrence of each trade_id (pre-double-entry),
+    and ensures group_id is populated with trade_id if missing.
+
+    This is intentionally trade_id-only, because post_double_entry()
+    will create exactly two legs (debit/credit) per unique trade.
+    """
+    seen = set()
+    result: List[Dict[str, Any]] = []
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        tid = e.get("trade_id")
+        if not tid:
+            # If no trade_id, keep it (let compliance/mapping decide later)
+            result.append(e)
+            continue
+        if tid in seen:
+            continue
+        seen.add(tid)
+        if not e.get("group_id"):
+            e = dict(e)
+            e["group_id"] = tid
+        result.append(e)
+    return result
