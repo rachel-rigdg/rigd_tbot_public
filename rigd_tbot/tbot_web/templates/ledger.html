@@ -25,9 +25,6 @@
       .status-mismatch { color:#b30000; font-weight:600; }
       .resolved-tag { color:#0a7; font-weight:600; }
       .status-ok { color:#333; }
-      .inline-form { display:flex; gap:.4rem; align-items:center; }
-      .inline-form select { max-width: 18rem; }
-      .inline-form small { color:#666; }
     </style>
     <script src="/static/js/ledger.js"></script>
 </head>
@@ -152,7 +149,7 @@
 
                     <!-- NEW: inline COA account editor per leg -->
                     <td>
-                      <form class="inline-form" method="post" action="{{ url_for('ledger_web.update_ledger_account_route', entry_id=sub.id) }}">
+                      <form method="post" action="{{ url_for('ledger_web.update_account', entry_id=sub.id) }}">
                         <select name="account" required>
                           {% for code, name in coa_accounts %}
                             <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
@@ -160,17 +157,6 @@
                             </option>
                           {% endfor %}
                         </select>
-                        <select name="strategy">
-                          <option value="" {% if not sub.strategy %}selected{% endif %}>strategy…</option>
-                          <option value="open"  {% if sub.strategy == 'open' %}selected{% endif %}>open</option>
-                          <option value="mid"   {% if sub.strategy == 'mid' %}selected{% endif %}>mid</option>
-                          <option value="close" {% if sub.strategy == 'close' %}selected{% endif %}>close</option>
-                          <option value="other" {% if sub.strategy == 'other' %}selected{% endif %}>other</option>
-                        </select>
-                        <label>
-                          <input type="checkbox" name="apply_to_group" value="1">
-                          apply to group
-                        </label>
                         <button type="submit">Save</button>
                       </form>
                     </td>
@@ -267,27 +253,5 @@
       </div>
     </div>
   </div>
-
-  <script>
-    // Wire up the "Collapse all" toggle to the backend endpoint; reload after.
-    document.addEventListener('DOMContentLoaded', () => {
-      const master = document.getElementById('collapse-all');
-      if (master) {
-        master.addEventListener('change', async () => {
-          try {
-            await fetch('collapse_all', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ collapse: master.checked })
-            });
-            location.reload();
-          } catch (e) {
-            console.error('collapse_all failed', e);
-            alert('Failed to toggle all groups. Check logs.');
-          }
-        });
-      }
-    });
-  </script>
 </body>
 </html>
