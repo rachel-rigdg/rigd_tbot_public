@@ -1,5 +1,13 @@
 # requirements.txt
 
+# Python version note:
+# Project is developed for Python ≥ 3.10 (recommended).
+# If you must run on 3.8/3.9, code uses 'from __future__ import annotations' in modules with PEP 604 unions.
+# (requirements.txt cannot enforce Python version; create your venv with the desired interpreter.)
+
+# === Python compatibility (3.8/3.9 helpers) ===
+typing_extensions>=4.10.0; python_version < "3.10"   # Backports newer typing features for older Python
+
 # === Trading APIs ===
 alpaca-trade-api==3.2.0           # Alpaca trading integration
 ib_insync==0.9.83                 # Interactive Brokers trading integration (preferred, high-level wrapper)
