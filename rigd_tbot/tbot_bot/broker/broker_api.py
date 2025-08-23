@@ -3,21 +3,73 @@
 # Calls always use current secrets/config for all supported brokers. All other code must use these functions only.
 
 import importlib
+from typing import Any, Dict, List
+
 from tbot_bot.support.decrypt_secrets import (
     decrypt_json,
-    load_broker_credential
+    load_broker_credential,
 )
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 
+# Prefer the central compliance filter; fall back to a local-lite filter if unavailable.
+try:
+    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (
+        compliance_filter_entries as _compliance_filter_entries,
+    )
+    _HAS_COMPLIANCE = True
+except Exception:
+    _HAS_COMPLIANCE = False
+    _PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "total_value")
+    _ALLOWED_ACTIONS = {
+        "long", "short", "put", "call", "assignment", "exercise", "expire", "reorg", "inverse", "other",
+        # accepted system/ops actions (harmless if unused)
+        "reserve_tax", "reserve_payroll", "float_allocation", "rebalance_buy", "rebalance_sell",
+    }
+
+    def _is_blank_primary(entry: Dict[str, Any]) -> bool:
+        return all(entry.get(f) is None or str(entry.get(f)).strip() == "" for f in _PRIMARY_FIELDS)
+
+    def _lite_filter(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        filtered = []
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            if _is_blank_primary(e):
+                continue
+            action = e.get("action")
+            if action not in _ALLOWED_ACTIONS:
+                continue
+            if e.get("skip_insert"):
+                continue
+            jm = e.get("json_metadata")
+            if isinstance(jm, dict) and isinstance(jm.get("raw_broker"), dict):
+                # Drop obvious status-only markers that may slip through normalization
+                raw = jm["raw_broker"]
+                hint = str(
+                    raw.get("activity_type") or raw.get("type") or raw.get("order_status") or ""
+                ).upper()
+                if hint in {"NEW", "PENDING_NEW", "ACCEPTED", "CANCELED", "CANCELLED",
+                            "REPLACED", "REJECTED", "EXPIRED", "PARTIAL_FILL", "PARTIALLY_FILLED",
+                            "PENDING_CANCEL", "FILL"}:
+                    # Only admit them if they have clear economics (nonzero total_value or fees)
+                    tv = float(e.get("total_value") or 0)  # safe cast
+                    fees = float(e.get("fee") or 0) + float(e.get("commission") or 0)
+                    if tv == 0 and fees == 0:
+                        continue
+            filtered.append(e)
+        return filtered
+
+
 ADAPTERS = {
     "ALPACA": "tbot_bot.broker.adapters.alpaca.AlpacaBroker",
     "IBKR": "tbot_bot.broker.adapters.ibkr.IBKRBroker",
-    "TRADIER": "tbot_bot.broker.adapters.tradier.TradierBroker"
+    "TRADIER": "tbot_bot.broker.adapters.tradier.TradierBroker",
 }
 
 _broker_instance = None
 _broker_env = None
+
 
 def get_broker_env():
     global _broker_env
@@ -30,6 +82,7 @@ def get_broker_env():
         except Exception:
             _broker_env = {}
     return _broker_env
+
 
 def get_active_broker():
     global _broker_instance
@@ -47,6 +100,16 @@ def get_active_broker():
     _broker_instance = broker_cls(env)
     return _broker_instance
 
+
+def _normalize_and_filter(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Normalize broker records and filter out blanks/unmapped/status-only noise."""
+    normalized = [normalize_trade(r) for r in records if isinstance(r, dict)]
+    if _HAS_COMPLIANCE:
+        return _compliance_filter_entries(normalized)
+    # Fallback path if compliance module not importable
+    return _lite_filter(normalized)
+
+
 def place_order(order):
     broker = get_active_broker()
     if hasattr(broker, "place_order"):
@@ -56,45 +119,53 @@ def place_order(order):
     else:
         raise AttributeError(f"{broker.__class__.__name__} has neither place_order nor submit_order method.")
 
+
 def cancel_order(order_id):
     broker = get_active_broker()
     return broker.cancel_order(order_id)
+
 
 def close_position(order):
     broker = get_active_broker()
     return broker.close_position(order["symbol"])
 
+
 def get_account_info():
     broker = get_active_broker()
     return broker.get_account_info()
+
 
 def get_positions():
     broker = get_active_broker()
     return broker.get_positions()
 
+
 def is_symbol_tradable(symbol):
     broker = get_active_broker()
     return broker.is_symbol_tradable(symbol)
+
 
 def supports_fractional(symbol):
     broker = get_active_broker()
     return broker.supports_fractional(symbol)
 
+
 def get_min_order_size(symbol):
     broker = get_active_broker()
     return broker.get_min_order_size(symbol)
 
+
 def fetch_all_trades(start_date, end_date=None):
     broker = get_active_broker()
     trades = broker.fetch_all_trades(start_date, end_date)
-    # ENFORCE NORMALIZATION ON ALL OUTPUTS
-    return [normalize_trade(t) for t in trades if isinstance(t, dict)]
+    return _normalize_and_filter(trades)
+
 
 def fetch_cash_activity(start_date, end_date=None):
     broker = get_active_broker()
     acts = broker.fetch_cash_activity(start_date, end_date)
-    # ENFORCE NORMALIZATION ON ALL OUTPUTS
-    return [normalize_trade(c) for c in acts if isinstance(c, dict)]
+    return _normalize_and_filter(acts)
+
 
 __all__ = [
     "get_active_broker",
@@ -107,5 +178,5 @@ __all__ = [
     "supports_fractional",
     "get_min_order_size",
     "fetch_all_trades",
-    "fetch_cash_activity"
+    "fetch_cash_activity",
 ]

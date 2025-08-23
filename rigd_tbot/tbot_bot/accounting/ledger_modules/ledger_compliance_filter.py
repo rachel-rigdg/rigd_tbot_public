@@ -19,19 +19,22 @@ PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "tota
 # Actions permitted by the ledger schema & our posting hooks
 _ALLOWED_ACTIONS = {
     "long", "short", "put", "call", "assignment", "exercise", "expire", "reorg", "inverse", "other",
-    # system/ops hooks
+    # system/ops hooks (kept for forward compatibility; harmless if unused)
     "reserve_tax", "reserve_payroll", "float_allocation", "rebalance_buy", "rebalance_sell",
 }
+
 
 def _is_blank_primary(entry: Dict[str, Any]) -> bool:
     """True if all primary display fields are None/empty strings."""
     return all(entry.get(f) is None or str(entry.get(f)).strip() == "" for f in PRIMARY_FIELDS)
+
 
 def _as_float(x: Any, default: float = 0.0) -> float:
     try:
         return float(x)
     except Exception:
         return default
+
 
 def _is_zero_value_spurious(entry: Dict[str, Any]) -> bool:
     """
@@ -63,6 +66,7 @@ def _is_zero_value_spurious(entry: Dict[str, Any]) -> bool:
         return True
     return False
 
+
 def compliance_filter_entry(entry: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     """
     Validate a single entry. Returns (allowed, reason_if_rejected).
@@ -75,7 +79,7 @@ def compliance_filter_entry(entry: Dict[str, Any]) -> Tuple[bool, Optional[str]]
     if _is_blank_primary(entry):
         return False, "blank_primary_fields"
 
-    # Action check
+    # Action check (must already be mapped to ledger actions)
     action = entry.get("action")
     if action not in _ALLOWED_ACTIONS:
         return False, "unmapped_action"
@@ -90,6 +94,7 @@ def compliance_filter_entry(entry: Dict[str, Any]) -> Tuple[bool, Optional[str]]
 
     return True, None
 
+
 def compliance_filter_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Batch version: returns only entries that pass compliance."""
     passed: List[Dict[str, Any]] = []
@@ -98,6 +103,7 @@ def compliance_filter_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, A
         if ok:
             passed.append(e)
     return passed
+
 
 # --- Backward compatibility shims ---
 
@@ -108,5 +114,17 @@ def is_compliant_ledger_entry(entry: dict) -> bool:
     ok, _ = compliance_filter_entry(entry)
     return ok
 
-# Some modules import this exact name
-compliance_filter_ledger_entry = compliance_filter_entry
+
+def compliance_filter_ledger_entry(entry: dict):
+    """
+    Legacy entry/None wrapper retained for modules that expect the filtered entry back.
+    Returns the original entry if compliant, otherwise None.
+    """
+    ok, _ = compliance_filter_entry(entry)
+    return entry if ok else None
+
+
+# Some tests/modules look for this exact helper name.
+# Make it a thin alias to the batch filter above.
+def filter_valid_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return compliance_filter_entries(entries)
