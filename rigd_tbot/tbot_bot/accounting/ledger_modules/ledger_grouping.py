@@ -71,15 +71,55 @@ def get_trades_grouped_by_trade_id(trade_id=None, limit=100, offset=0):
                 results.append([dict(row) for row in rows])
     return results
 
-def collapse_group(trades_group):
+def _pick_representative_leg(trades_group):
+    """
+    Choose one leg to represent the economic transaction in collapsed view.
+    Prefer a 'debit' leg if present (so quantity/price/total_value match the buy/open leg),
+    otherwise fall back to the first row.
+    """
     if not trades_group:
         return {}
-    collapsed = dict(trades_group[0])
-    collapsed["quantity"] = sum(float(t.get("quantity") or 0) for t in trades_group)
-    collapsed["total_value"] = sum(float(t.get("total_value") or 0) for t in trades_group)
-    collapsed["amount"] = sum(float(t.get("amount") or 0) for t in trades_group)
-    collapsed["fee"] = sum(float(t.get("fee") or 0) for t in trades_group)
-    collapsed["commission"] = sum(float(t.get("commission") or 0) for t in trades_group)
+    for t in trades_group:
+        try:
+            if (t.get("side") or "").lower() == "debit":
+                return t
+        except Exception:
+            pass
+    return trades_group[0]
+
+def collapse_group(trades_group):
+    """
+    Build a collapsed view that shows ONE leg's economics (representative),
+    not the sum of both legs. This avoids doubled quantity and total_value=0 issues.
+    All original legs are still available in 'sub_entries' (attached later).
+    """
+    if not trades_group:
+        return {}
+
+    rep = _pick_representative_leg(trades_group)
+    collapsed = dict(rep)  # start from representative leg
+
+    # Defensive numeric helper
+    def _f(x, default=0.0):
+        try:
+            return float(x)
+        except Exception:
+            return default
+
+    # Use representative leg's economics; do NOT sum across legs
+    if rep.get("quantity") is None:
+        qs = [_f(t.get("quantity")) for t in trades_group if t.get("quantity") is not None]
+        collapsed["quantity"] = max(qs) if qs else None
+    else:
+        collapsed["quantity"] = rep.get("quantity")
+
+    collapsed["price"] = rep.get("price")
+    collapsed["total_value"] = rep.get("total_value")
+    collapsed["amount"] = rep.get("amount")
+    collapsed["fee"] = rep.get("fee")
+    collapsed["commission"] = rep.get("commission")
+
+    # Keep metadata for debugging/inspection
     collapsed["sides"] = [t.get("side") for t in trades_group]
     collapsed["ids"] = [t.get("id") for t in trades_group]
     return collapsed
