@@ -8,7 +8,11 @@ from pathlib import Path
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 
 from tbot_bot.support.decrypt_secrets import load_bot_identity
-from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex, resolve_ledger_db_path
+from tbot_bot.support.path_resolver import (
+    validate_bot_identity,
+    get_bot_identity_string_regex,
+    resolve_ledger_db_path,
+)
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts
@@ -89,7 +93,7 @@ def ledger_reconcile():
         balances = calculate_account_balances()
 
         coa_data = load_coa_metadata_and_accounts()
-        coa_accounts = coa_data.get("accounts_flat", [])
+        coa_accounts = coa_data.get("accounts_flat", [])  # list of (code, name)
 
         # Use grouped view by default (collapsed)
         entries = fetch_grouped_trades()
@@ -280,6 +284,10 @@ def add_ledger_entry_route():
 
 @ledger_web.route('/ledger/edit/<int:entry_id>', methods=['POST'])
 def edit_ledger_entry_route(entry_id):
+    """
+    Full edit (legacy) — keeps behavior for forms that post many fields.
+    If you only want to change the COA account, use /ledger/update_account/<id>.
+    """
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import edit_ledger_entry
@@ -334,6 +342,140 @@ def edit_ledger_entry_route(entry_id):
         traceback.print_exc()
         flash(f"Ledger error: {e}", "error")
     return redirect(url_for('ledger_web.ledger_reconcile'))
+
+
+# ---------- NEW: minimal, safe COA account updater (single-row or whole-group) ----------
+
+def _valid_account_code(code: str) -> bool:
+    if not code:
+        return False
+    try:
+        coa = load_coa_metadata_and_accounts()
+        valid_codes = {c for c, _n in (coa.get("accounts_flat", []) or [])}
+        return code in valid_codes
+    except Exception:
+        return False
+
+
+@ledger_web.route('/ledger/update_account/<int:entry_id>', methods=['POST'])
+def update_ledger_account_route(entry_id: int):
+    """
+    Update only the COA account (and optionally strategy) for a single ledger row.
+    Optional form fields:
+      - account (required)
+      - strategy (optional)
+      - apply_to_group: "1" to apply to all rows with the same group_id
+    """
+    if provisioning_guard() or identity_guard():
+        return redirect(url_for('main.root_router'))
+
+    account = (request.form.get("account") or "").strip()
+    strategy = (request.form.get("strategy") or "").strip() or None
+    apply_to_group = str(request.form.get("apply_to_group", "0")).lower() in ("1", "true", "yes")
+
+    if not _valid_account_code(account):
+        flash("Invalid account code.", "error")
+        return redirect(url_for('ledger_web.ledger_reconcile'))
+
+    # Locate DB
+    bot_identity = load_bot_identity()
+    e, j, b, bot_id = bot_identity.split("_")
+    db_path = resolve_ledger_db_path(e, j, b, bot_id)
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT id, group_id FROM trades WHERE id = ?", (entry_id,)).fetchone()
+            if not row:
+                flash("Entry not found.", "error")
+                return redirect(url_for('ledger_web.ledger_reconcile'))
+
+            if apply_to_group and row["group_id"]:
+                params = [account]
+                sql = "UPDATE trades SET account = ?"
+                if strategy is not None:
+                    sql += ", strategy = ?"
+                    params.append(strategy)
+                sql += " WHERE group_id = ?"
+                params.append(row["group_id"])
+                conn.execute(sql, tuple(params))
+            else:
+                params = [account]
+                sql = "UPDATE trades SET account = ?"
+                if strategy is not None:
+                    sql += ", strategy = ?"
+                    params.append(strategy)
+                sql += " WHERE id = ?"
+                params.append(entry_id)
+                conn.execute(sql, tuple(params))
+            conn.commit()
+
+        flash("Account updated." + (" (Applied to group.)" if apply_to_group else ""))
+    except Exception as e:
+        traceback.print_exc()
+        flash(f"Failed to update account: {e}", "error")
+
+    return redirect(url_for('ledger_web.ledger_reconcile'))
+
+
+@ledger_web.route('/ledger/update_account_json', methods=['POST'])
+def update_ledger_account_json():
+    """
+    JSON variant for XHR updates.
+    Body: {"entry_id": 123, "account": "Assets:Cash", "strategy":"open", "apply_to_group": true}
+    """
+    if provisioning_guard() or identity_guard():
+        return jsonify({"ok": False, "error": "Not permitted"}), 403
+
+    data = request.get_json(silent=True) or {}
+    try:
+        entry_id = int(data.get("entry_id"))
+    except Exception:
+        return jsonify({"ok": False, "error": "missing/invalid entry_id"}), 400
+
+    account = (data.get("account") or "").strip()
+    strategy = (data.get("strategy") or "").strip() or None
+    apply_to_group = bool(data.get("apply_to_group", False))
+
+    if not _valid_account_code(account):
+        return jsonify({"ok": False, "error": "invalid account code"}), 400
+
+    # Locate DB
+    bot_identity = load_bot_identity()
+    e, j, b, bot_id = bot_identity.split("_")
+    db_path = resolve_ledger_db_path(e, j, b, bot_id)
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT id, group_id FROM trades WHERE id = ?", (entry_id,)).fetchone()
+            if not row:
+                return jsonify({"ok": False, "error": "entry not found"}), 404
+
+            if apply_to_group and row["group_id"]:
+                params = [account]
+                sql = "UPDATE trades SET account = ?"
+                if strategy is not None:
+                    sql += ", strategy = ?"
+                    params.append(strategy)
+                sql += " WHERE group_id = ?"
+                params.append(row["group_id"])
+                conn.execute(sql, tuple(params))
+            else:
+                params = [account]
+                sql = "UPDATE trades SET account = ?"
+                if strategy is not None:
+                    sql += ", strategy = ?"
+                    params.append(strategy)
+                sql += " WHERE id = ?"
+                params.append(entry_id)
+                conn.execute(sql, tuple(params))
+            conn.commit()
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @ledger_web.route('/ledger/delete/<int:entry_id>', methods=['POST'])

@@ -29,14 +29,23 @@ function sortLedgerTable(col) {
     rows.forEach(row => tbody.appendChild(row));
     table.dataset.sortCol = col;
     table.dataset.sortDir = asc ? 'asc' : 'desc';
-    currentSort = {col, desc: !asc}; // Set next sort direction for UI
+    currentSort = {col, desc: !asc};
     updateSortIndicators();
 }
 
 function getColIdx(col) {
+    // UPDATED indices to include the new Account column (3rd col)
     const mapping = {
-        "datetime_utc": 1, "symbol": 2, "action": 3, "quantity": 4,
-        "price": 5, "fee": 6, "total_value": 7, "status": 8, "running_balance": 9
+        "datetime_utc": 1,
+        "symbol": 2,
+        "account": 3,
+        "action": 4,
+        "quantity": 5,
+        "price": 6,
+        "fee": 7,
+        "total_value": 8,
+        "status": 9,
+        "running_balance": 10
     };
     return mapping[col] || 1;
 }
@@ -51,9 +60,9 @@ function updateSortIndicators() {
 }
 
 // --- Collapse/Expand handling ---
-// IMPORTANT: use RELATIVE paths so they work under the blueprint prefix (/ledger/ledger/*)
-const COLLAPSE_ENDPOINT_BASE = "collapse_expand/";   // <-- no leading slash
-const COLLAPSE_ALL_ENDPOINT  = "collapse_all";       // optional, if route exists
+// Use RELATIVE paths so they work under the blueprint prefix (/ledger/ledger/*)
+const COLLAPSE_ENDPOINT_BASE = "collapse_expand/";
+const COLLAPSE_ALL_ENDPOINT  = "collapse_all"; // will be used if backend route exists
 
 function _checkOk(res) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -123,7 +132,8 @@ function renderLedgerRows(data) {
         if (
             (entry.symbol && String(entry.symbol).trim()) ||
             (entry.datetime_utc && String(entry.datetime_utc).trim()) ||
-            (entry.action && String(entry.action)).trim() ||
+            // FIXED: avoid calling .trim() on false
+            (entry.action && String(entry.action).trim()) ||
             (entry.price !== null && entry.price !== "" && entry.price !== "None") ||
             (entry.quantity !== null && entry.quantity !== "" && entry.quantity !== "None") ||
             (entry.total_value !== null && entry.total_value !== "" && entry.total_value !== "None")
@@ -143,6 +153,8 @@ function renderLedgerRows(data) {
                     ${entry.datetime_utc ? entry.datetime_utc.split('T')[0] : ""}
                 </td>
                 <td>${entry.symbol || ""}</td>
+                <!-- NEW: Account cell to match the template column order -->
+                <td>${entry.account || ""}</td>
                 <td>${entry.action || ""}</td>
                 <td>${entry.quantity || ""}</td>
                 <td>${entry.price || ""}</td>
@@ -174,6 +186,7 @@ function renderLedgerRows(data) {
 }
 
 document.addEventListener("DOMContentLoaded", function() {
+    // hook up auto-calc on the add-entry form
     var prefix = 'tr.row-top form[action$="add_ledger_entry_route"] ';
     ['quantity', 'price', 'fee'].forEach(function(field) {
         var el = document.querySelector(prefix + 'input[name="' + field + '"]');
@@ -181,6 +194,8 @@ document.addEventListener("DOMContentLoaded", function() {
             el.addEventListener('input', function() { autoCalcTotal(prefix); });
         }
     });
+
+    // sortable headers
     document.querySelectorAll('.sortable').forEach(function(th) {
         th.addEventListener('click', function() {
             let col = th.dataset.col;
@@ -188,4 +203,23 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     });
     updateSortIndicators();
+
+    // Master "Collapse all" checkbox (if present and backend route exists)
+    const collapseAllEl = document.getElementById('collapse-all');
+    if (collapseAllEl) {
+        collapseAllEl.addEventListener('change', () => {
+            setAllCollapsed(collapseAllEl.checked).catch(err => {
+                // graceful fallback: toggle each group individually if the batch route is missing
+                console.warn('collapse_all route failed; falling back per-group:', err);
+                const expanded = !collapseAllEl.checked; // collapse-all checked => expanded=false
+                const toggles = Array.from(document.querySelectorAll('.toggle-group'));
+                Promise.all(toggles.map(cb => postCollapseState(cb.dataset.groupId, expanded)))
+                    .then(() => location.reload())
+                    .catch(e => {
+                        console.error('Fallback per-group toggle failed', e);
+                        alert('Failed to apply collapse/expand to all rows.');
+                    });
+            });
+        });
+    }
 });

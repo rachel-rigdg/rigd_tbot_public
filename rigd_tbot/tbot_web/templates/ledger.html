@@ -25,6 +25,9 @@
       .status-mismatch { color:#b30000; font-weight:600; }
       .resolved-tag { color:#0a7; font-weight:600; }
       .status-ok { color:#333; }
+      .inline-form { display:flex; gap:.4rem; align-items:center; }
+      .inline-form select { max-width: 18rem; }
+      .inline-form small { color:#666; }
     </style>
     <script src="/static/js/ledger.js"></script>
 </head>
@@ -68,6 +71,8 @@
           <tr>
             <th class="sortable" data-col="datetime_utc" onclick="sortLedgerTable('datetime_utc')">Date (UTC)</th>
             <th class="sortable" data-col="symbol" onclick="sortLedgerTable('symbol')">Symbol</th>
+            <!-- NEW: Account column (sortable) -->
+            <th class="sortable" data-col="account" onclick="sortLedgerTable('account')">Account</th>
             <th class="sortable" data-col="action" onclick="sortLedgerTable('action')">Action</th>
             <th class="sortable" data-col="quantity" onclick="sortLedgerTable('quantity')">Quantity</th>
             <th class="sortable" data-col="price" onclick="sortLedgerTable('price')">Price</th>
@@ -99,7 +104,7 @@
             %}
               <tr class="row-top {{ entry.status }}">
                 <td>
-                  {# Old +/- button, now sends intended target state #}
+                  {# +/- button sends intended target state #}
                   <button
                     class="collapse-btn"
                     type="button"
@@ -108,7 +113,7 @@
                     {{ "+" if entry.collapsed else "-" }}
                   </button>
 
-                  {# New checkbox: checked = expanded (persisted) #}
+                  {# Checkbox: checked = expanded (persisted) #}
                   <label class="expand-toggle">
                     <input
                       type="checkbox"
@@ -121,6 +126,8 @@
                   {{ entry.datetime_utc.split('T')[0] if entry.datetime_utc }}
                 </td>
                 <td>{{ entry.symbol or "" }}</td>
+                <!-- NEW: show representative leg's account in collapsed/top row -->
+                <td>{{ entry.account or "" }}</td>
                 <td>{{ entry.action or "" }}</td>
                 <td>{{ entry.quantity or "" }}</td>
                 <td>{{ entry.price or "" }}</td>
@@ -142,7 +149,32 @@
                 {% for sub in entry.sub_entries %}
                   <tr class="row-bottom {{ sub.status }}">
                     <td>{{ sub.trade_id or "" }}</td>
-                    <td>{{ sub.account or "" }}</td>
+
+                    <!-- NEW: inline COA account editor per leg -->
+                    <td>
+                      <form class="inline-form" method="post" action="{{ url_for('ledger_web.update_ledger_account_route', entry_id=sub.id) }}">
+                        <select name="account" required>
+                          {% for code, name in coa_accounts %}
+                            <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
+                              {{ name }} ({{ code }})
+                            </option>
+                          {% endfor %}
+                        </select>
+                        <select name="strategy">
+                          <option value="" {% if not sub.strategy %}selected{% endif %}>strategy…</option>
+                          <option value="open"  {% if sub.strategy == 'open' %}selected{% endif %}>open</option>
+                          <option value="mid"   {% if sub.strategy == 'mid' %}selected{% endif %}>mid</option>
+                          <option value="close" {% if sub.strategy == 'close' %}selected{% endif %}>close</option>
+                          <option value="other" {% if sub.strategy == 'other' %}selected{% endif %}>other</option>
+                        </select>
+                        <label>
+                          <input type="checkbox" name="apply_to_group" value="1">
+                          apply to group
+                        </label>
+                        <button type="submit">Save</button>
+                      </form>
+                    </td>
+
                     <td>{{ sub.strategy or "" }}</td>
                     <td>{{ sub.tags or "" }}</td>
                     <td>{{ sub.notes or "" }}</td>
@@ -159,6 +191,8 @@
             <form method="post" action="{{ url_for('ledger_web.add_ledger_entry_route') }}">
               <td><input type="text" name="datetime_utc" placeholder="YYYY-MM-DD" required></td>
               <td><input type="text" name="symbol" placeholder="Symbol"></td>
+              <!-- placeholder cell for Account column in top row -->
+              <td></td>
               <td>
                 <select name="action">
                   <option value="">NONE</option>
@@ -233,5 +267,27 @@
       </div>
     </div>
   </div>
+
+  <script>
+    // Wire up the "Collapse all" toggle to the backend endpoint; reload after.
+    document.addEventListener('DOMContentLoaded', () => {
+      const master = document.getElementById('collapse-all');
+      if (master) {
+        master.addEventListener('change', async () => {
+          try {
+            await fetch('collapse_all', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collapse: master.checked })
+            });
+            location.reload();
+          } catch (e) {
+            console.error('collapse_all failed', e);
+            alert('Failed to toggle all groups. Check logs.');
+          }
+        });
+      }
+    });
+  </script>
 </body>
 </html>
