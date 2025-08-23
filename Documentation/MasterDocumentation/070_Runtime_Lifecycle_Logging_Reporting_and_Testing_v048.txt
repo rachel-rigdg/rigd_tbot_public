@@ -1,8 +1,8 @@
 =================================================================================
 Document: 070
 Runtime_Lifecycle_Logging_Reporting_and_Testing
-Version: v0476
-Date: UTC:2025-07-19 00:00:00
+Version: v048
+Date: UTC:2025-08-23 00:00:00
 ================================================================================
 
 This module documents the runtime session lifecycle, phases, shutdown protocols, bot_state management, and design confirmations.
@@ -18,39 +18,44 @@ All runtime logic is immutable except via Web UI configuration changes.
 Audit compliance enforced.
 
 ================================================================================
-RIGD PHASE SUPERVISOR: USER-MODE SYSTEMD SPECIFICATION 
+RIGD PHASE SUPERVISOR: USER-MODE SYSTEMD SPECIFICATION
 ================================================================================
 
 OBJECTIVE:
-Fully eliminate `sudo` and `visudo` from all bot orchestration. The phase supervisor and systemd units run entirely in *user mode*, allowing any `tbot` -like account to bootstrap a bot instance without elevated permissions.
+Fully eliminate `sudo`/`visudo` from bot orchestration. The phase supervisor and
+systemd unit run entirely in *user mode*. Any `tbot`-like account can bootstrap
+and run the bot without elevated permissions.
+
+Systemd model: **exactly one user-mode unit `tbot_bot.service` (no additional
+services or timers).** Strategy windows are orchestrated inside
+`main.py` + `tbot_supervisor.py` (supervisor is **mandatory** and launched by
+`main.py`).
 
 --------------------------------------------------------------------------------
-CORE CHANGES TO IMPLEMENT 
+CORE IMPLEMENTATION
 --------------------------------------------------------------------------------
 
-1. Replace All `sudo systemctl` with `systemctl --user`
-    - Applies to `main.py` and all launch scripts
-    - e.g. `systemctl --user restart tbot_bot.service`
+1) Replace all `sudo systemctl …` with `systemctl --user …`
+   - Applies to any docs/scripts.
+   - Example: `systemctl --user restart tbot_bot.service`
 
-2. Unit Files Directory
-    - Move all `.service` files to:
-      `/home/tbot/.config/systemd/user/`
-    - Remove any `User=...` directive (not valid in user units)
-    - Ensure `[Install]` section uses: `WantedBy=default.target`
+2) Unit files live in the user tree
+   - Path: `/home/tbot/.config/systemd/user/`
+   - Do not set `User=` in user units (invalid).
+   - `[Install]` must use `WantedBy=default.target`.
 
-3. Enable User-Level Systemd Session
-    ```bash
-    loginctl enable-linger tbot
-    ```
+3) Enable a persistent user systemd session
+   loginctl enable-linger tbot
 
-4. Environment Setup
-    - Add to ~/.bashrc or loader script:
-      `export XDG_RUNTIME_DIR=/run/user/$(id -u)`
+4) Environment setup for user services
+   Add to `~/.bashrc` (or launcher profile):
+     export XDG_RUNTIME_DIR=/run/user/$(id -u)
+   Timezone is UTC at the OS level; do not override per-process TZ.
 
-5. Supervisor Launch
-    - Run supervisor with:
-      `systemctl --user start tbot_bot.service`
-    - No sudo usage anywhere in Python or shell scripts
+5) Launch & manage the bot via user systemd
+   Start:  systemctl --user start tbot_bot.service
+   Enable: systemctl --user enable --now tbot_bot.service
+   No `sudo` anywhere in Python or shell.
 
 --------------------------------------------------------------------------------
 SYSTEMD INSTALLATION
@@ -59,10 +64,45 @@ SYSTEMD INSTALLATION
 mkdir -p ~/.config/systemd/user
 cd ~/.config/systemd/user
 
-ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_bot.service
+# Option A: symlink the provided unit
+ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_bot.service tbot_bot.service
 
-systemctl --user daemon-reexec
+# Option B: write the unit file here (see example below)
+
 systemctl --user daemon-reload
+systemctl --user enable --now tbot_bot.service
+
+Example user unit (~/.config/systemd/user/tbot_bot.service):
+----------------------------------------------------------------
+[Unit]
+Description=RIGD TradeBot (user-mode)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/tbot/rigd_tbot
+ExecStart=/home/tbot/rigd_tbot/.venv/bin/python -m tbot_bot.runtime.main
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
+----------------------------------------------------------------
+
+Notes
+- `tbot_supervisor.py` is invoked by `tbot_bot.runtime.main` after provisioning;
+  it never runs as its own unit.
+- Logs go to journald and to `tbot_bot/output/` per bot policy.
+- All internal paths are resolved via `tbot_bot/support/path_resolver.py`.
+
+Validation
+- systemctl --user status tbot_bot.service
+- journalctl --user -u tbot_bot.service -e
 
 
 =============================================================================================================================================
@@ -72,14 +112,14 @@ TradeBot Runtime Flow
 Phase 0: Pre-Session (Preparation)
 ↓
 - Edit and validate `.env_bot` (strategy, risk, runtime) and `.env` (keypaths, credentials).
-- If encrypted, decrypt `.env_bot.enc` using `security_bot.py` with AES-256 key from `ENV_BOT_KEY` in `.env`.
-- Bootstrap session by creating `control_start.txt` or submitting `configuration.html` via Web UI only.
+- If encrypted, decrypt `.env_bot.enc` using `security_bot.py` with AES-256 key from `storage/keys/env_bot.key` (path via `path_resolver.py`).
+- Bootstrap via Web UI only (which writes `control_start.flag`).
 - Ensure all encrypted secret files (`bot_identity.json.enc`, `broker.json.enc`, etc.) exist post-bootstrap.
 - `.env_bot.enc` must exist pre-bootstrap.
 
 Phase 1: System Boot Validation
 ↓
-- `security_bot.py` decrypts `.env_bot.enc` using key from `storage/keys/env.key`.
+- `security_bot.py` decrypts `.env_bot.enc` using key from `storage/keys/env_bot.key`.
 - `env_bot.py` validates required env vars; missing/malformed values cause fatal error and halt.
 - Run `.self_check()` on critical modules (`risk_module.py`, `kill_switch.py`, `watchdog_bot.py`, `error_handler.py`, `strategy_router.py`).
 - Failures abort session and log error in UTC to `output/logs/error_tracebacks.log`.
@@ -101,7 +141,7 @@ For each enabled strategy:
 ↓
 - Load strategy module as per `.env_bot` toggles and schedule.
 - Each strategy runs `.self_check()` (API availability, timing, float).
-- `finnhub_screener.py` filters symbols based on volume, price, fundamentals.
+- Load the **active screener module(s)** selected via the Web UI/Credentials panel (no default). The operator chooses screeners for universe build, enrichment, and trading; the runtime loads the corresponding data-feed module(s).
 - For each symbol passing filters, calculate allocation and enforce caps (`MAX_RISK_PER_TRADE`, `MAX_TRADES`, etc.).
 - Submit orders via `broker_api.py`.
 - Log trades to `output/trades/`.
@@ -117,13 +157,14 @@ Phase 4: Risk/Fault Monitoring (Continuous)
 - Verify API health (`watchdog_bot.py`).
 - Log uncaught exceptions (`error_handler.py`).
 - On breach, halt broker or suspend trading.
-- DEFENSE_MODE events logged to `disaster_mode.log`.
+- DEFENSE_MODE events are logged to `kill_switch.log` and system logs.
 
 Phase 5: Session Termination
 ↓
 - `stop_bot.py` closes open positions gracefully.
 - `reporting_bot.py` compiles logs (trades, daily summary, disaster logs).
-- Trades and PnL routed to accounting ledger database (`entities/{ENTITY}_{JURIS}/ledgers/bot/...`).
+- Trades and PnL routed to the accounting ledger:
+  `output/{BOT_IDENTITY}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db` (resolved via `path_resolver.py`).
 - `auto_backup.py` archives logs and ledgers (UTC).
 - Mark session "CLOSED" in status.json.
 - Session complete.
@@ -308,7 +349,7 @@ Each bot instance writes structured outputs to isolated, per-bot subdirectories 
 |                                            | - `close.log` (close strategy events)                              | Yes                     |
 |                                            | - `unresolved_orders.log` (failed/stale orders)                    | Yes                     |
 |                                            | - `error_tracebacks.log` (exceptions/errors)                       | Yes                     |
-|                                            | - `daily_summary.json` (end-of-session summary)          	| yes               |
+|                                            | - `daily_summary.json` (end-of-session summary)          	| Yes                     |
 |                                            | - `status.json` (session state, not a log, not shown in logs.html) | No                      |
 | `output/{BOT_IDENTITY}/trades/`            | Per-session trade history logs (`csv` or `json`)                   | No                      |
 | `output/{BOT_IDENTITY}/summaries/`         | Session summaries: PnL, stats, win-rate                            | No                      |
@@ -577,10 +618,11 @@ FILES AFFECTED:
 - `tbot_bot/trading/orders_bot.py`
 - `tbot_bot/trading/notifier_bot.py`
 - `tbot_bot/reporting/reporting_bot.py`
-- `tbot_bot/accounting/ledger_utils.py`
+- `tbot_bot/accounting/ledger_modules/*`
+- `tbot_bot/accounting/ledger_modules/ledger_sync.py`
 - `tbot_web/py/settings_web.py`
 - `tbot_web/py/ledger_web.py` (optional logs display)
-- `tbot_web/py/main_web.py` or `strategy_router.py` (immediate execution)
+- `tbot_web/py/main_web.py` (writes flags only; execution handled by main.py/tbot_supervisor.py)
 - `tbot_web/py/test_web.py` and `templates/test.html` (dedicated UI and per-test controls)
 - `tbot_web/templates/settings.html` (toggle update)
 - `tbot_bot/test/*` (all test scripts now require relevant flag to execute)
@@ -646,7 +688,7 @@ All critical bot logic, modules, and outputs must be validated via an explicit, 
 
 **Integration Test Flow:**
 - Loads `.env_bot.test`
-- Launches `main_bot.py`, injects mock historical data, runs `start_bot.py` (dry mode)
+- Invokes `main.py` in TEST_MODE (via the global flag); injects mock historical data as needed.
 - Confirms: strategy execution order (`STRATEGY_SEQUENCE`), log and output file generation, all triggers/errors, trade/log/export correctness, session integrity
 - Validates that all ledger/COA/holdings events are posted and queried via `ledger_modules/` only
 
@@ -698,7 +740,7 @@ tbot_bot/runtime/
 --------------------------------------------------------------------------------
 main.py
     # ENTRY DISPATCHER. Only script launched by systemd or run_tbot.sh.
-    # Handles bootstrap, provisioning, and launches portal_web_main.py (Web UI).
+    # Handles bootstrap, provisioning, and launches main_web.py (Web UI).
     # After successful provisioning and bootstrapping, launches tbot_supervisor.py (if present) for persistent monitoring, phase management, and process orchestration.
     # No watcher/worker/runner is ever launched except by main.py.
     # In TEST_MODE, launches test runners directly.
@@ -836,4 +878,3 @@ NOTES
 - All tests and integration test runner require the appropriate test_mode.flag or test_mode_<test>.flag to run, and must auto-remove their flag after completion.
 
 ================================================================================
-

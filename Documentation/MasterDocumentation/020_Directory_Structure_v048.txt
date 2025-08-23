@@ -1,8 +1,8 @@
 ================================================================================
 Document: 020
 Directory_Structure
-Version: v047
-Date: UTC:2025-07-26 00:00:00
+Version: v048
+Date: UTC:2025-08-23 00:00:00
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -524,8 +524,3 @@ rigd_tbot/
         ├── universe.html			            # Web UI page providing controls to inspect and modify the symbol universe
         ├── users.html                          # List and manage all users (admin only)
         └── wait.html                   	    # Spinner/progress bar shown while bot is initializing; triggers transition to main.html when ready
-
-
-
-
-

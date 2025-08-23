@@ -1,8 +1,8 @@
 ================================================================================
 Document: 010
 010_Introduction_Objective_and_Overview
-Version: v047
-Date: UTC:2025-07-19 00:00:00
+Version: v048
+Date: UTC:2025-08-23 00:00:00
 ================================================================================
 
 
@@ -15,15 +15,15 @@ This master index provides a comprehensive reference to all TradeBot system spec
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 | Filename                                      	| Title/Subject                                  		| Summary & Key Contents                                                 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 | 000_chatKick-off.txt                          		| Initial Chat Kickoff & Setup Overview           	| Project goals, workflow, onboarding, and initial constraints            
-| 010_Introduction_Objective_and_Overview_v045.txt 		| Objective & System Overview                 		| High-level system objective, instructions, deployment, time zone std    
-| 020_Directory_Structure_v045.txt               		| Directory Structure & Module Layout           	| Authoritative directory/file structure, launch/control notes            
-| 030_Trading_Bot_Core_Specs_v045.txt            		| Core Trading Bot Specifications                	| Infrastructure, risk, strategy logic, integration, float/ledger rules   
-| 040_Screener_Symbol_Universe_v045.txt          		| Symbol Screener & Universe Controls            	| Screener modules, universe management, dynamic symbol filtering         
-| 050_Enhancements_and_Safety_v045.txt           		| Safety/Enhancement Modules                    	| Kill switch, risk gating, VIX, filters, session enforcement             
-| 060_Accounting_Integration_v045.txt            		| Accounting & Ledger Integration                 	| OFX schema, double-entry, COA, export, reconciliation                   
-| 070_Runtime_Lifecycle_Logging_Reporting_and_Testing_v045.txt 	| Runtime, Logging, Testing, & Reporting 		| Session lifecycle, state machine, logging/report/test specs, TEST_MODE  
-| 080_Env_Security_Integration_and_Expansion_Modules.txt 	| Env, Security, & Expansion Modules        		| Environment, encrypted config, key management, future enhancements      
-| 090_Web_Interface_and_Dashboard_v045.txt       		| Web UI & Dashboard Specification                	| Flask UI, RBAC, bot control, dashboard logic, live status, COA mgmt    
+| 010_Introduction_Objective_and_Overview_v048.txt 		| Objective & System Overview                 		| High-level system objective, instructions, deployment, time zone std    
+| 020_Directory_Structure_v048.txt               		| Directory Structure & Module Layout           	| Authoritative directory/file structure, launch/control notes            
+| 030_Trading_Bot_Core_Specs_v048.txt            		| Core Trading Bot Specifications                	| Infrastructure, risk, strategy logic, integration, float/ledger rules   
+| 040_Screener_Symbol_Universe_v048.txt          		| Symbol Screener & Universe Controls            	| Screener modules, universe management, dynamic symbol filtering         
+| 050_Enhancements_and_Safety_v048.txt           		| Safety/Enhancement Modules                    	| Kill switch, risk gating, VIX, filters, session enforcement             
+| 060_Accounting_Integration_v048.txt            		| Accounting & Ledger Integration                 	| OFX schema, double-entry, COA, export, reconciliation                   
+| 070_Runtime_Lifecycle_Logging_Reporting_and_Testing_v048.txt 	| Runtime, Logging, Testing, & Reporting 		| Session lifecycle, state machine, logging/report/test specs, TEST_MODE  
+| 080_Env_Security_Integration_and_Expansion_Modules_v048.txt 	| Env, Security, & Expansion Modules        		| Environment, encrypted config, key management, future enhancements      
+| 090_Web_Interface_and_Dashboard_v048.txt       		| Web UI & Dashboard Specification                	| Flask UI, RBAC, bot control, dashboard logic, live status, COA mgmt    
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 Usage Notes:

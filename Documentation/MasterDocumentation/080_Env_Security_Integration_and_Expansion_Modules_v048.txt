@@ -1,8 +1,8 @@
 ================================================================================
 Document:080
 Env_Security_Integration_and_Expansion_Modules
-Version: v047
-Date: UTC:2025-07-19 00:00:00
+Version: v048
+Date: UTC:2025-08-23 00:00:00
 ================================================================================
 
 ================================================================================
@@ -29,7 +29,6 @@ Modules Included:
 - Robust error handling, automatic retry logic, and fallback routing configured by `.env_bot` toggles (`FAILOVER_ENABLED`, etc.).
 - Comprehensive structured audit logging of all broker API events with UTC timestamps; strict enforcement of broker rate limits and quotas.
 
-
 3. Encryption & Key Management Enhancements
 - Key rotation tooling (`tools/rotate_keys.py`)
 - Automated config encryption/decryption workflows (`tools/encrypt_env_bot.py`)
@@ -46,7 +45,7 @@ Modules Included:
 5. Automated Holdings, Float, and Reserve Management (Core, Non-Optional)
 
 - The holdings management system is a mandatory, fully integrated core component—**never optional**—responsible for all automated float/top-up actions, tax reserve splits, payroll allocations, persistent holdings allocations, and scheduled or manual portfolio rebalancing.
-- **All holdings configuration data**—including allocations, symbol list, target percentages, and interval settings—are stored exclusively in an encrypted holdings secrets file (`storage/secrets/holdings_secrets.json.enc`), protected by a unique Fernet key (`storage/keys/holdings_secrets.key`).
+- **All holdings configuration data**—including allocations, symbol list, target percentages, and interval settings—are stored exclusively in an encrypted holdings secrets file (`tbot_bot/storage/secrets/holdings_secrets.json.enc`), protected by a unique Fernet key (`tbot_bot/storage/keys/holdings_secrets.key`).
 - **Separation of concerns:** The holdings management module (`tbot_bot/holdings/holdings_manager.py` and `tbot_bot/support/holdings_secrets.py`) operates entirely independently from all trading strategy modules, broker adapters, or screener logic. No strategy or broker module may trigger, modify, or bypass holdings, float, or reserve logic.
 - **Config updates enforcement:** Every change to holdings allocations, symbol list, interval, or any persistent setting—whether via Web UI or API—**triggers an atomic rotation and re-encryption** of all related keys and secrets, with the previous versions backed up under `tbot_bot/storage/backups/`. This cannot be suppressed or bypassed.
 - **Audit and compliance:** All actions (settings changes, rebalances, float top-ups, splits) are immutably audit-logged with UTC timestamp, user/operator, context, and full change details. No holdings or float operation is ever performed without a corresponding audit trail entry.
@@ -60,7 +59,7 @@ Implementation Notes:
 - Strict logging and audit trails are required: all critical actions, configuration changes, and failures must be UTC timestamped and logged to the designated output or audit log as per system policy.
 - **Expansion modules, the holdings management system, and all related processes must use ONLY system APIs for all key, secret, and configuration management—direct file access, raw file writes, or any ad hoc key handling are explicitly forbidden.**
 - **Key/secret rotation and encryption/decryption workflows must align with the system’s core logic and compliance policies. All updates to sensitive data (credentials, config, allocations, secrets) must automatically trigger atomic rotation and re-encryption of all relevant keys and secret files, with append-only backup and audit logging for every change event.**
-- All backups, old keys, and rotated secrets are archived in `storage/backups/` and can only be restored through system APIs and recovery procedures.
+- All backups, old keys, and rotated secrets are archived in `tbot_bot/storage/backups/` and can only be restored through system APIs and recovery procedures.
 
 Compliance:
 - Modules adhere strictly to {CURRENT_VERSION} build instructions and audit requirements.
@@ -152,7 +151,6 @@ LOG_FORMAT=json
 
 
 
-
 # -----------------------------------------
 # Trade Execution & Risk Controls
 # -----------------------------------------
@@ -194,7 +192,6 @@ MAX_OPEN_POSITIONS=5
 # -----------------------------------------
 # Screeners Configuration
 # -----------------------------------------
-
 
 # Universe cache file max age in days (max allowable staleness)
 SCREENER_UNIVERSE_MAX_AGE_DAYS=3
@@ -238,10 +235,9 @@ MAX_PRICE=1000
 MIN_VOLUME_THRESHOLD=500000       
 
 # Finnhub Guard filter 
-ENABLE_FUNNHUB_FUNDAMENTALS_FILTER=true
+ENABLE_FINNHUB_FUNDAMENTALS_FILTER=true
 
 MAX_PE_RATIO=60
-
 MAX_DEBT_EQUITY=3.5
 
 
@@ -250,12 +246,12 @@ MAX_DEBT_EQUITY=3.5
 # Strategy Routing & Broker Mode
 # -----------------------------------------
 
-
 # Strategy run order; values: open, mid, close
 STRATEGY_SEQUENCE=open,mid,close
 
 # Optional: override normal order and run only one strategy
 STRATEGY_OVERRIDE=
+
 
 # -----------------------------------------
 # Automated Rebalance Triggers
@@ -285,16 +281,14 @@ FAILOVER_ENABLED=true
 FAILOVER_LOG_TAG=FAILOVER_ACTIVE         
 
 
-
 # -----------------------------------------
 # Global Time & Polling
 # -----------------------------------------
 
-
- # e.g. 9:30 AM New York (US/Eastern) is 14:30 UTC
+# e.g. 9:30 AM New York (US/Eastern) is 14:30 UTC
 MARKET_OPEN_UTC=14:30     
 
- # e.g. 4:00 PM New York (US/Eastern) is 21:00 UTC
+# e.g. 4:00 PM New York (US/Eastern) is 21:00 UTC
 MARKET_CLOSE_UTC=21:00    
 
 # Days allowed for trading (UTC-based control logic)
@@ -304,10 +298,10 @@ TRADING_DAYS=mon,tue,wed,thu,fri
 UNIVERSE_SLEEP_TIME=.5
 STRATEGY_SLEEP_TIME=0.03
 
+
 # -----------------------------------------
 # OPEN Strategy Configuration (20 min trading)
 # -----------------------------------------
-
 
 # Maximum gap allowed from open to current price (used in screener)
 MAX_GAP_PCT_OPEN=0.1
@@ -335,7 +329,8 @@ OPEN_MONITORING_TIME=30
 STRAT_OPEN_BUFFER=0.02
 
 # Shorting method: InverseETF, disabled, ShortSell, LongPut,
-SHORT_TYPE_OPEN= InverseETF               
+SHORT_TYPE_OPEN=InverseETF               
+
 
 # -----------------------------------------
 # MID Strategy Configuration (VWAP Reversion)
@@ -347,7 +342,6 @@ MAX_GAP_PCT_MID=0.1
 # Minimum and maximum market cap allowed for MID strategy candidates
 MIN_MARKET_CAP_MID=300000000
 MAX_MARKET_CAP_MID=10000000000
-
 
 # Enable or disable MID strategy
 STRAT_MID_ENABLED=true
@@ -367,8 +361,9 @@ MID_MONITORING_TIME=30
 # VWAP deviation required to enter trade
 STRAT_MID_VWAP_THRESHOLD=0.02
 
-# Shorting method: InverseETF, ShortSell, LongPut,  or disabled
-SHORT_TYPE_MID= InverseETF              
+# Shorting method: InverseETF, ShortSell, LongPut, or disabled
+SHORT_TYPE_MID=InverseETF              
+
 
 # -----------------------------------------
 # CLOSE Strategy Configuration (EOD Momentum/Fade)
@@ -380,7 +375,6 @@ MAX_GAP_PCT_CLOSE=0.1
 # Minimum and maximum market cap allowed for CLOSE strategy candidates
 MIN_MARKET_CAP_CLOSE=300000000
 MAX_MARKET_CAP_CLOSE=10000000000
-
 
 # Enable or disable CLOSE strategy
 STRAT_CLOSE_ENABLED=true
@@ -401,17 +395,24 @@ CLOSE_MONITORING_TIME=25
 STRAT_CLOSE_VIX_THRESHOLD=15
 
 # Shorting method: InverseETF, ShortSell, LongPut, or disabled
-SHORT_TYPE_CLOSE= InverseETF               
+SHORT_TYPE_CLOSE=InverseETF               
+
 
 # -----------------------------------------
-# Notifications
+# Notifications (incl. Real-Time Alerts)
 # -----------------------------------------
 
 # Send email alert on trade entry
 NOTIFY_ON_FILL=true
-
 # Send email alert on trade exit
-NOTIFY_ON_EXIT=true                    
+NOTIFY_ON_EXIT=true
+# Send alert on critical failures
+NOTIFY_ON_FAILURE=true
+# Options: email, slack, sms, pagerduty
+CRITICAL_ALERT_CHANNEL=pagerduty
+# Options: email, slack
+ROUTINE_ALERT_CHANNEL=email
+
 
 # -----------------------------------------
 # Reporting & Ledger Export
@@ -434,6 +435,7 @@ DEFENSE_MODE_TRADE_LIMIT_PCT=66
 # Maximum session allocation allowed during Defense Mode (e.g., 1%)
 DEFENSE_MODE_TOTAL_ALLOCATION=0.01
 
+
 # -----------------------------------------
 # ENHANCEMENT MODULE TOGGLES 
 # -----------------------------------------
@@ -446,7 +448,7 @@ REBALANCE_TRIGGER_PCT=10
 # --- Role-Based Web Access ---
 # Enable multi-user roles in web dashboard
 RBAC_ENABLED=true             
- # Default role for new users                   
+# Default role for new users                   
 DEFAULT_USER_ROLE=viewer                        
 
 # --- Strategy Optimizer ---
@@ -457,24 +459,15 @@ OPTIMIZER_BACKTEST_LOOKBACK_DAYS=30
 OPTIMIZER_ALGORITHM=grid_search                  
 OPTIMIZER_OUTPUT_DIR=backtest_results/strategy_tuning/
 
-# --- Real-Time Alerts ---
-NOTIFY_ON_FILL=true
-NOTIFY_ON_EXIT=true
-NOTIFY_ON_FAILURE=true
-# Options: email, slack, sms, pagerduty
-CRITICAL_ALERT_CHANNEL=pagerduty    
-# Options: email, slack             
-ROUTINE_ALERT_CHANNEL=email                      
-
 # --- Backtest Slippage Modeling ---
 ENABLE_SLIPPAGE_MODEL=true
 # Options: none, rule_based, randomized
 SLIPPAGE_SIMULATION_TYPE=randomized              
 # Average slippage %
 SLIPPAGE_MEAN_PCT=0.15                          
- # Standard deviation 
+# Standard deviation 
 SLIPPAGE_STDDEV_PCT=0.10                        
- # Artificial delay (in milliseconds) per order
+# Artificial delay (in milliseconds) per order
 SIMULATED_LATENCY_MS=500                        
 
 
@@ -483,7 +476,7 @@ SIMULATED_LATENCY_MS=500
 ENABLE_BSM_FILTER=true
 # Reject if >15% over/under priced
 MAX_BSM_DEVIATION=0.15             
- # Used in BSM if not supplied dynamically 
+# Used in BSM if not supplied dynamically 
 RISK_FREE_RATE=0.045               
 # Options: static, dynamic — dynamic adjusts by JURISDICTION_CODE via bot_identity
 RISK_FREE_RATE_SOURCE=dynamic       
@@ -496,14 +489,14 @@ Secure Environment Variables (UPDATED – Ephemeral Encrypted Deployment, Automa
 Overview:
 TradeBot separates runtime configuration into two environment files:
 - `.env` contains global config, API keys, encryption keys, and paths to encrypted credential files — **never raw credentials**.
-- `.env_bot` defines all trading logic, risk controls, and strategy parameters — **never stored in version control**.
+- `.env_bot` defines all trading logic, risk controls, and strategy parameters — **never stored in version control**. In production, only the encrypted form (`.env_bot.enc`) is used; any plaintext `.env_bot` is ephemeral (staging-only) and must not persist.
 
 Security Goals:
 - `.env_bot` and all sensitive config data are encrypted at rest using AES-256 (Fernet).
-- Encrypted config files reside under `tbot_bot/support/` as `.env_bot.enc` and other category-specific encrypted files (`.bot_identity.enc`, `.broker.enc`, etc.).
-- Corresponding encryption keys reside under `tbot_bot/storage/keys/`.
+- Encrypted bot config resides at **`tbot_bot/support/.env_bot.enc`**. Category-specific encrypted JSON files reside under **`tbot_bot/storage/secrets/`**.
+- Corresponding encryption keys reside under **`tbot_bot/storage/keys/`**.
 - **Whenever any secret or key is created or modified, the system performs a fully automated atomic rotation and re-encryption of all key/secret pairs.** This ensures forward secrecy and eliminates partial update risk.
-- All prior key and secret files are versioned and backed up before overwrites.
+- All prior key and secret files are versioned and backed up before overwrites (archived under `tbot_bot/storage/backups/`).
 - Decryption keys and encrypted files are **never committed to source control** (enforced by `.gitignore` and `.scpignore`).
 - The system performs **runtime decryption in-memory only**, avoiding persistent plaintext files on disk.
 - Post-decryption, sensitive data is immediately overwritten or discarded after use.
@@ -516,27 +509,27 @@ Module Locations & Responsibilities:
   - `tbot_bot/config/security_bot.py` (manages bot config encryption, key validation, atomic rotation, and secret writes)
   - `tbot_bot/config/key_manager.py` (manages generation and full-rotation of all Fernet keys)
 - The Web UI configuration module (`tbot_web/py/configuration_web.py`) handles:
-  - Writing encrypted secret category files into `tbot_bot/support/`.
+  - Writing encrypted secret category files into `tbot_bot/storage/secrets/`.
   - Initializing core databases.
-  - Encrypting `.env_bot` in-memory and saving `.env_bot.enc`.
+  - Encrypting `.env_bot` in-memory and saving `tbot_bot/support/.env_bot.enc`.
   - **Triggering full key/secret rotation and re-encryption whenever config or credentials are modified.**
 - `tbot_bot/config/env_bot.py` loads and validates decrypted bot config at runtime.
-- All secret keys and encrypted files are accessed via absolute paths resolved by `tbot_bot/support/path_resolver.py`.
+- All secret keys and encrypted files are accessed via paths resolved by `tbot_bot/support/path_resolver.py`.
 
 Ephemeral .env.enc Support:
 - For container or cloud deployment, `.env` may be distributed as `.env.enc`.
-- On startup, `.env.enc` is decrypted in-memory using the key at `storage/keys/env_enc.key`.
+- On startup, `.env.enc` is decrypted in-memory using the key at `tbot_bot/storage/keys/env_enc.key`.
 - No plaintext `.env` is ever persisted on disk in production.
 - `.env_bot` follows similar ephemeral encrypted deployment, ensuring sensitive bot config is protected.
 
 Encryption/Decryption & Rotation Workflow:
-1. Populate plaintext `.env_bot` with required variables.
-2. Encrypt `.env_bot` using `tools/encrypt_env_bot.py` to produce `.env_bot.enc`.
-3. **Whenever any secret category or credential is created, updated, or removed, the system automatically generates new Fernet keys for all secret categories, re-encrypts all config/secret files, and backs up the old keys/secrets.**
-4. Upload `.env_bot.enc` and all corresponding new keys (`env.key`, `env_enc.key`, etc.) to deployment servers.
+1. Populate plaintext `.env_bot` with required variables (staging only).
+2. Encrypt `.env_bot` using `tools/encrypt_env_bot.py` to produce `tbot_bot/support/.env_bot.enc`.
+3. **Whenever any secret category or credential is created, updated, or removed, the system automatically generates new Fernet keys for all secret categories, re-encrypts all config/secret files, and backs up the old keys/secrets (to `tbot_bot/storage/backups/`).**
+4. Upload `tbot_bot/support/.env_bot.enc` and all corresponding new keys (e.g., `tbot_bot/storage/keys/env_bot.key`, `tbot_bot/storage/keys/env_enc.key`) to deployment servers.
 5. At runtime, decrypt `.env_bot.enc` **in memory**; load and validate keys.
-6. All category-specific encrypted JSON files (`bot_identity.json.enc`, `broker.json.enc`, etc.) are written and read from `tbot_bot/support/` during Web UI config lifecycle.
-7. The bootstrap process initializes missing secret category files from Web UI input.
+6. All category-specific encrypted JSON files (`bot_identity.json.enc`, `broker_credentials.json.enc`, etc.) are written to and read from `tbot_bot/storage/secrets/` during the Web UI config lifecycle.
+7. The bootstrap process initializes any missing secret category files from Web UI input.
 
 Validation and Error Handling:
 - Decryption failures or missing required environment variables cause fatal startup errors.
@@ -567,47 +560,42 @@ Compliance and Verification:
 
 **Summary Table:**
 
-| File                              | Type              | Storage Location           | Deployment State          | Encryption Key Location               |
-|------------------------------------|-------------------|----------------------------|--------------------------|---------------------------------------|
-| `.env`                            | Global config     | Project root               | Optional (plaintext)     | -                                     |
-| `.env.enc`                        | Global config     | Project root               | Recommended (encrypted)  | `storage/keys/env_enc.key`            |
-| `.env_bot`                        | Bot config        | Project root (temp only)   | Forbidden (prod)         | -                                     |
-| `.env_bot.enc`                    | Bot config        | `tbot_bot/support/`        | Required (encrypted)     | `storage/keys/env_bot.key`            |
-| `bot_identity.json.enc`           | Bot identity      | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/bot_identity.key`       |
-| `broker.json.enc`                 | Broker creds      | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/broker.key`             |
-| `smtp.json.enc`                   | SMTP creds        | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/smtp.key`               |
-| `screener_api.json.enc`           | Screener API      | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/screener_api.key`       |
-| `network_config.json.enc`         | Network config    | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/network_config.key`     |
-| `alert_channels.json.enc`         | Alert channels    | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/alert_channels.key`     |
-| `acct_api.json.enc`               | Acct API          | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/acct_api.key`           |
-| `broker_credentials.json.enc`     | Broker API        | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/broker_credentials.key` |
-| `smtp_credentials.json.enc`       | SMTP API          | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/smtp_credentials.key`   |
-| `acct_api_credentials.json.enc`   | Acct API          | `tbot_bot/support/`        | Created/rotated atomic   | `storage/keys/acct_api_credentials.key`|
-| `holdings_secrets.json.enc`       | Holdings settings | `storage/secrets/`         | Created/rotated atomic   | `storage/keys/holdings_secrets.key`   |
+| File                              | Type              | Storage Location                 | Deployment State          | Encryption Key Location                     |
+|-----------------------------------|-------------------|----------------------------------|---------------------------|---------------------------------------------|
+| `.env`                            | Global config     | Project root                     | Optional (plaintext)      | -                                           |
+| `.env.enc`                        | Global config     | Project root                     | Recommended (encrypted)   | `tbot_bot/storage/keys/env_enc.key`         |
+| `.env_bot`                        | Bot config        | Project root (temp only)         | Forbidden (prod)          | -                                           |
+| `.env_bot.enc`                    | Bot config        | `tbot_bot/support/`              | Required (encrypted)      | `tbot_bot/storage/keys/env_bot.key`         |
+| `bot_identity.json.enc`           | Bot identity      | `tbot_bot/storage/secrets/`      | Created/rotated atomic    | `tbot_bot/storage/keys/bot_identity.key`    |
+| `broker_credentials.json.enc`     | Broker API        | `tbot_bot/storage/secrets/`      | Created/rotated atomic    | `tbot_bot/storage/keys/broker.key`          |
+| `smtp_credentials.json.enc`       | SMTP API          | `tbot_bot/storage/secrets/`      | Created/rotated atomic    | `tbot_bot/storage/keys/smtp.key`            |
+| `screener_api.json.enc`           | Screener API      | `tbot_bot/storage/secrets/`      | Created/rotated atomic    | `tbot_bot/storage/keys/screener_api.key`    |
+| `network_config.json.enc`         | Network config    | `tbot_bot/storage/secrets/`      | Created/rotated atomic    | `tbot_bot/storage/keys/network_config.key`  |
+| `alert_channels.json.enc`         | Alert channels    | `tbot_bot/storage/secrets/`      | Created/rotated atomic    | `tbot_bot/storage/keys/alert_channels.key`  |
+| `acct_api_credentials.json.enc`   | Acct API          | `tbot_bot/storage/secrets/`      | Created/rotated atomic    | `tbot_bot/storage/keys/acct_api.key`        |
+| `holdings_secrets.json.enc`       | Holdings settings | `tbot_bot/storage/secrets/`      | Created/rotated atomic    | `tbot_bot/storage/keys/holdings_secrets.key`|
 
 ---
 **NOTE:**
-- All encrypted secret category files—including `holdings_secrets.json.enc` under `storage/secrets/`—are created, rotated, and managed **exclusively** by the Web UI configuration/bootstrap process and the designated key/secret manager modules. **Manual file edits or CLI-driven changes are forbidden.**
+- All encrypted secret category files—including `holdings_secrets.json.enc` under `tbot_bot/storage/secrets/`—are created, rotated, and managed **exclusively** by the Web UI configuration/bootstrap process and the designated key/secret manager modules. **Manual file edits or CLI-driven changes are forbidden.**
 - **Any creation or modification of a secret or credential triggers a full atomic rotation and re-encryption of all relevant key/secret pairs, with versioned backup of previous states for audit and rollback.**
 - No plaintext secrets may persist outside the secure Web UI input flow or approved staging environment files. All persistent config/secrets must be encrypted at rest.
 - The bot runtime operates *exclusively* from the encrypted `.env_bot.enc`, `holdings_secrets.json.enc`, and other category-encrypted files. **Plaintext config files are never used in production.**
 - All encrypted files and their corresponding keys must **never** be committed to any version control system or shared via backup/archive exports.
 - All prior key and secret files are automatically backed up under `tbot_bot/storage/backups/` upon every rotation event.
 
----
-
+----
 
 --------------------------------------------------------------------------------
 Security Best Practices & Enforcement
 --------------------------------------------------------------------------------
-- The holdings secrets file (`storage/secrets/holdings_secrets.json.enc`) is governed by the exact same audit, backup, recovery, and atomic rotation requirements as all other credential or configuration secrets in the system.
-- **Any change** to holdings secrets—including create, update, or delete—**automatically triggers a full atomic rotation** of the holdings Fernet key (`storage/keys/holdings_secrets.key`) and the encrypted file itself, with all prior versions securely backed up to `tbot_bot/storage/backups/`.
+- The holdings secrets file (`tbot_bot/storage/secrets/holdings_secrets.json.enc`) is governed by the exact same audit, backup, recovery, and atomic rotation requirements as all other credential or configuration secrets in the system.
+- **Any change** to holdings secrets—including create, update, or delete—**automatically triggers a full atomic rotation** of the holdings Fernet key (`tbot_bot/storage/keys/holdings_secrets.key`) and the encrypted file itself, with all prior versions securely backed up to `tbot_bot/storage/backups/`.
 - **All access, modifications, and errors** involving the holdings secrets file are immutably logged with UTC timestamp, user/operator, action context, and details of the change or error.
 - **No plaintext or unencrypted holdings configuration** is ever persisted or exported outside the secure Web UI input and in-memory flow. Any decrypted data is destroyed immediately after use.
 - **All encryption, decryption, backup, and key rotation operations** for holdings secrets must use only the system API modules (never direct file or ad hoc handling). No manual, CLI, or script-based editing is permitted.
 - **Recovery** of holdings secrets is performed only via the restore function, using encrypted backups and keys. Manual edits or key/file manipulation outside the system workflow are strictly forbidden and will trigger audit failures.
 - **All audit, compliance, and rollback requirements** enforced for other secrets/config categories are identically and strictly enforced for holdings management secrets, without exception or bypass.
-
 
 
 ================================================================================
@@ -686,14 +674,14 @@ Section: Symbol Universe & Screener Caching
 
 **Symbol Universe Caching Specification:**
 
-- Every night (off-hours), the bot fetches the complete list of supported equities for the target exchanges (NYSE/NASDAQ) using the broker’s API.
+- Off-hours, the bot refreshes the symbol universe using the **selected screener provider and/or the active broker adapter**, per configuration.
 - For each symbol:
   - Fetch symbol metadata (ticker, exchange, price, market cap).
-  - Apply filters:
-    - Exchange: Only NYSE or NASDAQ.
-    - Market Cap: $2B ≤ market cap ≤ $10B.
-    - Last close price: $5 ≤ price ≤ $100.
-  - Exclude delisted, illiquid, blocklisted, or otherwise ineligible symbols.
+  - Apply filters **as configured in `.env_bot`**:
+    - Exchange: `SCREENER_UNIVERSE_EXCHANGES`
+    - Market Cap: `SCREENER_UNIVERSE_MIN_MARKET_CAP`..`SCREENER_UNIVERSE_MAX_MARKET_CAP`
+    - Price: `SCREENER_UNIVERSE_MIN_PRICE`..`SCREENER_UNIVERSE_MAX_PRICE`
+  - Exclude delisted, illiquid, blocklisted, or otherwise ineligible symbols (blocklist: `SCREENER_UNIVERSE_BLOCKLIST_PATH`).
 - The filtered/cached symbol universe is stored as `output/cache/symbol_universe.json` and refreshed nightly.
 - **At screener runtime (open/mid/close strategies), only fetch quotes for these pre-filtered symbols.**
 - The same cached universe is used by all screeners (Alpaca, IBKR, Tradier, etc.).
@@ -705,6 +693,7 @@ Section: Symbol Universe & Screener Caching
 - Greatly reduces latency and rate limit risk.
 - Enables consistent cross-broker symbol handling.
 - No wasted API quota on irrelevant symbols.
+
 
 ================================================================================  
 Section: Broker Credential Variable Standardization  
@@ -728,8 +717,7 @@ BROKER_URL=               # Full API base URL (e.g., https://paper-api.alpaca.ma
 - No broker-specific variable names (e.g., `ALPACA_API_KEY`, `IBKR_API_HOST`) are permitted in the config, adapters, or runtime logic.
 - Broker adapters are responsible for mapping these generic variables to the exact fields and authentication flows required by their respective APIs.
 - All secret fields must be sourced via secure decryption (never from plaintext `.env` in production).
-- On any update or provisioning of broker credentials, the full set of encrypted keys and secrets are rotated and re-encrypted atomically, with backup of all previous key/secret versions under `storage/backups/`.
-
+- On any update or provisioning of broker credentials, the full set of encrypted keys and secrets are rotated and re-encrypted atomically, with backup of all previous key/secret versions under `tbot_bot/storage/backups/`.
 
 **Example Usage in Broker Adapter:**
 ```python
@@ -737,7 +725,6 @@ BROKER_URL=               # Full API base URL (e.g., https://paper-api.alpaca.ma
 self.api_key    = env.get("BROKER_API_KEY")
 self.secret_key = env.get("BROKER_SECRET_KEY")
 self.base_url   = env.get("BROKER_URL")
-# ...etc.
 
 # Example (IBKR)
 self.host       = env.get("BROKER_HOST")
@@ -762,7 +749,6 @@ Enables easy switching between brokers and multi-broker expansion.
 Avoids codebase drift, brittle logic, and credential sprawl.
 
 Aligns with the overall system architecture and security design.
-
 
 
 
@@ -834,7 +820,7 @@ This blueprint defines user credential management, configuration file lifecycle,
 
 ### 3.3 Key File Provisioning Policy
 
-- **All Fernet key files are provisioned, checked, and, on any update or change, atomically regenerated and re-encrypted by the backend (key_manager.py/provisioning_helper.py), triggered by the Web UI. Previous keys and encrypted secrets are backed up to storage/backups/ at every operation to allow safe rollback and full auditability.**
+- **All Fernet key files are provisioned, checked, and, on any update or change, atomically regenerated and re-encrypted by the backend (key_manager.py/provisioning_helper.py), triggered by the Web UI. Previous keys and encrypted secrets are backed up to `tbot_bot/storage/backups/` at every operation to allow safe rollback and full auditability.**
 - Keys are written only to `tbot_bot/storage/keys/`.
 - *Manual/CLI key creation is forbidden* and will be flagged as noncompliant.
 
@@ -858,7 +844,7 @@ This blueprint defines user credential management, configuration file lifecycle,
 |-----------------------------|------------------------------------------------|--------------------------------------------------------------|
 | `key_manager.py`            | Fernet key creation/rotation/checks             | Only called by provisioning_runner.py; never CLI/UI direct   |
 | `security_users.py`         | User RBAC and Fernet key helpers                | Key/user provisioning only from backend                      |
-| `config_encryption.py`      | Encrypts/decrypts secrets/backups, secure writes| Always uses keys from `storage/keys/`                        |
+| `config_encryption.py`      | Encrypts/decrypts secrets/backups, secure writes| Always uses keys from `tbot_bot/storage/keys/`               |
 | `db_bootstrap.py`           | DB initialization via backend scripts           | Invoked only by provisioning_runner.py                       |
 | `auth_web.py`               | Handles login/session/token in UI               | No key or secret management                                  |
 | `register_web.py`           | Manages user registration and persistence       | Updates SYSTEM_USERS.db if no users, or when credentials are changed |
@@ -866,7 +852,7 @@ This blueprint defines user credential management, configuration file lifecycle,
 | `session_manager.py`        | Session state, token handling                   | No key or secret storage                                     |
 | `utils_web.py`              | Web-only helpers, non-secret logic              | No config/secret/key writes                                  |
 
-- Any time `register_web.py` creates or updates a user, or SYSTEM_USERS.db is modified, a full key and secret atomic rotation is performed by backend scripts—triggered automatically. All prior keys and secrets are backed up to `storage/backups/` at each change event.
+- Any time `register_web.py` creates or updates a user, or SYSTEM_USERS.db is modified, a full key and secret atomic rotation is performed by backend scripts—triggered automatically. All prior keys and secrets are backed up to `tbot_bot/storage/backups/` at each change event.
 
 
 ---
@@ -908,7 +894,6 @@ This blueprint defines user credential management, configuration file lifecycle,
 - **Key/Secret Atomic Rotation:** All key and secret creation, update, or user change events trigger full system-wide atomic rotation and re-encryption, with all previous keys/secrets archived.
 
 
----
 ================================================================================
 Encryption_and_Key_Management
 {CURRENT_VERSION}
@@ -934,7 +919,7 @@ Key Management Policies
   - Key generation, validation, rotation are performed only via the configuration/provisioning workflow (`tbot_web/py/configuration_web.py`, `key_manager.py`, `security_users.py`).  
   - Manual or CLI-based key generation is strictly forbidden after bootstrap.
 - **Rotation is atomic and logged:**  
-  - Any time user credentials or secrets are created, updated, or changed (including registration, password change, or SYSTEM_USERS.db update), all Fernet keys and all encrypted secrets are atomically regenerated and all previous versions are backed up to `storage/backups/`.
+  - Any time user credentials or secrets are created, updated, or changed (including registration, password change, or SYSTEM_USERS.db update), all Fernet keys and all encrypted secrets are atomically regenerated and all previous versions are backed up to `tbot_bot/storage/backups/`.
   - Key rotations, re-provisioning, or recovery are performed from the Web UI only.  
   - All events are logged with UTC timestamp, user, affected category, and change context.
 - **No key file is ever committed to VCS, backup, or exported:**  
@@ -943,7 +928,7 @@ Key Management Policies
 --------------------------------------------------------------------------------
 Encryption Workflows
 --------------------------------------------------------------------------------
-- Encrypt `.env_bot` and all config files exclusively using Web UI via helper modules; keys read from `storage/keys/`.
+- Encrypt `.env_bot` and all config files exclusively using Web UI via helper modules; keys read from `tbot_bot/storage/keys/`.
 - `.env` may be optionally encrypted for ephemeral/prod cloud deployments.
 - Decrypt only on runtime startup or configuration reload; any failure is fatal and blocks the process.
 - Plaintext configs (if any) are ephemeral—held only in RAM or secure temp, then destroyed/overwritten after use.
@@ -980,14 +965,7 @@ Functional Requirements
 bot_state.txt State Management 
 --------------------------------------------------------------------------------
 - `tbot_bot/control/bot_state.txt` holds the authoritative session state string for both the runtime and UI routing.
-- Valid states:  
-  `initialize`, `provisioning`, `bootstrapping`, `idle`, `analyzing`, `trading`, `monitoring`, `updating`, `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error`
-- UI routing is driven by `bot_state.txt` as follows:
-    - `initialize`, `provisioning`, `bootstrapping`: show configuration UI (`configuration.html`)
-    - `idle`, `trading`, `monitoring`, `analyzing`, `updating`: show main dashboard UI (`main.html`)
-    - `shutdown`, `graceful_closing_positions`, `emergency_closing_positions`, `shutdown_triggered`, `error`: show error state/page and halt further operations
-- The state machine is cross-referenced and enforced per `090_Runtime_and_Lifecycle_v041.txt` and `110_Web_Interface_and_Dashboard_v041.txt`.
-
+- **The canonical state catalog and UI routing are defined in Document 070.** This document references the same states and must remain in lockstep with Document 070.
 
 --------------------------------------------------------------------------------
 Summary
@@ -996,5 +974,5 @@ Summary
 - No manual key or credential handling is permitted.  
 - All failures or policy violations trigger fatal errors and are recorded for compliance review.
 - All key and secret creation, update, or user change events trigger full system-wide atomic rotation and re-encryption, with all previous keys/secrets archived.
-- The bot state machine (`bot_state.txt`) governs runtime session transitions, UI routing, and error states, and must always be kept in sync with session events for full compliance.
+- The bot state machine (`bot_state.txt`) governs runtime session transitions, UI routing, and error states, and must always be kept in sync with session events and Document 070 for full compliance.
 

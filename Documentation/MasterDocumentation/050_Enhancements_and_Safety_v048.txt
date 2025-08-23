@@ -1,0 +1,153 @@
+================================================================================
+Document: 050
+Enhancements_and_Safety
+Version: v048
+Date: UTC:2025-08-23 00:00:00
+================================================================================
+
+This module specifies modular enhancement plugins, filters, and core safety systems, including centralized error management and atomic key/secret rotation. All specifications here are non-optional for compliance (modules may be disabled via config, but must exist, pass self-check, and be audit-logged).
+
+Contents:
+- Enhancement Module Activation (Comprehensive — All Modules Listed)
+- Centralized Error Management (Lossless Compression, Spec v1.1)
+- Atomic Key/Secret Rotation Compliance
+
+All modules require runtime self-check compliance and strict audit logging. All filesystem paths are resolved via tbot_bot/support/path_resolver.py (no direct paths).
+
+=============================================================================================================================================
+Enhancement Module Activation 
+=============================================================================================================================================
+
+**Overview:**  
+TradeBot includes modular enhancements in `/tbot_bot/enhancements/` to refine signal quality, block trades under poor conditions, and perform diagnostics. Enhancements are plug-ins activated via strategy context or `.env_bot`.  
+Each enhancement returns a boolean (`True`=allow, `False`=block). Failures are audit-logged and default to core logic unless marked fatal. Outcomes are logged to strategy logs and summaries, not accounting ledgers.
+
+---
+
+**Enhancements Directory – All Modules:**
+
+1. **adx_filter.py**  
+   Blocks trades during strong trend (e.g., ADX > 25); used in `strategy_mid.py`. Toggle: `ADX_FILTER_ENABLED=true` (if present). Self-check verifies data source availability.
+
+2. **black_scholes_filter.py**  
+   Validates option pricing using Black–Scholes–Merton.  
+   - Adjusts `risk_free_rate` by `{JURISDICTION_CODE}` from `bot_identity.json.enc`  
+   - Toggle: `ENABLE_BSM_FILTER=true`  
+   - Rejects if deviation > `MAX_BSM_DEVIATION` (default 15%)  
+   - Logs full rejection context
+
+3. **bollinger_confluence.py**  
+   Requires ±2σ Bollinger confluence on entries; lowers false positives in low-vol regimes; used in `strategy_mid.py`.
+
+4. **build_check.py**  
+   Pre-launch validator for keys, schemas, COA presence/alignment, directory structure. **Invoked by `tbot_bot/runtime/main.py` at startup; never via CLI.** Bot halts on failure. (Location may exist under `enhancements/` and/or `support/`; startup pipeline is authoritative.)
+
+5. **finnhub_fundamental_guard.py**  
+   Blocks trades if fundamentals fail thresholds.  
+   - Credentials loaded exclusively from `storage/secrets/screener_api.json.enc`  
+   - Caches to `data/cache/fundamentals_{date}.json`  
+   - Enforced metrics (configurable):  
+     - `peNormalizedAnnual` ≤ `MAX_PE_RATIO` (default 50)  
+     - `totalDebt/totalEquityAnnual` ≤ `MAX_DEBT_EQUITY` (default 2.5)  
+     - `marketCapitalization` ≥ `MIN_MARKET_CAP_FUNDAMENTAL` (default 2_000_000_000)  
+   - Logs full rejection context
+
+6. **imbalance_scanner_ibkr.py**  
+   Uses IBKR imbalance feed 20:30–21:00 UTC to gate `strategy_close.py` when `BROKER=ibkr`. Blocks entries during strong opposing pressure.
+
+7. **ticker_blocklist.py**  
+   Prevents duplicate ticker usage within a single session (in-memory + temp persistence). Always-on. Logged with UTC cause and context.
+
+8. **tuning_tracker.py**  
+   Tracks historical strategy performance; writes summary stats for self-tuning and audit; surfaced in Web UI.
+
+9. **vix_gatekeeper.py**  
+   Blocks EOD trades when VIX is **below** `STRAT_CLOSE_VIX_THRESHOLD` (from `.env_bot`). Aligns with `strategy_close.py` requirement that VIX must be **≥ threshold** for entries.
+
+---
+
+**Best Practices:**
+- Enhancements remain decoupled from signal generation.  
+- Enable/disable only via `.env_bot` or strategy context—no hardcoded toggles.  
+- Only executed trades hit ledgers; blocks/skips go to operational logs and summaries.  
+- All timestamps are UTC.  
+- **All file and log paths obtained via `path_resolver.py`.**
+
+---
+
+**Core Safety Systems:**
+
+- **kill_switch.py**: Enforces `DAILY_LOSS_LIMIT`; initiates immediate, safe halt; emits immutable audit event.  
+- **watchdog_bot.py**: Connection/feed watchdog; suspends trading on broker/market failure; **launched and supervised by `tbot_supervisor.py` only.**  
+- **risk_bot.py**: Enforces allocations and risk controls before execution.  
+- **error_handler.py**: Centralized exception capture/escalation; integrates with notifier and supervisor (see below).  
+- **security_bot.py**: Validates decryption of `.env_bot.enc`; blocks plaintext in production.  
+- **Atomic Key/Secret Rotation**: Automatic, atomic rotation/re-encryption of Fernet keys & secrets on any sensitive change or user add/modify; backups created pre-overwrite; old keys never reused.  
+- **Holdings/Float/Reserve Safety**: Holdings actions (float top-up, tax, payroll, reinvest) are immutable, fully audit-logged, and never reallocated except via explicit, audited manual override.
+
+---
+
+**Emergency Shutdown Table**
+
+| Event                         | Scope   | Action                                          |
+|------------------------------|---------|-------------------------------------------------|
+| DAILY_LOSS_LIMIT breach      | Global  | Immediate halt via kill_switch; audit+notify    |
+| Broker API failure           | Global  | Watchdog triggers suspend; supervisor handles   |
+| Market data failure          | Global  | Supervisor-initiated controlled stop            |
+| Critical exception           | Global  | Fatal: safe shutdown via supervisor             |
+| Manual override              | Scoped  | Controlled shutdown/reset via start/stop flags  |
+
+_All actions are append-only audit-logged with UTC timestamps._
+
+---
+
+**Self-Check System:**  
+Every enhancement and safety module must implement `.self_check()` at launch. **`tbot_bot/runtime/main.py` blocks startup** on any failure and logs cause with UTC, module, and remediation hint.
+
+=============================================================================================================================================
+Centralized Error Management 
+=============================================================================================================================================
+Overview: `error_handler.py` provides deterministic, auditable exception capture and escalation. Fatal on validation failure. Works headless; surfaced in Web UI read-only.
+
+**Emergency Event Matrix:**
+
+| Event                          | Detection           | Scope  | Response                                                      | Reboot |
+|--------------------------------|---------------------|--------|---------------------------------------------------------------|--------|
+| PnL Loss > DAILY_LOSS_LIMIT    | kill_switch.py      | Broker | Halt broker, emit audit+notify                                | No     |
+| Broker API Down                | watchdog_bot.py     | Broker | Suspend broker; supervisor continues health checks            | No     |
+| Market Data Down               | watchdog_bot.py     | All    | Supervisor issues **controlled stop**                         | Yes    |
+| .env_bot Decryption Fail       | security_bot.py     | All    | Block launch; log sanitized error                             | Yes    |
+| Logic Error                    | error_handler.py    | Varies | Classify → retry/backoff; escalate if critical                | Yes    |
+| Defense Mode On                | risk_bot.py+.env    | All    | Compress risk parameters                                      | No     |
+| Validation Fail (risk/config)  | risk_bot.py         | Broker | Block trade; log                                               | No     |
+| Manual Shutdown                | control_stop.flag   | Any    | Supervisor orchestrates safe shutdown                         | Yes    |
+| System File/Schema Fail        | build_check.py      | All    | Abort launch; log & require remediation                       | Yes    |
+
+**error_handler.py details:**
+- **Classification:** `NetworkError`, `BrokerError`, `LogicError`, `ConfigError` (sanitized).  
+- **Logging:** Writes structured entries to `output/{BOT_IDENTITY}/logs/unresolved_orders.log` and system logs per `.env_bot` format (CSV/JSON); includes `timestamp_utc`, `strategy`, `broker`, `error_type`, `error_code`, `exception_repr`, `context`.  
+- **Retries:** Exponential backoff with `API_RETRY_LIMIT`; escalates to kill_switch or supervised stop if unrecoverable.  
+- **Alerts:** `notifier_bot.py` on critical (SMTP/webhook via secrets), with minimal sanitized context.  
+- **Supervised Control:** On fatal, writes control flags via `path_resolver.py` and signals `tbot_supervisor.py` for orderly shutdown. **No direct process kills.**
+
+**Backtest Engine (backtest_engine.py):**
+- Simulates strategy logic (no broker/ledger writes, no `tbot_web` dependency).  
+- Config from `.env_bot` or `.env_bot.test`; supports filter toggles.  
+- Strategies implement `.simulate()`.  
+- Outputs: `trade_history_backtest.csv/json`, `daily_summary_backtest.json` (no SQLite/OFX).  
+- Metrics: Win Rate, Max Drawdown, Avg Duration/PnL, Sharpe. `plot_results.py` for visuals.  
+- CLI: `python tbot_bot/backtest/backtest_engine.py --strategy=STRAT --start=YYYY-MM-DD --end=YYYY-MM-DD --data_source=CSV`  
+- CI: pytest; validates env parsing and error handling pre-prod.
+
+Summary:
+- Centralized error management: every runtime/validation/logic issue is structured, UTC-stamped, and immutable-audited.  
+- Fatal conditions trigger supervised, controlled shutdown.  
+- Backtest engine is CI-ready, safe, and ledger-isolated.
+
+=============================================================================================================================================
+Atomic Key/Secret Rotation Compliance
+=============================================================================================================================================
+- All Fernet keys and encrypted secrets (config, credentials, ledger/COA, holdings) rotate **atomically** whenever any sensitive change occurs (including user CRUD).  
+- Rotation re-encrypts affected files, writes timestamped encrypted backups, and updates version metadata.  
+- No manual action required; old keys/secrets are never reused.  
+- All rotations are append-only audit-logged with UTC timestamp, category, initiator (user/system), and affected artifacts (sanitized).

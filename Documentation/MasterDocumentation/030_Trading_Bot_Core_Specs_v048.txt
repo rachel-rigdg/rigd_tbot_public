@@ -1,8 +1,8 @@
 ================================================================================
 Document: 030
 Trading_Bot_Core_Specs
-Version: v047
-Date: UTC:2025-07-19 00:00:00
+Version: v048
+Date: UTC:2025-08-23 00:00:00
 ================================================================================
 
 This module details the core infrastructure, risk controls, trading strategy logic, and instrument integrations for the RIGD Trading Bot system.
@@ -10,8 +10,10 @@ This module details the core infrastructure, risk controls, trading strategy log
 Contents:
 - RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATED)
 - Unified Capital Risk Controls and Dynamic Broker Float Allocation
+- Automated Holdings, Float, and Reserve Management
 - TradeBot Strategy Logic Spec v1.1 (Self-Contained)
 - InverseETF Integration Specification (Final v1.0)
+- Ranked Symbol Fallback and Fractional Trading Logic (v1.0)
 
 All risk, allocation, and execution logic is governed *exclusively* by the deployed environment and `.env_bot` configuration.
 
@@ -34,33 +36,27 @@ RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATE
   - Python 3.10+ (3.11+ preferred)
   - pip, venv, sqlite3, rsync, curl, git installed
   - All working directories and virtual environments set up
-- **PHASE 3:** Systemd Integration:
-  - `/etc/systemd/system/` contains:
-    - `tbot.target` (parent target for coordinated lifecycle)
-    - `tbot-open.service` (9:30–9:50 UTC)
-    - `tbot-mid.service` (12:00–12:30 UTC)
-    - `tbot-close.service` (15:45–16:00 UTC)
-    - `tbot-monitor.service` (trailing stop, runtime health check)
-    - `tbot-backup.service` + `.timer` (scheduled backup/rotation)
-    - `tbot-sync.service` + optional `.timer` (accounting sync)
+- **PHASE 3:** Systemd Integration (single entrypoint; supervisor **mandatory**):
+  - User-level unit: `~/.config/systemd/user/tbot_bot.service`
+  - `ExecStart`: `python -m tbot_bot.runtime.main`
+  - `WorkingDirectory`: project root (e.g., `/home/tbot/rigd_tbot`)
+  - `Restart=on-failure`, `RestartSec=5s`
   - All services run as `tbot` user
-  - `Restart=on-failure` enforced
-  - `WorkingDirectory` set to project root (e.g., `~/rigd_tbot`)
-  - `ExecStart` points to proper entry script (never Flask web, never manual)
-  - Logs routed to journald and to `/logs/` as per bot policy
-  - `/etc/tbot.env` (optional) for non-secrets environment overrides
-  - All timers use `OnCalendar=`, `Persistent=true` for reliability
+  - **`tbot_supervisor.py` is mandatory and always launched by `tbot_bot.runtime.main` to orchestrate strategy windows and workers.**
+  - **No other systemd units or timers launch strategies directly.** (Open/Mid/Close windows are managed inside supervisor/main.)
+  - Logs routed to journald and to `/tbot_bot/output/` as per bot policy
+  - Optional `/etc/tbot.env` (or user env) for non-secrets overrides
 - **PHASE 4:** Logging/Backups:
-  - Script: `~/rigdtb/scripts/backup_bot_to_iceland.sh` compresses logs, SQLite ledgers, configs, pushes to remote DR/backup; prunes archives >7 days old.
-  - (Optional) Mirror to `/mnt/shared` or DR storage; verify archive consistency
+  - Scripted archival via `tbot_bot/reporting/auto_backup.py` compresses logs, SQLite ledgers, configs; offsite push optional
+  - Backups are non-blocking; UTC-timestamped; retention/pruning enforced
 - **PHASE 5:** Validation:
-  - Use `systemctl list-timers` and `status tbot.target` to confirm operations
-  - Simulate session and backup triggers; verify archive output
-  - Simulate crash/kill and auto-restart; verify end-to-end continuity
+  - Confirm Web-UI bootstrap completed; verify broker API up, ledger writes (COA present), strategy triggers, alerts
+  - Simulate crash/kill and auto-restart; verify continuity
 - **Critical:**
-  - *All bot operations must be controlled exclusively via systemd*—no manual launches, no cron, no root SSH.
-  - All logs/backups must be fail-safe and non-blocking
-  - System clocks, logs, ledgers must be UTC
+  - *All bot operations are controlled exclusively via the single systemd entrypoint*—no manual launches, no cron, no root SSH.
+  - All clocks/logs/ledgers use UTC.
+  - All file paths resolved via `tbot_bot/support/path_resolver.py` only.
+  - OFX-aligned fields; immutable append-only audit logs; double-entry; entity/jurisdiction-scoped ledgers.
 
 ================================================================================
 Unified Capital Risk Controls and Dynamic Broker Float Allocation
@@ -135,11 +131,10 @@ The RIGD Trading Bot now implements a fully automated, audit-compliant holdings 
   - Float Target %, Tax Reserve %, and Payroll % are enforced and maintained automatically.
   - After each trading day’s open session, realized gains are split per configured percentages and posted to the correct COA/ledger accounts and audit trail.
   - Float top-ups (security sales to restore float) result in tax reserve allocations on any realized gain, but never payroll allocations. Losses result in no reserve.
-  - Payroll allocations are applied only to post-tax realized gains from trading bot activities (never float sales or losses).
+  - Payroll allocations are applied only to *post-tax* realized gains from trading bot activities (not float-top-up sales).
   - **Allocated tax and payroll reserves are never reduced or clawed back in drawdowns.**
-  - All float/cash shortfalls or overages are resolved via automated security sales/purchases, with complete audit trail.
 
-- **Portfolio Rebalancing:**  
+- **Rebalancing:**  
   - Long-term holdings are rebalanced according to user-defined intervals (3, 6, 12 months) or on manual trigger from the UI.
   - Rebalance logic supports explicit and blank allocation fields—any blank allocation symbols receive equal split of the remainder.
   - All buy/sell transactions are double-entry compliant and posted to the ledger with audit metadata.
@@ -363,6 +358,3 @@ NO EXCEPTIONS:
 - All risk and eligibility logic is single-source-of-truth as above.
 
 ================================================================================
-
-
-
