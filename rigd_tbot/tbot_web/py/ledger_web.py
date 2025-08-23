@@ -147,6 +147,48 @@ def ledger_collapse_expand(group_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@ledger_web.route('/ledger/collapse_all', methods=['POST'])
+def ledger_collapse_all():
+    """
+    Collapse or expand ALL groups in one shot.
+    Accepts JSON in any of these shapes:
+      {"collapse": true}          -> collapse all
+      {"collapse": false}         -> expand all
+      {"collapsed_state": 1|0}    -> 1 collapse, 0 expand
+      {"expanded": true|false}    -> inverse of collapsed_state
+    """
+    if provisioning_guard() or identity_guard():
+        return jsonify({"ok": False, "error": "Not permitted"}), 403
+    try:
+        data = request.get_json(silent=True) or {}
+        if "collapse" in data:
+            collapsed_state = 1 if bool(data["collapse"]) else 0
+        elif "collapsed_state" in data:
+            collapsed_state = 1 if str(data["collapsed_state"]).lower() in ("1", "true", "yes") else 0
+        elif "expanded" in data:
+            collapsed_state = 0 if bool(data["expanded"]) else 1
+        else:
+            return jsonify({"ok": False, "error": "missing collapse/expanded flag"}), 400
+
+        # Fetch current groups (collapsed view is fine; we only need IDs)
+        groups = fetch_grouped_trades(collapse=True, limit=10000)
+        group_ids = [g.get("group_id") or g.get("trade_id") for g in groups if g]
+        group_ids = [gid for gid in group_ids if gid]
+
+        changed = 0
+        for gid in group_ids:
+            try:
+                collapse_expand_group(gid, collapsed_state=collapsed_state)
+                changed += 1
+            except Exception:
+                # keep going; report partial success
+                traceback.print_exc()
+
+        return jsonify({"ok": True, "collapsed_state": collapsed_state, "count": changed})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @ledger_web.route('/ledger/search', methods=['GET'])
 def ledger_search():

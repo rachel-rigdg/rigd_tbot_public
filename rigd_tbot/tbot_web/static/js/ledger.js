@@ -88,6 +88,54 @@ document.addEventListener('change', function(ev) {
         });
 });
 
+// ---- Collapse-all support (optional) ----
+function getGroupCheckboxes() {
+    return Array.from(document.querySelectorAll('input.toggle-group[data-group-id]'));
+}
+
+function updateCollapseAllIndicator() {
+    const master = document.getElementById('collapse-all');
+    if (!master) return;
+    const boxes = getGroupCheckboxes();
+    if (boxes.length === 0) {
+        master.checked = true; // nothing to show; treat as collapsed
+        master.indeterminate = false;
+        return;
+    }
+    const allExpanded = boxes.every(cb => cb.checked);
+    const allCollapsed = boxes.every(cb => !cb.checked);
+    if (allExpanded) {
+        master.checked = false;         // unchecked = expand all
+        master.indeterminate = false;
+    } else if (allCollapsed) {
+        master.checked = true;          // checked = collapse all
+        master.indeterminate = false;
+    } else {
+        master.checked = false;
+        master.indeterminate = true;    // mixed state
+    }
+}
+
+function attachCollapseAllListener() {
+    const master = document.getElementById('collapse-all');
+    if (!master) return;
+    master.addEventListener('change', async (e) => {
+        const collapseAll = e.target.checked; // true => collapse everything
+        const targetExpanded = !collapseAll;
+        const boxes = getGroupCheckboxes();
+        const ops = [];
+        for (const cb of boxes) {
+            if (cb.checked !== targetExpanded) {
+                ops.push(postCollapseState(cb.dataset.groupId, targetExpanded));
+            }
+        }
+        if (ops.length) {
+            try { await Promise.all(ops); } catch (err) { console.error(err); }
+        }
+        location.reload();
+    });
+}
+
 function renderLedgerRows(data) {
     let tbody = document.getElementById('ledger-tbody');
     tbody.innerHTML = '';
@@ -105,7 +153,7 @@ function renderLedgerRows(data) {
             trTop.className = "row-top " + (entry.status || "");
             trTop.innerHTML = `
                 <td>
-                    <!-- keep old +/- button working -->
+                    <!-- keep old +/- button working; send intended target state -->
                     <button class="collapse-btn" onclick="toggleCollapse('${gid}', ${entry.collapsed ? 'true' : 'false'})" title="${entry.collapsed ? 'Expand' : 'Collapse'}">
                         ${entry.collapsed ? "+" : "-"}
                     </button>
@@ -145,6 +193,8 @@ function renderLedgerRows(data) {
         }
     });
     updateSortIndicators();
+    // After client render, sync master toggle indicator
+    updateCollapseAllIndicator();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
@@ -162,4 +212,10 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     });
     updateSortIndicators();
+    attachCollapseAllListener();
+    // On first load (SSR rows), update master indicator
+    updateCollapseAllIndicator();
 });
+
+// Expose toggleCollapse globally (used by inline onclick)
+window.toggleCollapse = toggleCollapse;
