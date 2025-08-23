@@ -121,7 +121,10 @@ LOGIN_ATTEMPT_LIMIT=10
 LOGIN_LOCKOUT_MINUTES=15
 SESSION_TIMEOUT_MINUTES=120
 
-# .env_bot – TradeBot Configuration 
+
+============================================================
+.env_bot – TradeBot Configuration 
+============================================================
 # All strategy logic, broker routing, and runtime behavior are driven by this file.
 # Time values are specified in UTC. Comments indicate usage and system impact.
 
@@ -493,7 +496,8 @@ TradeBot separates runtime configuration into two environment files:
 
 Security Goals:
 - `.env_bot` and all sensitive config data are encrypted at rest using AES-256 (Fernet).
-- Encrypted bot config resides at **`tbot_bot/support/.env_bot.enc`**. Category-specific encrypted JSON files reside under **`tbot_bot/storage/secrets/`**.
+- Encrypted bot config resides at **`tbot_bot/support/.env_bot.enc`**. 
+- Category-specific encrypted JSON files reside under **`tbot_bot/storage/secrets/`**.
 - Corresponding encryption keys reside under **`tbot_bot/storage/keys/`**.
 - **Whenever any secret or key is created or modified, the system performs a fully automated atomic rotation and re-encryption of all key/secret pairs.** This ensures forward secrecy and eliminates partial update risk.
 - All prior key and secret files are versioned and backed up before overwrites (archived under `tbot_bot/storage/backups/`).
