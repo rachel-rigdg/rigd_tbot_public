@@ -51,7 +51,14 @@ function updateSortIndicators() {
 }
 
 // --- Collapse/Expand handling ---
-const COLLAPSE_ENDPOINT_BASE = "/ledger/collapse_expand/";
+// IMPORTANT: use RELATIVE paths so they work under the blueprint prefix (/ledger/ledger/*)
+const COLLAPSE_ENDPOINT_BASE = "collapse_expand/";   // <-- no leading slash
+const COLLAPSE_ALL_ENDPOINT  = "collapse_all";       // optional, if route exists
+
+function _checkOk(res) {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res;
+}
 
 function postCollapseState(groupId, expanded) {
     // Server expects collapsed_state: 1/0 (1 = collapsed, 0 = expanded)
@@ -60,18 +67,30 @@ function postCollapseState(groupId, expanded) {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ collapsed_state })
-    });
+    }).then(_checkOk);
 }
 
 // Back-compat for existing +/- button calls
 function toggleCollapse(groupId, wantExpanded = null) {
+    const url = COLLAPSE_ENDPOINT_BASE + encodeURIComponent(groupId);
+    let p;
     if (wantExpanded === null) {
         // Old behavior: no explicit state, let server toggle
-        return fetch(COLLAPSE_ENDPOINT_BASE + encodeURIComponent(groupId), { method: "POST" })
-            .then(() => location.reload());
+        p = fetch(url, { method: "POST" });
     } else {
-        return postCollapseState(groupId, wantExpanded).then(() => location.reload());
+        const collapsed_state = wantExpanded ? 0 : 1;
+        p = fetch(url, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ collapsed_state })
+        });
     }
+    return p.then(_checkOk)
+            .then(() => location.reload())
+            .catch(err => {
+                console.error('toggleCollapse failed', err);
+                alert('Failed to toggle group view. Check logs.');
+            });
 }
 
 // Delegate checkbox changes (checked = expanded)
@@ -88,52 +107,13 @@ document.addEventListener('change', function(ev) {
         });
 });
 
-// ---- Collapse-all support (optional) ----
-function getGroupCheckboxes() {
-    return Array.from(document.querySelectorAll('input.toggle-group[data-group-id]'));
-}
-
-function updateCollapseAllIndicator() {
-    const master = document.getElementById('collapse-all');
-    if (!master) return;
-    const boxes = getGroupCheckboxes();
-    if (boxes.length === 0) {
-        master.checked = true; // nothing to show; treat as collapsed
-        master.indeterminate = false;
-        return;
-    }
-    const allExpanded = boxes.every(cb => cb.checked);
-    const allCollapsed = boxes.every(cb => !cb.checked);
-    if (allExpanded) {
-        master.checked = false;         // unchecked = expand all
-        master.indeterminate = false;
-    } else if (allCollapsed) {
-        master.checked = true;          // checked = collapse all
-        master.indeterminate = false;
-    } else {
-        master.checked = false;
-        master.indeterminate = true;    // mixed state
-    }
-}
-
-function attachCollapseAllListener() {
-    const master = document.getElementById('collapse-all');
-    if (!master) return;
-    master.addEventListener('change', async (e) => {
-        const collapseAll = e.target.checked; // true => collapse everything
-        const targetExpanded = !collapseAll;
-        const boxes = getGroupCheckboxes();
-        const ops = [];
-        for (const cb of boxes) {
-            if (cb.checked !== targetExpanded) {
-                ops.push(postCollapseState(cb.dataset.groupId, targetExpanded));
-            }
-        }
-        if (ops.length) {
-            try { await Promise.all(ops); } catch (err) { console.error(err); }
-        }
-        location.reload();
-    });
+// Optional: Collapse/Expand all (if you add the backend route + UI control)
+function setAllCollapsed(collapse) {
+    return fetch(COLLAPSE_ALL_ENDPOINT, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ collapse: !!collapse })
+    }).then(_checkOk).then(() => location.reload());
 }
 
 function renderLedgerRows(data) {
@@ -143,7 +123,7 @@ function renderLedgerRows(data) {
         if (
             (entry.symbol && String(entry.symbol).trim()) ||
             (entry.datetime_utc && String(entry.datetime_utc).trim()) ||
-            (entry.action && String(entry.action).trim()) ||
+            (entry.action && String(entry.action)).trim() ||
             (entry.price !== null && entry.price !== "" && entry.price !== "None") ||
             (entry.quantity !== null && entry.quantity !== "" && entry.quantity !== "None") ||
             (entry.total_value !== null && entry.total_value !== "" && entry.total_value !== "None")
@@ -153,11 +133,9 @@ function renderLedgerRows(data) {
             trTop.className = "row-top " + (entry.status || "");
             trTop.innerHTML = `
                 <td>
-                    <!-- keep old +/- button working; send intended target state -->
                     <button class="collapse-btn" onclick="toggleCollapse('${gid}', ${entry.collapsed ? 'true' : 'false'})" title="${entry.collapsed ? 'Expand' : 'Collapse'}">
                         ${entry.collapsed ? "+" : "-"}
                     </button>
-                    <!-- new checkbox: checked = expanded -->
                     <label style="margin-left:.5rem;">
                       <input type="checkbox" class="toggle-group" data-group-id="${gid}" ${entry.collapsed ? '' : 'checked'} />
                       expand
@@ -193,8 +171,6 @@ function renderLedgerRows(data) {
         }
     });
     updateSortIndicators();
-    // After client render, sync master toggle indicator
-    updateCollapseAllIndicator();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
@@ -212,10 +188,4 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     });
     updateSortIndicators();
-    attachCollapseAllListener();
-    // On first load (SSR rows), update master indicator
-    updateCollapseAllIndicator();
 });
-
-// Expose toggleCollapse globally (used by inline onclick)
-window.toggleCollapse = toggleCollapse;
