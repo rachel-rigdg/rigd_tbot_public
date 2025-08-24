@@ -1,66 +1,73 @@
 # tbot_bot/accounting/ledger_modules/ledger_db.py
 
-import os
-import sqlite3
+"""
+Ledger DB helpers (v048)
+- Resolve DB path via path_resolver + utils_identity (no inline decrypts).
+- Provide migrations runner.
+- Use pragma-configured connections via ledger_core (busy_timeout, WAL, foreign_keys=ON).
+"""
+
+from __future__ import annotations
+
 import json
-from cryptography.fernet import Fernet
+import sqlite3
 from pathlib import Path
+from typing import Iterable, Optional
+
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+from tbot_bot.accounting.ledger_modules.ledger_core import get_conn, tx_context
 
-# ---- Compliance filter (backwards compatible) ----
+# ---- Compliance (v048 preferred) ----
 try:
-    # Preferred: boolean helper
-    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (
-        is_compliant_ledger_entry as _is_compliant,  # type: ignore
-    )
-except Exception:
-    # Legacy helper that might return entry/None or (bool, reason)
-    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (  # type: ignore
-        compliance_filter_ledger_entry as _legacy_compliance,
-    )
-
+    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import validate_entries as _validate_entries  # type: ignore
     def _is_compliant(entry: dict) -> bool:
-        res = _legacy_compliance(entry)
-        if isinstance(res, tuple):
-            return bool(res[0])
-        return res is not None
+        ok, _ = _validate_entries([entry])
+        return bool(ok)
+except Exception:
+    try:
+        from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import is_compliant_ledger_entry as _legacy_is_compliant  # type: ignore
+        def _is_compliant(entry: dict) -> bool:
+            return bool(_legacy_is_compliant(entry))
+    except Exception:
+        def _is_compliant(entry: dict) -> bool:  # type: ignore
+            return True  # last-resort permissive (should not happen in prod)
 
-BOT_ID = get_bot_identity()
+
 CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 
-def _read_identity_tuple():
+def _identity_tuple() -> tuple[str, str, str, str]:
     """
-    Decrypts identity and returns (entity_code, jurisdiction_code, broker_code, bot_id).
+    (entity_code, jurisdiction_code, broker_code, bot_id) from BOT identity.
     """
-    key_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
-    enc_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
-    key = key_path.read_bytes()
-    cipher = Fernet(key)
-    plaintext = cipher.decrypt(enc_path.read_bytes())
-    bot_identity_data = json.loads(plaintext.decode("utf-8"))
-    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity_data.get("BOT_IDENTITY_STRING").split("_")
-    return entity_code, jurisdiction_code, broker_code, bot_id
+    parts = str(get_bot_identity()).split("_")
+    if len(parts) < 4:
+        raise ValueError("Invalid BOT identity; expected 'ENTITY_JURISDICTION_BROKER_BOTID'")
+    return parts[0], parts[1], parts[2], parts[3]
 
 
-def get_db_path():
-    entity_code, jurisdiction_code, broker_code, bot_id = _read_identity_tuple()
-    return resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+def get_db_path() -> str:
+    """
+    Resolved ledger DB path for current identity (compat helper).
+    """
+    ec, jc, bc, bid = _identity_tuple()
+    return str(resolve_ledger_db_path(ec, jc, bc, bid))
 
 
-def validate_ledger_schema(db_path=None, schema_path=None):
+def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[str] = None) -> bool:
     """
-    Validates the ledger DB against the reference schema. Returns True if valid, False if not.
+    Validates the ledger DB against the reference schema by EXPLAIN-ing statements.
+    Returns True if valid, False otherwise.
     """
-    db_path = db_path or get_db_path()
-    schema_path = schema_path or resolve_ledger_schema_path()
     try:
-        with sqlite3.connect(db_path) as conn:
-            with open(schema_path, "r", encoding="utf-8") as f:
-                schema = f.read()
+        dsn = db_path or get_db_path()
+        schema_file = schema_path or resolve_ledger_schema_path()
+        with open(schema_file, "r", encoding="utf-8") as f:
+            schema = f.read()
+        with get_conn() as conn:
             cursor = conn.cursor()
             for stmt in schema.split(";"):
                 stmt = stmt.strip()
@@ -70,9 +77,9 @@ def validate_ledger_schema(db_path=None, schema_path=None):
                     cursor.execute(f"EXPLAIN {stmt}")
                 except sqlite3.DatabaseError:
                     return False
+        return True
     except Exception:
         return False
-    return True
 
 
 def _map_action(action: str | None) -> str:
@@ -90,22 +97,21 @@ def _map_action(action: str | None) -> str:
 
 def _sanitize_for_sqlite(entry: dict) -> dict:
     """
-    Fill required fields, set identity, compute amount/side defaults,
-    and JSON-encode any complex objects to avoid sqlite binding errors.
+    Fill required fields, set identity defaults, compute amount/side defaults,
+    and JSON-encode complex objects to avoid sqlite binding errors.
     """
     e = dict(entry)
 
     # Identity fields (NOT NULL in schema)
-    entity_code, jurisdiction_code, broker_code, bot_id = _read_identity_tuple()
-    e.setdefault("entity_code", entity_code)
-    e.setdefault("jurisdiction_code", jurisdiction_code)
-    e.setdefault("broker_code", broker_code)
-    e.setdefault("bot_id", bot_id)
+    ec, jc, bc, bid = _identity_tuple()
+    e.setdefault("entity_code", ec)
+    e.setdefault("jurisdiction_code", jc)
+    e.setdefault("broker_code", bc)
+    e.setdefault("bot_id", bid)
 
     # Ensure trade_id / group_id
     if not e.get("trade_id"):
-        # hash of items — safe-ish placeholder
-        e["trade_id"] = f"{broker_code}_{bot_id}_{hash(frozenset(e.items()))}"
+        e["trade_id"] = f"{bc}_{bid}_{hash(frozenset(e.items()))}"
     if not e.get("group_id"):
         e["group_id"] = e.get("trade_id")
 
@@ -154,50 +160,45 @@ def _sanitize_for_sqlite(entry: dict) -> dict:
     return e
 
 
-def add_entry(entry):
+def add_entry(entry: dict) -> None:
     """
     Adds a single ledger entry to the trades table.
-    Enforces compliance and sanitization to prevent bad/incompatible rows.
+    Enforces compliance and sanitization to prevent invalid rows.
     """
     if not isinstance(entry, dict):
         raise RuntimeError("Entry must be a dict")
-    # Compliance check (bool)
-    if not _is_compliant(entry):
-        return  # silently ignore non-compliant entries
 
-    db_path = get_db_path()
+    if not _is_compliant(entry):
+        return  # ignore non-compliant entries (already audited by compliance module)
+
     e = _sanitize_for_sqlite(entry)
 
     keys = ", ".join(TRADES_FIELDS)
     placeholders = ", ".join("?" for _ in TRADES_FIELDS)
     values = tuple(e.get(k) for k in TRADES_FIELDS)
-    try:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(f"INSERT INTO trades ({keys}) VALUES ({placeholders})", values)
-            conn.commit()
-    except Exception as exc:
-        raise RuntimeError(f"Failed to add ledger entry: {exc}")
+
+    with tx_context() as conn:
+        conn.execute(f"INSERT INTO trades ({keys}) VALUES ({placeholders})", values)
 
 
-def _schema_has_amount_side(db_path):
+def _schema_has_amount_side() -> bool:
     """
     Checks if the trades table has 'amount' and 'side' columns.
     """
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.execute("PRAGMA table_info(trades)")
-            cols = [row[1] for row in cursor.fetchall()]
+        with get_conn() as conn:
+            cols = [row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()]
             return ("amount" in cols) and ("side" in cols)
     except Exception:
         return False
 
 
-def post_double_entry(entries, mapping_table=None):
+def post_double_entry(entries: Iterable[dict], mapping_table: Optional[dict] = None):
     """
     Posts balanced double-entry records using the double-entry helper module.
     Applies compliance to each raw entry before delegating.
     """
-    from tbot_bot.accounting.ledger_modules.ledger_double_entry import (
+    from tbot_bot.accounting.ledger_modules.ledger_double_entry import (  # local import to avoid cycles
         post_double_entry as _post_double_entry_helper,
     )
 
@@ -209,28 +210,32 @@ def post_double_entry(entries, mapping_table=None):
     return _post_double_entry_helper(filtered, mapping_table)
 
 
-def run_schema_migration(migration_sql_path):
+def run_schema_migration(migration_sql_path: str) -> None:
     """
-    Runs a schema migration SQL script on the ledger DB.
+    Runs a single schema migration SQL script on the ledger DB (atomic).
     """
-    db_path = get_db_path()
-    try:
-        with open(migration_sql_path, "r", encoding="utf-8") as f:
-            migration_sql = f.read()
-        with sqlite3.connect(db_path) as conn:
-            conn.executescript(migration_sql)
-            conn.commit()
-    except Exception as e:
-        raise RuntimeError(f"Failed to run schema migration: {e}")
+    with open(migration_sql_path, "r", encoding="utf-8") as f:
+        migration_sql = f.read()
+    with tx_context() as conn:
+        conn.executescript(migration_sql)
 
 
-def reconcile_ledger_with_coa():
+def run_migrations_dir(migrations_dir: str) -> None:
+    """
+    Runs all *.sql migrations in a directory in lexical order.
+    """
+    p = Path(migrations_dir)
+    files = sorted([f for f in p.iterdir() if f.suffix.lower() == ".sql"])
+    for f in files:
+        run_schema_migration(str(f))
+
+
+def reconcile_ledger_with_coa() -> bool:
     """
     Placeholder for reconciliation logic between ledger entries and COA accounts.
     """
-    db_path = get_db_path()
     try:
-        with sqlite3.connect(db_path):
+        with get_conn():
             pass
         return True
     except Exception as e:

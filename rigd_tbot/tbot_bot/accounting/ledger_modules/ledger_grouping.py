@@ -1,82 +1,223 @@
 # tbot_bot/accounting/ledger_modules/ledger_grouping.py
 
-import sqlite3
-from tbot_bot.support.path_resolver import resolve_ledger_db_path
-from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
+"""
+Grouping helpers (v048)
+- Generate/propagate group_id (UUIDv4 or deterministic from FITID set).
+- Helpers to group related splits and link reconciliation_log metadata.
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Dict, Iterable, List, Optional, Tuple
+
+from tbot_bot.accounting.ledger_modules.ledger_core import get_conn, get_identity_tuple
 
 COLLAPSED_TABLE = "trade_group_collapsed"
+_TS_COL = "COALESCE(timestamp_utc, datetime_utc, created_at_utc)"
 
-def _ensure_collapsed_table(db_path):
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {COLLAPSED_TABLE} (
-                group_id TEXT PRIMARY KEY,
-                collapsed INTEGER NOT NULL
-            )
-            """
+
+# -----------------
+# group_id helpers
+# -----------------
+
+def generate_group_id(entries: Iterable[Dict]) -> str:
+    """
+    If all entries have a FITID, generate deterministic UUIDv5 from sorted FITIDs.
+    Otherwise return a random UUIDv4.
+    """
+    fitids = sorted([str(e.get("fitid")).strip() for e in entries if e and e.get("fitid")])
+    if entries and len(fitids) == len(list(entries)):
+        seed = "|".join(fitids)
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"rigd-tbot-group:{seed}"))
+    return str(uuid.uuid4())
+
+
+def propagate_group_id(entries: List[Dict], group_id: Optional[str] = None) -> Tuple[str, List[Dict]]:
+    """
+    Ensure each entry has a group_id. Returns (group_id, updated_entries).
+    """
+    if not group_id:
+        group_id = generate_group_id(entries)
+    updated: List[Dict] = []
+    for e in entries:
+        ee = dict(e)
+        ee.setdefault("group_id", group_id)
+        updated.append(ee)
+    return group_id, updated
+
+
+# -----------------
+# storage helpers
+# -----------------
+
+def _ensure_collapsed_table(conn) -> None:
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {COLLAPSED_TABLE} (
+            group_id TEXT PRIMARY KEY,
+            collapsed INTEGER NOT NULL
         )
+        """
+    )
 
-def get_trades_grouped_by_group_id(group_id=None, limit=100, offset=0):
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    results = []
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
+
+def _rows_to_dicts(rows) -> List[Dict]:
+    return [{k: row[k] for k in row.keys()} for row in rows]
+
+
+# -----------------
+# reconciliation links
+# -----------------
+
+def _fetch_reconciliation_map(conn, group_ids: List[str]) -> Dict[str, Dict]:
+    """
+    Return latest reconciliation info per group_id if table exists.
+    Keys: group_id → {status, sync_run_id, mapping_version, last_ts}
+    """
+    if not group_ids:
+        return {}
+    # Check for table
+    try:
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reconciliation_log'"
+        ).fetchone()
+        if not exists:
+            return {}
+    except Exception:
+        return {}
+
+    q = f"""
+        SELECT group_id,
+               MAX({ _TS_COL }) AS last_ts,
+               COALESCE(status,'') AS status,
+               COALESCE(sync_run_id,'') AS sync_run_id,
+               COALESCE(mapping_version,'') AS mapping_version
+          FROM reconciliation_log
+         WHERE group_id IN ({",".join(["?"]*len(group_ids))})
+         GROUP BY group_id
+    """
+    rows = conn.execute(q, tuple(group_ids)).fetchall()
+    out = {}
+    for r in rows:
+        out[r["group_id"]] = {
+            "status": r["status"],
+            "sync_run_id": r["sync_run_id"],
+            "mapping_version": r["mapping_version"],
+            "last_ts": r["last_ts"],
+        }
+    return out
+
+
+def attach_reconciliation_to_groups(groups: List[List[Dict]]) -> List[List[Dict]]:
+    """
+    For each group (list of splits), attach 'reconciliation' dict to the first element.
+    """
+    if not groups:
+        return groups
+    group_ids = []
+    for g in groups:
+        if g:
+            gid = g[0].get("group_id") or g[0].get("trade_id")
+            if gid:
+                group_ids.append(gid)
+
+    with get_conn() as conn:
+        conn.row_factory = __import__("sqlite3").Row
+        recon_map = _fetch_reconciliation_map(conn, group_ids)
+
+    for g in groups:
+        if not g:
+            continue
+        gid = g[0].get("group_id") or g[0].get("trade_id")
+        if gid and gid in recon_map:
+            g[0]["reconciliation"] = recon_map[gid]
+    return groups
+
+
+# -----------------
+# grouping queries
+# -----------------
+
+def get_trades_grouped_by_group_id(group_id: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[List[Dict]]:
+    """
+    Return trades grouped by group_id, ordered within each group by time ascending.
+    """
+    results: List[List[Dict]] = []
+    with get_conn() as conn:
+        conn.row_factory = __import__("sqlite3").Row
         if group_id:
             rows = conn.execute(
-                "SELECT * FROM trades WHERE group_id = ? ORDER BY datetime_utc ASC",
-                (group_id,)
+                f"SELECT * FROM trades WHERE group_id = ? ORDER BY {_TS_COL} ASC, id ASC",
+                (group_id,),
             ).fetchall()
             if rows:
-                results.append([dict(row) for row in rows])
+                results.append(_rows_to_dicts(rows))
         else:
-            group_rows = conn.execute(
-                "SELECT group_id, MAX(datetime_utc) as max_dt FROM trades WHERE group_id IS NOT NULL GROUP BY group_id ORDER BY max_dt DESC LIMIT ? OFFSET ?",
-                (limit, offset)
+            groups = conn.execute(
+                f"""
+                SELECT group_id, MAX({_TS_COL}) AS max_dt
+                  FROM trades
+                 WHERE group_id IS NOT NULL
+                 GROUP BY group_id
+                 ORDER BY max_dt DESC
+                 LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
             ).fetchall()
-            for group in group_rows:
-                gid = group["group_id"]
+            for g in groups:
+                gid = g["group_id"]
                 rows = conn.execute(
-                    "SELECT * FROM trades WHERE group_id = ? ORDER BY datetime_utc ASC",
-                    (gid,)
+                    f"SELECT * FROM trades WHERE group_id = ? ORDER BY {_TS_COL} ASC, id ASC",
+                    (gid,),
                 ).fetchall()
-                results.append([dict(row) for row in rows])
+                if rows:
+                    results.append(_rows_to_dicts(rows))
     return results
 
-def get_trades_grouped_by_trade_id(trade_id=None, limit=100, offset=0):
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    results = []
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
+
+def get_trades_grouped_by_trade_id(trade_id: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[List[Dict]]:
+    """
+    Return trades grouped by trade_id, ordered within each group by time ascending.
+    """
+    results: List[List[Dict]] = []
+    with get_conn() as conn:
+        conn.row_factory = __import__("sqlite3").Row
         if trade_id:
             rows = conn.execute(
-                "SELECT * FROM trades WHERE trade_id = ? ORDER BY datetime_utc ASC",
-                (trade_id,)
+                f"SELECT * FROM trades WHERE trade_id = ? ORDER BY {_TS_COL} ASC, id ASC",
+                (trade_id,),
             ).fetchall()
             if rows:
-                results.append([dict(row) for row in rows])
+                results.append(_rows_to_dicts(rows))
         else:
-            trade_rows = conn.execute(
-                "SELECT trade_id, MAX(datetime_utc) as max_dt FROM trades WHERE trade_id IS NOT NULL GROUP BY trade_id ORDER BY max_dt DESC LIMIT ? OFFSET ?",
-                (limit, offset)
+            groups = conn.execute(
+                f"""
+                SELECT trade_id, MAX({_TS_COL}) AS max_dt
+                  FROM trades
+                 WHERE trade_id IS NOT NULL
+                 GROUP BY trade_id
+                 ORDER BY max_dt DESC
+                 LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
             ).fetchall()
-            for t in trade_rows:
-                tid = t["trade_id"]
+            for g in groups:
+                tid = g["trade_id"]
                 rows = conn.execute(
-                    "SELECT * FROM trades WHERE trade_id = ? ORDER BY datetime_utc ASC",
-                    (tid,)
+                    f"SELECT * FROM trades WHERE trade_id = ? ORDER BY {_TS_COL} ASC, id ASC",
+                    (tid,),
                 ).fetchall()
-                results.append([dict(row) for row in rows])
+                if rows:
+                    results.append(_rows_to_dicts(rows))
     return results
 
-def _pick_representative_leg(trades_group):
-    """
-    Choose one leg to represent the economic transaction in collapsed view.
-    Prefer a 'debit' leg if present (so quantity/price/total_value match the buy/open leg),
-    otherwise fall back to the first row.
-    """
+
+# -----------------
+# collapse helpers
+# -----------------
+
+def _pick_representative_leg(trades_group: List[Dict]) -> Dict:
     if not trades_group:
         return {}
     for t in trades_group:
@@ -87,26 +228,22 @@ def _pick_representative_leg(trades_group):
             pass
     return trades_group[0]
 
-def collapse_group(trades_group):
+
+def collapse_group(trades_group: List[Dict]) -> Dict:
     """
-    Build a collapsed view that shows ONE leg's economics (representative),
-    not the sum of both legs. This avoids doubled quantity and total_value=0 issues.
-    All original legs are still available in 'sub_entries' (attached later).
+    Build a collapsed view that shows ONE leg's economics (representative).
     """
     if not trades_group:
         return {}
-
     rep = _pick_representative_leg(trades_group)
-    collapsed = dict(rep)  # start from representative leg
+    collapsed = dict(rep)
 
-    # Defensive numeric helper
     def _f(x, default=0.0):
         try:
             return float(x)
         except Exception:
             return default
 
-    # Use representative leg's economics; do NOT sum across legs
     if rep.get("quantity") is None:
         qs = [_f(t.get("quantity")) for t in trades_group if t.get("quantity") is not None]
         collapsed["quantity"] = max(qs) if qs else None
@@ -119,71 +256,92 @@ def collapse_group(trades_group):
     collapsed["fee"] = rep.get("fee")
     collapsed["commission"] = rep.get("commission")
 
-    # Keep metadata for debugging/inspection
     collapsed["sides"] = [t.get("side") for t in trades_group]
     collapsed["ids"] = [t.get("id") for t in trades_group]
     return collapsed
 
-def get_collapsed_groups_by_group_id(limit=100, offset=0):
+
+def get_collapsed_groups_by_group_id(limit: int = 100, offset: int = 0) -> List[Dict]:
     groups = get_trades_grouped_by_group_id(None, limit, offset)
-    # Always historical order within group
     for g in groups:
-        g.sort(key=lambda row: row.get("datetime_utc") or "")
+        g.sort(key=lambda row: (row.get("timestamp_utc") or row.get("datetime_utc") or "", row.get("id") or 0))
     return [collapse_group(g) for g in groups if g]
 
-def get_collapsed_groups_by_trade_id(limit=100, offset=0):
+
+def get_collapsed_groups_by_trade_id(limit: int = 100, offset: int = 0) -> List[Dict]:
     groups = get_trades_grouped_by_trade_id(None, limit, offset)
     for g in groups:
-        g.sort(key=lambda row: row.get("datetime_utc") or "")
+        g.sort(key=lambda row: (row.get("timestamp_utc") or row.get("datetime_utc") or "", row.get("id") or 0))
     return [collapse_group(g) for g in groups if g]
 
-def _get_collapsed_map(db_path, group_ids):
+
+# -----------------
+# UI helpers with collapse state + reconciliation
+# -----------------
+
+def _get_collapsed_map(conn, group_ids: List[str]) -> Dict[str, int]:
     if not group_ids:
         return {}
-    with sqlite3.connect(db_path) as conn:
-        rows = conn.execute(
-            f"SELECT group_id, collapsed FROM {COLLAPSED_TABLE} WHERE group_id IN ({','.join(['?']*len(group_ids))})",
-            tuple(group_ids)
-        ).fetchall()
+    rows = conn.execute(
+        f"SELECT group_id, collapsed FROM {COLLAPSED_TABLE} WHERE group_id IN ({','.join(['?']*len(group_ids))})",
+        tuple(group_ids),
+    ).fetchall()
     return {row[0]: row[1] for row in rows}
 
-def fetch_grouped_trades(by="group_id", collapse=True, limit=100, offset=0, show_expanded_groups=None):
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    _ensure_collapsed_table(db_path)
 
-    if by == "trade_id":
-        groups = get_trades_grouped_by_trade_id(None, limit, offset)
-        group_ids = [g[0].get("trade_id") for g in groups if g]
-    else:
-        groups = get_trades_grouped_by_group_id(None, limit, offset)
-        group_ids = [g[0].get("group_id") for g in groups if g]
+def fetch_grouped_trades(
+    by: str = "group_id",
+    collapse: bool = True,
+    limit: int = 100,
+    offset: int = 0,
+    show_expanded_groups: Optional[List[str]] = None,
+) -> List[Dict]:
+    """
+    Fetch grouped trades, optionally collapsed, with reconciliation metadata attached.
+    """
+    with get_conn() as conn:
+        _ensure_collapsed_table(conn)
 
-    collapsed_map = _get_collapsed_map(db_path, group_ids)
-    result = []
-
-    for group in groups:
-        if not group:
-            continue
-        group.sort(key=lambda row: row.get("datetime_utc") or "")  # strict historical order, forensic
-        group_id = group[0].get("group_id") if by != "trade_id" else group[0].get("trade_id")
-        collapsed_state = collapsed_map.get(group_id, 1)
-        force_expand = show_expanded_groups and group_id in show_expanded_groups
-        if collapse and collapsed_state and not force_expand:
-            collapsed = collapse_group(group)
-            collapsed["collapsed"] = True
-            collapsed["group_id"] = group_id
-            collapsed["sub_entries"] = group
-            result.append(collapsed)
+        if by == "trade_id":
+            groups = get_trades_grouped_by_trade_id(None, limit, offset)
+            group_ids = [g[0].get("trade_id") for g in groups if g]
         else:
-            for entry in group:
-                entry["collapsed"] = False
-                entry["group_id"] = group_id
-                entry["sub_entries"] = []
-            result.extend(group)
-    return result
+            groups = get_trades_grouped_by_group_id(None, limit, offset)
+            group_ids = [g[0].get("group_id") for g in groups if g]
 
-def fetch_trade_group_by_id(group_id, by="group_id"):
+        collapsed_map = _get_collapsed_map(conn, group_ids)
+        groups = attach_reconciliation_to_groups(groups)
+
+        result: List[Dict] = []
+        for group in groups:
+            if not group:
+                continue
+            group.sort(key=lambda row: (row.get("timestamp_utc") or row.get("datetime_utc") or "", row.get("id") or 0))
+            group_id = group[0].get("group_id") if by != "trade_id" else group[0].get("trade_id")
+            collapsed_state = collapsed_map.get(group_id, 1)
+            force_expand = show_expanded_groups and group_id in show_expanded_groups
+            if collapse and collapsed_state and not force_expand:
+                collapsed_row = collapse_group(group)
+                collapsed_row["collapsed"] = True
+                collapsed_row["group_id"] = group_id
+                collapsed_row["sub_entries"] = group
+                # Bubble reconciliation to collapsed row if present
+                if "reconciliation" in group[0]:
+                    collapsed_row["reconciliation"] = group[0]["reconciliation"]
+                result.append(collapsed_row)
+            else:
+                for entry in group:
+                    entry["collapsed"] = False
+                    entry["group_id"] = group_id
+                    entry.setdefault("sub_entries", [])
+                result.extend(group)
+        return result
+
+
+def fetch_trade_group_by_id(group_id: str, by: str = "group_id") -> List[Dict]:
+    """
+    Fetch a single group by group_id or trade_id, sorted ascending.
+    """
     if by == "trade_id":
         group = get_trades_grouped_by_trade_id(trade_id=group_id)
     else:
@@ -192,24 +350,24 @@ def fetch_trade_group_by_id(group_id, by="group_id"):
     for entry in group[0] if group else []:
         entry["collapsed"] = False
     if group and group[0]:
-        group[0].sort(key=lambda row: row.get("datetime_utc") or "")
+        group[0].sort(key=lambda row: (row.get("timestamp_utc") or row.get("datetime_utc") or "", row.get("id") or 0))
         return group[0]
     return []
 
-def collapse_expand_group(group_id, by="group_id", collapsed_state=None):
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    _ensure_collapsed_table(db_path)
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.cursor()
-        cur.execute(f"SELECT collapsed FROM {COLLAPSED_TABLE} WHERE group_id = ?", (group_id,))
+
+def collapse_expand_group(group_id: str, by: str = "group_id", collapsed_state: Optional[bool] = None) -> bool:
+    """
+    Toggle or set the collapsed state for a group in the UI helper table.
+    """
+    with get_conn() as conn:
+        _ensure_collapsed_table(conn)
+        cur = conn.execute(f"SELECT collapsed FROM {COLLAPSED_TABLE} WHERE group_id = ?", (group_id,))
         row = cur.fetchone()
         if row:
             prev_state = bool(row[0])
             new_state = int(not prev_state) if collapsed_state is None else int(bool(collapsed_state))
-            cur.execute(f"UPDATE {COLLAPSED_TABLE} SET collapsed = ? WHERE group_id = ?", (new_state, group_id))
+            conn.execute(f"UPDATE {COLLAPSED_TABLE} SET collapsed = ? WHERE group_id = ?", (new_state, group_id))
         else:
             new_state = 0 if collapsed_state is None else int(bool(collapsed_state))
-            cur.execute(f"INSERT INTO {COLLAPSED_TABLE} (group_id, collapsed) VALUES (?, ?)", (group_id, new_state))
-        conn.commit()
+            conn.execute(f"INSERT INTO {COLLAPSED_TABLE} (group_id, collapsed) VALUES (?, ?)", (group_id, new_state))
     return True

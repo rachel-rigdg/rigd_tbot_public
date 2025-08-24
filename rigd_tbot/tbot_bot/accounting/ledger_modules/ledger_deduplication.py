@@ -1,127 +1,284 @@
 # tbot_bot/accounting/ledger_modules/ledger_deduplication.py
 
-import sqlite3
-from tbot_bot.support.path_resolver import resolve_ledger_db_path
-from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
-from typing import List, Dict, Any
+"""
+Deduplication utilities (v048)
+- Canonical dedupe key per entry: prefers FITID; falls back to composite.
+- DB-level UNIQUE guards to enforce idempotency.
+- Idempotent upsert helpers using SQLite ON CONFLICT DO NOTHING.
+"""
 
-def trade_exists(trade_id, side=None):
+from __future__ import annotations
+
+import sqlite3
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_EVEN, getcontext
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from tbot_bot.accounting.ledger_modules.ledger_core import get_conn, tx_context
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+from tbot_bot.support.utils_identity import get_bot_identity
+
+# Decimal context
+getcontext().prec = 28
+getcontext().rounding = ROUND_HALF_EVEN
+
+# ----------------------------
+# Canonical dedupe key
+# ----------------------------
+
+_TS_KEYS = ("timestamp_utc", "datetime_utc", "created_at_utc")
+
+
+def _norm_ts(e: Dict[str, Any]) -> str:
+    """UTC ISO trimmed to seconds for stable keys."""
+    for k in _TS_KEYS:
+        v = e.get(k)
+        if not v:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    # Fallback stable empty
+    return ""
+
+
+def _norm_dec(x: Any) -> str:
+    try:
+        d = Decimal(str(x or "0")).quantize(Decimal("0.0001"))
+    except Exception:
+        d = Decimal("0.0000")
+    # Use absolute magnitude for key; side encodes direction
+    return f"{abs(d):f}"
+
+
+def compute_dedupe_key(entry: Dict[str, Any]) -> str:
     """
-    Checks if a trade with the given trade_id and optional side exists in the ledger.
-    Returns True if found, else False.
+    Canonical dedupe key:
+      1) FITID if present (exact)
+      2) Composite: {entity}:{juris}:{broker}:{trade_id}:{side}:{account}:{ts}:{amount}
+    Note: DB is identity-scoped, but identity included to protect future merges.
+    """
+    fitid = (entry.get("fitid") or "").strip()
+    if fitid:
+        return f"FITID:{fitid}"
+
+    # Identity (best-effort; safe defaults)
+    parts = str(get_bot_identity()).split("_")
+    entity = parts[0] if len(parts) > 0 else ""
+    juris = parts[1] if len(parts) > 1 else ""
+    broker = parts[2] if len(parts) > 2 else ""
+
+    trade_id = str(entry.get("trade_id") or "").strip()
+    side = str(entry.get("side") or "").strip().lower()
+    account = str(entry.get("account") or "").strip()
+    ts = _norm_ts(entry)
+    amt = _norm_dec(entry.get("total_value"))
+
+    return f"CMP:{entity}:{juris}:{broker}:{trade_id}:{side}:{account}:{ts}:{amt}"
+
+
+# ----------------------------
+# DB-level UNIQUE guards
+# ----------------------------
+
+def install_unique_guards() -> None:
+    """
+    Create UNIQUE indexes to enforce idempotency:
+      - unique_trades_fitid on (fitid) WHERE fitid IS NOT NULL
+      - unique_trades_cmp on (entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc)
+    """
+    ddl_fitid = """
+        CREATE UNIQUE INDEX IF NOT EXISTS unique_trades_fitid
+        ON trades(fitid) WHERE fitid IS NOT NULL;
+    """
+    ddl_cmp = """
+        CREATE UNIQUE INDEX IF NOT EXISTS unique_trades_cmp
+        ON trades(entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc);
+    """
+    with get_conn() as conn:
+        conn.execute(ddl_fitid)
+        conn.execute(ddl_cmp)
+        conn.commit()
+
+
+# ----------------------------
+# Idempotent upsert helpers
+# ----------------------------
+
+def _ordered_values(entry: Dict[str, Any]) -> Tuple[Any, ...]:
+    """Return values per TRADES_FIELDS order (missing keys → None)."""
+    return tuple(entry.get(k) for k in TRADES_FIELDS)
+
+
+def upsert_entry(entry: Dict[str, Any]) -> bool:
+    """
+    Insert a single row idempotently.
+    - If fitid present: ON CONFLICT(fitid) DO NOTHING
+    - Else: ON CONFLICT(entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc) DO NOTHING
+    Returns True if inserted, False if skipped.
+    Assumes caller has sanitized entry and ensured compliance.
+    """
+    has_fitid = bool(entry.get("fitid"))
+    cols = ", ".join(TRADES_FIELDS)
+    placeholders = ", ".join("?" for _ in TRADES_FIELDS)
+
+    if has_fitid:
+        sql = f"""
+            INSERT INTO trades ({cols})
+            VALUES ({placeholders})
+            ON CONFLICT(fitid) DO NOTHING;
+        """
+    else:
+        sql = f"""
+            INSERT INTO trades ({cols})
+            VALUES ({placeholders})
+            ON CONFLICT(entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc)
+            DO NOTHING;
+        """
+
+    with tx_context() as conn:
+        cur = conn.execute(sql, _ordered_values(entry))
+        # sqlite3 returns rowcount=1 on successful insert, 0 on DO NOTHING
+        return cur.rowcount == 1
+
+
+def upsert_entries(entries: Iterable[Dict[str, Any]]) -> Tuple[int, int]:
+    """
+    Batch idempotent insert.
+    Returns: (inserted_count, skipped_count)
+    """
+    inserted = 0
+    skipped = 0
+    with tx_context() as conn:
+        for e in entries:
+            has_fitid = bool(e.get("fitid"))
+            cols = ", ".join(TRADES_FIELDS)
+            placeholders = ", ".join("?" for _ in TRADES_FIELDS)
+            if has_fitid:
+                sql = f"""
+                    INSERT INTO trades ({cols})
+                    VALUES ({placeholders})
+                    ON CONFLICT(fitid) DO NOTHING;
+                """
+            else:
+                sql = f"""
+                    INSERT INTO trades ({cols})
+                    VALUES ({placeholders})
+                    ON CONFLICT(entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc)
+                    DO NOTHING;
+                """
+            cur = conn.execute(sql, _ordered_values(e))
+            if cur.rowcount == 1:
+                inserted += 1
+            else:
+                skipped += 1
+    return inserted, skipped
+
+
+# ----------------------------
+# Duplicate inspection/cleanup
+# ----------------------------
+
+def trade_exists(trade_id: str, side: Optional[str] = None) -> bool:
+    """
+    True if a trade with the given trade_id and optional side exists.
     """
     if not trade_id:
         return False
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    with sqlite3.connect(db_path) as conn:
-        if side:
-            result = conn.execute(
-                "SELECT 1 FROM trades WHERE trade_id = ? AND side = ? LIMIT 1",
-                (trade_id, side)
-            ).fetchone()
-        else:
-            result = conn.execute(
-                "SELECT 1 FROM trades WHERE trade_id = ? LIMIT 1",
-                (trade_id,)
-            ).fetchone()
-        return result is not None
+    q = "SELECT 1 FROM trades WHERE trade_id = ?"
+    params: Tuple[Any, ...] = (trade_id,)
+    if side:
+        q += " AND side = ?"
+        params = (trade_id, side)
+    with get_conn() as conn:
+        row = conn.execute(q + " LIMIT 1", params).fetchone()
+        return row is not None
 
-def find_duplicate_trades(limit=1000):
-    """
-    Returns a list of (trade_id, side) pairs that are duplicated in the trades table.
-    """
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    with sqlite3.connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT trade_id, side, COUNT(*) as count
-            FROM trades
-            WHERE trade_id IS NOT NULL
-            GROUP BY trade_id, side
-            HAVING count > 1
-            LIMIT ?
-            """,
-            (limit,)
-        ).fetchall()
-        return [{"trade_id": r[0], "side": r[1], "count": r[2]} for r in rows]
 
-def remove_duplicate_trades():
+def check_duplicates(trade_id: str, side: Optional[str] = None) -> int:
     """
-    Deletes all but one of each duplicate (trade_id, side) pair in the trades table.
-    Returns number of deleted rows.
-    """
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    deleted = 0
-    with sqlite3.connect(db_path) as conn:
-        duplicates = conn.execute(
-            """
-            SELECT id
-            FROM (
-                SELECT id,
-                       ROW_NUMBER() OVER (PARTITION BY trade_id, side ORDER BY id) AS rn
-                FROM trades
-                WHERE trade_id IS NOT NULL
-            )
-            WHERE rn > 1
-            """
-        ).fetchall()
-        ids_to_delete = [row[0] for row in duplicates]
-        if ids_to_delete:
-            conn.executemany("DELETE FROM trades WHERE id = ?", [(i,) for i in ids_to_delete])
-            deleted = len(ids_to_delete)
-            conn.commit()
-    return deleted
-
-def check_duplicates(trade_id, side=None):
-    """
-    Returns count of duplicate (trade_id, side) pairs in the trades table.
+    Count duplicates for (trade_id[, side]).
     """
     if not trade_id:
         return 0
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    with sqlite3.connect(db_path) as conn:
-        if side:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM trades WHERE trade_id = ? AND side = ?",
-                (trade_id, side)
-            ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM trades WHERE trade_id = ?",
-                (trade_id,)
-            ).fetchone()
-        return row[0] if row else 0
+    q = "SELECT COUNT(*) FROM trades WHERE trade_id = ?"
+    params: Tuple[Any, ...] = (trade_id,)
+    if side:
+        q += " AND side = ?"
+        params = (trade_id, side)
+    with get_conn() as conn:
+        row = conn.execute(q, params).fetchone()
+        return int(row[0]) if row else 0
 
-# -------- In-memory de-dup for pre-posting (used by tests & sync) --------
+
+def find_duplicate_trades(limit: int = 1000) -> List[Dict[str, Any]]:
+    """
+    List (trade_id, side, count) pairs with count > 1.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT trade_id, side, COUNT(*) as count
+              FROM trades
+             WHERE trade_id IS NOT NULL
+             GROUP BY trade_id, side
+            HAVING count > 1
+             LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [{"trade_id": r[0], "side": r[1], "count": r[2]} for r in rows]
+
+
+def remove_duplicate_trades() -> int:
+    """
+    Deletes all but one of each duplicate (trade_id, side) pair.
+    Returns number of deleted rows.
+    """
+    deleted = 0
+    with tx_context() as conn:
+        duplicates = conn.execute(
+            """
+            SELECT id
+              FROM (
+                    SELECT id,
+                           ROW_NUMBER() OVER (PARTITION BY trade_id, side ORDER BY id) AS rn
+                      FROM trades
+                     WHERE trade_id IS NOT NULL
+                   )
+             WHERE rn > 1
+            """
+        ).fetchall()
+        ids = [row[0] for row in duplicates]
+        if ids:
+            conn.executemany("DELETE FROM trades WHERE id = ?", [(i,) for i in ids])
+            deleted = len(ids)
+    return deleted
+
+
+# -------- In-memory dedup for pre-posting (sync/tests) --------
 
 def deduplicate_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    In-memory deduplication of normalized broker entries before posting.
-    Keeps the first occurrence of each trade_id (pre-double-entry),
-    and ensures group_id is populated with trade_id if missing.
-
-    This is intentionally trade_id-only, because post_double_entry()
-    will create exactly two legs (debit/credit) per unique trade.
+    In-memory deduplication before posting.
+    Keeps the first occurrence of each canonical key (FITID or composite).
+    Ensures group_id is populated with trade_id if missing.
     """
     seen = set()
     result: List[Dict[str, Any]] = []
     for e in entries:
         if not isinstance(e, dict):
             continue
-        tid = e.get("trade_id")
-        if not tid:
-            # If no trade_id, keep it (let compliance/mapping decide later)
-            result.append(e)
+        key = compute_dedupe_key(e)
+        if key in seen:
             continue
-        if tid in seen:
-            continue
-        seen.add(tid)
-        if not e.get("group_id"):
+        seen.add(key)
+        if not e.get("group_id") and e.get("trade_id"):
             e = dict(e)
-            e["group_id"] = tid
+            e["group_id"] = e["trade_id"]
         result.append(e)
     return result
