@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 import json
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_EVEN, getcontext
@@ -61,6 +62,33 @@ def _map_action(action: Optional[str]) -> str:
     return "other"
 
 
+def _ensure_timestamp_utc(e: dict) -> None:
+    # prefer provided timestamp_utc, else fall back to datetime_utc, else now-UTC
+    from datetime import datetime, timezone
+    ts = e.get("timestamp_utc") or e.get("datetime_utc")
+    if not ts:
+        ts = datetime.now(timezone.utc).isoformat()
+    e["timestamp_utc"] = ts
+
+
+def _quantize_money_fields(e: dict) -> None:
+    """Quantize all money-like fields to _Q in-place."""
+    for k in ("total_value", "amount", "commission", "fee", "accrued_interest", "tax", "net_amount"):
+        if k in e and e[k] is not None:
+            e[k] = float(_to_dec(e[k]))
+
+
+def _normalize_total_value_sign(e: dict) -> None:
+    """Ensure total_value sign aligns with side (debit=+, credit=-)."""
+    side = str(e.get("side") or "").lower()
+    val = _to_dec(e.get("total_value"))
+    if side == "credit":
+        val = -abs(val)
+    else:  # default debit
+        val = abs(val)
+    e["total_value"] = float(val)
+
+
 def _add_required_fields(entry: dict, ec: str, jc: str, bc: str, bid: str) -> dict:
     """
     Ensure mandatory columns exist; coerce numerics; JSON-encode complex values for SQLite.
@@ -85,14 +113,13 @@ def _add_required_fields(entry: dict, ec: str, jc: str, bc: str, bid: str) -> di
     # side & amounts
     side = str(e.get("side") or "").lower()
     if side not in ("debit", "credit"):
-        # default to debit for safety
         side = "debit"
         e["side"] = side
 
     if "total_value" not in e or e["total_value"] is None:
         e["total_value"] = 0.0
 
-    # amount derived from side
+    # amount derived from side when absent
     if "amount" not in e or e["amount"] is None:
         val = _to_dec(e.get("total_value"))
         e["amount"] = float(-abs(val)) if side == "credit" else float(abs(val))
@@ -101,6 +128,13 @@ def _add_required_fields(entry: dict, ec: str, jc: str, bc: str, bid: str) -> di
     e["action"] = _map_action(e.get("action"))
     if not e.get("status"):
         e["status"] = "ok"
+
+    # Ensure timestamps
+    _ensure_timestamp_utc(e)
+
+    # Quantize money and enforce total_value sign by side
+    _quantize_money_fields(e)
+    _normalize_total_value_sign(e)
 
     # Fill schema fields
     for k in TRADES_FIELDS:
@@ -112,29 +146,38 @@ def _add_required_fields(entry: dict, ec: str, jc: str, bc: str, bid: str) -> di
         if isinstance(v, (dict, list)):
             e[k] = json.dumps(v, default=str)
 
-    # Ensure Decimal quantization applied to total_value before write
-    e["total_value"] = float(_to_dec(e.get("total_value")))
     return e
 
 
-def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_id_hint: Optional[str]) -> List[dict]:
+def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_id_hint: Optional[str]) -> Tuple[List[dict], str]:
     """
     Accepts raw entries (without side) or prepared splits (with side).
     Ensures each logical input results in exactly two legs (debit/credit) with the same group_id.
+    Returns (splits, group_id_out) where group_id_out is the first group's id (useful for tests/UX).
     """
     # Determine if entries are already split
-    entries = list(entries)
-    has_side = any(isinstance(e, dict) and e.get("side") for e in entries)
+    items = list(entries)
+    has_side = any(isinstance(e, dict) and e.get("side") for e in items)
+
+    # Choose/propagate batch group_id if provided or generate one when all missing
+    group_out = (group_id_hint or "").strip()
+    if not group_out:
+        # If any entry has a group_id use it; otherwise generate a new UUID (kept internal; legs still get per-entry group)
+        for e in items:
+            if isinstance(e, dict) and e.get("group_id"):
+                group_out = str(e.get("group_id"))
+                break
+        if not group_out:
+            group_out = str(uuid.uuid4())
 
     if has_side:
-        # Assume caller provided debit/credit splits; ensure group_id propagation
+        # Assume caller provided debit/credit splits; ensure group_id propagation if missing
         splits: List[dict] = []
-        for e in entries:
+        for e in items:
             ee = dict(e)
-            if group_id_hint and not ee.get("group_id"):
-                ee["group_id"] = group_id_hint
+            ee.setdefault("group_id", group_id_hint or ee.get("trade_id") or group_out)
             splits.append(ee)
-        return splits
+        return splits, splits[0].get("group_id") if splits else group_out
 
     # Raw entries → use mapping to create debit/credit legs
     ec, jc, bc, bid = get_identity_tuple()
@@ -142,59 +185,83 @@ def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_
         mapping_table = load_mapping_table(ec, jc, bc, bid)
 
     splits = []
-    for e in entries:
+    for e in items:
         debit, credit = apply_mapping_rule(e, mapping_table)
         # Preserve/propagate group_id
-        gid = e.get("group_id") or e.get("trade_id") or group_id_hint
-        if gid:
-            debit.setdefault("group_id", gid)
-            credit.setdefault("group_id", gid)
+        gid = e.get("group_id") or e.get("trade_id") or group_id_hint or group_out
+        debit.setdefault("group_id", gid)
+        credit.setdefault("group_id", gid)
         splits.extend([debit, credit])
-    return splits
+    return splits, splits[0].get("group_id") if splits else group_out
 
 
-def _enforce_group_balance(splits: List[dict]) -> None:
+def _enforce_group_balance(splits: List[dict]) -> List[Tuple[str, Decimal]]:
     """
     Enforce that the sum of splits per group_id (or trade_id fallback) equals zero (Decimal, quantized).
+    Returns a list of (group_key, total) for any imbalanced groups (empty if all balanced).
     """
     groups = defaultdict(list)
     for s in splits:
         key = s.get("group_id") or s.get("trade_id") or "__ungrouped__"
         groups[key].append(_to_dec(s.get("total_value")))
 
+    imbalances: List[Tuple[str, Decimal]] = []
     for key, vals in groups.items():
         total = sum(vals, Decimal("0")).quantize(_Q)
         if total != Decimal("0").quantize(_Q):
-            raise ValueError(f"Double-entry imbalance for group '{key}': {total}")
+            imbalances.append((key, total))
+    if imbalances:
+        return imbalances
+    return []
 
 
-def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional[str] = None) -> List[int]:
+def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional[str] = None) -> Dict[str, object]:
     """
-    Public entrypoint.
+    Public entrypoint. ATOMIC per batch.
     - Accepts raw entries or prepared splits.
-    - Builds splits, enforces group sum==0 (Decimal), and inserts both sides atomically.
-    - Returns DB row IDs inserted (list[int]).
+    - Builds splits, enforces group/batch sum==0 (Decimal), and inserts both sides atomically.
+    - Quantizes money fields before insert.
+    - Returns dict:
+        {
+          "inserted_ids": [int, ...],
+          "group_id": "<first-group-id>",
+          "balanced": True|False,
+          "imbalances": [(group_key, total_decimal_as_str), ...]
+        }
     """
     ec, jc, bc, bid = get_identity_tuple()
 
     # Build and normalize splits
-    splits = _build_splits(entries, mapping_table=None, group_id_hint=group_id)
+    splits, group_out = _build_splits(entries, mapping_table=None, group_id_hint=group_id)
 
     # Compliance filter (non-mutating)
     filtered = [s for s in splits if _is_compliant(s)]
     if not filtered:
-        return []
+        return {"inserted_ids": [], "group_id": group_out, "balanced": True, "imbalances": []}
 
-    # Enforce group balance (Decimal)
-    _enforce_group_balance(filtered)
+    # Prepare normalized rows (quantized money, timestamps, sign enforcement)
+    normalized = []
+    for s in filtered:
+        n = _add_required_fields(s, ec, jc, bc, bid)
+        normalized.append(n)
 
+    # ATOMIC block: verify balance and then insert
     inserted_ids: List[int] = []
     with tx_context() as conn:
-        for s in filtered:
-            # Append identity defaults, amounts, etc., and quantize Decimal
-            s_norm = _add_required_fields(s, ec, jc, bc, bid)
+        # (1) Per-group balance check
+        imbalances = _enforce_group_balance(normalized)
+        # (2) Batch-wide balance check
+        batch_total = sum((_to_dec(x.get("total_value")) for x in normalized), Decimal("0")).quantize(_Q)
+        if batch_total != Decimal("0").quantize(_Q):
+            imbalances.append(("*batch*", batch_total))
 
-            # Dedup check: (trade_id, side) pair (best-effort)
+        if imbalances:
+            # Abort the transaction by raising (auto-rollback by tx_context)
+            raise ValueError(f"Double-entry imbalance: {[(k, str(v)) for k, v in imbalances]}")
+
+        # Insert rows
+        for s_norm in normalized:
+            # Best-effort dedup check on (trade_id, side)
             dup = conn.execute(
                 "SELECT id FROM trades WHERE trade_id = ? AND side = ? LIMIT 1",
                 (s_norm.get("trade_id"), s_norm.get("side")),
@@ -210,12 +277,22 @@ def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional
             )
             inserted_ids.append(int(cur.lastrowid))
 
-    return inserted_ids
+    return {
+        "inserted_ids": inserted_ids,
+        "group_id": group_out,
+        "balanced": True,
+        "imbalances": [],
+    }
 
 
 # Backward-compatible alias expected by older callers
-def post_double_entry(entries: Iterable[dict], mapping_table: Optional[dict] = None) -> List[int]:
-    return post_ledger_entries_double_entry(entries)
+def post_double_entry(entries: Iterable[dict], mapping_table: Optional[dict] = None):
+    """
+    Legacy wrapper: returns only the list of inserted IDs to keep older callers working.
+    New code should use post_ledger_entries_double_entry().
+    """
+    res = post_ledger_entries_double_entry(entries)
+    return res.get("inserted_ids", [])
 
 
 def validate_double_entry() -> bool:

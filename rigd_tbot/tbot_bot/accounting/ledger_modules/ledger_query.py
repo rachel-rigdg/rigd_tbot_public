@@ -14,6 +14,7 @@ Public API:
 - query_balances(as_of_utc=None, window_start_utc=None)
 - fetch_grouped_trades(...)
 - fetch_trade_group_by_id(...)
+- search_trades(...)         # compatibility wrapper for web UI
 """
 
 from __future__ import annotations
@@ -314,3 +315,23 @@ def fetch_grouped_trades(*args, **kwargs):
 
 def fetch_trade_group_by_id(group_id, *args, **kwargs):
     return grouping_fetch_trade_group_by_id(group_id, *args, **kwargs)
+
+
+# -----------------
+# Web/UI compatibility shim
+# -----------------
+
+def search_trades(
+    *,
+    search_term: Optional[str] = None,
+    sort_by: str = "datetime_utc",   # accepted but ordering is fixed to UTC then id for stability
+    sort_desc: bool = True,
+    limit: int = 1000,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """
+    Backward/compat wrapper used by web UI.
+    Delegates to query_entries() with free-text 'search' applied.
+    """
+    # Note: 'sort_by' is ignored to preserve canonical ordering by UTC timestamp then id.
+    return query_entries(search=search_term or None, limit=limit, offset=offset, sort_desc=sort_desc)

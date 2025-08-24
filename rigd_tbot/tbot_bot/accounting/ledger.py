@@ -21,9 +21,11 @@ from tbot_bot.accounting.ledger_modules.ledger_entry import (  # noqa: F401
     get_identity_tuple,
     load_internal_ledger,
     add_ledger_entry,
+    mark_entry_resolved,
+)
+from tbot_bot.accounting.ledger_modules.ledger_edit import (  # noqa: F401
     edit_ledger_entry,
     delete_ledger_entry,
-    mark_entry_resolved,
 )
 from tbot_bot.accounting.ledger_modules.ledger_double_entry import post_ledger_entries_double_entry  # noqa: F401
 from tbot_bot.accounting.ledger_modules.ledger_hooks import (  # noqa: F401

@@ -24,9 +24,6 @@ from tbot_bot.accounting.ledger_modules.ledger_grouping import (
 )
 from tbot_bot.accounting.ledger_modules.ledger_query import search_trades
 
-# Useful for display sanity (not mutating here)
-from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_running_balances  # noqa: F401
-
 ledger_web = Blueprint("ledger_web", __name__)
 
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"

@@ -148,7 +148,7 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     e["broker_code"] = bc
     e["bot_id"] = bid
 
-    # Timestamp
+    # Timestamp: ALWAYS tz-aware UTC
     e["timestamp_utc"] = _ensure_iso_utc(_coalesce(e.get("timestamp_utc"), e.get("datetime_utc"), e.get("created_at_utc")))
 
     # Strategy / tags
@@ -205,23 +205,9 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     # Account
     e["account"] = _norm_account(e.get("account"), side)
 
-    # FITID (prefer provided → trade_id → derived hash)
-    fitid = e.get("fitid")
-    if not fitid:
-        fitid = _coalesce(e.get("trade_id"), e.get("order_id"))
-    if not fitid:
-        # Deterministic hash of salient fields
-        salient = {
-            "broker": e.get("broker"),
-            "symbol": e.get("symbol"),
-            "action": e.get("action"),
-            "side": side,
-            "account": e.get("account"),
-            "ts": e["timestamp_utc"],
-            "amount": e["total_value"],
-        }
-        fitid = hashlib.blake2s(json.dumps(salient, sort_keys=True).encode("utf-8")).hexdigest()
-    e["fitid"] = str(fitid)
+    # FITID: set only if available (fitid|trade_id|order_id); otherwise leave NULL
+    provided_fitid = _coalesce(e.get("fitid"), e.get("trade_id"), e.get("order_id"))
+    e["fitid"] = str(provided_fitid) if provided_fitid not in (None, "") else None
 
     # Response hash (API response/confirmations)
     e["response_hash"] = _hash_response(_coalesce(e.get("response"), e.get("api_response"), e.get("broker_response")))

@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ledger_entry_id INTEGER REFERENCES ledger_entries(id) ON DELETE CASCADE,
     datetime_utc TEXT NOT NULL,
+    timestamp_utc TEXT,              -- NEW: UTC ISO-8601, used for stable ordering when present
     symbol TEXT NOT NULL,
     symbol_full TEXT,
     action TEXT CHECK(action IN ('long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg')) NOT NULL,
@@ -171,6 +172,7 @@ CREATE TABLE IF NOT EXISTS trades (
     broker_code TEXT NOT NULL REFERENCES brokers(code),
     account TEXT NOT NULL,
     trade_id TEXT NOT NULL,
+    fitid TEXT,                       -- NEW: OFX/unique idempotency key (nullable, unique when present)
     group_id TEXT, -- Optionally used for grouping double-entry pairs
     strategy TEXT,
     tags TEXT DEFAULT '',
@@ -216,6 +218,7 @@ CREATE TABLE IF NOT EXISTS trades (
 
 -- Index for (trade_id, side) to support deduplication and quick double-entry lookup
 CREATE INDEX IF NOT EXISTS idx_trades_tradeid_side ON trades (trade_id, side);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_fitid ON trades (fitid) WHERE fitid IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_trades_group_id ON trades (group_id);  -- added for group queries
 
 -- Table: Events (compliance, audit, info/warning/error)

@@ -95,7 +95,7 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
     # Point-in-time DB snapshot prior to mutation
     snapshot_ledger_before_sync()
 
-    # Ensure DB-level UNIQUE guards (FITID + composite)
+    # Ensure DB-level UNIQUE guards (FITID + composite) BEFORE any inserts
     install_unique_guards()
 
     # Pull broker data (date filters are passed through if provided)
@@ -179,7 +179,13 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
     summary["dedup_skipped"] = len(valid_entries) - len(deduped)
 
     # Post (double-entry; atomic per group; idempotent at DB via UNIQUE guards)
-    inserted_ids = post_ledger_entries_double_entry(deduped)
+    post_result = post_ledger_entries_double_entry(deduped)
+    # Accept updated return shape (dict) or legacy list
+    if isinstance(post_result, dict):
+        inserted_ids = list(post_result.get("inserted_ids", []))
+    else:
+        inserted_ids = list(post_result or [])
+
     summary["inserted_rows"] = len(inserted_ids)
     summary["posted_groups"] = len(deduped)
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Set, Tuple, List
 
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_identity import get_bot_identity
@@ -57,17 +57,54 @@ def get_db_path() -> str:
     return str(resolve_ledger_db_path(ec, jc, bc, bid))
 
 
+def _get_table_columns(conn: sqlite3.Connection, table: str) -> Set[str]:
+    """
+    Return set of column names for a given table using PRAGMA table_info.
+    """
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {str(r[1]) for r in rows}
+
+
 def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[str] = None) -> bool:
     """
-    Validates the ledger DB against the reference schema by EXPLAIN-ing statements.
-    Returns True if valid, False otherwise.
+    Validates the ledger DB with three gates (in order):
+      1) PRAGMA integrity_check → must return a single row 'ok'
+      2) Required columns exist in trades:
+         {'datetime_utc','timestamp_utc','trade_id','group_id','side','amount','total_value','fitid'}
+      3) EXPLAIN pass across reference schema statements (syntax & basic objects)
+    Returns True if all checks pass, else False.
     """
     try:
+        # Resolve paths (note: get_conn() manages pragmas and current identity DB)
         dsn = db_path or get_db_path()
         schema_file = schema_path or resolve_ledger_schema_path()
+
         with open(schema_file, "r", encoding="utf-8") as f:
             schema = f.read()
+
         with get_conn() as conn:
+            # 1) Corruption check
+            ic_rows = conn.execute("PRAGMA integrity_check").fetchall()
+            if not ic_rows or any((str(row[0]).lower() != "ok") for row in ic_rows):
+                # Any non-"ok" result signals corruption
+                return False
+
+            # 2) Required columns present in trades
+            required = {
+                "datetime_utc",
+                "timestamp_utc",
+                "trade_id",
+                "group_id",
+                "side",
+                "amount",
+                "total_value",
+                "fitid",
+            }
+            cols = _get_table_columns(conn, "trades")
+            if not required.issubset(cols):
+                return False
+
+            # 3) Secondary EXPLAIN pass (syntax/object existence)
             cursor = conn.cursor()
             for stmt in schema.split(";"):
                 stmt = stmt.strip()
@@ -77,6 +114,7 @@ def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[
                     cursor.execute(f"EXPLAIN {stmt}")
                 except sqlite3.DatabaseError:
                     return False
+
         return True
     except Exception:
         return False

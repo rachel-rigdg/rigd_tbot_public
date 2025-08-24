@@ -29,7 +29,8 @@ from typing import Any, Dict, Iterable, List, Tuple
 # ---------------------------
 TRADES_FIELDS: List[str] = [
     # --- identity & time ---
-    "timestamp_utc",          # ISO-8601, tz-aware (UTC)
+    "datetime_utc",           # ISO-8601 trade datetime (DB NOT NULL)
+    "timestamp_utc",          # ISO-8601, tz-aware (UTC) - placed immediately after datetime_utc
     "entity_code",            # TEXT NOT NULL
     "jurisdiction_code",      # TEXT NOT NULL
     "broker_code",            # TEXT NOT NULL
@@ -47,8 +48,8 @@ TRADES_FIELDS: List[str] = [
     "currency",               # TEXT (ISO 4217-like, 3-4 letters)
     "account",                # TEXT NOT NULL (COA path)
     "trade_id",               # TEXT
+    "fitid",                  # TEXT UNIQUE (OFX id; optional, immediately after trade_id)
     "group_id",               # TEXT
-    "fitid",                  # TEXT UNIQUE (OFX id; optional but preferred)
     "strategy",               # TEXT
     "tags",                   # TEXT (JSON array)
     "description",            # TEXT
@@ -78,6 +79,7 @@ REQUIRED_TRADES_FIELDS = {
 
 # Type/nullability hints for validation (informational; DB is source of truth)
 FIELD_SPECS: Dict[str, Dict[str, Any]] = {
+    "datetime_utc": {"type": "iso_utc", "nullable": True},   # DB may enforce NOT NULL; keep validator lenient
     "timestamp_utc": {"type": "iso_utc", "nullable": False},
     "entity_code": {"type": "text", "nullable": False},
     "jurisdiction_code": {"type": "text", "nullable": False},
@@ -95,8 +97,8 @@ FIELD_SPECS: Dict[str, Dict[str, Any]] = {
     "currency": {"type": "currency", "nullable": True},
     "account": {"type": "text", "nullable": False},
     "trade_id": {"type": "text", "nullable": True},
-    "group_id": {"type": "text", "nullable": True},
     "fitid": {"type": "text", "nullable": True},
+    "group_id": {"type": "text", "nullable": True},
     "strategy": {"type": "text", "nullable": True},
     "tags": {"type": "json_text", "nullable": True},
     "description": {"type": "text", "nullable": True},

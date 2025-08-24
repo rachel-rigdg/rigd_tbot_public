@@ -87,21 +87,55 @@ def compute_dedupe_key(entry: Dict[str, Any]) -> str:
 
 def install_unique_guards() -> None:
     """
-    Create UNIQUE indexes to enforce idempotency:
-      - unique_trades_fitid on (fitid) WHERE fitid IS NOT NULL
-      - unique_trades_cmp on (entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc)
-    """
-    ddl_fitid = """
-        CREATE UNIQUE INDEX IF NOT EXISTS unique_trades_fitid
-        ON trades(fitid) WHERE fitid IS NOT NULL;
-    """
-    ddl_cmp = """
-        CREATE UNIQUE INDEX IF NOT EXISTS unique_trades_cmp
-        ON trades(entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc);
+    Ensure additive schema + indexes needed for idempotency:
+      a) Add missing columns via PRAGMA table_info(trades):
+         - fitid TEXT
+         - timestamp_utc TEXT
+      b) Create UNIQUE index on (fitid) WHERE fitid IS NOT NULL
+      c) Create index on (group_id)
+      d) (Optional) Create composite UNIQUE index used by upsert when FITID is absent
+         on (entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc)
+    Never drops or renames anything; safe to call repeatedly.
     """
     with get_conn() as conn:
-        conn.execute(ddl_fitid)
-        conn.execute(ddl_cmp)
+        # a) Check existing columns
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("PRAGMA table_info(trades)").fetchall()
+        col_names = {row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in rows}
+
+        # Add columns if missing (additive only)
+        if "fitid" not in col_names:
+            try:
+                conn.execute("ALTER TABLE trades ADD COLUMN fitid TEXT")
+            except sqlite3.OperationalError as e:
+                # Ignore if another process raced us
+                if "duplicate column name" not in str(e).lower():
+                    raise
+        if "timestamp_utc" not in col_names:
+            try:
+                conn.execute("ALTER TABLE trades ADD COLUMN timestamp_utc TEXT")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+        # b) Unique index on fitid (nullable allowed)
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_fitid ON trades(fitid) WHERE fitid IS NOT NULL"
+        )
+
+        # c) Index on group_id for grouping queries
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trades_group_id ON trades(group_id)"
+        )
+
+        # d) Composite UNIQUE index to support ON CONFLICT() when FITID is absent
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS unique_trades_cmp
+            ON trades(entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc)
+            """
+        )
+
         conn.commit()
 
 

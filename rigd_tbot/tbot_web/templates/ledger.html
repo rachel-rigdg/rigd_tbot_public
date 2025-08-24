@@ -110,15 +110,6 @@
                     {{ "+" if entry.collapsed else "-" }}
                   </button>
 
-                  {# Checkbox: checked = expanded (persisted) #}
-                  <label class="expand-toggle">
-                    <input
-                      type="checkbox"
-                      class="toggle-group"
-                      data-group-id="{{ entry.group_id or entry.trade_id }}"
-                      {% if not entry.collapsed %}checked{% endif %}/>
-                    expand
-                  </label>
 
                   {{ entry.datetime_utc.split('T')[0] if entry.datetime_utc }}
                 </td>
