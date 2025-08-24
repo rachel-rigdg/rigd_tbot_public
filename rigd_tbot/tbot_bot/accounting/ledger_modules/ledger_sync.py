@@ -260,7 +260,7 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
         inserted_ids = list(post_result or [])
 
     summary["inserted_rows"] = len(inserted_ids)
-    # count groups by group_id to be accurate
+    # Count groups by group_id to be accurate
     try:
         summary["posted_groups"] = len({e.get("group_id") for e in deduped})
     except Exception:

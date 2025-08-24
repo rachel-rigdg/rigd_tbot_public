@@ -13,9 +13,8 @@ from tbot_bot.accounting.ledger_modules.ledger_core import (
     get_conn,
     tx_context,
 )
-from tbot_bot.accounting.coa_mapping_table import apply_mapping_rule
+from tbot_bot.accounting.coa_mapping_table import apply_mapping_rule, load_mapping_table
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
-from tbot_bot.accounting.ledger_modules.ledger_entry import build_normalized_entry
 
 # Decimal policy
 getcontext().prec = 28
@@ -26,7 +25,6 @@ _Q = Decimal("0.0001")
 # ---- Compliance filter (backwards-compatible import) ----
 try:
     from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import validate_entries as _validate_entries  # type: ignore
-
     def _is_compliant(entry: dict) -> bool:
         ok, _ = _validate_entries([entry])
         return bool(ok)
@@ -35,7 +33,6 @@ except Exception:
         from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (  # type: ignore
             is_compliant_ledger_entry as _legacy_is_compliant,
         )
-
         def _is_compliant(entry: dict) -> bool:
             return bool(_legacy_is_compliant(entry))
     except Exception:
@@ -64,9 +61,9 @@ def _map_action(action: Optional[str]) -> str:
 
 
 def _ensure_timestamp_utc(e: dict) -> None:
-    # prefer provided timestamp_utc, else fall back to datetime_utc, else now-UTC
+    # prefer provided timestamp_utc, else datetime_utc, else created_at_utc, else now-UTC
     from datetime import datetime, timezone
-    ts = e.get("timestamp_utc") or e.get("datetime_utc")
+    ts = e.get("timestamp_utc") or e.get("datetime_utc") or e.get("created_at_utc")
     if not ts:
         ts = datetime.now(timezone.utc).isoformat()
     e["timestamp_utc"] = ts
@@ -92,22 +89,18 @@ def _normalize_total_value_sign(e: dict) -> None:
 
 def _add_required_fields(entry: dict, ec: str, jc: str, bc: str, bid: str) -> dict:
     """
-    Canonical normalization via build_normalized_entry to avoid drift/duplication.
-    Ensures identity & grouping defaults before delegating.
+    Ensure mandatory columns exist; coerce numerics; JSON-encode complex values for SQLite.
     """
     e = dict(entry)
-
     # Identity
-    e.setdefault("entity_code", ec)
-    e.setdefault("jurisdiction_code", jc)
-    e.setdefault("broker_code", bc)
-    e.setdefault("bot_id", bid)
+    e["entity_code"] = ec
+    e["jurisdiction_code"] = jc
+    e["broker_code"] = bc
+    e["bot_id"] = bid
 
-    # Defaults for commission/fee (some callers omit them)
-    if e.get("fee") is None:
-        e["fee"] = 0.0
-    if e.get("commission") is None:
-        e["commission"] = 0.0
+    # Defaults
+    e["fee"] = 0.0 if e.get("fee") is None else e.get("fee")
+    e["commission"] = 0.0 if e.get("commission") is None else e.get("commission")
 
     # trade_id / group_id
     if not e.get("trade_id"):
@@ -115,26 +108,43 @@ def _add_required_fields(entry: dict, ec: str, jc: str, bc: str, bid: str) -> di
     if not e.get("group_id"):
         e["group_id"] = e["trade_id"]
 
-    # side default to keep signs deterministic
+    # side & amounts
     side = str(e.get("side") or "").lower()
     if side not in ("debit", "credit"):
-        e["side"] = "debit"
+        side = "debit"
+        e["side"] = side
 
-    # Normalize timestamps if missing (builder will ensure ISO UTC)
+    if "total_value" not in e or e["total_value"] is None:
+        e["total_value"] = 0.0
+
+    # amount derived from side when absent
+    if "amount" not in e or e["amount"] is None:
+        val = _to_dec(e.get("total_value"))
+        e["amount"] = float(-abs(val)) if side == "credit" else float(abs(val))
+
+    # action / status
+    e["action"] = _map_action(e.get("action"))
+    if not e.get("status"):
+        e["status"] = "ok"
+
+    # Ensure timestamps
     _ensure_timestamp_utc(e)
 
-    # Delegate to the canonical builder (adds timestamp_utc, fitid, signs, JSON safety, etc.)
-    n = build_normalized_entry(e)
+    # Quantize money and enforce total_value sign by side
+    _quantize_money_fields(e)
+    _normalize_total_value_sign(e)
 
-    # Allow Uncategorized accounts to pass compliance here (mapping may intentionally do that)
-    if isinstance(n.get("account"), str) and n["account"].startswith("Uncategorized"):
-        n["allow_uncategorized"] = True
-
-    # Ensure every TRADES_FIELDS key exists
+    # Fill schema fields
     for k in TRADES_FIELDS:
-        n.setdefault(k, None)
+        if k not in e:
+            e[k] = None
 
-    return n
+    # JSON-encode complex objects
+    for k, v in list(e.items()):
+        if isinstance(v, (dict, list)):
+            e[k] = json.dumps(v, default=str)
+
+    return e
 
 
 def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_id_hint: Optional[str]) -> Tuple[List[dict], str]:
@@ -158,7 +168,6 @@ def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_
             group_out = str(uuid.uuid4())
 
     if has_side:
-        # Caller provided debit/credit splits; ensure group_id propagation if missing
         splits: List[dict] = []
         for e in items:
             ee = dict(e)
@@ -168,11 +177,12 @@ def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_
 
     # Raw entries → use mapping to create debit/credit legs
     ec, jc, bc, bid = get_identity_tuple()
+    if mapping_table is None:
+        mapping_table = load_mapping_table(ec, jc, bc, bid)
 
     splits = []
     for e in items:
-        debit, credit = apply_mapping_rule(e, ec, jc, bc, bid)
-        # Preserve/propagate group_id
+        debit, credit = apply_mapping_rule(e, mapping_table)
         gid = e.get("group_id") or e.get("trade_id") or group_id_hint or group_out
         debit.setdefault("group_id", gid)
         credit.setdefault("group_id", gid)
@@ -202,50 +212,39 @@ def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional
     """
     Public entrypoint. ATOMIC per batch.
     - Accepts raw entries or prepared splits.
-    - Builds splits, normalizes rows, enforces group/batch sum==0 (Decimal), inserts atomically.
-    - Returns dict:
-        {
-          "inserted_ids": [int, ...],
-          "group_id": "<first-group-id>",
-          "balanced": True|False,
-          "imbalances": [(group_key, total_decimal_as_str), ...]
-        }
+    - Builds splits, **enriches them**, then runs compliance, then enforces balance and inserts.
     """
     ec, jc, bc, bid = get_identity_tuple()
 
-    # Build splits for each logical transaction
+    # Build splits
     splits, group_out = _build_splits(entries, mapping_table=None, group_id_hint=group_id)
 
-    # Normalize BEFORE compliance so we can set allow_uncategorized, timestamps, signs, etc.
-    normalized: List[dict] = []
-    for s in splits:
-        n = _add_required_fields(s, ec, jc, bc, bid)
-        normalized.append(n)
+    # >>> IMPORTANT: Enrich BEFORE compliance <<<
+    normalized = [_add_required_fields(s, ec, jc, bc, bid) for s in splits]
 
-    # Compliance filter on normalized rows
-    compliant = [s for s in normalized if _is_compliant(s)]
-    if not compliant:
+    # Compliance on enriched rows
+    filtered = [n for n in normalized if _is_compliant(n)]
+    if not filtered:
         return {"inserted_ids": [], "group_id": group_out, "balanced": True, "imbalances": []}
 
     # ATOMIC block: verify balance and then insert
     inserted_ids: List[int] = []
     with tx_context() as conn:
         # (1) Per-group balance check
-        imbalances = _enforce_group_balance(compliant)
+        imbalances = _enforce_group_balance(filtered)
         # (2) Batch-wide balance check
-        batch_total = sum((_to_dec(x.get("total_value")) for x in compliant), Decimal("0")).quantize(_Q)
+        batch_total = sum((_to_dec(x.get("total_value")) for x in filtered), Decimal("0")).quantize(_Q)
         if batch_total != Decimal("0").quantize(_Q):
             imbalances.append(("*batch*", batch_total))
-
         if imbalances:
-            # Abort the transaction by raising (auto-rollback by tx_context)
             raise ValueError(f"Double-entry imbalance: {[(k, str(v)) for k, v in imbalances]}")
 
-        # Insert rows (idempotent by (trade_id, side) guard used here as a best-effort)
-        for s_norm in compliant:
+        # Insert rows
+        for row in filtered:
+            # Best-effort dedup check on (trade_id, side)
             dup = conn.execute(
                 "SELECT id FROM trades WHERE trade_id = ? AND side = ? LIMIT 1",
-                (s_norm.get("trade_id"), s_norm.get("side")),
+                (row.get("trade_id"), row.get("side")),
             ).fetchone()
             if dup:
                 continue
@@ -254,32 +253,20 @@ def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional
             placeholders = ", ".join(["?"] * len(cols))
             cur = conn.execute(
                 f"INSERT INTO trades ({', '.join(cols)}) VALUES ({placeholders})",
-                tuple(s_norm.get(c) for c in cols),
+                tuple(row.get(c) for c in cols),
             )
             inserted_ids.append(int(cur.lastrowid))
 
-    return {
-        "inserted_ids": inserted_ids,
-        "group_id": group_out,
-        "balanced": True,
-        "imbalances": [],
-    }
+    return {"inserted_ids": inserted_ids, "group_id": group_out, "balanced": True, "imbalances": []}
 
 
 # Backward-compatible alias expected by older callers
 def post_double_entry(entries: Iterable[dict], mapping_table: Optional[dict] = None):
-    """
-    Legacy wrapper: returns only the list of inserted IDs to keep older callers working.
-    New code should use post_ledger_entries_double_entry().
-    """
     res = post_ledger_entries_double_entry(entries)
     return res.get("inserted_ids", [])
 
 
 def validate_double_entry() -> bool:
-    """
-    Validates that each trade_id sums to zero across its legs (Decimal-aware).
-    """
     with get_conn() as conn:
         rows = conn.execute("SELECT trade_id, SUM(total_value) FROM trades GROUP BY trade_id").fetchall()
         imbalances = [
