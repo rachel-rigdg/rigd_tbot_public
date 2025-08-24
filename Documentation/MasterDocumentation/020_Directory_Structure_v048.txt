@@ -38,8 +38,8 @@ rigd_tbot/
 │   ├── _init_all_core_databases.sh     # [Legacy] CLI for initial database schema setup; NOT for production use
 │   ├── build_check.py			        # Full project self-check: keys, schemas, config, directory structure, file integrity
 │   ├── encrypt_env.py			        # [Legacy] CLI: Encrypts .env for initial migration only; never generates Fernet keys for runtime.
-│   ├── encrypt_env_bot.py           	# [Legacy] CLI: Encrypts .env_bot as support/.env_bot.enc with Fernet key in storage/keys/env_bot.key
-│   ├── encrypt_json.py			        # [Legacy] CLI: Encrypts JSON secrets in storage/secrets/ using category Fernet keys
+│   ├── encrypt_env_bot.py           	# [Legacy] CLI: Encrypts .env_bot as support/.env_bot.enc with Fernet key in tbot_bot/storage/keys/env_bot.key
+│   ├── encrypt_json.py			        # [Legacy] CLI: Encrypts JSON secrets in tbot_bot/storage/secrets/ using category Fernet keys
 │   ├── hash_password.py		        # [Legacy] CLI: Creates bcrypt-hashed user, Fernet key, and DB entry; superceded by Web UI
 │   ├── init_encrypted_secrets.py	    # [Legacy] CLI: Generates encrypted secrets from plaintext templates for one-time bot setup
 │   ├── log_test.py			            # Sanity-check: Verifies log output in active runtime environment
@@ -146,7 +146,7 @@ rigd_tbot/
 │   │   ├── provisioning_helper.py		        # Generates and writes all required Fernet keys and minimal secrets (idempotent); calls key_manager.py, security_users.py; invoked by provisioning_runner.py
 │   │   ├── provisioning_runner.py		        # Central orchestrator: watches for provisioning flag; calls key_manager.py, provisioning_helper.py, bootstrapping_helper.py, db_bootstrap.py; handles all setup steps and privilege/escalation
 │   │   ├── PROVISION_FLAG                      # File flag (created post-provisioning) to skip re-provisioning at startup
-│   │   ├── security_bot.py                     # Loads/decrypts .env_bot using Fernet keys from storage/keys/; used by config UI and runtime scripts
+│   │   ├── security_bot.py                     # Loads/decrypts .env_bot using Fernet keys from tbot_bot/storage/keys/; used by config UI and runtime scripts
 │   │   └── settings_bot.py                     # Editor/validator for .env_bot (strategy/runtime vars); used by Web UI/scripts; never manages key files
 │   │
 │   ├── control/                                # Control signals for runtime (web/CLI triggers)
@@ -358,11 +358,11 @@ rigd_tbot/
 │   │   ├── bootstrap_utils.py                  # UI-only first-run logic: detects bootstrap status, determines page to show (config or login); calls db_bootstrap.py
 │   │   ├── build_check.py                      # Validates COA/schema/key alignment and file integrity at build/startup; blocks on error (calls path_resolver.py)
 │   │   ├── config_fetch.py                     # Loads, validates, and returns the latest live config for key/secret rotation; provides config dicts to provisioning and key_manager logic
-│   │   ├── decrypt_secrets.py                  # Loads/decrypts *.json.enc secrets using Fernet keys from storage/keys/; called by config/runtime modules
-│   │   ├── encrypt_secrets.py                  # Encrypts/rotates all secret/config JSONs in storage/secrets/ using Fernet keys from storage/keys/
+│   │   ├── decrypt_secrets.py                  # Loads/decrypts *.json.enc secrets using Fernet keys from tbot_bot/storage/keys/; called by config/runtime modules
+│   │   ├── encrypt_secrets.py                  # Encrypts/rotates all secret/config JSONs in tbot_bot/storage/secrets/ using Fernet keys from tbot_bot/storage/keys/
 │   │   ├── holdings_secrets.py                 # Module for encrypted holdings config/secrets CRUD, atomic writes, rollback support, and audit integration - triggers key, secrets rotation/backup
-│   │   ├── path_resolver.py                    # Resolves storage/output/config paths for all modules, based on BOT_IDENTITY and file category; called by all runtime modules for dynamic file routing
-│   │   ├── rotate_keys.py                      # Rotates all Fernet keys in storage/keys/, re-encrypts matching secrets in storage/secrets/, and triggers versioned backup
+│   │   ├── path_resolver.py                    # Resolves tbot_bot/storage/output/config paths for all modules, based on BOT_IDENTITY and file category; called by all runtime modules for dynamic file routing
+│   │   ├── rotate_keys.py                      # Rotates all Fernet keys in tbot_bot/storage/keys/, re-encrypts matching secrets in tbot_bot/storage/secrets/, and triggers versioned backup
 │   │   ├── secrets_manager.py                  # Central secrets CRUD/rotation manager; abstracts encrypt/decrypt, validates key–secret pairing, provides high-level API to web/provisioning
 │   │   ├── service_bot.py                      # (Optional) Systemd-compatible daemon: manages TradeBot process as a background service (not required for bootstrap)
 │   │   ├── utils_config.py                     # Loads/validates all bot and environment configuration files (.env, .env_bot, runtime envs) 

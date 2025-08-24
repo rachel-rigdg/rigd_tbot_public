@@ -44,7 +44,7 @@ Each enhancement returns a boolean (`True`=allow, `False`=block). Failures are a
 
 5. **finnhub_fundamental_guard.py**  
    Blocks trades if fundamentals fail thresholds.  
-   - Credentials loaded exclusively from `storage/secrets/screener_api.json.enc`  
+   - Credentials loaded exclusively from `tbot_bot/storage/secrets/screener_api.json.enc`  
    - Caches to `data/cache/fundamentals_{date}.json`  
    - Enforced metrics (configurable):  
      - `peNormalizedAnnual` ≤ `MAX_PE_RATIO` (default 50)  
