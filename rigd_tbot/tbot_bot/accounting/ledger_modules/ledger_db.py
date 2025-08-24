@@ -68,28 +68,25 @@ def _get_table_columns(conn: sqlite3.Connection, table: str) -> Set[str]:
 def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[str] = None) -> bool:
     """
     Validates the ledger DB with three gates (in order):
-      1) PRAGMA integrity_check → must return a single row 'ok'
+      1) PRAGMA integrity_check → must return only 'ok'
       2) Required columns exist in trades:
-         {'datetime_utc','timestamp_utc','trade_id','group_id','side','amount','total_value','fitid'}
-      3) EXPLAIN pass across reference schema statements (syntax & basic objects)
+         {'datetime_utc','timestamp_utc','trade_id','group_id','side','amount','total_value','fitid','created_at_utc'}
+      3) EXPLAIN pass across reference schema statements (syntax for explainable statements only)
     Returns True if all checks pass, else False.
     """
     try:
-        # Resolve paths (note: get_conn() manages pragmas and current identity DB)
         dsn = db_path or get_db_path()
         schema_file = schema_path or resolve_ledger_schema_path()
-
         with open(schema_file, "r", encoding="utf-8") as f:
             schema = f.read()
 
         with get_conn() as conn:
-            # 1) Corruption check
+            # 1) Corruption/integrity check
             ic_rows = conn.execute("PRAGMA integrity_check").fetchall()
-            if not ic_rows or any((str(row[0]).lower() != "ok") for row in ic_rows):
-                # Any non-"ok" result signals corruption
+            if not ic_rows or any(str(row[0]).lower() != "ok" for row in ic_rows):
                 return False
 
-            # 2) Required columns present in trades
+            # 2) Required columns in trades
             required = {
                 "datetime_utc",
                 "timestamp_utc",
@@ -99,17 +96,26 @@ def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[
                 "amount",
                 "total_value",
                 "fitid",
+                "created_at_utc",
             }
             cols = _get_table_columns(conn, "trades")
             if not required.issubset(cols):
                 return False
 
-            # 3) Secondary EXPLAIN pass (syntax/object existence)
+            # 3) Secondary EXPLAIN pass: only for statements SQLite can EXPLAIN
             cursor = conn.cursor()
-            for stmt in schema.split(";"):
-                stmt = stmt.strip()
+            for raw in schema.split(";"):
+                stmt = raw.strip()
                 if not stmt:
                     continue
+                # Skip comments/PRAGMAs/DDL and other non-explainable statements
+                leading = stmt.split(None, 1)[0].upper() if stmt.split() else ""
+                if not leading or leading.startswith("--") or leading in {
+                    "PRAGMA", "CREATE", "ALTER", "DROP", "VACUUM",
+                    "BEGIN", "COMMIT", "END",
+                }:
+                    continue
+                # Attempt EXPLAIN for DML-like statements only
                 try:
                     cursor.execute(f"EXPLAIN {stmt}")
                 except sqlite3.DatabaseError:
@@ -177,7 +183,6 @@ def _sanitize_for_sqlite(entry: dict) -> dict:
 
     # Account default (schema marks NOT NULL)
     if not e.get("account"):
-        # Fallback to generic bucket depending on side for safety
         e["account"] = "Uncategorized:Credit" if e["side"].lower() == "credit" else "Uncategorized:Debit"
 
     # Normalize action/status

@@ -102,17 +102,20 @@ def _bootstrap_table(
     bc: str,
     bid: str,
 ) -> dict:
+    now = _utc_now_iso()
     table = {
         "meta": {
             "entity_code": ec,
             "jurisdiction_code": jc,
             "broker_code": bc,
             "bot_id": bid,
-            "created_at_utc": _utc_now_iso(),
-            "updated_at_utc": _utc_now_iso(),
+            "created_at_utc": now,
+            "updated_at_utc": now,
             "coa_version": "v1.0.0",
             "version_id": 1,
         },
+        # Back-compat: mirror meta.version_id at top level
+        "version": 1,
         "rows": [],        # list[MappingRow as dict]
         "history": [],     # snapshot metadata per save
         "unmapped": [],    # optional queue for review
@@ -128,12 +131,14 @@ def _bootstrap_table(
 def _normalize_legacy_table(table: dict, mapping_path: Path) -> dict:
     """Migrate legacy shape with 'mappings'/'version' to new meta/rows/version_id."""
     if "meta" in table and "rows" in table:
-        # Already new format; ensure required keys.
+        # Already new format; ensure required keys and back-compat mirror.
         table["meta"].setdefault("updated_at_utc", _utc_now_iso())
         table["meta"].setdefault("coa_version", "v1.0.0")
-        table["meta"].setdefault("version_id", 1)
+        table["meta"].setdefault("version_id", int(table.get("version", 1)))
         table.setdefault("history", [])
         table.setdefault("unmapped", [])
+        # Back-compat: keep top-level "version" always in sync
+        table["version"] = int(table["meta"]["version_id"])
         return table
 
     # Legacy → New
@@ -171,6 +176,7 @@ def _normalize_legacy_table(table: dict, mapping_path: Path) -> dict:
             "coa_version": table.get("coa_version", "v1.0.0"),
             "version_id": table.get("version", 1),
         },
+        "version": int(table.get("version", 1)),  # back-compat mirror
         "rows": rows,
         "history": table.get("history", []),
         "unmapped": table.get("unmapped", []),
@@ -197,7 +203,10 @@ def load_mapping_table(
 
     if version_id is None:
         table = _read_json(mapping_path)
-        return _normalize_legacy_table(table, mapping_path)
+        table = _normalize_legacy_table(table, mapping_path)
+        # Ensure back-compat mirror on read
+        table["version"] = int(table["meta"].get("version_id", 1))
+        return table
 
     # Specific version → load snapshot
     versions = _versions_dir(mapping_path)
@@ -210,12 +219,18 @@ def load_mapping_table(
         candidates = sorted([p for p in versions.glob(f"coa_mapping_table_v{version_id}_*.json")])
     if not candidates:
         raise FileNotFoundError(f"COA mapping snapshot v{version_id} not found.")
-    return _read_json(candidates[-1])
+    snap = _read_json(candidates[-1])
+    # Normalize & back-compat mirror for snapshots too
+    snap = _normalize_legacy_table(snap, mapping_path)
+    snap["version"] = int(snap["meta"].get("version_id", version_id))
+    return snap
 
 def _save_mapping_table(table: dict, mapping_path: Path, user: str, reason: str) -> dict:
     # bump version and snapshot
     table["meta"]["version_id"] = int(table["meta"].get("version_id", 0)) + 1
     table["meta"]["updated_at_utc"] = _utc_now_iso()
+    # keep legacy mirror in sync
+    table["version"] = int(table["meta"]["version_id"])
     snap_meta = {
         "version_id": table["meta"]["version_id"],
         "timestamp_utc": table["meta"]["updated_at_utc"],
@@ -253,13 +268,14 @@ def assign_mapping(mapping_rule: Dict[str, str], user: str, reason: Optional[str
         if r.get("code") == code and r.get("active", False):
             r["active"] = False  # allowed in live table; immutable history preserved in snapshots
 
-    # Append new immutable row
+    # Append new immutable row with the *next* version_id as preview
+    next_version = int(table["meta"].get("version_id", 0)) + 1
     new_row = MappingRow(
         code=code,
         debit_account=mapping_rule["debit_account"],
         credit_account=mapping_rule["credit_account"],
         active=True,
-        version_id=int(table["meta"].get("version_id", 0)) + 1,  # preview of next version
+        version_id=next_version,
         updated_by=user,
         updated_at_utc=_utc_now_iso(),
         reason=reason or "manual assignment",
@@ -280,6 +296,7 @@ def import_mapping_table(json_data: str, user: str = "import") -> dict:
     # Normalize incoming to rows
     rows: List[dict] = []
     now = _utc_now_iso()
+    next_version = int(table["meta"].get("version_id", 0)) + 1
     for m in incoming.get("rows") or incoming.get("mappings", []):
         match = m.get("match") or {k: m.get(k) for k in ("broker", "type", "subtype", "description") if m.get(k)}
         code = m.get("code") or _rule_code(match)
@@ -288,7 +305,7 @@ def import_mapping_table(json_data: str, user: str = "import") -> dict:
             "debit_account": m.get("debit_account", "Uncategorized:Debit"),
             "credit_account": m.get("credit_account", "Uncategorized:Credit"),
             "active": bool(m.get("active", True)),
-            "version_id": int(table["meta"].get("version_id", 0)) + 1,
+            "version_id": next_version,
             "updated_by": m.get("updated_by", user),
             "updated_at_utc": m.get("updated_at_utc", now),
             "reason": m.get("reason", "imported"),
@@ -310,6 +327,7 @@ def get_version(
     bot_id: Optional[str] = None,
 ) -> int:
     table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
+    # Prefer meta.version_id; keep top-level mirror in sync
     return int(table["meta"]["version_id"])
 
 def get_accounts_for(
@@ -467,6 +485,8 @@ def rollback_mapping_version(
     snap = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id, version_id=version_id)
     # Write snapshot over live (this creates a NEW version upon save)
     _write_json(mapping_path, snap)
+    # Ensure legacy mirror stays correct before saving new version
+    snap["version"] = int(snap["meta"].get("version_id", version_id))
     _audit(mapping_path, {"event": "rollback_requested", "to_version": version_id})
     _save_mapping_table(snap, mapping_path, user="system", reason=f"rollback to v{version_id}")
     return True

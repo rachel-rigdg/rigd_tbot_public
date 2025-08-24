@@ -87,33 +87,48 @@ def compute_dedupe_key(entry: Dict[str, Any]) -> str:
 
 def install_unique_guards() -> None:
     """
-    Ensure additive schema + indexes needed for idempotency:
+    Ensure additive schema + indexes needed for idempotency and COALESCE(timestamp_utc, datetime_utc, created_at_utc):
       a) Add missing columns via PRAGMA table_info(trades):
          - fitid TEXT
          - timestamp_utc TEXT
+         - created_at_utc TEXT  (backfilled from created_at when present)
       b) Create UNIQUE index on (fitid) WHERE fitid IS NOT NULL
       c) Create index on (group_id)
-      d) (Optional) Create composite UNIQUE index used by upsert when FITID is absent
+      d) Create composite UNIQUE index used by upsert when FITID is absent
          on (entity_code, jurisdiction_code, broker_code, trade_id, side, account, timestamp_utc)
     Never drops or renames anything; safe to call repeatedly.
     """
     with get_conn() as conn:
-        # a) Check existing columns
         conn.row_factory = sqlite3.Row
         rows = conn.execute("PRAGMA table_info(trades)").fetchall()
         col_names = {row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in rows}
 
-        # Add columns if missing (additive only)
+        # a) Add columns if missing (additive only)
         if "fitid" not in col_names:
             try:
                 conn.execute("ALTER TABLE trades ADD COLUMN fitid TEXT")
             except sqlite3.OperationalError as e:
-                # Ignore if another process raced us
                 if "duplicate column name" not in str(e).lower():
                     raise
         if "timestamp_utc" not in col_names:
             try:
                 conn.execute("ALTER TABLE trades ADD COLUMN timestamp_utc TEXT")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+        # NEW: created_at_utc for COALESCE fallbacks used by queries/balances
+        if "created_at_utc" not in col_names:
+            try:
+                conn.execute("ALTER TABLE trades ADD COLUMN created_at_utc TEXT")
+                # Best-effort backfill from legacy created_at if it exists
+                try:
+                    conn.execute(
+                        "UPDATE trades SET created_at_utc = created_at "
+                        "WHERE created_at_utc IS NULL AND created_at IS NOT NULL"
+                    )
+                except sqlite3.OperationalError:
+                    # If created_at doesn't exist on this DB, ignore silently
+                    pass
             except sqlite3.OperationalError as e:
                 if "duplicate column name" not in str(e).lower():
                     raise
