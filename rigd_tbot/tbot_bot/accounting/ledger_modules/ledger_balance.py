@@ -107,7 +107,7 @@ def calculate_account_balances(
     start_iso = _to_utc_iso(window_start_utc) if window_start_utc else _utc_midnight_iso(as_of_iso)
 
     # Column for timestamp: support multiple legacy names via COALESCE
-    ts_col = "COALESCE(timestamp_utc, datetime_utc, created_at_utc)"
+    ts_col = "COALESCE(timestamp_utc, datetime_utc)"
 
     q_open = f"""
         SELECT account, SUM(total_value) AS amt
