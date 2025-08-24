@@ -13,8 +13,9 @@ from tbot_bot.accounting.ledger_modules.ledger_core import (
     get_conn,
     tx_context,
 )
-from tbot_bot.accounting.coa_mapping_table import apply_mapping_rule, load_mapping_table
+from tbot_bot.accounting.coa_mapping_table import apply_mapping_rule
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+from tbot_bot.accounting.ledger_modules.ledger_entry import build_normalized_entry
 
 # Decimal policy
 getcontext().prec = 28
@@ -91,18 +92,22 @@ def _normalize_total_value_sign(e: dict) -> None:
 
 def _add_required_fields(entry: dict, ec: str, jc: str, bc: str, bid: str) -> dict:
     """
-    Ensure mandatory columns exist; coerce numerics; JSON-encode complex values for SQLite.
+    Canonical normalization via build_normalized_entry to avoid drift/duplication.
+    Ensures identity & grouping defaults before delegating.
     """
     e = dict(entry)
-    # Identity
-    e["entity_code"] = ec
-    e["jurisdiction_code"] = jc
-    e["broker_code"] = bc
-    e["bot_id"] = bid
 
-    # Defaults
-    e["fee"] = 0.0 if e.get("fee") is None else e.get("fee")
-    e["commission"] = 0.0 if e.get("commission") is None else e.get("commission")
+    # Identity
+    e.setdefault("entity_code", ec)
+    e.setdefault("jurisdiction_code", jc)
+    e.setdefault("broker_code", bc)
+    e.setdefault("bot_id", bid)
+
+    # Defaults for commission/fee (some callers omit them)
+    if e.get("fee") is None:
+        e["fee"] = 0.0
+    if e.get("commission") is None:
+        e["commission"] = 0.0
 
     # trade_id / group_id
     if not e.get("trade_id"):
@@ -110,43 +115,26 @@ def _add_required_fields(entry: dict, ec: str, jc: str, bc: str, bid: str) -> di
     if not e.get("group_id"):
         e["group_id"] = e["trade_id"]
 
-    # side & amounts
+    # side default to keep signs deterministic
     side = str(e.get("side") or "").lower()
     if side not in ("debit", "credit"):
-        side = "debit"
-        e["side"] = side
+        e["side"] = "debit"
 
-    if "total_value" not in e or e["total_value"] is None:
-        e["total_value"] = 0.0
-
-    # amount derived from side when absent
-    if "amount" not in e or e["amount"] is None:
-        val = _to_dec(e.get("total_value"))
-        e["amount"] = float(-abs(val)) if side == "credit" else float(abs(val))
-
-    # action / status
-    e["action"] = _map_action(e.get("action"))
-    if not e.get("status"):
-        e["status"] = "ok"
-
-    # Ensure timestamps
+    # Normalize timestamps if missing (builder will ensure ISO UTC)
     _ensure_timestamp_utc(e)
 
-    # Quantize money and enforce total_value sign by side
-    _quantize_money_fields(e)
-    _normalize_total_value_sign(e)
+    # Delegate to the canonical builder (adds timestamp_utc, fitid, signs, JSON safety, etc.)
+    n = build_normalized_entry(e)
 
-    # Fill schema fields
+    # Allow Uncategorized accounts to pass compliance here (mapping may intentionally do that)
+    if isinstance(n.get("account"), str) and n["account"].startswith("Uncategorized"):
+        n["allow_uncategorized"] = True
+
+    # Ensure every TRADES_FIELDS key exists
     for k in TRADES_FIELDS:
-        if k not in e:
-            e[k] = None
+        n.setdefault(k, None)
 
-    # JSON-encode complex objects
-    for k, v in list(e.items()):
-        if isinstance(v, (dict, list)):
-            e[k] = json.dumps(v, default=str)
-
-    return e
+    return n
 
 
 def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_id_hint: Optional[str]) -> Tuple[List[dict], str]:
@@ -162,7 +150,6 @@ def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_
     # Choose/propagate batch group_id if provided or generate one when all missing
     group_out = (group_id_hint or "").strip()
     if not group_out:
-        # If any entry has a group_id use it; otherwise generate a new UUID (kept internal; legs still get per-entry group)
         for e in items:
             if isinstance(e, dict) and e.get("group_id"):
                 group_out = str(e.get("group_id"))
@@ -171,7 +158,7 @@ def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_
             group_out = str(uuid.uuid4())
 
     if has_side:
-        # Assume caller provided debit/credit splits; ensure group_id propagation if missing
+        # Caller provided debit/credit splits; ensure group_id propagation if missing
         splits: List[dict] = []
         for e in items:
             ee = dict(e)
@@ -181,12 +168,10 @@ def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_
 
     # Raw entries → use mapping to create debit/credit legs
     ec, jc, bc, bid = get_identity_tuple()
-    if mapping_table is None:
-        mapping_table = load_mapping_table(ec, jc, bc, bid)
 
     splits = []
     for e in items:
-        debit, credit = apply_mapping_rule(e, mapping_table)
+        debit, credit = apply_mapping_rule(e, ec, jc, bc, bid)
         # Preserve/propagate group_id
         gid = e.get("group_id") or e.get("trade_id") or group_id_hint or group_out
         debit.setdefault("group_id", gid)
@@ -210,17 +195,14 @@ def _enforce_group_balance(splits: List[dict]) -> List[Tuple[str, Decimal]]:
         total = sum(vals, Decimal("0")).quantize(_Q)
         if total != Decimal("0").quantize(_Q):
             imbalances.append((key, total))
-    if imbalances:
-        return imbalances
-    return []
+    return imbalances
 
 
 def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional[str] = None) -> Dict[str, object]:
     """
     Public entrypoint. ATOMIC per batch.
     - Accepts raw entries or prepared splits.
-    - Builds splits, enforces group/batch sum==0 (Decimal), and inserts both sides atomically.
-    - Quantizes money fields before insert.
+    - Builds splits, normalizes rows, enforces group/batch sum==0 (Decimal), inserts atomically.
     - Returns dict:
         {
           "inserted_ids": [int, ...],
@@ -231,27 +213,27 @@ def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional
     """
     ec, jc, bc, bid = get_identity_tuple()
 
-    # Build and normalize splits
+    # Build splits for each logical transaction
     splits, group_out = _build_splits(entries, mapping_table=None, group_id_hint=group_id)
 
-    # Compliance filter (non-mutating)
-    filtered = [s for s in splits if _is_compliant(s)]
-    if not filtered:
-        return {"inserted_ids": [], "group_id": group_out, "balanced": True, "imbalances": []}
-
-    # Prepare normalized rows (quantized money, timestamps, sign enforcement)
-    normalized = []
-    for s in filtered:
+    # Normalize BEFORE compliance so we can set allow_uncategorized, timestamps, signs, etc.
+    normalized: List[dict] = []
+    for s in splits:
         n = _add_required_fields(s, ec, jc, bc, bid)
         normalized.append(n)
+
+    # Compliance filter on normalized rows
+    compliant = [s for s in normalized if _is_compliant(s)]
+    if not compliant:
+        return {"inserted_ids": [], "group_id": group_out, "balanced": True, "imbalances": []}
 
     # ATOMIC block: verify balance and then insert
     inserted_ids: List[int] = []
     with tx_context() as conn:
         # (1) Per-group balance check
-        imbalances = _enforce_group_balance(normalized)
+        imbalances = _enforce_group_balance(compliant)
         # (2) Batch-wide balance check
-        batch_total = sum((_to_dec(x.get("total_value")) for x in normalized), Decimal("0")).quantize(_Q)
+        batch_total = sum((_to_dec(x.get("total_value")) for x in compliant), Decimal("0")).quantize(_Q)
         if batch_total != Decimal("0").quantize(_Q):
             imbalances.append(("*batch*", batch_total))
 
@@ -259,9 +241,8 @@ def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional
             # Abort the transaction by raising (auto-rollback by tx_context)
             raise ValueError(f"Double-entry imbalance: {[(k, str(v)) for k, v in imbalances]}")
 
-        # Insert rows
-        for s_norm in normalized:
-            # Best-effort dedup check on (trade_id, side)
+        # Insert rows (idempotent by (trade_id, side) guard used here as a best-effort)
+        for s_norm in compliant:
             dup = conn.execute(
                 "SELECT id FROM trades WHERE trade_id = ? AND side = ? LIMIT 1",
                 (s_norm.get("trade_id"), s_norm.get("side")),
