@@ -5,13 +5,13 @@ Ledger sync orchestrator (v048)
 
 - import → normalize → compliance → dedupe → post
 - Idempotency enforced (FITID UNIQUE + composite guards)
-- Validation gate: any reject → audit & reconciliation logs, abort posting
+- Validation gate: rejects are audited & reconciled; posting aborts on rejects
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
@@ -47,15 +47,16 @@ def _utc_now_iso() -> str:
 
 def _normalize_record(raw: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Broker → bot normalization + canonical field completion (fitid, identity, UTC).
+    Broker → bot normalization (via ledger_normalizer) + canonical completion.
+    - Always goes through normalize_trade()
+    - build_normalized_entry() fills identity, fitid, timestamp_utc, etc.
     """
     norm = normalize_trade(raw) or {}
-    # Normalizer may add 'skip_insert' for non-economics; respect it upstream
-    e = build_normalized_entry(norm)
-    # Ensure group default
-    if not e.get("group_id") and e.get("trade_id"):
-        e["group_id"] = e["trade_id"]
-    return e
+    entry = build_normalized_entry(norm)
+    # Ensure a stable default group_id
+    if not entry.get("group_id") and entry.get("trade_id"):
+        entry["group_id"] = entry["trade_id"]
+    return entry
 
 
 def _recon_log(entry: Dict[str, Any], *, status: str, notes: str, sync_run_id: str) -> None:
@@ -83,10 +84,9 @@ def _recon_log(entry: Dict[str, Any], *, status: str, notes: str, sync_run_id: s
 # Public orchestrator
 # -----------------
 
-def sync_broker_ledger(start_date: str | None = None, end_date: str | None = None) -> Dict[str, Any]:
+def sync_broker_ledger(start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
     """
-    Orchestrate broker → ledger sync.
-    Returns summary dict.
+    Orchestrate broker → ledger sync; returns a summary dict.
     Aborts posting if any entry fails validation (all rejects audited and recorded).
     """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
@@ -95,7 +95,7 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
     # Point-in-time DB snapshot prior to mutation
     snapshot_ledger_before_sync()
 
-    # Ensure DB-level UNIQUE guards (FITID + composite) BEFORE any inserts
+    # Ensure DB-level UNIQUE guards (adds fitid/timestamp_utc/created_at_utc and indexes) BEFORE inserts
     install_unique_guards()
 
     # Pull broker data (date filters are passed through if provided)
@@ -109,17 +109,16 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
     for raw in list(trades_raw) + list(cash_raw):
         if not isinstance(raw, dict):
             continue
-        n = normalize_trade(raw) or {}
-        if n.get("skip_insert"):
+        prelim = normalize_trade(raw) or {}
+        if prelim.get("skip_insert"):
             skipped_noise += 1
-            # Optional audit for visibility
             log_audit_event(
                 action="sync_skip",
                 entry_id=None,
                 user="system",
                 before={"raw": raw},
                 after=None,
-                reason=(n.get("json_metadata") or {}).get("unmapped_action", "skip_insert"),
+                reason=(prelim.get("json_metadata") or {}).get("unmapped_action", "skip_insert"),
                 audit_reference=sync_run_id,
                 group_id=None,
                 fitid=None,
@@ -128,29 +127,55 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
             continue
         normalized.append(_normalize_record(raw))
 
-    # Validation gate (pre-write compliance)
+    # Validation gate (pre-write compliance, but lenient for backfills)
     rejects = 0
     valid_entries: List[Dict[str, Any]] = []
+    IGNORABLE_ERRORS: Set[str] = {"timestamp_too_old"}  # accept backfills; still audit as warn
+
     for e in normalized:
-        ok, errs = validate_entries([e])
+        e_check = dict(e)
+        # Allow Uncategorized here; mapping during double-entry will assign proper accounts
+        e_check["allow_uncategorized"] = True
+        ok, errs = validate_entries([e_check])
+
         if ok:
             valid_entries.append(e)
-        else:
-            rejects += 1
-            # Compliance module already audits per-entry rejects; add recon + explicit audit
-            _recon_log(e, status="rejected", notes=";".join(errs or ["validation_failed"]), sync_run_id=sync_run_id)
+            continue
+
+        errs_set = {er for er in (errs or []) if er}
+        if errs_set and errs_set.issubset(IGNORABLE_ERRORS):
+            # Accept but record warning (recon + audit)
+            valid_entries.append(e)
+            _recon_log(e, status="warn", notes="accepted_old_timestamp", sync_run_id=sync_run_id)
             log_audit_event(
-                action="sync_reject",
+                action="sync_warn",
                 entry_id=None,
                 user="system",
                 before=e,
                 after=None,
-                reason=";".join(errs or ["validation_failed"]),
+                reason="accepted_old_timestamp",
                 audit_reference=sync_run_id,
                 group_id=e.get("group_id"),
                 fitid=e.get("fitid"),
-                extra={"phase": "validation"},
+                extra={"phase": "validation_pre_mapping"},
             )
+            continue
+
+        # Hard reject
+        rejects += 1
+        _recon_log(e, status="rejected", notes=";".join(errs or ["validation_failed"]), sync_run_id=sync_run_id)
+        log_audit_event(
+            action="sync_reject",
+            entry_id=None,
+            user="system",
+            before=e,
+            after=None,
+            reason=";".join(errs or ["validation_failed"]),
+            audit_reference=sync_run_id,
+            group_id=e.get("group_id"),
+            fitid=e.get("fitid"),
+            extra={"phase": "validation_pre_mapping"},
+        )
 
     summary: Dict[str, Any] = {
         "identity": {
@@ -174,12 +199,13 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
     if rejects > 0:
         return summary
 
-    # In-memory dedupe (FITID→canonical key)
+    # In-memory dedupe (FITID→canonical/composite)
     deduped = deduplicate_entries(valid_entries)
     summary["dedup_skipped"] = len(valid_entries) - len(deduped)
 
-    # Post (double-entry; atomic per group; idempotent at DB via UNIQUE guards)
+    # Post (double-entry; atomic per group; idempotent via DB UNIQUE guards)
     post_result = post_ledger_entries_double_entry(deduped)
+
     # Accept updated return shape (dict) or legacy list
     if isinstance(post_result, dict):
         inserted_ids = list(post_result.get("inserted_ids", []))
@@ -197,3 +223,14 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
         _recon_log(e, status="matched", notes="Imported by sync", sync_run_id=sync_run_id)
 
     return summary
+
+
+# -----------------
+# Back-compat shim for older tests
+# -----------------
+
+def _sanitize_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Legacy helper expected by some tests; delegate to the canonical normalizer.
+    """
+    return build_normalized_entry(entry)
