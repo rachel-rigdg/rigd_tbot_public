@@ -11,6 +11,9 @@ Contents:
 - RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATED)
 - Unified Capital Risk Controls and Dynamic Broker Float Allocation
 - Automated Holdings, Float, and Reserve Management
+- Broker Sync & Ledger Pipeline (Alpaca → Normalizers → Compliance → Mapping → Dedupe → Double-Entry → Query/UI)
+- Ledger Identifiers & Grouping Policy (FITID, DTPOSTED=UTC, group_id policy)
+- Opening Balances Snapshot (positions + cash) — idempotent
 - TradeBot Strategy Logic Spec v1.1 (Self-Contained)
 - InverseETF Integration Specification (Final v1.0)
 - Ranked Symbol Fallback and Fractional Trading Logic (v1.0)
@@ -180,7 +183,7 @@ TBot executes intraday breakout and mean-reversion strategies using a unified lo
 **Supported Brokers:**  
 - Alpaca: long equity, inverse ETFs
 - IBKR: long equity, inverse ETFs, long puts
-- Tradier (depreciated): long equity, inverse ETFs - # currently depreciated and not in use
+- Tradier (deprecated): long equity, inverse ETFs - # currently deprecated and not in use
 
 **Execution Framework:**  
 - Strategy execution is sequenced via `STRATEGY_SEQUENCE` in `.env_bot`
@@ -188,12 +191,55 @@ TBot executes intraday breakout and mean-reversion strategies using a unified lo
 - Runtime logic strictly observes UTC windows and `.env_bot` timing/config variables
 
 **Ledger and Accounting Integration:**  
-- **All trade activities, allocations, and PnL updates are written directly to:**
-    - `output/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
-- **All ledger entries** must comply with OFX schema:
-    - Required fields: `TRNTYPE`, `DTPOSTED` (UTC), `FITID`, broker, strategy, ticker, side, size, entry_price, exit_price, PnL, and audit references.
-- `.csv` or `.json` trade histories are external audit artifacts and not parsed for ledger ingestion.
-- All reporting and reconciliation flow through the accounting system’s ingestion modules.
+- **Ledger DB (per-bot, scoped by identity):**
+    - `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+    - Append-only, **double-entry** invariant (every economic event posts two balanced splits, sum = 0), **UTC-only** timestamps, **OFX-aligned** fields, all paths via `path_resolver.py`.
+- **Required OFX-aligned fields (per entry):**
+    - Identifiers: `FITID` (stable, unique per economic event), `group_id` (pairs debit/credit legs), `sync_run_id`, `response_hash`, `broker`, `{BOT_IDENTITY}`
+    - Timing: `DTPOSTED` (UTC, ISO-8601)
+    - Economics: `TRNTYPE`, `AMOUNT` (Decimal), `CURRENCY`, `QTY`, `PRICE` (when applicable)
+    - Context: `SYMBOL` (ticker), `STRATEGY`, `NAME`, `MEMO`, `REFNUM`/`CHECKNUM` (when applicable)
+- **Ingestion pipeline (idempotent):** Alpaca → **normalizers** → **compliance** → **mapping (COA)** → **dedupe** → **double-entry post** → **audit/reconcile** → **query/UI**.
+    - Mapping rules live in `coa_mapping_table.json` (lazy-created, versioned); **unmapped** transactions are **skipped** and flagged for UI mapping.
+- `.csv`/`.json` trade histories are **external audit artifacts only** (never parsed for ledger ingestion).
+- **All reporting/UI** (ledger list, groups, balances) **must** read via `tbot_bot/accounting/ledger_modules/*` APIs; **no direct DB or file access** outside these modules.
+
+
+### Broker Sync & Ledger Pipeline
+1) **Fetch (Alpaca)** → `broker_api.get_trades()/get_activities()/get_positions()` (UTC-only, stable IDs, no DB writes).  
+2) **Normalize** → `broker/utils/ledger_normalizer.py` (OFX-aligned dicts: `TRNTYPE`, `DTPOSTED`=UTC ISO, `FITID` seed, amounts/qty/price/symbol/strategy).  
+3) **Compliance** → `ledger_modules/ledger_compliance_filter.py` (required fields, no future dates, numeric bounds; rejects flagged).  
+4) **Mapping (COA)** → `coa_mapping_table.json` via `ledger_account_map.py` (resolve debit/credit accounts; **unmapped ⇒ skip_insert + flag**; mapping file lazy-created and versioned).  
+5) **Dedup** → `ledger_deduplication.py` (UNIQUE by `FITID` + content hash idempotency).  
+6) **Post (Double-Entry)** → `ledger_double_entry.py` (two balanced splits per event, **sum=0**; Decimal math; group_id assigned; atomic batch).  
+7) **Audit & Reconcile** → `ledger_audit.py` + `reconciliation_log.py` (append-only, UTC, includes `sync_run_id`, `broker`, mapping version).  
+8) **Query/UI** → `ledger_query.py` + `ledger_grouping.py` + `ledger_balance.py` (grouped rows, collapse state, balances); **UI reads only via these APIs**.  
+_All paths resolved via `path_resolver.py`; no hardcoded paths; no direct SQL outside `ledger_modules`._
+
+### Ledger Identifiers & Grouping Policy
+- **FITID (unique, stable):** SHA-256 over tuple ⇒ `(broker, account_id, external_id, TRNTYPE, SYMBOL, DTPOSTED_UTC, AMOUNT, QTY, PRICE, CURRENCY)`. Stored and indexed; **UNIQUE(FITID)** enforced.  
+- **DTPOSTED:** Required; UTC, ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`). No local time.  
+- **sync_run_id:** UUIDv4 per sync run; attached to all inserted rows and audit entries.  
+- **response_hash:** SHA-256 of raw broker payload (per record) for traceability.  
+- **group_id (deterministic):**  
+  - Trades: UUIDv5 over concatenated leg FITIDs (or broker external trade id if present).  
+  - Cash/fees/dividends: UUIDv5 over record FITID + type.  
+  - Reuse on reruns (idempotent); never NULL. Collapse state stored in `trade_group_collapsed`.  
+- **Side/sign rules:** Debit/credit labels drive balances; signs consistent with COA account nature.  
+- **Immutability:** No in-place edits; corrections via adjusting journal entries (AJEs) with new FITIDs.
+
+### Opening Balances Snapshot (positions + cash) — Idempotent
+- **When:** First successful sync on a fresh ledger (or when `opening_balances_posted` flag is false and ledger empty).  
+- **Positions:** For each held symbol: **Debit** `Brokerage:Equity:{SYMBOL}` at **cost_basis** (if missing, use market value tagged `EST_BASIS`) and **Credit** `Opening Balances:Equity`.  
+- **Cash:** **Debit** `Brokerage:Cash` and **Credit** `Opening Balances:Cash` for starting cash.  
+- **Identifiers:**  
+  - `group_id = "OPENING_BALANCE_{YYYYMMDD}"` (UTC date).  
+  - `FITID = SHA-256(broker|account_id|UTC_date|OB|symbol|amount)` (per leg).  
+- **Ordering:** `DTPOSTED` strictly < first trade `DTPOSTED`.  
+- **Re-entrancy:** If any OB group exists or the status flag is set, **do not re-post**; later true basis corrections use AJEs (no mutation of OB rows).  
+- **Audit:** Full audit entries with `sync_run_id` and position source (positions API vs. manual import).
+
+
 
 ---
 
@@ -216,8 +262,8 @@ Strategy: strategy_open.py – Opening Range Breakout
 - **Shorting:** Controlled by `SHORT_TYPE_OPEN`: InverseETF, LongPut, ShortSell, or disabled
 - **Logging:**
   - Logs: `open.log`
-  - Ledger: `output/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
-  - Trade History: `output/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
+  - Ledger: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+  - Trade History: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
 
 ---------------------------------------------------------
 Strategy: strategy_mid.py – VWAP Mean Reversion
@@ -237,8 +283,8 @@ Strategy: strategy_mid.py – VWAP Mean Reversion
 - **Enhancements:** `adx_filter.py`, `bollinger_confluence.py`
 - **Logging:**
   - Logs: `mid.log`
-  - Ledger: `output/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
-  - Trade History: `output/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
+  - Ledger: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+  - Trade History: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
 
 ---------------------------------------------------------
 Strategy: strategy_close.py – End-of-Day Momentum / Fade
@@ -258,8 +304,8 @@ Strategy: strategy_close.py – End-of-Day Momentum / Fade
 - **Enhancements:** `vix_gatekeeper.py`, `imbalance_scanner_ibkr.py`, `ticker_blocklist.py`
 - **Logging:**
   - Logs: `close.log`
-  - Ledger: `output/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
-  - Trade History: `output/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
+  - Ledger: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+  - Trade History: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
 
 ---
 

@@ -97,7 +97,7 @@ WantedBy=default.target
 Notes
 - `tbot_supervisor.py` is invoked by `tbot_bot.runtime.main` after provisioning;
   it never runs as its own unit.
-- Logs go to journald and to `tbot_bot/output/` per bot policy.
+- Logs go to journald and to `tbot_bot/output/` as per bot policy.
 - All internal paths are resolved via `tbot_bot/support/path_resolver.py`.
 
 Validation
@@ -134,7 +134,6 @@ Phase 2: Session Initialization
 - All float, reserve, allocation, and holdings-related adjustments are posted exclusively to the modular ledger via `ledger_modules/` with full audit metadata; legacy audit logs and helpers are deprecated.
 - `status_bot.py` writes initial bot state to `output/status.json`.
 - Begin strategy cycle.
-
 
 Phase 3: Strategy Cycle (Open → Mid → Close, UTC)
 For each enabled strategy:
@@ -176,7 +175,19 @@ Phase 6: Manual Review / Rebalancing
 - Any manual override or rebalancing action triggers versioned audit logging via the modular ledger and immediate config/secret backup.
 - Manual reset of defense flags is required after any defense mode event.
 
-
+--------------------------------------------------------------------------------
+Runtime Worker: `sync_broker_ledger` (Structured Logs & Snapshot Retention)
+--------------------------------------------------------------------------------
+- **Location:** `tbot_bot/runtime/sync_broker_ledger.py`
+- **Launched by:** `main.py` (on admin Web UI POST `/ledger/sync`) or scheduled internal trigger; never by CLI or web directly.
+- **Responsibilities:**
+  - Resolve paths via `path_resolver.py`; ensure COA and ledger DB exist.
+  - Take **pre-sync snapshot** via `ledger_modules/ledger_snapshot.py` to `output/{BOT_IDENTITY}/ledgers/snapshots/` (UTC-name, atomic). Enforce retention window from `.env_bot` (e.g., `LEDGER_SNAPSHOT_RETENTION_DAYS`).
+  - Invoke `tbot_bot/accounting/ledger_modules/ledger_sync.py` (Alpaca → normalizers → compliance → mapping → dedupe → double-entry).
+  - Emit **structured JSONL** to `output/{BOT_IDENTITY}/logs/ledger_sync.log`:
+    - Fields: `timestamp_utc`, `sync_run_id`, `broker`, `start`, `end`, `fetched_trades`, `fetched_cash`, `inserted_rows`, `updated_rows`, `skipped_duplicates`, `skipped_unmapped`, `mapping_version`, `snapshot_file`, `duration_ms`, `status`, `error`.
+  - Append audit events via `ledger_modules/ledger_audit.py`.
+- **Constraints:** UTC timestamps, Decimal math, no direct SQL or file access outside `ledger_modules/`. Idempotent.
 
 =============================================================================================================================================
 Bot State Definitions (bot_state.txt values)
@@ -349,7 +360,8 @@ Each bot instance writes structured outputs to isolated, per-bot subdirectories 
 |                                            | - `close.log` (close strategy events)                              | Yes                     |
 |                                            | - `unresolved_orders.log` (failed/stale orders)                    | Yes                     |
 |                                            | - `error_tracebacks.log` (exceptions/errors)                       | Yes                     |
-|                                            | - `daily_summary.json` (end-of-session summary)          	| Yes                     |
+|                                            | - `daily_summary.json` (end-of-session summary)          	        | Yes                     |
+|                                            | - `ledger_sync.log` (structured JSONL for sync runs)               | Yes                     |
 |                                            | - `status.json` (session state, not a log, not shown in logs.html) | No                      |
 | `output/{BOT_IDENTITY}/trades/`            | Per-session trade history logs (`csv` or `json`)                   | No                      |
 | `output/{BOT_IDENTITY}/summaries/`         | Session summaries: PnL, stats, win-rate                            | No                      |
@@ -366,11 +378,12 @@ Each bot instance writes structured outputs to isolated, per-bot subdirectories 
 | Unresolved Orders  | `unresolved_orders.log`            | Rejects, partials, stale orders (shown in logs.html)      |
 | Error Traces       | `error_tracebacks.log`             | Exceptions/errors (shown in logs.html)                    |
 | Start/Stop Events  | `start_log`, `stop_log`            | Session/bot start/stop events (shown in logs.html)        |
-| Activity/Audit     | `user_activity_monitoring.log`, `system_users.log`, `security_users.log`, `auth_web.log` | Audit/compliance, user and role events (shown in logs.html) |
+| Ledger Sync        | `ledger_sync.log`                  | JSONL records from runtime sync worker                    |
+| Activity/Audit     | `user_activity_monitoring.log`, `system_users.log`, `security_users.log`, `auth_web.log` | Audit/compliance (shown) |
 | Provisioning       | `provisioning.log`, `provisioning_status.json` | Setup/provisioning (shown in logs.html)                   |
 | Trade History      | `trade_history.csv`, `.json`       | All executed trades, full session                         |
 | Daily Summary      | `daily_summary.json`               | End-of-session PnL/stats/metrics (optional in logs.html)  |
-| Password Reset     | `password_reset_tokens.log`         | Password reset event log (optional in logs.html)          |
+| Password Reset     | `password_reset_tokens.log`        | Password reset event log (optional in logs.html)          |
 
 *All output filenames are always resolved per bot identity and session by the path resolver.*
 
@@ -532,14 +545,16 @@ In `env_bot.py` and runtime logic:
 
 ---
 
-**Policy & Security:**
-
-- All reporting, logs, and summaries are deterministic, UTC-stamped, versioned, and compliant with the required field layout.
-- All output and reporting is via modular, audit-compliant interfaces (`ledger_modules/` and reporting modules).
-- No log post-processing outside reporting modules or explicit audit export.
-- Logs/trade records are never imported back into ledgers.
-- Compliance: All reporting and UI stats must be cross-referenced with audit event IDs from the ledger_modules/.
-- Any change to reporting, logging, or ledger APIs must be reflected in this section and the directory spec.
+**RBAC Enforcement — Ledger Web Endpoints**
+- **Scope:** `tbot_web/py/ledger_web.py` endpoints (`/ledger`, `/ledger/sync`, `/ledger/groups`, `/ledger/balances`, `/ledger/reconciliation`).
+- **Roles:**
+  - `Admin`: Full access, including POST `/ledger/sync` (triggers runtime worker), edits to mapping via dedicated mapping blueprint.
+  - `Analyst`: Read-only access to ledger listings, groups, balances, reconciliation; **no sync**.
+  - `Viewer`: Read-only limited (no reconciliation export).
+- **Rules:**
+  - All endpoints validate session user + role; unauthorized requests → `403` with audit entry (`auth_web.log` + `user_activity_monitoring.log`).
+  - All ledger data access uses `ledger_modules/*` APIs; **no direct SQL/file access**.
+  - Each request logs `{timestamp_utc, user_id, role, endpoint, params_hash, result_count, status}` to `auth_web.log`.
 
 ---
 ================================================================================
@@ -620,9 +635,9 @@ FILES AFFECTED:
 - `tbot_bot/reporting/reporting_bot.py`
 - `tbot_bot/accounting/ledger_modules/*`
 - `tbot_bot/accounting/ledger_modules/ledger_sync.py`
+- `tbot_bot/runtime/sync_broker_ledger.py`
 - `tbot_web/py/settings_web.py`
-- `tbot_web/py/ledger_web.py` (optional logs display)
-- `tbot_web/py/main_web.py` (writes flags only; execution handled by main.py/tbot_supervisor.py)
+- `tbot_web/py/ledger_web.py` (optional logs display; RBAC enforced)
 - `tbot_web/py/test_web.py` and `templates/test.html` (dedicated UI and per-test controls)
 - `tbot_web/templates/settings.html` (toggle update)
 - `tbot_bot/test/*` (all test scripts now require relevant flag to execute)
@@ -657,72 +672,63 @@ All critical bot logic, modules, and outputs must be validated via an explicit, 
 **Testing Directory:**  
 `tbot_bot/test/`
 
-**Test Modules:**
-- `test_main_bot.py`           # Lifecycle loop, strategy routing, logger flow, shutdown/resume checks
-- `test_env_bot.py`            # .env_bot variable coverage, error, defaults, VERSION_TAG matches VERSION.md (build fails if mismatch)
-- `test_backtest_engine.py`    # Simulated trades on historical data, rule and fill consistency, no drift
-- `test_strategy_selfcheck.py` # All .self_check() methods must return True, logs all failures
-- `test_logging_format.py`     # Log structure matches output JSON schema and all required fields
-- `test_broker_trade_stub.py`  # Randomized micro-trades, broker order submission/logging/flow
-- `test_screener_random.py`    # Symbol screener, randomized eligibility/filter logic
-- `test_screener_integration.py` # Screener module integration using universe cache and API simulation
-- `test_ledger_schema.py`      # Validates ledgers against COA/schema and double-entry rules (MUST use `ledger_modules/` API; legacy ledger.py is forbidden)
-- `test_coa_web_endpoints.py`  # Endpoint test for /coa, /coa/api, /coa/export and RBAC
-- `test_coa_consistency.py`    # COA template/snapshot vs runtime, schema integrity, metadata fields
-- `integration_test_runner.py` # Full-session simulation, end-to-end (provisioning, config, trading, shutdown, modular ledger/holdings event integration)
-- All new test scripts must implement the per-test flag pattern for direct Web UI and CLI launch
-
-*Planned:*
-- `test_broker.py` – **Manual live trade placement/close for broker readiness/validation.**
+**Test Modules (Matrix — required):**
+- `test_main_bot.py`                 # Lifecycle loop, strategy routing, logger flow, shutdown/resume checks
+- `test_env_bot.py`                  # .env_bot variable coverage, error, defaults, VERSION_TAG matches VERSION.md (fatal if mismatch)
+- `test_backtest_engine.py`          # Historical sim, fills, drift checks
+- `test_strategy_selfcheck.py`       # All .self_check() methods True; logs failures
+- `test_logging_format.py`           # Log structure matches output JSON schema / required fields
+- `test_broker_trade_stub.py`        # Randomized micro-trades, order submission/logging/flow
+- `test_screener_random.py`          # Symbol screener randomized eligibility/filter logic
+- `test_screener_integration.py`     # Screener module integration using cache and API simulation
+- `test_ledger_schema.py`            # Schema validation; double-entry rules; uses `ledger_modules/*` APIs only
+- `test_ledger_double_entry.py`      # Debit/credit balance invariant (sum=0) across events; AJEs; fees/taxes
+- `test_broker_sync.py`              # Normalizer + sync pipeline; idempotency; mapping enforcement; snapshot before/after
+- `test_ledger_deduplication.py`     # FITID + content-hash idempotency; repeat runs
+- `test_ledger_reconciliation.py`    # Reconciliation states: ok/mismatch/local-only/broker-only/resolved
+- `test_ledger_concurrency.py`       # Concurrent writes/locks; thread/process contention
+- `test_ledger_write_failure.py`     # Disk/permission failures; rollback; error propagation
+- `test_coa_mapping.py`              # Mapping CRUD/versioning; unmapped=skip_insert; rollback to prior mapping version
+- `test_coa_web_endpoints.py`        # /coa UI/API; RBAC; version export/import
+- `test_ledger_web_rbac.py`          # Ledger endpoints RBAC: role gates, audit logging, 403 paths
+- `integration_test_runner.py`       # E2E: provisioning→config→strategies→sync→reports; mapping version linkage
 
 **Framework:**
-- All tests use pytest or unittest, CLI/CI-compatible, modular for batch or single-run.
-- Output: `--junitxml` plus CI/CD test reporters (GitHub Actions, GitLab, Jenkins, etc.)
-- Each test can be run by CLI (with the appropriate flag), or launched via Web UI using per-test or global test_mode flags.
+- pytest/unittest, CLI/CI-compatible, `--junitxml` supported
+- Each test launched only when its flag present (or global `test_mode.flag`)
 
 **Test Commands:**
-- Run all tests via:  
+- Run all tests:  
   `pytest tbot_bot/test/`
 - Run individual test (with flag):  
   `touch tbot_bot/control/test_mode_<testname>.flag && python3 -m tbot_bot.test.test_<testname>`
 
 **Integration Test Flow:**
 - Loads `.env_bot.test`
-- Invokes `main.py` in TEST_MODE (via the global flag); injects mock historical data as needed.
-- Confirms: strategy execution order (`STRATEGY_SEQUENCE`), log and output file generation, all triggers/errors, trade/log/export correctness, session integrity
+- Invokes `main.py` in TEST_MODE (via the global flag)
+- Confirms strategy order, log/output generation, triggers/errors, trade/log/export correctness, session integrity
 - Validates that all ledger/COA/holdings events are posted and queried via `ledger_modules/` only
 
 **Web UI & Flag Requirements:**
-- `test_web.py` and `test.html` allow triggering and monitoring of ALL or INDIVIDUAL tests.
-- Each test requires presence of its dedicated flag (e.g., `test_mode_strategy_selfcheck.flag`) OR the global flag (`test_mode.flag`) to run.
-- Flags are auto-removed on completion.
-- No individual test will run in CLI or UI unless proper flag is present.
+- `test_web.py` + `test.html` allow triggering ALL or INDIVIDUAL tests
+- Flags auto-removed on completion
+- No test runs without proper flag(s)
 
 **CI/DevOps:**
-- Compatible with all major CI runners; headless, no GUI or broker API required
-- Custom `.env_bot.test` allowed for CI override, secrets stubbed for test mode
-
-**Requirements:**
-- Python 3.11+, pytest, pydantic, all packages from `requirements.txt`
-
-**Test Mode:**
-- `integration_test_runner.py` runs ALL tests if `test_mode.flag` exists; runs ONLY the matching module if `test_mode_<test>.flag` exists.
-- All test outputs route to test-only logs; test failures to stdout/stderr.
-- All test scripts implement safe auto-deletion of their own test flag after completion.
-- `integration_test_runner.py` writes only to test_mode.log and output artifacts; never launches or supervises other workers/watchers.
+- Headless; no live broker API required
+- `.env_bot.test` allowed for CI; secrets stubbed
 
 **Version Enforcement:**
-- `test_env_bot.py` must verify `.env_bot["VERSION_TAG"]` matches `VERSION.md` (fatal if mismatch; blocks deployment)
+- `test_env_bot.py` verifies `.env_bot["VERSION_TAG"]` matches `VERSION.md` (fatal if mismatch)
 
-**Required Validation for All Tests:**
-- All output/log/trade/ledger files must match the runtime schema as enforced in `030_Trading_Bot_Core_Specs_v047.txt` and directory structure in `020_Directory_Structure_v047.txt`
-- All ledger outputs must match required fields and double-entry rules enforced by `ledger_modules/` (legacy ledger.py/ledger_utils.py not allowed)
-- All reporting and audit files are UTC timestamped, deterministic, and scoped to `{BOT_IDENTITY}`
+**Required Validation (All Tests):**
+- All outputs match runtime schema in 030/020 specs (current version)
+- Ledgers pass double-entry rules; OFX alignment; UTC timestamps
+- UI/reporting pull via modular ledger APIs only
+- Sync worker produces `ledger_sync.log` entries; snapshot files exist; retention enforced
 
 **Summary:**  
-All code, strategy, config, and provisioning updates are blocked if any test fails. CI/CD must gate on full test pass for any merge/release. Audit logs, trade logs, ledgers, and summaries are validated as part of the integration test suite.  
-UI/CLI may launch and monitor all or any individual test, and each test script requires its own control flag.  
-All modular ledger/holdings/COA functionality is required to be validated in automated tests.
+Any failing test blocks release. Logs, ledgers, summaries, and mapping versions are validated as part of the integration suite. UI/CLI may launch full or single tests via flags. All modular ledger/holdings/COA functionality must be covered.
 
 ================================================================================
 TESTING, WATCHER/WORKER, AND LOGGING SYSTEM DEFINITIONS
@@ -763,6 +769,11 @@ tbot_supervisor.py
     # Only one instance allowed; manages all bot state transitions and can start, stop, or monitor critical subprocesses (monitor, runtime, etc).
     # Never directly runs strategy code.
     # In test mode: checks for per-test flags (test_mode_<test>.flag) and launches only that test, or global test_mode.flag to launch all.
+
+sync_broker_ledger.py
+    # WORKER. Launched by main.py on admin Web UI POST /ledger/sync (RBAC: Admin only).
+    # Takes pre-sync snapshot (ledger_snapshot.py), enforces retention, invokes ledger_modules/ledger_sync.py, writes JSONL to ledger_sync.log, appends audit records.
+    # Never runs on its own; never touches DB/files directly outside ledger_modules/ and path_resolver.
 
 --------------------------------------------------------------------------------
 tbot_bot/reporting/
@@ -805,7 +816,12 @@ test_web.py
 logs_web.py
     # LOG READER/WEB ENDPOINT. Reads from tbot_bot/output/logs/*.log and tbot_bot/output/{bot_id}/logs/*.log (all shown-in-logs.html files listed in directory spec), never writes.
 
-ALL OTHER BLUEPRINTS (configuration_web.py, ledger_web.py, etc.):
+ledger_web.py
+    # LEDGER BLUEPRINT. RBAC-enforced endpoints for /ledger, /ledger/sync, /ledger/groups, /ledger/balances, /ledger/reconciliation.
+    # Uses ledger_modules/* APIs only; Admin required for POST /ledger/sync; read endpoints allow Analyst/Viewer per policy.
+    # All requests audit-logged with user, role, endpoint, params hash, status.
+
+ALL OTHER BLUEPRINTS (configuration_web.py, settings_web.py, etc.):
     # NEVER launch workers/watchers; may write control flags for main.py to pick up.
 
 --------------------------------------------------------------------------------
@@ -843,6 +859,7 @@ tbot_bot/output/{bot_id}/logs/close.log                       # Written only by:
 tbot_bot/output/{bot_id}/logs/error_tracebacks.log            # Written only by: main.py, status_bot.py (on uncaught error, shown in logs.html)
 tbot_bot/output/{bot_id}/logs/unresolved_orders.log           # Written only by: main.py, orders_bot.py (shown in logs.html)
 tbot_bot/output/{bot_id}/logs/daily_summary.json              # Written only by: daily_summary.py (optional, may be shown in logs.html)
+tbot_bot/output/{bot_id}/logs/ledger_sync.log                 # Written only by: runtime/sync_broker_ledger.py (shown in logs.html)
 tbot_bot/output/{bot_id}/logs/status.json                     # Written only by: status_bot.py, status_logger.py (not shown in logs.html; status.html only)
 
 --------------------------------------------------------------------------------
@@ -863,6 +880,7 @@ main.py                        | systemd/CLI           | Entry Point | always   
 status_bot.py                  | main.py               | Watcher     | always                   | status.json, system_logs.log
 watchdog_bot.py                | main.py               | Watcher     | always                   | heartbeat logs
 tbot_supervisor.py             | main.py               | Supervisor  | after provisioning/boot  | bot_state.txt, process mgmt, test flags
+sync_broker_ledger.py          | main.py               | Worker      | on Admin /ledger/sync    | ledger_sync.log, snapshots (pre-sync), audit entries
 integration_test_runner.py     | main.py, test UI/CI   | Test runner | test mode only           | test_mode.log, output logs, cleans up flags
 test_web.py                    | web UI                | Test flag   | admin/test action        | test_mode.flag, test_mode_<test>.flag, log read
 test_*.py                      | manual/CI/pytest      | Dev/CI test | never prod               | temp logs/console only, cleans up flags

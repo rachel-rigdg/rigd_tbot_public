@@ -11,6 +11,7 @@ Contents:
 - Enhancement Module Activation (Comprehensive — All Modules Listed)
 - Centralized Error Management (Lossless Compression, Spec v1.1)
 - Atomic Key/Secret Rotation Compliance
+- **Ledger & Database Safeguards (Atomic Batch Inserts, Rollback-on-Fail, Constraints, Orphan-Group Prevention) — REQUIRED**  ← NEW
 
 All modules require runtime self-check compliance and strict audit logging. All filesystem paths are resolved via tbot_bot/support/path_resolver.py (no direct paths).
 
@@ -83,7 +84,8 @@ Each enhancement returns a boolean (`True`=allow, `False`=block). Failures are a
 - **error_handler.py**: Centralized exception capture/escalation; integrates with notifier and supervisor (see below).  
 - **security_bot.py**: Validates decryption of `.env_bot.enc`; blocks plaintext in production.  
 - **Atomic Key/Secret Rotation**: Automatic, atomic rotation/re-encryption of Fernet keys & secrets on any sensitive change or user add/modify; backups created pre-overwrite; old keys never reused.  
-- **Holdings/Float/Reserve Safety**: Holdings actions (float top-up, tax, payroll, reinvest) are immutable, fully audit-logged, and never reallocated except via explicit, audited manual override.
+- **Holdings/Float/Reserve Safety**: Holdings actions (float top-up, tax, payroll, reinvest) are immutable, fully audit-logged, and never reallocated except via explicit, audited manual override.  
+  - **All float/reserve/tax/rebalance hooks call `tbot_bot/accounting/ledger_modules/` only; no direct DB/file writes and no use of legacy `ledger.py`/`ledger_utils.py`.**  ← NEW
 
 ---
 
@@ -103,6 +105,44 @@ _All actions are append-only audit-logged with UTC timestamps._
 
 **Self-Check System:**  
 Every enhancement and safety module must implement `.self_check()` at launch. **`tbot_bot/runtime/main.py` blocks startup** on any failure and logs cause with UTC, module, and remediation hint.
+
+=============================================================================================================================================
+Ledger & Database Safeguards — REQUIRED  ← NEW
+=============================================================================================================================================
+
+**Goal:** Prevent partial or inconsistent accounting states during broker syncs, postings, and COA/holdings effects.
+
+1) **Atomic Batch Inserts**  
+- All ledger postings (including broker sync, COA remap effects, float/reserve/tax/rebalance events) are executed inside a single DB transaction per batch.  
+- On success → single `COMMIT`; on any error → `ROLLBACK` (no partial rows visible to readers).
+
+2) **Rollback-on-Fail**  
+- Any exception during a batch (validation, FK/UNIQUEness, IO) triggers immediate rollback and structured audit entry (`category="ledger_batch"`, `batch_id`, `reason`).  
+- Batches are **idempotent**: repeated runs with the same `sync_run_id` or `batch_id` must not duplicate rows.
+
+3) **UNIQUE & Integrity Constraints**  
+- Duplicate ingestion prevented via **UNIQUE keys** on broker identifiers (e.g., `fitid`, and/or `(broker_code, fitid)` where applicable).  
+- **FOREIGN KEY** constraints tie legs to their parent `group_id`; **CHECK** constraints enforce non-negative amounts for `debit`/`credit` domains where defined.  
+- Schema constraints are part of build-time checks (`build_check.py`) and must pass on startup.
+
+4) **Orphan-Group Prevention**  
+- No leg may exist without a valid parent group:  
+  - Application-level validation **and** DB-level FK constraints enforce this.  
+  - Group creation and leg insertion occur within the **same transaction**; if any leg fails validation, the entire group is rolled back.  
+- Deletions are disallowed (append-only corrections via reversing entries).
+
+5) **Write Path Discipline**  
+- **All accounting writes are performed exclusively via `tbot_bot/accounting/ledger_modules/` APIs.**  
+- Legacy helpers (`ledger.py`, `ledger_utils.py`) are forbidden for both UI and batch paths.  
+- Float/reserves/tax hooks, rebalancing, and COA mapping updates must call ledger modules that enforce the above transactional rules.
+
+6) **Sync Safety**  
+- `/ledger/sync` (see Doc 090) must pass a **`sync_run_id`** through the pipeline. All rows written by a run are tagged and can be verified in audit.  
+- If a sync run aborts, **no rows** from that run remain; the next run may safely retry.
+
+7) **Audit & Telemetry**  
+- Every batch records: `batch_id/sync_run_id`, `started_utc`, `completed_utc`, `row_count`, `commit_state` (`committed|rolled_back`), and caller (system/UI).  
+- Constraint violations emit sanitized details (constraint name, category) without leaking secrets.
 
 =============================================================================================================================================
 Centralized Error Management 

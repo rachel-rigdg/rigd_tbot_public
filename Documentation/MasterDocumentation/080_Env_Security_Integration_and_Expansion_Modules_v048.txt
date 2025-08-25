@@ -1,5 +1,5 @@
 ================================================================================
-Document:080
+Document: 080
 Env_Security_Integration_and_Expansion_Modules
 Version: v048
 Date: UTC:2025-08-23 00:00:00
@@ -24,10 +24,16 @@ Modules Included:
 2. Detailed Broker API Integration
 - Fully modularized broker architecture in `broker/adapters/`, with common interfaces defined in `broker/core/` and shared utilities in `broker/utils/`.
 - Advanced broker adapters currently supported: Alpaca, IBKR, Tradier; each encapsulates broker-specific REST/WebSocket interfaces, order lifecycle management, eligibility logic, and trade/cash synchronization.
+- **Normalization chain location (authoritative):**
+  - Public entry-point: `tbot_bot/broker/utils/ledger_normalizer.py`
+  - Private modules: `tbot_bot/broker/utils/normalizers/_common.py`, `_trades.py`, `_cash.py`, `_positions.py`
+  - Normalizers output OFX-aligned dicts and **never** write to the ledger directly.
+- **Accounting/ledger logic lives only under** `tbot_bot/accounting/ledger_modules/` (double-entry, mapping, compliance, dedupe, queries).
 - Implements standardized `.self_check()` method in each adapter for connectivity, credential validation, and API availability.
 - Dynamic adapter loading and dispatch via central `broker_api.py` interface.
-- Robust error handling, automatic retry logic, and fallback routing configured by `.env_bot` toggles (`FAILOVER_ENABLED`, etc.).
+- Robust error handling, automatic retry logic, and fallback routing configured by `.env_bot` toggles (e.g., `FAILOVER_ENABLED`).
 - Comprehensive structured audit logging of all broker API events with UTC timestamps; strict enforcement of broker rate limits and quotas.
+- **All file/database paths are resolved via `tbot_bot/support/path_resolver.py` only.** No hardcoded paths.
 
 3. Encryption & Key Management Enhancements
 - Key rotation tooling (`tools/rotate_keys.py`)
@@ -43,7 +49,6 @@ Modules Included:
 - Fine-grained alerting and escalation policies
 
 5. Automated Holdings, Float, and Reserve Management (Core, Non-Optional)
-
 - The holdings management system is a mandatory, fully integrated core component—**never optional**—responsible for all automated float/top-up actions, tax reserve splits, payroll allocations, persistent holdings allocations, and scheduled or manual portfolio rebalancing.
 - **All holdings configuration data**—including allocations, symbol list, target percentages, and interval settings—are stored exclusively in an encrypted holdings secrets file (`tbot_bot/storage/secrets/holdings_secrets.json.enc`), protected by a unique Fernet key (`tbot_bot/storage/keys/holdings_secrets.key`).
 - **Separation of concerns:** The holdings management module (`tbot_bot/holdings/holdings_manager.py` and `tbot_bot/support/holdings_secrets.py`) operates entirely independently from all trading strategy modules, broker adapters, or screener logic. No strategy or broker module may trigger, modify, or bypass holdings, float, or reserve logic.
@@ -53,18 +58,10 @@ Modules Included:
 - **Web UI and API:** All holdings operations and configuration updates are managed through the Web UI or authenticated API, with real-time compliance validation and audit trail presentation enforced for all user/operator actions.
 
 Implementation Notes:
-- All optional modules must NOT interfere with or alter the execution, logic, or data of any core runtime module when disabled. Optional modules must be cleanly isolated and fully deactivated by their toggles in `.env_bot`.
-- Every module, whether core or optional, **must implement a `.self_check()` method** that performs a full health and compliance check at launch or on config reload. Launch is blocked and an error is logged if `.self_check()` fails.
-- **All configuration toggles, parameters, and options required by a module must be explicitly and thoroughly documented in the `.env_bot` schema and system configuration documentation.**  
-- Strict logging and audit trails are required: all critical actions, configuration changes, and failures must be UTC timestamped and logged to the designated output or audit log as per system policy.
-- **Expansion modules, the holdings management system, and all related processes must use ONLY system APIs for all key, secret, and configuration management—direct file access, raw file writes, or any ad hoc key handling are explicitly forbidden.**
-- **Key/secret rotation and encryption/decryption workflows must align with the system’s core logic and compliance policies. All updates to sensitive data (credentials, config, allocations, secrets) must automatically trigger atomic rotation and re-encryption of all relevant keys and secret files, with append-only backup and audit logging for every change event.**
-- All backups, old keys, and rotated secrets are archived in `tbot_bot/storage/backups/` and can only be restored through system APIs and recovery procedures.
-
-Compliance:
-- Modules adhere strictly to {CURRENT_VERSION} build instructions and audit requirements.
-- No runtime config or credential leaks permitted.
-- Must operate independently of Web UI unless explicitly integrated.
+- Optional modules must NOT interfere with or alter core runtime when disabled. They are cleanly isolated and fully deactivated by `.env_bot` toggles.
+- Every module (core or optional) **must implement `.self_check()`**; launch is blocked if it fails.
+- **All configuration toggles/parameters required by any module must be explicitly documented** in the `.env_bot` schema and system configuration docs.
+- Strict UTC logging/audit required; **no privileged actions in Flask**—Web UI triggers backend runners only.
 
 
 ================================================================================
@@ -499,12 +496,12 @@ Security Goals:
 - Encrypted bot config resides at **`tbot_bot/support/.env_bot.enc`**. 
 - Category-specific encrypted JSON files reside under **`tbot_bot/storage/secrets/`**.
 - Corresponding encryption keys reside under **`tbot_bot/storage/keys/`**.
-- **Whenever any secret or key is created or modified, the system performs a fully automated atomic rotation and re-encryption of all key/secret pairs.** This ensures forward secrecy and eliminates partial update risk.
+- **Whenever any secret or key is created or modified, the system performs a fully automated atomic rotation and re-encryption of all key/secret pairs.**
 - All prior key and secret files are versioned and backed up before overwrites (archived under `tbot_bot/storage/backups/`).
-- Decryption keys and encrypted files are **never committed to source control** (enforced by `.gitignore` and `.scpignore`).
-- The system performs **runtime decryption in-memory only**, avoiding persistent plaintext files on disk.
-- Post-decryption, sensitive data is immediately overwritten or discarded after use.
-- All decryption errors are logged securely for audit purposes.
+- Decryption keys and encrypted files are **never committed to source control**.
+- Runtime decryption is in-memory only; plaintext is not persisted.
+- Errors are logged with secure, sanitized details.
+
 
 Module Locations & Responsibilities:
 - Encryption, decryption, and key/secret rotation logic are centralized in:
@@ -512,7 +509,8 @@ Module Locations & Responsibilities:
   - `tbot_bot/support/decrypt_secrets.py`
   - `tbot_bot/config/security_bot.py` (manages bot config encryption, key validation, atomic rotation, and secret writes)
   - `tbot_bot/config/key_manager.py` (manages generation and full-rotation of all Fernet keys)
-- The Web UI configuration module (`tbot_web/py/configuration_web.py`) handles:
+- Web UI (`tbot_web/py/configuration_web.py`) triggers provisioning; **backend runners perform all privileged operations**.
+
   - Writing encrypted secret category files into `tbot_bot/storage/secrets/`.
   - Initializing core databases.
   - Encrypting `.env_bot` in-memory and saving `tbot_bot/support/.env_bot.enc`.
@@ -535,6 +533,8 @@ Encryption/Decryption & Rotation Workflow:
 6. All category-specific encrypted JSON files (`bot_identity.json.enc`, `broker_credentials.json.enc`, etc.) are written to and read from `tbot_bot/storage/secrets/` during the Web UI config lifecycle.
 7. The bootstrap process initializes any missing secret category files from Web UI input.
 
+
+
 Validation and Error Handling:
 - Decryption failures or missing required environment variables cause fatal startup errors.
 - All such errors are logged with timestamps and module context.
@@ -545,7 +545,7 @@ Validation and Error Handling:
 Recovery:
 - Restore encrypted secrets and keys from secure backups if files are lost or corrupted.
 - Re-encrypt plaintext secrets if needed using `tools/encrypt_env_bot.py` and related scripts.
-- **On any config or personnel change, perform a full key rotation to ensure no prior access remains.**
+- **On any config or personnel change, triggers a full key rotation to ensure no prior access remains.**
 - Rotate encryption keys on personnel changes or compromise.
 
 Best Practices:
@@ -672,6 +672,48 @@ Audit & Compliance:
 - Ledger entries and audit logs encrypted at rest, append-only, and included in all compliance exports (OFX, CSV, JSON), maintaining permanent auditability for regulatory and internal review.
 - No holdings or reserve actions may bypass COA, ledger, or audit log posting workflows; violations constitute fatal compliance breaches.
 
+
+================================================================================
+Broker_API_Integration Modules
+{CURRENT_VERSION}
+================================================================================
+Overview:
+Defines the modularized broker API integration specifications for Alpaca, IBKR, and Tradier within TradeBot {CURRENT_VERSION}. Enforces a unified broker interface (`broker_api.py`), dynamic adapter loading, structured error handling, regulatory compliance, auditability, and efficient screener operations via cached symbol universes.
+
+Core Principles:
+- **Single active broker per bot**, dynamically selected and routed through the central `broker_api.py`.
+- API credentials loaded from encrypted secrets at bootstrap; no hardcoded/fallback keys.
+- Secure HTTPS / broker-secure channels only; UTC logging for all adapter events.
+- Retries capped by `API_RETRY_LIMIT` in `.env_bot`.
+- Each adapter implements `.self_check()` (connectivity, credentials, quota).
+- Screeners operate from a **pre-filtered cached universe**; no full-market pulls during trading.
+- **Ledger writes are forbidden** in adapters/normalizers; only `ledger_modules/` may write ledgers.
+
+Broker-Specific Adapter Details:
+
+Alpaca (`broker/adapters/alpaca.py`)
+- REST and WebSocket support; long equity & inverse ETFs; fractional if enabled.
+- Enforces rate limits with exponential backoff.
+- Normalizes trades/cash/positions via `broker/utils/ledger_normalizer.py`.
+
+IBKR (`broker/adapters/ibkr.py`)
+- TWS/Gateway async interface; long equity, inverse ETFs, long puts.
+- Full order lifecycle, fills, positions; rate limits enforced.
+
+Tradier (`broker/adapters/tradier.py`)
+- REST integration; long equity & inverse ETFs; polling positions.
+
+Modular Broker Interface Requirements (`broker/core/broker_interface.py`):
+- `connect()`, `submit_order()`, `cancel_order()`, `get_positions()`, `get_account_info()`, `.self_check()`
+- **Broker selection via `.env_bot`:** `BROKER_CODE=ALPACA|IBKR|TRADIER` (no `*_ENABLED` switches).
+- Fallback/failover configurable (`FAILOVER_ENABLED`, `FAILOVER_LOG_TAG`).
+
+Error Handling & Audit:
+- Unified, structured exception logging; fatal broker outages trigger `kill_switch.py`.
+- Order rejections persist to `unresolved_orders.log`.
+- All adapter request/response logs are sanitized; credentials redacted.
+
+
 ================================================================================  
 Section: Symbol Universe & Screener Caching  
 ================================================================================
@@ -687,6 +729,12 @@ Section: Symbol Universe & Screener Caching
     - Price: `SCREENER_UNIVERSE_MIN_PRICE`..`SCREENER_UNIVERSE_MAX_PRICE`
   - Exclude delisted, illiquid, blocklisted, or otherwise ineligible symbols (blocklist: `SCREENER_UNIVERSE_BLOCKLIST_PATH`).
 - The filtered/cached symbol universe is stored as `output/cache/symbol_universe.json` and refreshed nightly.
+- **Storage:**
+  - Final: `output/screeners/symbol_universe.json`
+  - Partial/in-progress: `output/screeners/symbol_universe.partial.json`
+  - Raw list: `output/screeners/symbol_universe.symbols_raw.json`
+  - Unfiltered enriched: `output/screeners/symbol_universe.unfiltered.json`
+  - Operations log: `output/screeners/universe_ops.log`
 - **At screener runtime (open/mid/close strategies), only fetch quotes for these pre-filtered symbols.**
 - The same cached universe is used by all screeners (Alpaca, IBKR, Tradier, etc.).
 - Never make full market API calls during active trading hours; only pull quotes for known eligible symbols.
@@ -697,6 +745,7 @@ Section: Symbol Universe & Screener Caching
 - Greatly reduces latency and rate limit risk.
 - Enables consistent cross-broker symbol handling.
 - No wasted API quota on irrelevant symbols.
+- Ensures consistent, deterministic screening across brokers.
 
 
 ================================================================================  
@@ -707,14 +756,14 @@ Section: Broker Credential Variable Standardization
 To ensure maintainability and avoid code drift, all broker integrations must consume credentials and endpoint settings from a standardized, broker-agnostic variable set. This applies to both the decrypted `.env_bot` and encrypted `broker_credentials.json.enc` files.
 
 **Mandatory Broker Credential Fields:**  
-BROKER_CODE=              # Internal identifier ("ALPACA", "IBKR", "TRADIER", etc.)
-BROKER_HOST=              # Broker API host address (if applicable)
-BROKER_USERNAME=          # Username or login credential (for brokers requiring authentication)
-BROKER_PASSWORD=          # Password or API passphrase (never stored in plaintext)
-BROKER_ACCOUNT_NUMBER=    # Account number or ID (if required by the broker)
-BROKER_API_KEY=           # Primary API key or token
-BROKER_SECRET_KEY=        # Secret key or secondary token (if required)
-BROKER_URL=               # Full API base URL (e.g., https://paper-api.alpaca.markets)
+BROKER_CODE               # "ALPACA", "IBKR", "TRADIER", etc.
+BROKER_HOST               # Host (if applicable)
+BROKER_USERNAME           # Username/login (if applicable)
+BROKER_PASSWORD           # Password/passphrase (never plaintext at rest)
+BROKER_ACCOUNT_NUMBER     # Broker account ID
+BROKER_API_KEY            # Primary API key/token
+BROKER_SECRET_KEY         # Secret/secondary token
+BROKER_URL                # Base URL (e.g., https://paper-api.alpaca.markets)
 
 **Broker Integration Requirements:**  
 - All broker adapters (e.g., `broker_alpaca.py`, `broker_ibkr.py`) must load only these variables from the config/environment, regardless of broker.
@@ -739,6 +788,12 @@ self.account    = env.get("BROKER_ACCOUNT_NUMBER")
 
 
 Enforcement:
+
+No broker-specific variable names in adapters/config.
+
+Secrets only from encrypted files; never plaintext .env in production.
+
+Any credential update via Web UI triggers full atomic rotation + backups.
 
 All new broker integrations, migrations, and maintenance updates must use the agnostic variable standard.
 
@@ -769,10 +824,11 @@ This blueprint defines user credential management, configuration file lifecycle,
 ## 1. Core Principles
 
 - **Autonomy:** After secure bootstrap, the bot manages user credentials, Fernet keys, config, and authentication fully locally—*no runtime dependency on external systems*.
-- **Web UI as Trigger:** All credential, key, config file creation—including Fernet key provisioning and user registration—is *triggered exclusively via the Web UI*. No CLI/manual provisioning is permitted after bootstrap.
+- **Web UI as Trigger:** backend runners perform all privileged actions. All credential, key, config file creation—including Fernet key provisioning and user registration—is *triggered exclusively via the Web UI*. No CLI/manual provisioning is permitted after bootstrap.
 - **Backend Provisioning:** *All privileged actions* (key generation, encrypted secret/DB creation, bootstrapping) are performed by backend scripts in `tbot_bot/config/`, *never* directly by Flask or tbot_web.
-- **Encrypted local storage:** All credentials and sensitive configs are **always encrypted at rest** under `tbot_bot/storage/secrets/` (JSON) and Fernet keys under `tbot_bot/storage/keys/`.
+- **Encrypted local storage for all secrets/keys;** per-category Fernet keys. All credentials and sensitive configs are **always encrypted at rest** under `tbot_bot/storage/secrets/` (JSON) and Fernet keys under `tbot_bot/storage/keys/`.
 - **No shared/runtime auth:** Bot never queries external systems for credentials or Fernet keys at runtime; all storage is local and autonomous.
+- **Full UTC audit trails for all events.**
 
 ---
 
@@ -904,37 +960,38 @@ Encryption_and_Key_Management
 ================================================================================
 
 Overview:
-Defines encryption, key management, and secure config handling for TradeBot v1.0+. All practices strictly enforce RIGD security and architecture standards as per `040_Directory_Structure_v041.txt` and all live compliance policies.
+Defines encryption, key management, and secure config handling for TradeBot v1.0+. All practices strictly enforce RIGD security and architecture standards as per **`020_Directory_Structure_v048.txt`** and live compliance policies.
 
 --------------------------------------------------------------------------------
 Core Concepts
 --------------------------------------------------------------------------------
 - All sensitive files are encrypted at rest using AES-256 (Fernet, per category).
-- Keys are always stored separately under `tbot_bot/storage/keys/`—never inside code, backups, or secrets.
+- Keys stored under `tbot_bot/storage/keys/`; secrets under `tbot_bot/storage/secrets/`.
 - No plaintext credentials/configs exist in the repo or persistent storage post-bootstrap.
 - All encrypted config files (`.env_bot.enc`, `.env.enc`, all `*.json.enc` for broker, identity, API, SMTP) and user credentials DB.
-- Decryption occurs only at runtime, with decrypted values held in memory or ephemeral temp; any plaintext files are immediately overwritten or deleted.
+- Decryption only at runtime; ephemeral in-memory/plaintext only; immediate destruction after use.
 
 --------------------------------------------------------------------------------
 Key Management Policies
 --------------------------------------------------------------------------------
 - **Unique Fernet keys per category:** (`login.key`, `broker.key`, `env.key`, `env_bot.key`, `smtp.key`, etc.).
-- **Key lifecycle is 100% Web UI controlled:**  
+- **- **Web UI-controlled lifecycle:** `tbot_web/py/configuration_web.py` triggers; backend (`key_manager.py`, `security_users.py`) executes.
   - Key generation, validation, rotation are performed only via the configuration/provisioning workflow (`tbot_web/py/configuration_web.py`, `key_manager.py`, `security_users.py`).  
   - Manual or CLI-based key generation is strictly forbidden after bootstrap.
-- **Rotation is atomic and logged:**  
+- - **Atomic rotation logged & enforced:** any user/secret change ⇒ regenerate all affected keys; re-encrypt all secrets; back up prior keys/secrets to `tbot_bot/storage/backups/`.
   - Any time user credentials or secrets are created, updated, or changed (including registration, password change, or SYSTEM_USERS.db update), all Fernet keys and all encrypted secrets are atomically regenerated and all previous versions are backed up to `tbot_bot/storage/backups/`.
   - Key rotations, re-provisioning, or recovery are performed from the Web UI only.  
   - All events are logged with UTC timestamp, user, affected category, and change context.
 - **No key file is ever committed to VCS, backup, or exported:**  
   - .scpignore, .gitignore, and all backup/archiving scripts must enforce this.
 
+
 --------------------------------------------------------------------------------
 Encryption Workflows
 --------------------------------------------------------------------------------
 - Encrypt `.env_bot` and all config files exclusively using Web UI via helper modules; keys read from `tbot_bot/storage/keys/`.
-- `.env` may be optionally encrypted for ephemeral/prod cloud deployments.
-- Decrypt only on runtime startup or configuration reload; any failure is fatal and blocks the process.
+- `.env.enc` for prod; decrypted in-memory using `env_enc.key`.
+- Decrypt only on runtime startup or configuration reload; any failures are fatal; logged with UTC/audit context.
 - Plaintext configs (if any) are ephemeral—held only in RAM or secure temp, then destroyed/overwritten after use.
 - All encryption and decryption events are logged for audit review.
 - On any user or secret update, the system performs full atomic key rotation and re-encryption of all secrets, with automated backup of all old key/secret files for audit and rollback.
@@ -943,27 +1000,33 @@ Encryption Workflows
 Secure Backup & Recovery
 --------------------------------------------------------------------------------
 - All backup artifacts are encrypted and stored under `tbot_bot/storage/backups/`.
-- Restore includes validation of both key and config file; successful restoration must re-encrypt using current keys.
+- Restore validates keys + files; re-encrypt under current keys.
 - Loss or compromise of any key triggers immediate forced key rotation via the Web UI, and all affected configs must be re-encrypted.
 - All recovery and restore events are audit logged (timestamp, user, affected category).
 
 --------------------------------------------------------------------------------
 Compliance and Best Practices
 --------------------------------------------------------------------------------
+
+- RBAC-limited key access; sanitized logs; periodic security review.
+- Startup validation of encrypted config; failure aborts with forensic log.
+=
 - Minimal, role-based key access only; secrets and keys never shared or exposed.
 - All key transmission, storage, and recovery is via secure, authenticated channels and Web UI workflow.
 - All encryption/decryption and key-related operations are logged for full forensic traceability.
 - .scpignore and .gitignore must exclude all decrypted secrets and key files; plaintext is ephemeral only.
 - All encrypted config is validated at every startup; decryption failure is fatal and logs forensic event.
 - Penetration testing and security review are periodic and enforced as part of CI/CD.
+- **All references in this document align with `020_Directory_Structure_{CURRENT_VERSION}.txt` and Document 070 v048.**
 
---------------------------------------------------------------------------------
+
 Functional Requirements
---------------------------------------------------------------------------------
-- All provisioning, credential creation, key management, and encryption occurs **exclusively** via the TradeBot Web UI configuration step.  
-- No external tool, CLI, script, or manual operator may create, rotate, or inject any Fernet key, config, or secret after bootstrap.
-- All encryption helpers (`key_manager.py`, `config_encryption.py`, `security_users.py`) must enforce this policy and reject any unauthorized usage.
-- All key and config storage paths, naming, and lifecycle strictly follow the structure defined in `040_Directory_Structure_v042.txt`.
+- **All provisioning/credential creation/key management/encryption occurs exclusively via the Web UI-triggered backend runners.**
+- Helpers enforce policy; reject unauthorized usage.
+- All storage paths/names/lifecycle follow **Document 020 v048**.
+- **`bot_state.txt`** governs runtime & UI routing (see Document 070 v048).
+- **Any creation/update of secrets or users ⇒ full atomic rotation + backups.**
+
 
 --------------------------------------------------------------------------------
 bot_state.txt State Management 
