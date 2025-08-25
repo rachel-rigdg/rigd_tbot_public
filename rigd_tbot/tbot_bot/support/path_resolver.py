@@ -66,6 +66,14 @@ def validate_bot_identity(bot_identity: str) -> None:
 def get_bot_identity_string_regex():
     return re.compile(IDENTITY_PATTERN)
 
+def _identity_or_error(bot_identity: str = None) -> str:
+    """Resolve current BOT_IDENTITY (from secrets unless explicitly provided) or raise."""
+    identity = get_bot_identity(bot_identity)
+    if not identity:
+        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
+    validate_bot_identity(identity)
+    return identity
+
 def get_output_path(category: str = None, filename: str = None, bot_identity: str = None, output_subdir: bool = False) -> str:
     # Always allow system/bootstrap logs to resolve even in bootstrap mode.
     if category == "logs" and (filename in SYSTEM_LOG_FILES + BOOTSTRAP_ONLY_LOGS or filename == "test_mode.log"):
@@ -140,24 +148,15 @@ def resolve_coa_schema_path():
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "coa_schema.sql")
 
 def resolve_coa_json_path(bot_identity: str = None) -> str:
-    identity = get_bot_identity(bot_identity)
-    if not identity:
-        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
-    validate_bot_identity(identity)
+    identity = _identity_or_error(bot_identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa.json")
 
 def resolve_coa_metadata_path(bot_identity: str = None) -> str:
-    identity = get_bot_identity(bot_identity)
-    if not identity:
-        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
-    validate_bot_identity(identity)
+    identity = _identity_or_error(bot_identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_metadata.json")
 
 def resolve_coa_audit_log_path(bot_identity: str = None) -> str:
-    identity = get_bot_identity(bot_identity)
-    if not identity:
-        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
-    validate_bot_identity(identity)
+    identity = _identity_or_error(bot_identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_audit_log.json")
 
 def resolve_coa_mapping_json_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> Path:
@@ -167,6 +166,15 @@ def resolve_coa_mapping_json_path(entity: str, jurisdiction: str, broker: str, b
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
     mapping_dir = PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers"
+    mapping_dir.mkdir(parents=True, exist_ok=True)
+    return mapping_dir / "coa_mapping_table.json"
+
+def resolve_coa_mapping_json_path_identity(bot_identity: str = None) -> Path:
+    """
+    Returns the absolute Path to the COA mapping table JSON using current BOT_IDENTITY.
+    """
+    identity = _identity_or_error(bot_identity)
+    mapping_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers"
     mapping_dir.mkdir(parents=True, exist_ok=True)
     return mapping_dir / "coa_mapping_table.json"
 
@@ -185,11 +193,24 @@ def resolve_output_path(rel_path):
     return str(out_path)
 
 def resolve_ledger_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
+    """
+    Returns the absolute path to the ledger database for a specific identity.
+    """
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
     return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_ledger.db")
 
+def resolve_ledger_db_path_identity(bot_identity: str = None) -> str:
+    """
+    Returns the absolute path to the ledger database using current BOT_IDENTITY.
+    """
+    identity = _identity_or_error(bot_identity)
+    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / f"{identity}_BOT_ledger.db")
+
 def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
+    """
+    Returns the absolute path to the separate COA database for a specific identity.
+    """
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
     return str(PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers" / f"{bot_identity}_BOT_COA.db")
@@ -257,10 +278,7 @@ def resolve_status_log_path(bot_identity: str = None) -> str:
     return str(logs_dir / "status.json")
 
 def resolve_status_summary_path(bot_identity: str = None) -> str:
-    identity = get_bot_identity(bot_identity)
-    if not identity:
-        raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
-    validate_bot_identity(identity)
+    identity = _identity_or_error(bot_identity)
     summaries_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity / "summaries"
     summaries_dir.mkdir(parents=True, exist_ok=True)
     return str(summaries_dir / "status.json")
@@ -346,6 +364,7 @@ __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
     "get_bot_identity_string_regex",
+    "_identity_or_error",
     "get_output_path",
     "resolve_control_path",
     "resolve_category_path",
@@ -357,6 +376,7 @@ __all__ = [
     "get_enhancements_path",
     "resolve_output_folder_path",
     "resolve_ledger_db_path",
+    "resolve_ledger_db_path_identity",
     "resolve_ledger_snapshot_dir",
     "resolve_coa_db_path",
     "resolve_coa_json_path",
@@ -364,6 +384,7 @@ __all__ = [
     "resolve_coa_metadata_path",
     "resolve_coa_audit_log_path",
     "resolve_coa_mapping_json_path",
+    "resolve_coa_mapping_json_path_identity",
     "resolve_ledger_schema_path",
     "resolve_coa_schema_path",
     "resolve_universe_cache_path",

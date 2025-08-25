@@ -1,11 +1,12 @@
 # tbot_bot/accounting/ledger_modules/ledger_entry.py
 
 """
-Legacy single-entry ledger helpers.
+Legacy single-entry ledger helpers (normalized builder only; no direct writes).
 All new posting/editing/deleting must use double-entry and helpers in ledger_double_entry.py / ledger_edit.py.
 
 This module now provides a canonical normalizer for single entries:
-- build_normalized_entry(): fitid, strategy, tags, identity fields, response_hash, sync_run_id, UTC ISO-8601
+- build_normalized_entry(): FITID, DTPOSTED (UTC ISO), strategy, tags, identity fields,
+  response_hash, sync_run_id, UTC ISO-8601
 - Decimal validation/normalization for numeric amounts; currency/account sanity checks
 """
 
@@ -15,31 +16,10 @@ import json
 import hashlib
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_EVEN, getcontext
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional, Tuple
 
-from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
-
-# ---- Compliance (prefer v048 API) ----
-try:
-    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import validate_entries as _validate_entries  # type: ignore
-
-    def _is_compliant(entry: dict) -> bool:
-        ok, _ = _validate_entries([entry])
-        return bool(ok)
-except Exception:
-    try:
-        from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry as _legacy_filter  # type: ignore
-
-        def _is_compliant(entry: dict) -> bool:
-            res = _legacy_filter(entry)
-            if isinstance(res, tuple):
-                return bool(res[0])
-            return res is not None
-    except Exception:
-        def _is_compliant(entry: dict) -> bool:  # type: ignore
-            return True
 
 # Decimal policy
 getcontext().prec = 28
@@ -51,14 +31,14 @@ _Q = Decimal("0.0001")
 # Identity helpers
 # -----------------------
 
-def get_identity_tuple():
+def get_identity_tuple() -> Tuple[str, str, str, str]:
     """
     Returns (entity_code, jurisdiction_code, broker_code, bot_id) from env-backed identity.
     """
     parts = str(get_bot_identity()).split("_")
     while len(parts) < 4:
         parts.append("")
-    return tuple(parts[:4])
+    return tuple(parts[:4])  # type: ignore[return-value]
 
 
 # -----------------------
@@ -134,7 +114,8 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Build a normalized single-entry dict aligned to TRADES_FIELDS.
     Fields:
-      - fitid (TEXT UNIQUE), strategy, tags (JSON string), entity_code, jurisdiction_code,
+      - fitid (TEXT UNIQUE), DTPOSTED (UTC ISO mirror of timestamp_utc),
+        strategy, tags (JSON string), entity_code, jurisdiction_code,
         broker_code, bot_id, response_hash, sync_run_id, timestamp_utc (ISO-8601, tz-aware)
       - Validated/quantized Decimal amounts stored as float for SQLite binding safety.
       - Currency normalized to 3-4 uppercase letters; account code non-empty.
@@ -142,6 +123,7 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     ec, jc, bc, bid = get_identity_tuple()
 
     e = dict(entry_data) if isinstance(entry_data, dict) else {}
+
     # Identity & metadata
     e["entity_code"] = ec
     e["jurisdiction_code"] = jc
@@ -150,6 +132,8 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
 
     # Timestamp: ALWAYS tz-aware UTC
     e["timestamp_utc"] = _ensure_iso_utc(_coalesce(e.get("timestamp_utc"), e.get("datetime_utc"), e.get("created_at_utc")))
+    # OFX mirror
+    e["DTPOSTED"] = e["timestamp_utc"]
 
     # Strategy / tags
     if "strategy" not in e or e.get("strategy") in (None, ""):
@@ -158,10 +142,8 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(tags, (list, dict)):
         e["tags"] = json.dumps(tags, default=str)
     elif isinstance(tags, str) and tags.strip().startswith("["):
-        # keep as-is JSON string
         e["tags"] = tags
     else:
-        # comma-separated or None → store as JSON array for consistency
         if isinstance(tags, str) and tags.strip():
             e["tags"] = json.dumps([t.strip() for t in tags.split(",") if t.strip()])
         else:
@@ -185,7 +167,6 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     if "total_value" in e and e.get("total_value") is not None:
         total = _to_dec(e.get("total_value"))
     else:
-        # Compute if quantity/price present; subtract fees/commission if provided
         if qty is not None and price is not None:
             gross = (qty * price).quantize(_Q)
         else:
@@ -198,14 +179,12 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     if side == "debit" and total < 0:
         total = -total
     e["total_value"] = float(total)
-
-    # amount column mirrors magnitude with sign by side if used elsewhere
-    e["amount"] = float(total)
+    e["amount"] = float(total)  # mirror
 
     # Account
     e["account"] = _norm_account(e.get("account"), side)
 
-    # FITID: set only if available (fitid|trade_id|order_id); otherwise leave NULL
+    # FITID: prefer provided stable id (fitid|trade_id|order_id)
     provided_fitid = _coalesce(e.get("fitid"), e.get("trade_id"), e.get("order_id"))
     e["fitid"] = str(provided_fitid) if provided_fitid not in (None, "") else None
 
@@ -227,63 +206,4 @@ def build_normalized_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     return e
 
 
-# -----------------------
-# Legacy helpers (DB I/O)
-# -----------------------
-
-def load_internal_ledger():
-    """
-    Load raw trades rows as list of dicts.
-    """
-    db_path = resolve_ledger_db_path(*get_identity_tuple())
-    import sqlite3
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    query = "SELECT id, " + ", ".join(TRADES_FIELDS) + " FROM trades"
-    cursor = conn.execute(query)
-    results: List[Dict[str, Any]] = [{k: row[k] for k in row.keys()} for row in cursor.fetchall()]
-    conn.close()
-    return results
-
-
-def mark_entry_resolved(entry_id):
-    """
-    Mark an entry as approved/resolved. (Legacy UI interaction)
-    """
-    db_path = resolve_ledger_db_path(*get_identity_tuple())
-    # Lazy import to avoid hard dependency if web layer is absent
-    try:
-        from tbot_web.support.auth_web import get_current_user  # type: ignore
-        current_user = get_current_user()
-        updater = current_user.username if hasattr(current_user, "username") else (current_user or "system")
-    except Exception:
-        updater = "system"
-    import sqlite3
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        "UPDATE trades SET approval_status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (updater, entry_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-def add_ledger_entry(entry_data):
-    """
-    Legacy single-entry ledger posting.
-    Use post_ledger_entries_double_entry for all new entries.
-    """
-    if not isinstance(entry_data, dict):
-        return
-    normalized = build_normalized_entry(entry_data)
-    if not _is_compliant(normalized):
-        return
-    db_path = resolve_ledger_db_path(*get_identity_tuple())
-    cols = TRADES_FIELDS
-    placeholders = ", ".join("?" for _ in cols)
-    values = [normalized.get(c) for c in cols]
-    import sqlite3
-    conn = sqlite3.connect(db_path)
-    conn.execute(f"INSERT INTO trades ({', '.join(cols)}) VALUES ({placeholders})", values)
-    conn.commit()
-    conn.close()
+__all__ = ["build_normalized_entry", "get_identity_tuple"]

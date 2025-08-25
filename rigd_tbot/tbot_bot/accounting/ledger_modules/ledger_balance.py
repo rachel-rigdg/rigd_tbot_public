@@ -107,7 +107,7 @@ def calculate_account_balances(
     start_iso = _to_utc_iso(window_start_utc) if window_start_utc else _utc_midnight_iso(as_of_iso)
 
     # Column for timestamp: support multiple legacy names via COALESCE
-    ts_col = "COALESCE(timestamp_utc, datetime_utc)"
+    ts_col = "COALESCE(timestamp_utc, datetime_utc, created_at_utc)"
 
     q_open = f"""
         SELECT account, SUM(total_value) AS amt
@@ -117,8 +117,8 @@ def calculate_account_balances(
     """
     q_window = f"""
         SELECT account,
-               SUM(CASE WHEN (COALESCE(side,'')='debit' OR total_value > 0) THEN ABS(total_value) ELSE 0 END) AS debits,
-               SUM(CASE WHEN (COALESCE(side,'')='credit' OR total_value < 0) THEN ABS(total_value) ELSE 0 END) AS credits
+               SUM(CASE WHEN (LOWER(COALESCE(side,''))='debit' OR total_value > 0) THEN ABS(total_value) ELSE 0 END) AS debits,
+               SUM(CASE WHEN (LOWER(COALESCE(side,''))='credit' OR total_value < 0) THEN ABS(total_value) ELSE 0 END) AS credits
           FROM trades
          WHERE {ts_col} >= ?
            AND {ts_col} <= ?

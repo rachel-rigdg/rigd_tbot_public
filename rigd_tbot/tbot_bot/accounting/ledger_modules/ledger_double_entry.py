@@ -178,11 +178,13 @@ def _build_splits(entries: Iterable[dict], mapping_table: Optional[dict], group_
     # Raw entries → use mapping to create debit/credit legs
     ec, jc, bc, bid = get_identity_tuple()
     if mapping_table is None:
-        mapping_table = load_mapping_table(ec, jc, bc, bid)
+        # Ensure mapping file exists / is loaded (lazy-create on first access)
+        _ = load_mapping_table(ec, jc, bc, bid)
 
     splits = []
     for e in items:
-        debit, credit = apply_mapping_rule(e, mapping_table)
+        # Correct call signature: identity-scoped lookup handled inside apply_mapping_rule
+        debit, credit = apply_mapping_rule(e, ec, jc, bc, bid)
         gid = e.get("group_id") or e.get("trade_id") or group_id_hint or group_out
         debit.setdefault("group_id", gid)
         credit.setdefault("group_id", gid)
@@ -213,6 +215,7 @@ def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional
     Public entrypoint. ATOMIC per batch.
     - Accepts raw entries or prepared splits.
     - Builds splits, **enriches them**, then runs compliance, then enforces balance and inserts.
+    - Verifies post-insert group balances to prevent orphan/partial groups.
     """
     ec, jc, bc, bid = get_identity_tuple()
 
@@ -239,9 +242,8 @@ def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional
         if imbalances:
             raise ValueError(f"Double-entry imbalance: {[(k, str(v)) for k, v in imbalances]}")
 
-        # Insert rows
+        # Insert rows (skip dup (trade_id, side))
         for row in filtered:
-            # Best-effort dedup check on (trade_id, side)
             dup = conn.execute(
                 "SELECT id FROM trades WHERE trade_id = ? AND side = ? LIMIT 1",
                 (row.get("trade_id"), row.get("side")),
@@ -256,6 +258,25 @@ def post_ledger_entries_double_entry(entries: Iterable[dict], group_id: Optional
                 tuple(row.get(c) for c in cols),
             )
             inserted_ids.append(int(cur.lastrowid))
+
+        # (3) Post-insert verification: all affected groups must net to zero
+        affected_groups = {str(r.get("group_id")) for r in filtered if r.get("group_id")}
+        if affected_groups:
+            ph = ", ".join(["?"] * len(affected_groups))
+            rows = conn.execute(
+                f"""
+                SELECT group_id, ROUND(COALESCE(SUM(total_value),0.0), 4) AS total
+                  FROM trades
+                 WHERE group_id IN ({ph})
+                 GROUP BY group_id
+                 HAVING ROUND(COALESCE(SUM(total_value),0.0), 4) <> 0.0000
+                """,
+                tuple(affected_groups),
+            ).fetchall()
+            if rows:
+                # Force rollback via exception to prevent orphan/partial groups
+                details = [(r[0], float(r[1])) for r in rows]
+                raise RuntimeError(f"Post-insert imbalance detected: {details}")
 
     return {"inserted_ids": inserted_ids, "group_id": group_out, "balanced": True, "imbalances": []}
 

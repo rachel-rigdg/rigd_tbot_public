@@ -3,6 +3,7 @@
 Append-only JSONL audit trail writer.
 - Path resolution via path_resolver (derived from ledger DB path).
 - Writes: before/after, actor, reason, audit_reference, group_id, ts_utc, fitid (+ core identity).
+- Supports extras like sync_run_id, response_hash, api_hash, mapping_version.
 - No deletes/rewrites; rotation is handled by immutable_log if available.
 """
 
@@ -56,11 +57,12 @@ def log_audit_event(
 ) -> None:
     """
     Append a single audit event as JSON line. Never mutates or deletes previous records.
+    'extra' may include: sync_run_id, response_hash, api_hash, mapping_version, broker, table, etc.
     """
     if TEST_MODE_FLAG.exists():
         return
 
-    ec, jc, bc, bid = str(get_bot_identity()).split("_", 4)
+    ec, jc, bc, bid = str(get_bot_identity()).split("_", 3)
     record: Dict[str, Any] = {
         "ts_utc": _utc_now_iso(),
         "action": action,
@@ -94,3 +96,6 @@ def log_audit_event(
     # Append-only JSONL write
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+__all__ = ["log_audit_event"]

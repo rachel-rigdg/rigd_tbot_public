@@ -1,0 +1,264 @@
+/* tbot_web/static/css/pages/coa.css
+   COA (Chart of Accounts) page styles — scoped to COA containers/elements only.
+   Safe to include globally; selectors are COA-specific.
+*/
+
+:root {
+    --coa-bg: #fafbfe;
+    --coa-panel: #ffffff;
+    --coa-border: #e2e5ee;
+    --coa-muted: #6b7280;
+    --coa-text: #1f2937;
+    --coa-accent: #334155;
+    --coa-accent-2: #0ea5e9;
+    --coa-danger: #c2410c;
+    --coa-dotted: #cbd5e1;
+  }
+  
+  /* ---------- Metadata ---------- */
+  
+  #coa-metadata-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--coa-panel);
+    border: 1px solid var(--coa-border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 0.5rem 0 1rem 0;
+  }
+  
+  #coa-metadata-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--coa-border);
+    color: var(--coa-text);
+  }
+  
+  #coa-metadata-table tr:last-child td {
+    border-bottom: 0;
+  }
+  
+  #coa-metadata-table td:first-child {
+    width: 220px;
+    font-weight: 600;
+    color: var(--coa-accent);
+    background: #f7f8fc;
+  }
+  
+  /* ---------- Read-only Tree ---------- */
+  
+  #coa-tree {
+    background: var(--coa-panel);
+    border: 1px solid var(--coa-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    line-height: 1.35;
+  }
+  
+  #coa-tree .coa-node,
+  #coa-tree > div {
+    color: var(--coa-text);
+  }
+  
+  #coa-tree .coa-children,
+  .coa-children {
+    margin-left: 24px;
+    padding-left: 12px;
+    border-left: 1px dotted var(--coa-dotted);
+  }
+  
+  /* ---------- Editor Panel ---------- */
+  
+  #coa-editor {
+    background: var(--coa-bg);
+    border: 1px solid var(--coa-border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+  }
+  
+  #coa-editor-tree {
+    background: var(--coa-panel);
+    border: 1px solid var(--coa-border);
+    border-radius: 8px;
+    padding: 8px;
+    max-height: 60vh;
+    overflow: auto;
+  }
+  
+  .coa-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 4px;
+    border-bottom: 1px dashed rgba(0,0,0,0.04);
+  }
+  
+  .coa-row:last-child {
+    border-bottom: 0;
+  }
+  
+  .coa-row input[type="text"] {
+    border: 1px solid var(--coa-border);
+    background: #fff;
+    color: var(--coa-text);
+    border-radius: 6px;
+    padding: 6px 8px;
+    height: 32px;
+    line-height: 20px;
+  }
+  
+  .coa-row input[type="text"]:focus {
+    outline: 2px solid rgba(14,165,233,0.25);
+    border-color: var(--coa-accent-2);
+  }
+  
+  /* code & name default sizes (can be overridden inline by template JS) */
+  .coa-row input[type="text"]:first-of-type {
+    width: 140px; /* code */
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  
+  .coa-row input[type="text"]:nth-of-type(2) {
+    width: 360px; /* name */
+  }
+  
+  /* Row controls */
+  .coa-row button {
+    border: 1px solid var(--coa-border);
+    background: #f8fafc;
+    color: var(--coa-accent);
+    border-radius: 6px;
+    height: 32px;
+    padding: 0 10px;
+    cursor: pointer;
+  }
+  
+  .coa-row button:hover {
+    background: #eef2f7;
+  }
+  
+  .coa-row button[title*="Delete"] {
+    color: var(--coa-danger);
+    border-color: #f3d2c4;
+    background: #fff7f2;
+  }
+  
+  .coa-row button[title*="Delete"]:hover {
+    background: #ffeadd;
+  }
+  
+  /* Add top-level button at root */
+  #coa-editor-tree > button {
+    margin: 8px 4px 4px 4px;
+  }
+  
+  /* Save bar */
+  #coa-save-bar {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  
+  #coa-save-bar button,
+  #coa-save-bar input[type="submit"] {
+    border: 1px solid var(--coa-border);
+    background: #111827;
+    color: #fff;
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  
+  #coa-save-bar button:hover {
+    background: #0b1220;
+  }
+  
+  /* ---------- Export Controls ---------- */
+  
+  #coa-export-controls {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0 16px 0;
+  }
+  
+  #coa-export-controls form button {
+    border: 1px solid var(--coa-border);
+    background: #f8fafc;
+    color: var(--coa-accent);
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  
+  #coa-export-controls form button:hover {
+    background: #eef2f7;
+  }
+  
+  /* ---------- History Table ---------- */
+  
+  #coa-history table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--coa-panel);
+    border: 1px solid var(--coa-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  #coa-history thead th {
+    text-align: left;
+    background: #f7f8fc;
+    color: var(--coa-accent);
+    font-weight: 600;
+    border-bottom: 1px solid var(--coa-border);
+    padding: 8px 10px;
+  }
+  
+  #coa-history tbody td {
+    border-bottom: 1px solid var(--coa-border);
+    padding: 8px 10px;
+    vertical-align: top;
+    color: var(--coa-text);
+  }
+  
+  #coa-history tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  
+  #coa-history pre {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+    background: #f8fafc;
+    border: 1px solid var(--coa-border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  
+  /* ---------- Small helpers ---------- */
+  
+  .subnote {
+    color: var(--coa-muted);
+    font-size: 0.9em;
+  }
+  
+  /* ---------- Responsive ---------- */
+  
+  @media (max-width: 900px) {
+    .coa-row {
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .coa-row input[type="text"]:first-of-type { width: 120px; }
+    .coa-row input[type="text"]:nth-of-type(2) { width: 100%; }
+  }
+  
+  @media (max-width: 600px) {
+    #coa-metadata-table td:first-child { width: 46%; }
+    #coa-export-controls { flex-direction: column; align-items: flex-start; }
+    #coa-editor-tree { max-height: 50vh; }
+  }
+  

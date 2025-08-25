@@ -1,17 +1,18 @@
 # tbot_bot/accounting/ledger_modules/ledger_account_map.py
 # Thin wrapper over versioned COA mapping (no static dicts).
-# Provides cached, entity/jurisdiction/broker-aware lookups and strict failures on unmapped codes.
+# Provides cached, entity/jurisdiction/broker-aware lookups and flags unmapped with skip_insert=True.
 
 from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 
 from tbot_bot.accounting.coa_mapping_table import (
     get_version as _get_version,
     get_accounts_for as _get_accounts_for,
     get_mapping_for_transaction as _get_mapping_for_transaction,
+    apply_mapping_rule as _apply_mapping_rule,
 )
 from tbot_bot.support.utils_identity import get_bot_identity
 
@@ -60,22 +61,20 @@ def get_account_path(
 ) -> str:
     """
     Resolve an account path for a logical code via the versioned COA mapping.
-    Prefers the debit side unless 'side="credit"' is specified.
-    Strict: raises KeyError if unmapped.
+    Prefers the debit side unless 'side=\"credit\"' is specified.
+    Returns 'Uncategorized:*' if unmapped (no exceptions).
     """
     ec, jc, bc, bid = _identity_tuple(entity_code, jurisdiction_code, broker_code, bot_id)
     ver = _resolve_version(version_id, ec, jc, bc, bid)
     accounts = _get_accounts_for(code, ec, jc, bc, bid, ver)
     if not accounts:
-        raise KeyError(f"Unmapped COA code: {code} (entity={ec}, juris={jc}, broker={bc}, ver={ver})")
+        return "Uncategorized:Credit" if side == "credit" else "Uncategorized:Debit"
     debit, credit = accounts
-    if side == "credit":
-        return str(credit)
-    return str(debit)
+    return str(credit) if side == "credit" else str(debit)
 
 
 def map_transaction_to_accounts(
-    txn: Dict[str, str],
+    txn: Dict[str, Any],
     *,
     entity_code: Optional[str] = None,
     jurisdiction_code: Optional[str] = None,
@@ -85,14 +84,67 @@ def map_transaction_to_accounts(
 ) -> Tuple[str, str, int]:
     """
     Map a broker transaction dict → (debit_account, credit_account, mapping_version_id).
-    Strict: raises KeyError if unmapped.
+    If unmapped, flag txn['skip_insert']=True and return Uncategorized accounts (idempotent).
     """
     ec, jc, bc, bid = _identity_tuple(entity_code, jurisdiction_code, broker_code, bot_id)
     ver = _resolve_version(version_id, ec, jc, bc, bid)
     row = _get_mapping_for_transaction(txn, ec, jc, bc, bid, ver)
     if not row:
-        raise KeyError(f"Unmapped transaction for entity={ec}, juris={jc}, broker={bc}, ver={ver}: {txn}")
+        # Flag as unmapped; downstream compliance can drop it.
+        try:
+            txn["skip_insert"] = True
+            meta = txn.setdefault("json_metadata", {})
+            if isinstance(meta, dict):
+                meta.setdefault("mapping", {})
+                meta["mapping"].update({
+                    "status": "unmapped",
+                    "reason": "no_active_rule",
+                    "entity_code": ec,
+                    "jurisdiction_code": jc,
+                    "broker_code": bc,
+                    "version_id": ver,
+                })
+        except Exception:
+            # keep best-effort; do not throw
+            pass
+        return "Uncategorized:Debit", "Uncategorized:Credit", ver
     return str(row.get("debit_account")), str(row.get("credit_account")), ver
+
+
+def map_or_flag_entry(
+    entry: Dict[str, Any],
+    *,
+    entity_code: Optional[str] = None,
+    jurisdiction_code: Optional[str] = None,
+    broker_code: Optional[str] = None,
+    bot_id: Optional[str] = None,
+    version_id: Optional[int] = None,
+):
+    """
+    High-level helper:
+    - If mapped: returns (debit_entry, credit_entry, mapping_version_id)
+    - If unmapped: returns (entry_with_skip_insert=True, None, mapping_version_id)
+    """
+    ec, jc, bc, bid = _identity_tuple(entity_code, jurisdiction_code, broker_code, bot_id)
+    ver = _resolve_version(version_id, ec, jc, bc, bid)
+    row = _get_mapping_for_transaction(entry, ec, jc, bc, bid, ver)
+    if not row:
+        flagged = dict(entry)
+        flagged["skip_insert"] = True
+        meta = flagged.setdefault("json_metadata", {})
+        if isinstance(meta, dict):
+            meta.setdefault("mapping", {})
+            meta["mapping"].update({
+                "status": "unmapped",
+                "reason": "no_active_rule",
+                "entity_code": ec,
+                "jurisdiction_code": jc,
+                "broker_code": bc,
+                "version_id": ver,
+            })
+        return flagged, None, ver
+    debit_entry, credit_entry = _apply_mapping_rule(entry, ec, jc, bc, bid, ver)
+    return debit_entry, credit_entry, ver
 
 
 def load_broker_code() -> str:

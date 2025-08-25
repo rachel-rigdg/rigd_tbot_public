@@ -5,6 +5,7 @@ Ledger DB helpers (v048)
 - Resolve DB path via path_resolver + utils_identity (no inline decrypts).
 - Provide migrations runner.
 - Use pragma-configured connections via ledger_core (busy_timeout, WAL, foreign_keys=ON).
+- Ensure indices/UNIQUE guards exist; sqlite3.Row row_factory; thread-safe contexts.
 """
 
 from __future__ import annotations
@@ -19,18 +20,28 @@ from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 from tbot_bot.accounting.ledger_modules.ledger_core import get_conn, tx_context
 
+
 # ---- Compliance (v048 preferred) ----
 try:
-    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import validate_entries as _validate_entries  # type: ignore
+    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (
+        validate_entries as _validate_entries,  # type: ignore
+    )
+
     def _is_compliant(entry: dict) -> bool:
         ok, _ = _validate_entries([entry])
         return bool(ok)
+
 except Exception:
     try:
-        from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import is_compliant_ledger_entry as _legacy_is_compliant  # type: ignore
+        from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (  # type: ignore
+            is_compliant_ledger_entry as _legacy_is_compliant,
+        )
+
         def _is_compliant(entry: dict) -> bool:
             return bool(_legacy_is_compliant(entry))
+
     except Exception:
+
         def _is_compliant(entry: dict) -> bool:  # type: ignore
             return True  # last-resort permissive (should not happen in prod)
 
@@ -57,6 +68,42 @@ def get_db_path() -> str:
     return str(resolve_ledger_db_path(ec, jc, bc, bid))
 
 
+# ---------------------------
+# Connection helpers (read-only convenience)
+# ---------------------------
+
+def get_readonly_conn() -> sqlite3.Connection:
+    """
+    Open a fresh, thread-safe (per-call) readonly connection with PRAGMAs and Row row_factory.
+    Use tx_context()/get_conn() for writes/transactions.
+    """
+    dsn = get_db_path()
+    uri = f"file:{dsn}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, check_same_thread=False, isolation_level=None)
+    _apply_pragmas(conn)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _apply_pragmas(conn: sqlite3.Connection) -> None:
+    """
+    Best-effort PRAGMA application (idempotent).
+    get_conn()/tx_context() should already configure these; we enforce again locally when needed.
+    """
+    try:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except Exception:
+        # ignore pragma errors; do not raise during checks
+        pass
+
+
+# ---------------------------
+# Schema validators / guards
+# ---------------------------
+
 def _get_table_columns(conn: sqlite3.Connection, table: str) -> Set[str]:
     """
     Return set of column names for a given table using PRAGMA table_info.
@@ -70,7 +117,7 @@ def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[
     Validates the ledger DB with three gates (in order):
       1) PRAGMA integrity_check → must return only 'ok'
       2) Required columns exist in trades:
-         {'datetime_utc','timestamp_utc','trade_id','group_id','side','amount','total_value','fitid','created_at_utc'}
+         {'TRNTYPE','DTPOSTED','FITID','group_id','entity_code','jurisdiction_code','broker_code','bot_id','total_value','account','created_at_utc'}
       3) EXPLAIN pass across reference schema statements (syntax for explainable statements only)
     Returns True if all checks pass, else False.
     """
@@ -81,6 +128,9 @@ def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[
             schema = f.read()
 
         with get_conn() as conn:
+            _apply_pragmas(conn)
+            conn.row_factory = sqlite3.Row
+
             # 1) Corruption/integrity check
             ic_rows = conn.execute("PRAGMA integrity_check").fetchall()
             if not ic_rows or any(str(row[0]).lower() != "ok" for row in ic_rows):
@@ -88,14 +138,16 @@ def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[
 
             # 2) Required columns in trades
             required = {
-                "datetime_utc",
-                "timestamp_utc",
-                "trade_id",
+                "TRNTYPE",
+                "DTPOSTED",
+                "FITID",
                 "group_id",
-                "side",
-                "amount",
+                "entity_code",
+                "jurisdiction_code",
+                "broker_code",
+                "bot_id",
                 "total_value",
-                "fitid",
+                "account",
                 "created_at_utc",
             }
             cols = _get_table_columns(conn, "trades")
@@ -108,14 +160,12 @@ def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[
                 stmt = raw.strip()
                 if not stmt:
                     continue
-                # Skip comments/PRAGMAs/DDL and other non-explainable statements
                 leading = stmt.split(None, 1)[0].upper() if stmt.split() else ""
                 if not leading or leading.startswith("--") or leading in {
                     "PRAGMA", "CREATE", "ALTER", "DROP", "VACUUM",
                     "BEGIN", "COMMIT", "END",
                 }:
                     continue
-                # Attempt EXPLAIN for DML-like statements only
                 try:
                     cursor.execute(f"EXPLAIN {stmt}")
                 except sqlite3.DatabaseError:
@@ -125,6 +175,38 @@ def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[
     except Exception:
         return False
 
+
+def ensure_schema_guards() -> None:
+    """
+    Ensure UNIQUE(FITID) and performance indices exist.
+    Runs inside a single transactional context for thread-safety.
+    """
+    with tx_context() as conn:
+        _apply_pragmas(conn)
+        conn.row_factory = sqlite3.Row
+
+        # Unique guard on FITID
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_trades_fitid ON trades(FITID)"
+        )
+        # Common query accelerators
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_trades_dtposted ON trades(DTPOSTED)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_trades_group_id ON trades(group_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_trades_account ON trades(account)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_trades_entity_scope ON trades(entity_code, jurisdiction_code, broker_code, bot_id)"
+        )
+
+
+# ---------------------------
+# Insert / posting helpers
+# ---------------------------
 
 def _map_action(action: str | None) -> str:
     if not action or not isinstance(action, str):
@@ -221,6 +303,8 @@ def add_entry(entry: dict) -> None:
     values = tuple(e.get(k) for k in TRADES_FIELDS)
 
     with tx_context() as conn:
+        _apply_pragmas(conn)
+        conn.row_factory = sqlite3.Row
         conn.execute(f"INSERT INTO trades ({keys}) VALUES ({placeholders})", values)
 
 
@@ -230,6 +314,7 @@ def _schema_has_amount_side() -> bool:
     """
     try:
         with get_conn() as conn:
+            conn.row_factory = sqlite3.Row
             cols = [row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()]
             return ("amount" in cols) and ("side" in cols)
     except Exception:
@@ -250,8 +335,13 @@ def post_double_entry(entries: Iterable[dict], mapping_table: Optional[dict] = N
     if not filtered:
         return []
 
+    ensure_schema_guards()
     return _post_double_entry_helper(filtered, mapping_table)
 
+
+# ---------------------------
+# Migrations / reconcile
+# ---------------------------
 
 def run_schema_migration(migration_sql_path: str) -> None:
     """
@@ -260,6 +350,7 @@ def run_schema_migration(migration_sql_path: str) -> None:
     with open(migration_sql_path, "r", encoding="utf-8") as f:
         migration_sql = f.read()
     with tx_context() as conn:
+        _apply_pragmas(conn)
         conn.executescript(migration_sql)
 
 
@@ -278,7 +369,9 @@ def reconcile_ledger_with_coa() -> bool:
     Placeholder for reconciliation logic between ledger entries and COA accounts.
     """
     try:
-        with get_conn():
+        with get_conn() as conn:
+            _apply_pragmas(conn)
+            conn.row_factory = sqlite3.Row
             pass
         return True
     except Exception as e:

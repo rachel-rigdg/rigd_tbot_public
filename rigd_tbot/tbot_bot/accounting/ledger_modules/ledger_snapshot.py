@@ -7,14 +7,14 @@ Daily/period ledger snapshots (v048)
 - Idempotent per (snapshot_date_utc, entity, jurisdiction, broker, bot_id).
 - Writes into snapshot tables within the primary ledger DB.
 - Provides enqueue_snapshot(as_of_utc) and snapshot_day(date_utc) helpers.
-- Retains legacy pre-sync file snapshot (updated to use utils_identity).
+- Retains pre-sync file snapshot (UTC + sync_run_id) with retention hooks.
 """
 
 from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from tbot_bot.accounting.ledger_modules.ledger_core import get_conn
 from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_account_balances
@@ -237,20 +237,64 @@ def enqueue_snapshot(as_of_utc: str | None = None) -> Tuple[int, int]:
 
 
 # -----------------
-# Legacy: file copy before critical ops
+# Pre-sync DB file snapshot (immutable, UTC + sync_run_id) with retention
 # -----------------
 
-def snapshot_ledger_before_sync():
+def _list_snapshots(snapshot_dir: str) -> List[str]:
+    return sorted(
+        [f for f in os.listdir(snapshot_dir) if f.startswith("ledger_snapshot_") and f.endswith(".db")]
+    )
+
+
+def _enforce_snapshot_retention(snapshot_dir: str, keep: int) -> int:
     """
-    Atomically snapshot the current ledger DB file before sync/critical operation (legacy).
+    Keep latest 'keep' snapshots by lexicographic order (UTC timestamp prefix ensures order).
+    Returns number of files deleted.
+    """
+    try:
+        files = _list_snapshots(snapshot_dir)
+    except FileNotFoundError:
+        return 0
+    if keep <= 0 or len(files) <= keep:
+        return 0
+    to_delete = files[:-keep]
+    deleted = 0
+    for name in to_delete:
+        try:
+            os.remove(os.path.join(snapshot_dir, name))
+            deleted += 1
+        except Exception:
+            # best-effort; continue
+            pass
+    return deleted
+
+
+def snapshot_ledger_before_sync(sync_run_id: Optional[str] = None, keep_last: Optional[int] = None) -> str:
+    """
+    Atomically snapshot the current ledger DB file before sync/critical operation.
+    Filename: ledger_snapshot_{UTC-TS}_{sync_run_id or 'nosync'}.db
+    Retention: keep_last (defaults from env LEDGER_SNAPSHOT_KEEP or 20).
     """
     entity_code, jurisdiction_code, broker_code, bot_id = str(get_bot_identity()).split("_")
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     snapshot_dir = resolve_ledger_snapshot_dir(entity_code, jurisdiction_code, broker_code, bot_id)
     os.makedirs(snapshot_dir, exist_ok=True)
-    timestamp = datetime.utcnow().replace(tzinfo=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    snapshot_name = f"ledger_snapshot_{timestamp}.db"
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    sync_tag = (sync_run_id or "nosync").strip().replace(" ", "_")
+    snapshot_name = f"ledger_snapshot_{ts}_{sync_tag}.db"
     snapshot_path = os.path.join(snapshot_dir, snapshot_name)
+
+    # Atomic-ish copy (single write)
     with open(db_path, "rb") as src, open(snapshot_path, "wb") as dst:
         dst.write(src.read())
+
+    # Retention
+    if keep_last is None:
+        try:
+            keep_last = int(os.getenv("LEDGER_SNAPSHOT_KEEP", "20"))
+        except Exception:
+            keep_last = 20
+    _enforce_snapshot_retention(snapshot_dir, max(0, int(keep_last)))
+
     return snapshot_path

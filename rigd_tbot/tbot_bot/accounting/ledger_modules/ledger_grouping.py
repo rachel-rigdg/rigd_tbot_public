@@ -26,8 +26,9 @@ def generate_group_id(entries: Iterable[Dict]) -> str:
     If all entries have a FITID, generate deterministic UUIDv5 from sorted FITIDs.
     Otherwise return a random UUIDv4.
     """
-    fitids = sorted([str(e.get("fitid")).strip() for e in entries if e and e.get("fitid")])
-    if entries and len(fitids) == len(list(entries)):
+    items = list(entries)
+    fitids = sorted([str(e.get("fitid")).strip() for e in items if e and e.get("fitid")])
+    if items and len(fitids) == len(items):
         seed = "|".join(fitids)
         return str(uuid.uuid5(uuid.NAMESPACE_URL, f"rigd-tbot-group:{seed}"))
     return str(uuid.uuid4())

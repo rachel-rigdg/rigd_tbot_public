@@ -152,49 +152,49 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     bot_id TEXT DEFAULT NULL
 );
 
--- Table: Trades (normalized view, legacy, for bot-internal trade logic)
+-- Table: Trades (normalized view, legacy, for bot-internal trade logic) — unified v048 (OFX-aligned, no duplicates)
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ledger_entry_id INTEGER REFERENCES ledger_entries(id) ON DELETE CASCADE,
-    datetime_utc TEXT NOT NULL,
-    timestamp_utc TEXT,              -- NEW: UTC ISO-8601, used for stable ordering when present
+
+    -- OFX-aligned core
+    TRNTYPE TEXT,                          -- BUY/SELL/DIV/INT/FEE/XFER/WITHDRAWAL/DEPOSIT/OTHER/POS
+    DTPOSTED TEXT,                         -- ISO-8601 UTC '...Z'
+    FITID TEXT,                            -- OFX idempotency key (nullable, unique when present)
+    group_id TEXT,                         -- grouping identifier (UUIDv5 or similar)
+
+    -- identity tags
+    entity_code TEXT NOT NULL,
+    jurisdiction_code TEXT NOT NULL REFERENCES jurisdictions(code),
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
+    bot_id TEXT DEFAULT NULL,
+
+    -- business semantics
+    action TEXT CHECK(action IN ('long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg')) NOT NULL,
+    side TEXT CHECK(side IN ('debit','credit')) NOT NULL,
     symbol TEXT NOT NULL,
     symbol_full TEXT,
-    action TEXT CHECK(action IN ('long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg')) NOT NULL,
     quantity REAL CHECK(quantity >= 0.0) NOT NULL,
     quantity_type TEXT,
     price REAL CHECK(price >= 0.0) NOT NULL,
     total_value REAL NOT NULL,
     amount REAL NOT NULL,
-    side TEXT CHECK(side IN ('debit','credit')) NOT NULL,
+
     commission REAL DEFAULT 0.0 CHECK(commission >= 0.0),
     fee REAL DEFAULT 0.0 CHECK(fee >= 0.0),
-    broker_code TEXT NOT NULL REFERENCES brokers(code),
+    currency TEXT,                         -- unified (replaces legacy currency_code)
+
     account TEXT NOT NULL,
     trade_id TEXT NOT NULL,
-    fitid TEXT,                       -- NEW: OFX/unique idempotency key (nullable, unique when present)
-    group_id TEXT, -- Optionally used for grouping double-entry pairs
+
+    -- optional metadata
     strategy TEXT,
     tags TEXT DEFAULT '',
     notes TEXT DEFAULT '',
-    jurisdiction_code TEXT NOT NULL REFERENCES jurisdictions(code),
-    entity_code TEXT NOT NULL,
-    language TEXT DEFAULT 'en',
-    created_by TEXT DEFAULT 'system',
-    updated_by TEXT DEFAULT NULL,
-    approved_by TEXT DEFAULT NULL,
-    approval_status TEXT CHECK(approval_status IN ('pending', 'approved', 'rejected')) DEFAULT 'approved',
     status TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT NULL,
-    gdpr_compliant BOOLEAN DEFAULT 1,
-    ccpa_compliant BOOLEAN DEFAULT 1,
-    pipeda_compliant BOOLEAN DEFAULT 1,
-    hipaa_sensitive BOOLEAN DEFAULT 0,
-    iso27001_tag TEXT DEFAULT '',
-    soc2_type TEXT DEFAULT '',
-    currency_code TEXT,
-    language_code TEXT DEFAULT 'en',
+    approval_status TEXT CHECK(approval_status IN ('pending', 'approved', 'rejected')) DEFAULT 'approved',
+
+    -- instrument/FX metadata
     price_currency TEXT,
     fx_rate REAL,
     commission_currency TEXT,
@@ -209,17 +209,30 @@ CREATE TABLE IF NOT EXISTS trades (
     description TEXT,
     counterparty TEXT,
     sub_account TEXT,
+
+    -- hashes / runtime
+    response_hash TEXT,
+    sync_run_id TEXT,
+
+    -- JSON/meta
     extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
     raw_broker_json TEXT DEFAULT '{}',
-    bot_id TEXT DEFAULT NULL,
+
+    -- UTC timestamps (unified; replaces legacy created_at/updated_at)
+    created_at_utc TEXT DEFAULT (datetime('now')),
+    updated_at_utc TEXT,
+
     FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
 );
 
--- Index for (trade_id, side) to support deduplication and quick double-entry lookup
+-- Indices (unified)
 CREATE INDEX IF NOT EXISTS idx_trades_tradeid_side ON trades (trade_id, side);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_fitid ON trades (fitid) WHERE fitid IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_trades_group_id ON trades (group_id);  -- added for group queries
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_fitid ON trades (FITID) WHERE FITID IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_trades_group_id ON trades (group_id);
+CREATE INDEX IF NOT EXISTS idx_trades_symbol_time ON trades (symbol, DTPOSTED);
+CREATE INDEX IF NOT EXISTS idx_trades_entity ON trades (entity_code);
+CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades (strategy);
 
 -- Table: Events (compliance, audit, info/warning/error)
 CREATE TABLE IF NOT EXISTS events (
@@ -404,14 +417,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_log (
     diff_json TEXT DEFAULT '{}'
 );
 
-
-
-
--- Compound Indexes & Foreign Key Indexes
-
-CREATE INDEX IF NOT EXISTS idx_trades_symbol_time ON trades (symbol, datetime_utc);
-CREATE INDEX IF NOT EXISTS idx_trades_entity ON trades (entity_code);
-CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades (strategy);
+-- Indices for other tables
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_datetime ON ledger_entries (datetime_utc, entry_type);
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_entity ON ledger_entries (entity_code);
 CREATE INDEX IF NOT EXISTS idx_events_type_time ON events (type, event_time_utc);
@@ -425,7 +431,7 @@ CREATE INDEX IF NOT EXISTS idx_acct_balances_broker_entity ON account_balances (
 CREATE INDEX IF NOT EXISTS idx_option_contracts_symbol ON option_contracts (symbol, expiration, strike, option_type);
 
 -- ====================================================================
--- ADDITIVE v048 MODULES (no deletions of legacy objects; all new below)
+-- ADDITIVE v048 MODULES (no deletions of legacy objects; unified schema)
 -- ====================================================================
 
 -- Chart of Accounts (normalized; additive to coa_accounts JSON form)

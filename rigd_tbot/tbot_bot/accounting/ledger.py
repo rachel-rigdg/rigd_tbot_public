@@ -151,15 +151,22 @@ def post_entries(group: Iterable[Dict]) -> Tuple[str, List[int]]:
 
     # Atomic posting
     with _tx_context():
-        # Prefer API that accepts (splits, group_id=...) but fallback to simple arg
+        result = None
         try:
-            inserted_ids = post_ledger_entries_double_entry(splits, group_id=group_id)  # type: ignore[arg-type]
+            # New API shape typically returns a dict with inserted_ids
+            result = post_ledger_entries_double_entry(splits, group_id=group_id)  # type: ignore[arg-type]
         except TypeError:
-            inserted_ids = post_ledger_entries_double_entry(splits)  # type: ignore[call-arg]
-        if not isinstance(inserted_ids, (list, tuple)):
-            inserted_ids = [inserted_ids]  # type: ignore[assignment]
+            result = post_ledger_entries_double_entry(splits)  # type: ignore[call-arg]
 
-    return group_id, list(map(int, inserted_ids))
+        # Normalize result to a list of ints
+        if isinstance(result, dict) and "inserted_ids" in result:
+            inserted_ids = list(map(int, result.get("inserted_ids") or []))
+        elif isinstance(result, (list, tuple)):
+            inserted_ids = list(map(int, result))
+        else:
+            inserted_ids = [int(result)] if result is not None else []
+
+    return group_id, inserted_ids
 
 
 def post_trade(fill: Dict) -> Tuple[str, List[int]]:

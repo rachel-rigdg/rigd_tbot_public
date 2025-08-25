@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,7 +30,6 @@ def _identity_tuple(
 ) -> Tuple[str, str, str, str]:
     if entity_code and jurisdiction_code and broker_code and bot_id:
         return entity_code, jurisdiction_code, broker_code, bot_id
-    # Fallback to bot identity; expected "ENTITY_JURISDICTION_BROKER_BOTID"
     parts = str(get_bot_identity()).split("_")
     if len(parts) >= 4:
         return parts[0], parts[1], parts[2], parts[3]
@@ -50,10 +50,20 @@ def _versions_dir(mapping_path: Path) -> Path:
 def _audit_path(mapping_path: Path) -> Path:
     return mapping_path.parent / "audit" / "coa_mapping_audit.jsonl"
 
-def _write_json(path: Path, payload: dict) -> None:
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    """
+    Atomic JSON write: write to temp file in same dir, fsync, then replace.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+def _write_json(path: Path, payload: dict) -> None:
+    _atomic_write_json(path, payload)
 
 def _read_json(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
@@ -114,11 +124,10 @@ def _bootstrap_table(
             "coa_version": "v1.0.0",
             "version_id": 1,
         },
-        # Back-compat: mirror meta.version_id at top level
-        "version": 1,
-        "rows": [],        # list[MappingRow as dict]
-        "history": [],     # snapshot metadata per save
-        "unmapped": [],    # optional queue for review
+        "version": 1,     # back-compat mirror
+        "rows": [],
+        "history": [],
+        "unmapped": [],
     }
     _write_json(mapping_path, table)
     versions = _versions_dir(mapping_path)
@@ -131,13 +140,11 @@ def _bootstrap_table(
 def _normalize_legacy_table(table: dict, mapping_path: Path) -> dict:
     """Migrate legacy shape with 'mappings'/'version' to new meta/rows/version_id."""
     if "meta" in table and "rows" in table:
-        # Already new format; ensure required keys and back-compat mirror.
         table["meta"].setdefault("updated_at_utc", _utc_now_iso())
         table["meta"].setdefault("coa_version", "v1.0.0")
         table["meta"].setdefault("version_id", int(table.get("version", 1)))
         table.setdefault("history", [])
         table.setdefault("unmapped", [])
-        # Back-compat: keep top-level "version" always in sync
         table["version"] = int(table["meta"]["version_id"])
         return table
 
@@ -176,7 +183,7 @@ def _normalize_legacy_table(table: dict, mapping_path: Path) -> dict:
             "coa_version": table.get("coa_version", "v1.0.0"),
             "version_id": table.get("version", 1),
         },
-        "version": int(table.get("version", 1)),  # back-compat mirror
+        "version": int(table.get("version", 1)),
         "rows": rows,
         "history": table.get("history", []),
         "unmapped": table.get("unmapped", []),
@@ -193,8 +200,7 @@ def load_mapping_table(
 ) -> dict:
     """
     Load the current (or a specific version) mapping table.
-    - Selection key: (entity_code, jurisdiction_code, broker_code, bot_id, version_id)
-    - If version_id is provided, load snapshot from versions dir; else load live file.
+    Lazy-creates the live file if missing (bootstrap).
     """
     mapping_path = _mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     if not mapping_path.exists():
@@ -204,7 +210,6 @@ def load_mapping_table(
     if version_id is None:
         table = _read_json(mapping_path)
         table = _normalize_legacy_table(table, mapping_path)
-        # Ensure back-compat mirror on read
         table["version"] = int(table["meta"].get("version_id", 1))
         return table
 
@@ -212,15 +217,12 @@ def load_mapping_table(
     versions = _versions_dir(mapping_path)
     if not versions.exists():
         raise FileNotFoundError("No versions directory found for COA mapping.")
-    # prefer new naming scheme
     candidates = sorted([p for p in versions.glob(f"coa_mapping_v{version_id}_*.json")])
     if not candidates:
-        # fallback to legacy "coa_mapping_table_v{version}_*.json"
         candidates = sorted([p for p in versions.glob(f"coa_mapping_table_v{version_id}_*.json")])
     if not candidates:
         raise FileNotFoundError(f"COA mapping snapshot v{version_id} not found.")
     snap = _read_json(candidates[-1])
-    # Normalize & back-compat mirror for snapshots too
     snap = _normalize_legacy_table(snap, mapping_path)
     snap["version"] = int(snap["meta"].get("version_id", version_id))
     return snap
@@ -229,7 +231,6 @@ def _save_mapping_table(table: dict, mapping_path: Path, user: str, reason: str)
     # bump version and snapshot
     table["meta"]["version_id"] = int(table["meta"].get("version_id", 0)) + 1
     table["meta"]["updated_at_utc"] = _utc_now_iso()
-    # keep legacy mirror in sync
     table["version"] = int(table["meta"]["version_id"])
     snap_meta = {
         "version_id": table["meta"]["version_id"],
@@ -247,6 +248,11 @@ def _save_mapping_table(table: dict, mapping_path: Path, user: str, reason: str)
     _audit(mapping_path, {"event": "save", **snap_meta})
     return table
 
+# Public save wrapper (manual save of an in-memory table)
+def save_mapping_table(table: dict, user: str = "system", reason: str = "manual-save") -> dict:
+    mp = _mapping_path(None, None, None, None)
+    return _save_mapping_table(table, mp, user=user, reason=reason)
+
 # -----------------------------------
 # Public mutation / assignment APIs
 # -----------------------------------
@@ -254,19 +260,17 @@ def _save_mapping_table(table: dict, mapping_path: Path, user: str, reason: str)
 def assign_mapping(mapping_rule: Dict[str, str], user: str, reason: Optional[str] = None) -> dict:
     """
     Create/replace a mapping rule (append-only):
-    mapping_rule keys:
-      broker, type, subtype, description (match fields; optional)
-      debit_account, credit_account (required)
-      code (optional; derived from match if absent)
+      mapping_rule: {broker?, type?, subtype?, description?, debit_account, credit_account, code?}
     """
     mapping_path = _mapping_path(None, None, None, None)
     table = load_mapping_table()
     match = {k: mapping_rule.get(k) for k in ("broker", "type", "subtype", "description") if mapping_rule.get(k)}
     code = mapping_rule.get("code") or _rule_code(match)
-    # Deactivate any prior active rows for this code
+
+    # Deactivate prior active rows for this code
     for r in table.get("rows", []):
         if r.get("code") == code and r.get("active", False):
-            r["active"] = False  # allowed in live table; immutable history preserved in snapshots
+            r["active"] = False
 
     # Append new immutable row with the *next* version_id as preview
     next_version = int(table["meta"].get("version_id", 0)) + 1
@@ -327,7 +331,6 @@ def get_version(
     bot_id: Optional[str] = None,
 ) -> int:
     table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
-    # Prefer meta.version_id; keep top-level mirror in sync
     return int(table["meta"]["version_id"])
 
 def get_accounts_for(
@@ -339,7 +342,6 @@ def get_accounts_for(
     version_id: Optional[int] = None,
 ) -> Optional[Tuple[str, str]]:
     table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id, version_id)
-    # Choose latest active row for code
     rows = [r for r in table.get("rows", []) if r.get("code") == code and r.get("active", False)]
     if not rows:
         return None
@@ -404,6 +406,20 @@ def apply_mapping_rule(
     debit_entry["side"] = "debit"
     credit_entry["side"] = "credit"
     return debit_entry, credit_entry
+
+# Per spec naming
+def debit_credit_for_entry(
+    entry: Dict[str, str],
+    entity_code: Optional[str] = None,
+    jurisdiction_code: Optional[str] = None,
+    broker_code: Optional[str] = None,
+    bot_id: Optional[str] = None,
+    version_id: Optional[int] = None,
+) -> Tuple[dict, dict]:
+    """
+    Alias to apply_mapping_rule(); required by posting pipeline contract.
+    """
+    return apply_mapping_rule(entry, entity_code, jurisdiction_code, broker_code, bot_id, version_id)
 
 def flag_unmapped_transaction(txn: Dict[str, str], user: str = "system") -> dict:
     """
@@ -483,9 +499,7 @@ def rollback_mapping_version(
     """
     mapping_path = _mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     snap = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id, version_id=version_id)
-    # Write snapshot over live (this creates a NEW version upon save)
-    _write_json(mapping_path, snap)
-    # Ensure legacy mirror stays correct before saving new version
+    _write_json(mapping_path, snap)  # overwrite live with snapshot
     snap["version"] = int(snap["meta"].get("version_id", version_id))
     _audit(mapping_path, {"event": "rollback_requested", "to_version": version_id})
     _save_mapping_table(snap, mapping_path, user="system", reason=f"rollback to v{version_id}")
