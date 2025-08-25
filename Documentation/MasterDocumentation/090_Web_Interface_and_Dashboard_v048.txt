@@ -4,7 +4,6 @@ Web_Interface_and_Dashboard
 Version: v048
 Date: UTC:2025-08-23 00:00:00
 ================================================================================
-
 ================================================================================
 Web_Interface_and_Dashboard
 ================================================================================
@@ -19,7 +18,8 @@ Contents:
 - Screener Credential Management UI and Integration (Generic Indexed Format, 2025-07)
 - Per-Page Modular CSS Loading (2025-07)
 - **Ledger UI & API (Grouped Rows, Collapse/Expand, Balances Panel, Sync) — NEW**
-- **COA Mapping UI (CRUD, Version History, Import/Export; RBAC) — NEW**
+- **COA Structure UI (Accounts Tree CRUD; RBAC) — NEW**
+- **COA→Ledger Mapping UI (CRUD, Version History, Import/Export; RBAC) — NEW**
 
 **Policy Enforcement:**  
 - All provisioning, credential creation, Fernet key generation (including all *.key files), configuration management, COA operations, holdings management, and screener credential management are *triggered exclusively* via the tbot_web Web UI.  
@@ -31,11 +31,13 @@ Contents:
 **UI Implementation Requirements:**
 - Every user-facing page/template listed below must load its own dedicated CSS file from `/static/css/pages/`, ensuring precise, isolated styling.
 - No changes to the iframe structure or Jinja2 rendering are permitted.
-- **All ledger, COA, and holdings UI pages (ledger.html, coa.html, holdings.html) must source, reconcile, and display all data exclusively from the modular ledger implementation in `tbot_bot/accounting/ledger_modules/`. Legacy `ledger.py` and `ledger_utils.py` are fully deprecated and forbidden for UI or API use.**
+- **Ledger & Holdings UIs** (`ledger.html`, `holdings.html`) must source, reconcile, and display all data exclusively from the modular ledger implementation in `tbot_bot/accounting/ledger_modules/`. Legacy `ledger.py` and `ledger_utils.py` are fully deprecated and forbidden for UI or API use.
+- **COA Structure UI** (`coa.html`) must use the COA APIs provided via `tbot_bot/accounting/ledger_modules/` (no direct file writes).
+- **COA→Ledger Mapping UI** (`coa_mapping.html`) must use `tbot_bot/accounting/coa_mapping_table.py` for load/save/versioning; mapping changes never touch the DB directly and are always versioned.
 - **Ledger group rows support a persisted collapse/expand state per group**. The UI provides a per-group toggle and a global “Collapse all” control. State is stored server-side (`trade_group_collapsed`) and survives reloads and sessions.
 - **Ledger balances panel** (right drawer) displays account/category balances and totals for the current filter/range. Data is fetched from `/ledger/balances` and computed by `tbot_bot/accounting/ledger_modules/ledger_balance.py`.
 - Ledger sub-entries expose an inline **COA Account** selector (RBAC-guarded) for per-leg allocation updates. Changes are written via modular ledger APIs, are audit-logged, and reflected immediately in balances/reconciliation.
-- **RBAC enforcement** is mandatory on all ledger endpoints. Read-only views may be granted to `viewer`; **mutations (sync, edits, mapping changes) require `admin`.**
+- **RBAC enforcement** is mandatory on all endpoints. Read-only views may be granted to `viewer`; **mutations (sync, edits, COA or mapping changes) require `admin`.**
 
 **User-Facing Pages, Templates, and Endpoints (REQUIRED):**
 
@@ -43,7 +45,8 @@ Contents:
 - `register.html`                 # Admin/user registration form
 - `main.html`                     # Dashboard container shell
 - `configuration.html`            # Bot/broker/API config form
-- `coa.html`                      # Chart of Accounts mapping UI (CRUD, versions, import/export; RBAC)
+- `coa.html`                      # **COA Structure editor:** accounts tree CRUD (RBAC)
+- `coa_mapping.html`              # **COA→Ledger Mapping editor:** rules CRUD, versions, import/export (RBAC)
 - `ledger.html`                   # Ledger entries, grouped rows, collapse/expand, balances panel, sync controls
 - `holdings.html`                 # **Holdings management UI:** allocations, float/reserve splits, rebalancing (modular ledger only)
 - `logs.html`                     # Logs panel (read-only)
@@ -81,27 +84,27 @@ Contents:
 - Modular per-page CSS (`/static/css/pages/`) is required; cross-page bleed is forbidden.
 - All screener credential logic/UI must use generic indexed format.
 - Holdings/float/reserve management is required and surfaced in both holdings.html and ledger/COA views via the modular ledger system.
-- All config/credential/holdings changes trigger **full-system atomic key/secret rotation** with versioned backup (to `tbot_bot/storage/backups/`), enforced via backend.
+- All config/credential/holdings **and COA or mapping** changes trigger **full-system atomic key/secret rotation** with versioned backup (to `tbot_bot/storage/backups/`), enforced via backend.
 - Audit, RBAC, and security policies are unchanged and strictly enforced.
-- **All ledger, reconciliation, holdings, and COA operations surfaced in the UI are powered only by `ledger_modules/`; legacy helpers and `ledger.py` are no longer permitted.**
+- **All ledger, reconciliation, holdings, and COA operations surfaced in the UI are powered only by the approved accounting modules** (ledger operations via `ledger_modules/`; COA mapping via `coa_mapping_table.py`); legacy helpers and `ledger.py` are no longer permitted.
 - **Ledger UI adds grouped rows with collapse/expand and a balances panel; new endpoints `/ledger/sync`, `/ledger/groups`, `/ledger/balances` are specified in this document.**
 
 =============================================================================================================================================
 Real-Time Monitoring Dashboard 
 =============================================================================================================================================
 
-`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, user/account management, password reset, Chart of Accounts (COA) management, **Holdings Management**, and Screener Credential Management. UI and backend components strictly follow `020_Directory_Structure_{CURRENT_VERSION}.txt`.
+`tbot_web/` provides a secure, independent Flask-based web dashboard for real-time bot monitoring, audit, control, user/account management, password reset, Chart of Accounts (COA) **structure**, **COA→Ledger Mapping**, **Holdings Management**, and Screener Credential Management. UI and backend components strictly follow `020_Directory_Structure_{CURRENT_VERSION}.txt`.
 
 **Frontend UI Components:**
 - `templates/index.html`: Login portal; RBAC, rate-limited authentication, audit-logged.
-- `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA, test, users, settings, screener credentials, **holdings**, etc.) using iframes.
+- `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA, COA mapping, test, users, settings, screener credentials, **holdings**, etc.) using iframes.
 - `templates/status.html`: Displays live bot health, session lifecycle, active strategy state, float metrics, win-rate, cumulative PnL, and risk/defense/kill switch state; data sourced from `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/status.json`.
 - `templates/ledger.html`: **Ledger interface** (grouped rows with expand/collapse & persisted state, balances panel, inline COA leg selector, sync controls); **MUST source data exclusively from `ledger_modules/`**.
 - `templates/holdings.html`: **Dedicated UI for holdings management:** view and edit float/top-up, reserve splits, allocations, symbol list, periodic/manual rebalancing, and full audit history of all holdings actions. **All holdings data, audit events, and compliance status must be sourced exclusively from the modular ledger (`ledger_modules/`).** All changes are versioned, RBAC-controlled, and cryptographically logged.
-- `templates/logs.html`: Streams all bot logs in real time (open.log, mid.log, close.log, unresolved_orders.log, error_tracebacks.log).
 - `templates/configuration.html`: Secure interface for credentials, email, API/broker config; encrypted at rest. Submits configuration and sets provisioning trigger/flag.
 - `templates/settings.html`: Edit and validate runtime trading parameters (timings, thresholds, risk controls); excludes credentials and COA. **Loads decrypted bot config from `tbot_bot/support/.env_bot.enc` via secure loader; no plaintext `.env_bot` in production.**
-- `templates/coa.html`: COA management and export UI; displays account hierarchy, metadata, version. Supports Markdown/CSV export, audit diffs, and admin-only edit workflow—all actions logged to `logs/web/coa_edit.log`. **All COA data and logic are powered exclusively by `ledger_modules/` and surfaced via `tbot_web/support/utils_coa_web.py`.**
+- `templates/coa.html`: **COA Structure editor** — accounts tree CRUD and export; displays account hierarchy, metadata, and version. Admin-only workflow with audit diffs. **Powered by accounting modules (`ledger_modules/`) and surfaced via `tbot_web/support/utils_coa_web.py`.**
+- `templates/coa_mapping.html`: **COA→Ledger Mapping editor** — mapping rules CRUD, version history, import/export bundle; admin-only with full audit/versioning. **Backed by `tbot_bot/accounting/coa_mapping_table.py` (no direct DB writes).**
 - `templates/screener_credentials.html`: Credential management UI for all screener/universe source credentials. Provides add, edit, rotate, and delete functionalities with field validation and audit logging.
 - `templates/wait.html`: Displayed after initial configuration/provisioning trigger; polls for provisioning/bot status and redirects to dashboard when bot is running.
 - `templates/test.html`: Dedicated UI page for TEST_MODE trigger and progress monitoring. Allows admin users to start the test sequence and view real-time logs and final test results.
@@ -115,7 +118,8 @@ Real-Time Monitoring Dashboard
 
 **Backend Flask Components (per directory spec):**
 - `py/__init__.py`: Registers Flask blueprints for all routes.
-- `py/coa_web.py`: **COA mapping UI & API (CRUD, versions, import/export)**. Uses modular ledger for COA operations; admin-only edits with version bumps and audit logs. COA management API. Uses `tbot_web/py/coa_web.py` for JSON/UI logic and `tbot_bot/accounting/ledger_modules/` for all COA/ledger operations. GET/POST endpoints for viewing, exporting (Markdown/CSV/table), and editing COA. Admin-only edits with version bumps and audit logs.
+- `py/coa_web.py`: **COA Structure UI & API (accounts tree CRUD, export).** Uses accounting modules for COA storage/access; admin-only edits with version bumps and audit logs.
+- `py/coa_mapping_web.py`: **COA→Ledger Mapping UI & API (CRUD, versions, import/export).** Uses `tbot_bot/accounting/coa_mapping_table.py` for load/save/versioning; mapping changes are validated and always versioned (never in-place overwrite); admin-only with audit logs.
 - `py/configuration_web.py`: Web UI route handling user, email, API, and broker credential configuration via encrypted multi-category config files. Only writes config and provisioning trigger; does *not* execute provisioning logic.
 - `py/settings_web.py`: Loads and validates **decrypted bot config** from `tbot_bot/support/.env_bot.enc` via system APIs; provides API for updates/errors; includes TEST_MODE flag toggle reflecting presence of `test_mode.flag`.
 - `py/status_web.py`: Serves live bot/session status with strategy metrics, system health, win-rate, PnL, float deviation, rebalance triggers, Defense/kill switch states, and alert counts as JSON.
@@ -152,7 +156,7 @@ Real-Time Monitoring Dashboard
 - `default_config_loader.py`: Loads config template/defaults for UI forms; never manages secrets or Fernet keys.
 - `security_users.py`: RBAC: role/permission enforcement, user CRUD, Fernet key helpers for user/auth.
 - `session_manager.py`: Handles web session lifecycle, token management, timeouts.
-- `utils_coa_web.py`: COA UI and logic helpers; all COA operations routed via `ledger_modules/`.
+- `utils_coa_web.py`: COA Structure UI helpers; all COA operations routed via approved accounting modules.
 - `utils_web.py`: Web-only helpers, UI utilities, non-secret logic.
 - **NEW:** `utils_holdings_web.py`: Holdings UI utilities (all reads/writes via `ledger_modules/`; no direct file access).
 - **NEW:** `screener_credentials_web.py` support files for credential management integration.
@@ -173,7 +177,7 @@ Real-Time Monitoring Dashboard
 **Other Expanded/Updated Requirements (summary only, no change):**
 - Screener credential management uses only the generic indexed format, with strict RBAC.
 - All endpoints enforce RBAC at both view and action level, with role-based UI controls and full audit logging.
-- All credential/config/holdings changes (including add/edit/delete/rotate for screener, holdings, or user) trigger **full-system atomic key/secret rotation** and backup; user is notified in the UI.
+- All credential/config/holdings **and COA or mapping** changes (including add/edit/delete/rotate) trigger **full-system atomic key/secret rotation** and backup; user is notified in the UI.
 - All templates, CSS, and route structures must remain compliant with `020_Directory_Structure_{CURRENT_VERSION}.txt`.
 - Ledger Schema Alignment Update:
   - `group_id` is a first-class field in the Trades schema and MUST be included anywhere `TRADES_FIELDS` is referenced or enforced. UI grouping and reconciliation rely on this field.
@@ -185,7 +189,7 @@ Flask Blueprint Overview
 
 - `main_web.py`
   - URL Prefix: `/`
-  - Role: Central router for main dashboard, status, logs, ledger, test UI, account, users, configuration/settings, screener credentials UI, and holdings management UI.
+  - Role: Central router for main dashboard, status, logs, ledger, **COA structure, COA→Ledger mapping**, test UI, account, users, configuration/settings, screener credentials UI, and holdings management UI.
   - Loads only when `bot_state` is in the **ACTIVE states defined in Document 070** (e.g., `idle`, `analyzing`, `trading`, `monitoring`, `updating`).
   - Renders `main.html`, `wait.html`, `test.html`, `holdings.html`, or error pages based on `bot_state`.
 
@@ -226,7 +230,6 @@ Flask Blueprint Overview
     - **POST `/ledger/edit/<entry_id>`** *(admin)* — Inline COA account change for a leg.
   - **RBAC:** `viewer`=read-only (`GET` endpoints), `admin`=all.
 
-
 - `holdings_web.py`
   - URL Prefix: `/holdings`
   - Role: Holdings management API and UI—viewing and editing of float/top-up, reserve splits, allocations, symbol list, rebalancing, and full audit history, all powered by modular ledger (`ledger_modules/`).
@@ -237,22 +240,38 @@ Flask Blueprint Overview
 
 - `coa_web.py`
   - URL Prefix: `/coa`
-  - Role: Chart of Accounts management API and UI; all operations routed via modular ledger.
-  - Admin-only access.
+  - Role: **Chart of Accounts (COA) structure UI & API** — accounts tree CRUD, metadata, versions, and export. All operations routed via approved accounting modules (`ledger_modules/`); **not** the mapping table.
+  - Admin-only access for mutations; viewer may read.
   - Accessible when bot is active (per Document 070).
-   - **Endpoints (Mapping UI):**
+  - **Endpoints (COA Structure UI):**
     - **GET `/coa`** — Render COA UI (tree, metadata).
-    - **GET `/coa/api`** — List COA accounts and active mapping rules.
-    - **POST `/coa/api`** *(admin)* — **Create** mapping rule.
-    - **PUT `/coa/api/<rule_id>`** *(admin)* — **Update** mapping rule.
-    - **DELETE `/coa/api/<rule_id>`** *(admin)* — **Delete** mapping rule.
-    - **GET `/coa/versions`** — List version history of `coa_mapping_table.json`.
+    - **GET `/coa/api`** — List COA accounts and metadata.
+    - **POST `/coa/api`** *(admin)* — **Create** account/node.
+    - **PUT `/coa/api/<account_code>`** *(admin)* — **Update** account/node.
+    - **DELETE `/coa/api/<account_code>`** *(admin)* — **Delete** account/node (subject to constraints).
+    - **GET `/coa/versions`** — List COA structure version history.
     - **GET `/coa/versions/<version_id>`** — Fetch a specific snapshot (read-only).
-    - **POST `/coa/rollback/<version_id>`** *(admin)* — Roll back to snapshot (creates a new version).
-    - **GET `/coa/export`** — Export COA + mapping (CSV/JSON/Markdown bundle).
-    - **POST `/coa/import`** *(admin)* — Import COA/mapping bundle (validates; creates new version; never overwrites in place).
+    - **POST `/coa/rollback/<version_id>`** *(admin)* — Roll back COA structure to snapshot (creates a new version).
+    - **GET `/coa/export`** — Export COA structure (CSV/JSON/Markdown).
   - **RBAC:** `viewer`=read-only endpoints; `admin`=mutations.
 
+- `coa_mapping_web.py`
+  - URL Prefix: `/coa_mapping`
+  - Role: **COA→Ledger Mapping UI & API** — mapping rules CRUD, version history, import/export bundle, and rollback; backed by `tbot_bot/accounting/coa_mapping_table.py`. Mapping changes are validated, always versioned, and never overwrite in place.
+  - Admin-only access for mutations; viewer may read.
+  - Accessible when bot is active (per Document 070).
+  - **Endpoints (Mapping UI):**
+    - **GET `/coa_mapping`** — Render mapping UI.
+    - **GET `/coa_mapping/api`** — List active mapping rules.
+    - **POST `/coa_mapping/api`** *(admin)* — **Create** mapping rule.
+    - **PUT `/coa_mapping/api/<rule_id>`** *(admin)* — **Update** mapping rule.
+    - **DELETE `/coa_mapping/api/<rule_id>`** *(admin)* — **Delete** mapping rule.
+    - **GET `/coa_mapping/versions`** — List version history of `coa_mapping_table.json`.
+    - **GET `/coa_mapping/versions/<version_id>`** — Fetch a specific snapshot (read-only).
+    - **POST `/coa_mapping/rollback/<version_id>`** *(admin)* — Roll back to snapshot (creates a new version).
+    - **GET `/coa_mapping/export`** — Export mapping bundle (CSV/JSON/Markdown).
+    - **POST `/coa_mapping/import`** *(admin)* — Import mapping bundle (validates; creates new version; never overwrites in place).
+  - **RBAC:** `viewer`=read-only endpoints; `admin`=mutations.
 
 - `settings_web.py`
   - URL Prefix: `/settings`
@@ -301,26 +320,29 @@ Flask Blueprint Overview
 UI Routing and Lifecycle Phase Enforcement
 --------------------------------------------------------------------------------
 
-| Bot Phase/State (per Document 070)            | Allowed Blueprints / Pages                                                                                                     | UI Behavior                              |
-|-----------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------|
-| `initialize`, `provisioning`, `bootstrapping` | `configuration_web`                                                                                                             | Show `configuration.html` UI              |
-| **No users exist** (DB check)                 | `register_web`, `password_reset_web`                                                                                            | Show `register.html` UI                   |
-| **ACTIVE states** (per Document 070)          | `main_web`, `status_web`, `logs_web`, `ledger_web`, `coa_web`, `settings_web`, `start_stop_web`, `test_web`, `account_web`, `users_web`, `password_reset_web`, `universe_web`, `screener_credentials_web`, **`holdings_web`** | Show `main.html` dashboard and all panels |
-| `graceful_closing_positions`, `emergency_closing_positions` | `main_web`, lifecycle blueprints                                                                                     | Show `main.html` with shutdown feedback   |
-| `shutdown`, `shutdown_triggered`, `error`     | Error pages only                                                                                                                | Show error or shutdown UI; block others   |
+| Bot Phase/State (per Document 070)            | Allowed Blueprints / Pages                                                                                                                     | UI Behavior                              |
+|-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------|
+| `initialize`, `provisioning`, `bootstrapping` | `configuration_web`                                                                                                                             | Show `configuration.html` UI              |
+| **No users exist** (DB check)                 | `register_web`, `password_reset_web`                                                                                                            | Show `register.html` UI                   |
+| **ACTIVE states** (per Document 070)          | `main_web`, `status_web`, `logs_web`, `ledger_web`, `coa_web`, `coa_mapping_web`, `settings_web`, `start_stop_web`, `test_web`, `account_web`, `users_web`, `password_reset_web`, `universe_web`, `screener_credentials_web`, **`holdings_web`** | Show `main.html` dashboard and all panels |
+| `graceful_closing_positions`, `emergency_closing_positions` | `main_web`, lifecycle blueprints                                                                                                   | Show `main.html` with shutdown feedback   |
+| `shutdown`, `shutdown_triggered`, `error`     | Error pages only                                                                                                                                | Show error or shutdown UI; block others   |
 
 --------------------------------------------------------------------------------
 Access Control and RBAC
 --------------------------------------------------------------------------------
 
 - RBAC is enforced via `security_users.py` with roles at minimum: `viewer`, `admin`.
-- **Ledger endpoints:**  
+- **Ledger endpoints (`/ledger`)**  
   - `viewer`: `GET /ledger`, `GET /ledger/groups`, `GET /ledger/balances`  
-  - `admin`: all of the above + `/ledger/sync`, `/ledger/edit/*`, collapse endpoints
-- **COA mapping endpoints:**  
+  - `admin`: all of the above + `/ledger/sync`, `/ledger/edit/*`, collapse-state endpoints
+- **COA structure endpoints (`/coa`)**  
   - `viewer`: `GET /coa`, `GET /coa/api`, `GET /coa/versions*`, `GET /coa/export`  
-  - `admin`: all of the above + `POST/PUT/DELETE /coa/api*`, `POST /coa/import`, `POST /coa/rollback/*`
-- **Holdings endpoints:** admin-only for any mutation; viewer may read summary where permitted.
+  - `admin`: all of the above + `POST/PUT/DELETE /coa/api*`, `POST /coa/rollback/*`
+- **COA→Ledger mapping endpoints (`/coa_mapping`)**  
+  - `viewer`: `GET /coa_mapping`, `GET /coa_mapping/api`, `GET /coa_mapping/versions*`, `GET /coa_mapping/export`  
+  - `admin`: all of the above + `POST/PUT/DELETE /coa_mapping/api*`, `POST /coa_mapping/import`, `POST /coa_mapping/rollback/*`
+- **Holdings endpoints (`/holdings`)**: admin-only for any mutation; viewer may read summary where permitted.
 - Login required for all routes except initial bootstrap configuration.
 - CSRF protection on all POST/PUT/DELETE endpoints.
 
@@ -344,6 +366,7 @@ Trigger and Action Flow
 - Start/stop/kill commands via `/control` blueprint update `bot_state` and coordinate strategy lifecycle.
 - UI polling endpoints (`status_web`) provide real-time `bot_state` for client-side UI updates.
 - User registration and password reset flows available after provisioning but before login if no users exist.
+- **COA structure and COA→Ledger mapping edits via `/coa` and `/coa_mapping` are validated, versioned, and audit-logged (no in-place overwrite; rollbacks create new versions). Active mapping version is updated atomically for subsequent postings.**
 - All role changes, credential updates, COA/ledger edits, screener credential changes, **holdings updates**, and test actions are logged with full audit trail.
 
 ================================================================================
@@ -359,7 +382,6 @@ Contents:
 - Severity and visual indicator logic
 - Dashboard shows Holdings Balance/Deviation/Compliance from holdings manager via modular ledger.
 - **COA metadata and holdings compliance loaded via `utils_coa_web.py` and `utils_holdings_web.py`; underlying data via `ledger_modules/`.**
-
 
 The design ensures real-time operational visibility and audit compliance.
 
@@ -404,7 +426,7 @@ RIGD GROUP LLC — Web Interface: Status Dashboard Design
 - Session tags: `DEFENSE_MODE_ACTIVE=true` triggers banner and log tag.
 - All UI-visible state changes logged for 7+ days (rotated JSON).
 - All fields fully compatible with bot runtime and accounting sync.
-- **COA metadata, holdings compliance, and session status data used by the dashboard must be loaded using `utils_coa_web.py` and `utils_holdings_web.py` for UI logic, and `coa_utils_ledger.py` for underlying ledger/schema integration.**
+- **COA structure metadata used by the dashboard is loaded via `utils_coa_web.py`; holdings compliance comes via `utils_holdings_web.py`. COA→Ledger mapping is managed separately by the `coa_mapping_web.py` blueprint and is not edited from the status panel. Underlying ledger/schema integration uses `coa_utils_ledger.py`.**
 - Universe cache, holdings status, and screener API health now surfaced directly in dashboard status table.
 - User session status column assists with support, troubleshooting, and RBAC enforcement at a glance.
 
@@ -419,23 +441,26 @@ RIGD GROUP LLC — Web Interface: Status Dashboard Design
 - `universe_web.py`      — Universe cache status and health
 - `session_manager.py`   — Current user/session status
 
+
 =======================================================================================
 Session Status Summary Panel
 =======================================================================================
 
 **Panel Title:** System Session Summary
 
-| Field                | Description                                           | Notes                                                                                      |
-|----------------------|-------------------------------------------------------|--------------------------------------------------------------------------------------------|
-| Overall System Status| OK / Warning / Critical                               | Derived from: API health, Defense Mode, Kill Switch, Universe Cache, **Holdings Compliance** |
-| Defense Mode Active  | true / false                                          | Mirrors `DEFENSE_MODE_ACTIVE` (decrypted config)                                           |
-| Total Bots Active    | Count of TradeBot instances currently online          | E.g., 1–N; reflects all deployed bots                                                      |
-| Bots in Kill Switch  | Count where Kill Switch Triggered = true              | E.g., 0/3 bots                                                                             |
-| Active Strategy      | open / mid / close / idle                             | From `strategy_router.py`                                                                  |
-| Open Trades (Total)  | Total live trades across all bots                     | Sum, enforced by `MAX_OPEN_POSITIONS`                                                      |
-| Universe Cache Status| up-to-date / stale / missing                          | Aggregated from all active bots                                                            |
-| **Holdings Compliance** | OK / Warning / Out-of-Spec                        | Aggregated from all bots (audit-log and holdings manager)                                  |
-| System Uptime        | Elapsed time since bot instance started               | From `main.py` boot time                                                                   |
+| Field                    | Description                                               | Notes                                                                                                    |
+|--------------------------|-----------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+| Overall System Status    | OK / Warning / Critical                                   | Derived from: API health, Defense Mode, Kill Switch, Universe Cache, **Holdings Compliance**             |
+| Defense Mode Active      | true / false                                              | Mirrors `DEFENSE_MODE_ACTIVE` (decrypted config)                                                         |
+| Total Bots Active        | Count of TradeBot instances currently online              | E.g., 1–N; reflects all deployed bots                                                                    |
+| Bots in Kill Switch      | Count where Kill Switch Triggered = true                  | E.g., 0/3 bots                                                                                           |
+| Active Strategy          | open / mid / close / idle                                 | From `strategy_router.py`                                                                                |
+| Open Trades (Total)      | Total live trades across all bots                         | Sum, enforced by `MAX_OPEN_POSITIONS`                                                                    |
+| Universe Cache Status    | up-to-date / stale / missing                              | Aggregated from all active bots                                                                          |
+| **Holdings Compliance**  | OK / Warning / Out-of-Spec                                | Aggregated from all bots (audit-log and holdings manager)                                                |
+| **COA Version (Active)** | Currently loaded Chart of Accounts version                | Read-only; managed in **COA UI** (`coa_web.py` / `coa.html`).                                            |
+| **Mapping Version (Active)** | Currently active COA→Ledger mapping version          | Read-only; managed in **COA Mapping UI** (`coa_mapping_web.py` / `coa_mapping.html`); not editable here. |
+| System Uptime            | Elapsed time since bot instance started                   | From `main.py` boot time                                                                                 |
 
 **Severity Logic (Overall System Status):**
 - Defense Mode=false AND all APIs healthy AND no Kill Switch AND universe cache up-to-date **AND Holdings Compliance OK**: `OK` (Green)
@@ -449,6 +474,7 @@ Session Status Summary Panel
 **Design Rationale:**
 - At-a-glance triage: mirrors core bot safety/ops.
 - Confirms Defense Mode/Kill Switch/universe cache/holdings compliance events in real time.
+- Shows **COA** and **COA→Ledger mapping** versions for traceability; both are **display-only** here and edited in their respective UIs.
 - Audit trail: all state changes, session tags, and events are logged for 7+ days.
 
 ================================================================================
@@ -463,31 +489,30 @@ The ledger interface in `ledger.html` is a comprehensive, audit-compliant UI for
 
 - **Global Search Window:**  
   - Located at the top of the ledger table.
-  - Allows free-text search across all major ledger fields (date, symbol, action, trade ID, account, tags, notes, etc).
+  - Allows free-text search across all major ledger fields (date, **DTPOSTED**, symbol, **TRNTYPE**, action, trade ID, **FITID**, group_id, account, tags, notes, etc).
   - Dynamically filters displayed entries as the user types.
   - Supports case-insensitive and partial-word matching.
 
 - **Column Sorting:**
-  - All primary columns (Date, Symbol, Action, Quantity, Price, Fee, Total Value, Status, Running Balance) are sortable by clicking the header.
+  - All primary columns (Date/**DTPOSTED**, Symbol, **TRNTYPE**, Action, Quantity, Price, Fee, Total Value, Status, Running Balance, **FITID**) are sortable by clicking the header.
   - Sorting is performed client-side (via JS) for current page, but can optionally trigger server-side sort via AJAX for large datasets.
   - Sort indicators (▲▼) show current sort direction; default is by Date (descending, most recent first).
 
 - **Multi-Column and Advanced Filters:**
-  - Secondary filter dropdowns for Action, Status, Account, and Strategy.
-  - Users may restrict visible entries to a specific action (e.g., “long”, “short”, “rebalance”), status (“ok”, “mismatch”, “resolved”), or account.
+  - Secondary filter dropdowns for Action, Status, Account, Strategy, and (optional) TRNTYPE.
+  - Users may restrict visible entries to a specific action (e.g., “long”, “short”, “rebalance”), status (“ok”, “mismatch”, “resolved”), account, or TRNTYPE.
   - Supports combined filters for granular drill-down.
 
 - **Holdings Event Visibility and Linking:**
   - All holdings-related actions (float transfer, reserve allocation, payroll/tax, rebalance, ETF purchase/sale) are displayed in-line with standard trades and cash entries.
-  - Holdings events are visually tagged and hyperlinked for drill-down; clicking a holdings event opens a modal with full event details and cross-links to the corresponding COA and holdings audit views.
-  - Every holdings event includes immutable audit metadata (user, timestamp, event type).
+  - Holdings events are visually tagged and hyperlinked for drill-down; clicking a holdings event opens a modal with full event details and cross-links to the corresponding **COA UI (`coa.html`)** and **COA→Ledger Mapping UI (`coa_mapping.html`)** read-only context. Mapping edits are performed in the COA Mapping UI, not in the ledger.
 
 - **Pagination and Page Size:**
   - Ledger table supports configurable page size (default: 50 rows per page) and paginated navigation.
   - Fast jump to first/last page; current page number always visible.
 
 - **Export and Download:**
-  - Users may export filtered ledger views to CSV, JSON, or Markdown, including all displayed audit/event metadata.
+  - Users may export filtered ledger views to CSV, JSON, or Markdown, including **DTPOSTED, TRNTYPE, FITID, group_id**, and all displayed audit/event metadata.
   - Export respects current search/sort/filter settings.
 
 - **Audit Trail and History:**
@@ -496,6 +521,7 @@ The ledger interface in `ledger.html` is a comprehensive, audit-compliant UI for
 
 - **Compliance and RBAC:**
   - All ledger actions (view, edit, reconcile, export) are RBAC-controlled; only admin users may perform edits or reconciliations.
+  - **Inline leg edits in the ledger only change the leg’s COA account allocation. They do not modify global COA→Ledger mapping rules** (those are edited in `coa_mapping_web.py` / `coa_mapping.html`).
   - All UI actions are logged and visible in the audit trail.
 
 - **Editable COA Account Allocation (Inline)**
@@ -503,24 +529,24 @@ The ledger interface in `ledger.html` is a comprehensive, audit-compliant UI for
   - Each expanded ledger group shows its constituent debit/credit legs with an inline Account `<select>` bound to COA codes.
   - Submitting an account change updates only that leg’s allocation in the modular ledger, is RBAC-enforced (admin only), and is audit-logged (user, UTC timestamp, before/after).
   - The collapsed/top row displays a representative account (implementation detail: commonly the debit leg), purely for operator context.
+  - **Quick-links**: each leg may expose “View COA” and “View Mapping Rule” links that navigate to `coa.html` and `coa_mapping.html` (read-only context), respectively.
 
 - **Persistent Group Collapse/Expand**
   - Group rows default to collapsed; operators can expand individual groups or use a global “Collapse all” control.
-   - Summaries are shown at group level (e.g., trade net; fees).  
+  - Summaries are shown at group level (e.g., trade net; fees).  
   - Click to expand reveals debit/credit legs.  
   - The collapse state is persisted server-side and restored on page load (per group).
   - Required endpoints:
-    - POST /ledger/collapse_expand/<group_id> — toggle or set explicit `{"collapsed_state": 1|0}`.
-    - POST /ledger/collapse_all — set all groups: `{"collapse": true|false}` (or `{"collapsed_state": 1|0}`).
+    - POST `/ledger/collapse_expand/<group_id>` — toggle or set explicit `{"collapsed_state": 1|0}`.
+    - POST `/ledger/collapse_all` — set all groups: `{"collapsed_state": 1|0}`.
   - Storage: dedicated lightweight table for UI state (see “Ledger Schema Alignment Update”).
   - **Balances Panel (Right Drawer):**  
-  - Shows **Assets, Liabilities, Equity totals** and selected account/category balances for current filters/range.  
-  - Displays “As of” timestamp and `sync_run_id` (if from last sync).  
-  - Supports scope selectors: date range, account class, currency (if multi).  
-  - Data source: **`GET /ledger/balances`** (computed by `tbot_bot/accounting/ledger_modules/ledger_balance.py`).  
-  - Recomputes live on filter/search changes.  
-  - RBAC: `viewer` allowed.
-
+    - Shows **Assets, Liabilities, Equity totals** and selected account/category balances for current filters/range.  
+    - Displays “As of” timestamp and `sync_run_id` (if from last sync).  
+    - Supports scope selectors: date range, account class, currency (if multi).  
+    - Data source: **`GET /ledger/balances`** (computed by `tbot_bot/accounting/ledger_modules/ledger_balance.py`).  
+    - Recomputes live on filter/search changes.  
+    - RBAC: `viewer` allowed.
 
 **Technical/Implementation Notes:**
 - All ledger UI operations—fetch, search, sort, filter, and audit—must call into `ledger_modules/` APIs, never the legacy `ledger.py` or `ledger_utils.py`.
@@ -530,6 +556,7 @@ The ledger interface in `ledger.html` is a comprehensive, audit-compliant UI for
 - All frontend logic is contained in `/static/js/ledger.js` and backend routes are in `tbot_web/py/ledger_web.py`.
 - All rendering is performed via `templates/ledger.html` with Jinja2 and client-side JS for dynamic interactions.
 - Group collapse/expand state is persisted via modular ledger grouping helpers; client JS must call the REST endpoints and never manipulate state locally only.
+- **Mapping rule retrieval for display is via `coa_mapping_table.py` (read-only in this view); any mapping edits must route users to `coa_mapping.html`.**
 
 **Future-Proofing and Compliance:**
 - Ledger is the canonical source for persistent events.  
@@ -540,13 +567,16 @@ The ledger interface in `ledger.html` is a comprehensive, audit-compliant UI for
 Ledger API — Endpoint Contracts (NEW)
 --------------------------------------------------------------------------------
 
-**All responses include** `{ "ok": true|false, "error": null|{code,msg}, "data": … }`.
+**All responses include** `{ "ok": true|false, "error": null|{code,msg}, "data": … }`.  
+**Timestamps are UTC ISO-8601. Monetary/quantity fields are serialized as strings to preserve Decimal precision.**
 
 1) **GET `/ledger`** — Query ledger entries (flat rows)
 - **Query params:**  
-  `q` (search), `page`, `page_size`, `sort` (e.g., `datetime_utc:desc`),  
-  `date_from`, `date_to`, `action`, `status`, `account`, `strategy`
-- **Returns:** paginated rows with minimal leg fields and `group_id`.
+  `q` (search), `page`, `page_size`,  
+  `sort` (e.g., `dtposted:desc`, aliases: `datetime_utc:desc`),  
+  `date_from`, `date_to` (UTC, inclusive on day),  
+  `action`, `status`, `account`, `strategy`, **`trntype`**, **`fitid`**, **`group_id`**
+- **Returns:** paginated rows with minimal fields including **`dtposted`**, **`trntype`**, **`fitid`**, `symbol`, `action`, `amount`, `status`, and **`group_id`**.
 - **RBAC:** `viewer`+
 
 2) **POST `/ledger/sync`** — Trigger broker sync *(admin)*
@@ -558,14 +588,13 @@ Ledger API — Endpoint Contracts (NEW)
 3) **GET `/ledger/groups`** — Grouped rows with legs & collapse state
 - **Query params:** same filters as `/ledger` (applied to groups)
 - **Returns:**  
-
 {
   "groups": [
     {
       "group_id": "…",
       "collapsed": 0,
       "summary": {
-        "datetime_utc": "…",
+        "dtposted": "…",
         "symbol": "…",
         "net_amount": "…",
         "trntype": "…",
@@ -575,8 +604,8 @@ Ledger API — Endpoint Contracts (NEW)
         {
           "entry_id": 123,
           "account_code": "1111",
-          "debit": 100.00,
-          "credit": 0.00,
+          "debit": "100.00",
+          "credit": "0.00",
           "currency": "USD",
           "fitid": "…",
           "dtposted": "…"
@@ -586,73 +615,67 @@ Ledger API — Endpoint Contracts (NEW)
   ],
   "meta": { "page": 1, "page_size": 50, "total_groups": 1234 }
 }
-
-
-
+- **RBAC:** `viewer`+
 
 4) **GET `/ledger/balances`** — Balances panel data
 - **Query params:** same filters as `/ledger` (date range, account class, etc.)
 - **Returns:**  
-
 {
   "as_of_utc": "2025-08-23T21:00:00Z",
   "sync_run_id": "uuid-or-null",
-  "totals": {
-    "assets": 0.0,
-    "liabilities": 0.0,
-    "equity": 0.0
-  },
+  "totals": { "assets": "0.00", "liabilities": "0.00", "equity": "0.00" },
   "by_account": [
-    { "account_code": "1030", "name": "Cash — Broker", "balance": 0.0 },
-    { "account_code": "1111", "name": "Equities — Broker", "balance": 0.0 }
+    { "account_code": "1030", "name": "Cash — Broker", "balance": "0.00" },
+    { "account_code": "1111", "name": "Equities — Broker", "balance": "0.00" }
   ]
 }
-
-
 - **RBAC:** `viewer`+
 
 5) **POST `/ledger/collapse_expand/<group_id>`**
 - **Body:** `{"collapsed_state": 1|0}` (optional; toggles if omitted)
-- **Returns:** updated `{group_id, collapsed_state}`
+- **Returns:** `{ "group_id": "…", "collapsed_state": 0|1 }`
 - **RBAC:** `admin`
 
 6) **POST `/ledger/collapse_all`**
 - **Body:** `{"collapsed_state": 1|0}`
+- **Returns:** `{ "collapsed_state": 0|1 }`
 - **RBAC:** `admin`
 
 7) **POST `/ledger/edit/<entry_id>`** — Inline COA account update *(admin)*
-- **Body:** `{"account_code":"<COA code>"}`  (validated via mapping table)
-- **Side effects:** audit trail entry; balance recalc reflects immediately.
+- **Body:** `{"account_code":"<COA code>"}` (validated against COA)
+- **Side effects:** audit trail entry; immediate balance recompute; **does not modify global COA→Ledger mapping rules** (those are edited via `coa_mapping_web.py`/`/coa_mapping/api`).
 - **RBAC:** `admin`
 
 --------------------------------------------------------------------------------
 COA Mapping UI — CRUD, Version History, Import/Export (RBAC)
 --------------------------------------------------------------------------------
 
-**UI (coa.html):**
-- Tree view of COA; table of **mapping rules** with search/filter.
+**UI (coa_mapping.html):**
+- Table of **COA→Ledger mapping rules** with search/filter; highlights unmapped transaction types/fields.
+- Cross-links to the COA tree (coa.html) for reference; **does not edit the COA structure**.
 - Actions (admin): **Create**, **Edit**, **Delete** mapping rules.
 - **Version History** panel listing snapshots of `coa_mapping_table.json` with timestamps, user, diff summary.
-- **Import/Export**: JSON/CSV/Markdown bundle download; import validates, snapshots new version (no in-place overwrite).
+- **Import/Export**: JSON/CSV/Markdown bundle download; import validates and snapshots a new version (no in-place overwrite).
 - All changes are audit-logged and **immediately versioned**; each ledger posting ties to the active mapping version.
 
-**API (coa_web.py):**
-- **GET `/coa`** — render UI
-- **GET `/coa/api`** — list accounts + mapping rules
-- **POST `/coa/api`** *(admin)* — create mapping rule
-- **PUT `/coa/api/<rule_id>`** *(admin)* — update mapping rule
-- **DELETE `/coa/api/<rule_id>`** *(admin)* — delete mapping rule
-- **GET `/coa/versions`** — list version snapshots
-- **GET `/coa/versions/<version_id>`** — fetch specific snapshot (read-only)
-- **POST `/coa/rollback/<version_id>`** *(admin)* — rollback (writes a new current version; never mutates history)
-- **GET `/coa/export`** — export current tree + mapping bundle
-- **POST `/coa/import`** *(admin)* — import bundle → validated → becomes new version
+**API (coa_mapping_web.py):**
+- **GET `/coa_mapping`** — render Mapping UI
+- **GET `/coa_mapping/api`** — list mapping rules (and optionally unmapped categories)
+- **POST `/coa_mapping/api`** *(admin)* — create mapping rule
+- **PUT `/coa_mapping/api/<rule_id>`** *(admin)* — update mapping rule
+- **DELETE `/coa_mapping/api/<rule_id>`** *(admin)* — delete mapping rule
+- **GET `/coa_mapping/versions`** — list version snapshots of `coa_mapping_table.json`
+- **GET `/coa_mapping/versions/<version_id>`** — fetch a specific mapping snapshot (read-only)
+- **POST `/coa_mapping/rollback/<version_id>`** *(admin)* — rollback to snapshot (creates a new current version)
+- **GET `/coa_mapping/export`** — export current mapping bundle (JSON/CSV/Markdown)
+- **POST `/coa_mapping/import`** *(admin)* — import mapping bundle → validate → create new version
 - **RBAC:** `viewer` may read; `admin` required for mutations/rollback/import.
 
 **Rules & Enforcement:**
-- Mapping changes are **lazy-created and versioned**; each change snapshots `coa_mapping_table.json`.
-- **Unmapped transactions are not posted** (skip_insert + flag) until mapping is assigned.
-- All COA edits are via UI/API only; **no direct file edits**.
+- Mapping changes are **lazy-created and versioned**; each change snapshots `coa_mapping_table.json` (atomic write).
+- **Unmapped transactions are not posted** (set `skip_insert=true` and flag) until a rule is assigned.
+- All mapping edits are via UI/API only; **no direct file edits**.
+- **Inline per-leg account edits in the Ledger UI do not modify global mapping rules** (they only adjust that specific leg); global rules are maintained exclusively in `coa_mapping_web.py`.
 
 ================================================================================
 Web Interface — Additional Notes & Non-Functional Requirements
@@ -664,3 +687,4 @@ Web Interface — Additional Notes & Non-Functional Requirements
 - **UX:** Per-page CSS isolation; keyboard navigation in tables; accessible ARIA roles for expand/collapse controls.
 
 ================================================================================
+
