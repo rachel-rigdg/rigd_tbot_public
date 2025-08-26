@@ -25,7 +25,8 @@ def _present_ts_cols_for_table(conn: sqlite3.Connection, table: str) -> List[str
     """Return timestamp-like columns that actually exist on the given table."""
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     cols = {r[1] for r in rows}  # r[1] is 'name'
-    ordered = ["timestamp_utc", "datetime_utc", "created_at_utc"]
+    # Preference order: canonical UTC first, then common fallbacks
+    ordered = ["timestamp_utc", "datetime_utc", "created_at_utc", "DTPOSTED", "posted_at_utc"]
     return [c for c in ordered if c in cols]
 
 
@@ -36,10 +37,27 @@ def _ts_expr_for_table(conn: sqlite3.Connection, table: str) -> str:
     """
     cols = _present_ts_cols_for_table(conn, table)
     if not cols:
-        return "id"  # absolute fallback to stable order
+        # absolute fallback to a stable order; callers also order by id
+        return "''"
     if len(cols) == 1:
         return cols[0]
     return "COALESCE(" + ", ".join(cols) + ")"
+
+
+def _ts_key_from_row(row: Dict) -> Tuple[str, int]:
+    """
+    Python-side sort key mirroring SQL fallback order.
+    Returns (timestamp_str_or_empty, id_int)
+    """
+    ts = (
+        row.get("timestamp_utc")
+        or row.get("datetime_utc")
+        or row.get("created_at_utc")
+        or row.get("DTPOSTED")
+        or row.get("posted_at_utc")
+        or ""
+    )
+    return (str(ts), int(row.get("id") or 0))
 
 
 # -----------------
@@ -322,14 +340,14 @@ def collapse_group(trades_group: List[Dict]) -> Dict:
 def get_collapsed_groups_by_group_id(limit: int = 100, offset: int = 0) -> List[Dict]:
     groups = get_trades_grouped_by_group_id(None, limit, offset)
     for g in groups:
-        g.sort(key=lambda row: ((row.get("timestamp_utc") or row.get("datetime_utc") or row.get("created_at_utc") or ""), row.get("id") or 0))
+        g.sort(key=_ts_key_from_row)
     return [collapse_group(g) for g in groups if g]
 
 
 def get_collapsed_groups_by_trade_id(limit: int = 100, offset: int = 0) -> List[Dict]:
     groups = get_trades_grouped_by_trade_id(None, limit, offset)
     for g in groups:
-        g.sort(key=lambda row: ((row.get("timestamp_utc") or row.get("datetime_utc") or row.get("created_at_utc") or ""), row.get("id") or 0))
+        g.sort(key=_ts_key_from_row)
     return [collapse_group(g) for g in groups if g]
 
 
@@ -374,7 +392,7 @@ def fetch_grouped_trades(
         for group in groups:
             if not group:
                 continue
-            group.sort(key=lambda row: ((row.get("timestamp_utc") or row.get("datetime_utc") or row.get("created_at_utc") or ""), row.get("id") or 0))
+            group.sort(key=_ts_key_from_row)
             group_id = group[0].get("group_id") if by != "trade_id" else group[0].get("trade_id")
             collapsed_state = collapsed_map.get(group_id, 1)
             force_expand = show_expanded_groups and group_id in show_expanded_groups
@@ -406,7 +424,7 @@ def fetch_trade_group_by_id(group_id: str, by: str = "group_id") -> List[Dict]:
     for entry in group[0] if group else []:
         entry["collapsed"] = False
     if group and group[0]:
-        group[0].sort(key=lambda row: ((row.get("timestamp_utc") or row.get("datetime_utc") or row.get("created_at_utc") or ""), row.get("id") or 0))
+        group[0].sort(key=_ts_key_from_row)
         return group[0]
     return []
 

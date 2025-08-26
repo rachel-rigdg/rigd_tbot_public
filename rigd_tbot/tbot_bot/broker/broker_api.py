@@ -19,7 +19,7 @@ ADAPTERS = {
 }
 
 _broker_instance = None
-_broker_env = None
+_broker_env: Optional[Dict[str, Any]] = None
 
 
 def get_broker_env() -> Dict[str, Any]:
@@ -68,11 +68,11 @@ def _ensure_stable_ids(records: List[Dict[str, Any]], broker_code: str, id_keys:
     Ensure each record has a stable_id suitable as a FITID seed downstream.
     If adapter already provides 'stable_id', it is preserved.
     """
-    out = []
-    for r in records:
+    out: List[Dict[str, Any]] = []
+    for r in records or []:
         if not isinstance(r, dict):
             continue
-        if "stable_id" in r and r["stable_id"]:
+        if r.get("stable_id"):
             out.append(r)
             continue
         base = _first_nonempty(r, id_keys) or _first_nonempty(r, ("id", "uuid", "hash"))
@@ -83,10 +83,28 @@ def _ensure_stable_ids(records: List[Dict[str, Any]], broker_code: str, id_keys:
             except Exception:
                 payload = str(r)
             base = hashlib.sha1(payload.encode("utf-8")).hexdigest()
-        r = dict(r)
-        r["stable_id"] = hashlib.sha1(f"{broker_code}:{base}".encode("utf-8")).hexdigest()
-        out.append(r)
+        rr = dict(r)
+        rr["stable_id"] = hashlib.sha1(f"{broker_code}:{base}".encode("utf-8")).hexdigest()
+        out.append(rr)
     return out
+
+
+# ---------------------------
+# Helpers for legacy wrappers
+# ---------------------------
+
+def _dateish_to_utc(dateish: Optional[str]) -> Optional[str]:
+    """
+    Convert 'YYYY-MM-DD' to ISO UTC start-of-day. Leave full ISO strings unchanged.
+    """
+    if not dateish:
+        return None
+    s = str(dateish).strip()
+    # If it already looks like an ISO timestamp with time or timezone, pass through.
+    if "T" in s or "Z" in s or "+" in s:
+        return s
+    # Accept bare 'YYYY-MM-DD'
+    return f"{s}T00:00:00Z"
 
 
 # ---------------------------
@@ -103,10 +121,10 @@ def get_trades(start_utc: str, end_utc: Optional[str] = None) -> List[Dict[str, 
     if hasattr(broker, "get_trades"):
         records = broker.get_trades(start_utc, end_utc)
     elif hasattr(broker, "fetch_all_trades"):
+        # legacy adapter name
         records = broker.fetch_all_trades(start_utc, end_utc)
     else:
         raise AttributeError(f"{broker.__class__.__name__} missing get_trades/fetch_all_trades")
-    # Attach stable IDs without altering other raw fields
     return _ensure_stable_ids(records or [], broker_code, ("trade_id", "execution_id", "order_id", "event_id"))
 
 
@@ -119,6 +137,7 @@ def get_activities(start_utc: str, end_utc: Optional[str] = None) -> List[Dict[s
     if hasattr(broker, "get_activities"):
         records = broker.get_activities(start_utc, end_utc)
     elif hasattr(broker, "fetch_cash_activity"):
+        # legacy adapter name
         records = broker.fetch_cash_activity(start_utc, end_utc)
     else:
         raise AttributeError(f"{broker.__class__.__name__} missing get_activities/fetch_cash_activity")
@@ -137,6 +156,30 @@ def get_positions(as_of_utc: Optional[str] = None) -> List[Dict[str, Any]]:
         # legacy name
         records = broker.get_positions()
     return _ensure_stable_ids(records or [], broker_code, ("position_id", "symbol"))
+
+
+# ---------------------------
+# Legacy compatibility shims
+# ---------------------------
+
+def fetch_all_trades(start_date: Optional[str] = None, end_date: Optional[str] = None, **_kwargs) -> List[Dict[str, Any]]:
+    """
+    Legacy function expected by tests/older code.
+    Delegates to get_trades(), converting date-only strings to ISO UTC.
+    """
+    start_utc = _dateish_to_utc(start_date) or "1970-01-01T00:00:00Z"
+    end_utc = _dateish_to_utc(end_date) if end_date else None
+    return get_trades(start_utc=start_utc, end_utc=end_utc)
+
+
+def fetch_cash_activity(start_date: Optional[str] = None, end_date: Optional[str] = None, **_kwargs) -> List[Dict[str, Any]]:
+    """
+    Legacy function expected by tests/older code.
+    Delegates to get_activities(), converting date-only strings to ISO UTC.
+    """
+    start_utc = _dateish_to_utc(start_date) or "1970-01-01T00:00:00Z"
+    end_utc = _dateish_to_utc(end_date) if end_date else None
+    return get_activities(start_utc=start_utc, end_utc=end_utc)
 
 
 # ---------------------------
@@ -187,6 +230,10 @@ __all__ = [
     "get_trades",
     "get_activities",
     "get_positions",
+    # legacy exports:
+    "fetch_all_trades",
+    "fetch_cash_activity",
+    # orders/info:
     "place_order",
     "cancel_order",
     "close_position",

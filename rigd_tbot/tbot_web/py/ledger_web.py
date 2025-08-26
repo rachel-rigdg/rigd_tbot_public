@@ -29,11 +29,11 @@ from tbot_bot.accounting.ledger import (
     sync_broker_ledger,
 )
 
-# Try to import a resolver if present (optional in some deployments)
+# Optional resolver if present
 try:
     from tbot_bot.accounting.ledger_modules.ledger_entry import mark_entry_resolved as _mark_entry_resolved  # type: ignore
 except Exception:
-    _mark_entry_resolved = None  # fallback used in route
+    _mark_entry_resolved = None
 
 ledger_web = Blueprint("ledger_web", __name__)
 
@@ -78,30 +78,21 @@ def _role_allowed(action: str) -> bool:
     """
     RBAC helper compatible with both new and legacy get_user_role signatures.
 
-    Roles:
-      viewer < editor < admin
-
-    Permissions:
-      - view, group_toggle: viewer/editor/admin
-      - add, edit, sync:    editor/admin
-      - delete:             admin
+    Roles (weak model): viewer < editor < admin
+    - view, group_toggle: viewer/editor/admin
+    - add, edit, sync:    editor/admin
+    - delete:             admin
     """
-    # Determine username from current session/user object (string or object)
     try:
         u = get_current_user()
         username = getattr(u, "username", None) or (u if isinstance(u, str) else None)
     except Exception:
         username = None
 
-    # Resolve role via get_user_role
     role = None
     try:
-        if username is not None:
-            role = get_user_role(username)  # new signature
-        else:
-            role = get_user_role()          # legacy no-arg
+        role = get_user_role(username) if username is not None else get_user_role()
     except TypeError:
-        # Fall back to legacy no-arg if we guessed wrong
         try:
             role = get_user_role()
         except Exception:
@@ -122,9 +113,16 @@ def _role_allowed(action: str) -> bool:
 
 def _is_display_entry(entry):
     # True if at least one primary display field is present/non-empty
+    ts = (
+        entry.get("timestamp_utc")
+        or entry.get("datetime_utc")
+        or entry.get("created_at_utc")
+        or entry.get("DTPOSTED")
+        or entry.get("posted_at_utc")
+    )
     return bool(
         (entry.get("symbol") and str(entry.get("symbol")).strip())
-        or (entry.get("datetime_utc") and str(entry.get("datetime_utc")).strip())
+        or (ts and str(ts).strip())
         or (entry.get("action") and str(entry.get("action")).strip())
         or (entry.get("price") not in (None, "", "None"))
         or (entry.get("quantity") not in (None, "", "None"))
@@ -134,6 +132,8 @@ def _is_display_entry(entry):
 
 # -----------------
 # Routes
+#   IMPORTANT: Paths are RELATIVE to the blueprint. If you register this blueprint
+#   with url_prefix="/ledger", your URLs will be /ledger/reconcile, /ledger/search, etc.
 # -----------------
 
 @ledger_web.route('/reconcile', methods=['GET', 'POST'])
@@ -173,7 +173,11 @@ def ledger_reconcile():
         coa_accounts = coa_data.get("accounts_flat", [])  # list of (code, name)
 
         # Use grouped view by default (collapsed)
+        # If there are no grouped entries (e.g., early bootstrap with no group_id),
+        # fall back to a flat search so the page still shows rows.
         entries = fetch_grouped_trades()
+        if not entries:
+            entries = search_trades(limit=500, sort_desc=True)
         entries = [e for e in entries if _is_display_entry(e)]
 
         return render_template('ledger.html', entries=entries, error=error, balances=balances, coa_accounts=coa_accounts)
@@ -204,16 +208,12 @@ def ledger_collapse_expand(group_id):
     if not _role_allowed("group_toggle"):
         return jsonify({"ok": False, "error": "Forbidden"}), 403
     try:
-        # Accept optional explicit state from the client.
-        # convention: collapsed_state = 1 means "collapsed", 0 means "expanded"
         data = request.get_json(silent=True) or {}
         collapsed_state = data.get("collapsed_state", None)
         if collapsed_state is not None:
-            # normalize to 0/1
             collapsed_state = 1 if str(collapsed_state).lower() in ("1", "true", "yes") else 0
             result = collapse_expand_group(group_id, collapsed_state=collapsed_state)
         else:
-            # no state provided -> toggle
             result = collapse_expand_group(group_id)
 
         return jsonify({"ok": True, "result": bool(result), "collapsed_state": collapsed_state})
@@ -246,7 +246,6 @@ def ledger_collapse_all():
         else:
             return jsonify({"ok": False, "error": "missing collapse/expanded flag"}), 400
 
-        # Fetch current groups (collapsed view is fine; we only need IDs)
         groups = fetch_grouped_trades(collapse=True, limit=10000)
         group_ids = [g.get("group_id") or g.get("trade_id") for g in groups if g]
         group_ids = [gid for gid in group_ids if gid]
@@ -284,9 +283,9 @@ def ledger_search():
 
 
 @ledger_web.route('/balances', methods=['GET'])
-def ledger_balances():
+def ledger_balances_api():
     """
-    JSON balances for the UI. Mirrors the summary used in /reconcile.
+    JSON balances endpoint expected by the front-end.
     """
     if provisioning_guard() or identity_guard():
         return jsonify({"error": "Not permitted"}), 403
@@ -294,7 +293,7 @@ def ledger_balances():
         return jsonify({"error": "Forbidden"}), 403
     try:
         rows = query_balances()
-        data = [
+        payload = [
             {
                 "account": r["account"],
                 "opening_balance": str(r["opening_balance"]),
@@ -304,7 +303,7 @@ def ledger_balances():
             }
             for r in rows
         ]
-        return jsonify({"balances": data})
+        return jsonify(payload)
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -320,10 +319,9 @@ def resolve_ledger_entry(entry_id):
 
     try:
         if callable(_mark_entry_resolved):
-            _mark_entry_resolved(entry_id)  # preferred if available
+            _mark_entry_resolved(entry_id)
             flash('Entry marked as resolved.')
         else:
-            # Fallback: tag via edit if resolver not present
             edit_ledger_entry(entry_id, {"approval_status": "resolved"})
             flash('Entry marked as resolved (fallback).')
     except Exception as e:
@@ -381,8 +379,6 @@ def add_ledger_entry_route():
         "soc2_type": "",
     }
     try:
-        # amount sign/side handled inside double-entry mapping,
-        # but provide a sane numeric default for pre-validation.
         entry_data["amount"] = _num(entry_data.get("total_value"), 0.0) or 0.0
         post_ledger_entries_double_entry([entry_data])
         flash('Ledger entry added (double-entry compliant).')
@@ -396,7 +392,7 @@ def add_ledger_entry_route():
 def edit_ledger_entry_route(entry_id):
     """
     Full edit (legacy) — keeps behavior for forms that post many fields.
-    If you only want to change the COA account, use /ledger/update_account/<id>.
+    If you only want to change the COA account, use /update_account/<id>.
     """
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
@@ -451,7 +447,7 @@ def edit_ledger_entry_route(entry_id):
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 
-# ---------- Updated: COA account updater (no raw SQL; supports whole-group with provided group_id) ----------
+# ---------- COA account updater ----------
 
 def _valid_account_code(code: str) -> bool:
     if not code:
@@ -494,7 +490,6 @@ def update_ledger_account_route(entry_id: int):
             if not group_id:
                 flash("group_id is required to apply changes to the whole group.", "error")
                 return redirect(url_for('ledger_web.ledger_reconcile'))
-            # Fetch entries in group and patch each via edit_ledger_entry
             group = fetch_trade_group_by_id(group_id)
             changed = 0
             for row in group or []:
@@ -521,7 +516,7 @@ def update_ledger_account_route(entry_id: int):
 def update_ledger_account_json():
     """
     JSON variant for XHR updates.
-    Body: {"entry_id": 123, "account": "Assets:Cash", "strategy":"open", "apply_to_group": true, "group_id": "..." }
+    Body: {"entry_id": 123, "account": "Assets:Cash", "strategy":"open", "apply_to_group": true, "group_id": "..."}
     """
     if provisioning_guard() or identity_guard():
         return jsonify({"ok": False, "error": "Not permitted"}), 403
@@ -600,9 +595,13 @@ def ledger_sync():
         rejected = summary.get("rejected", 0)
 
         if rejected:
-            flash(f"Sync finished with rejects. inserted={rows}, groups={groups}, dedup_skipped={skipped}, rejected={rejected}", "error")
+            flash(
+                f"Sync finished with rejects. inserted={rows}, groups={groups}, "
+                f"dedup_skipped={skipped}, rejected={rejected} (status={status})",
+                "error",
+            )
         else:
-            flash(f"Broker ledger synced. inserted={rows}, groups={groups}, dedup_skipped={skipped}")
+            flash(f"Broker ledger synced. inserted={rows}, groups={groups}, dedup_skipped={skipped} (status={status})")
 
         print(f"[WEB] /ledger/sync: completed - {summary}")
     except Exception as e:
