@@ -17,9 +17,6 @@
             .coa-actions button { margin-left: 4px; }
             #coa-edit-area { margin-top: 18px; }
             #coa-save-bar { margin-top: 12px; }
-            #coa-metadata-table td { padding: 4px 6px; }
-            .muted { color:#666; font-size:.9em; }
-            pre { white-space: pre-wrap; word-break: break-word; }
         </style>
     </head>
 <body>
@@ -33,18 +30,15 @@
                 <a href="{{ url_for('coa_web.coa_management') }}">COA</a>
             </nav>
         </header>
-
         {% if error %}
             <div class="error-message" style="color: #c00; margin-bottom: 2em;">
                 {{ error }}
             </div>
         {% endif %}
-
         <section>
             <h2>COA Metadata</h2>
             <table id="coa-metadata-table">
                 <tbody>
-                    <tr><td>Version</td><td id="version_id"></td></tr>
                     <tr><td>Currency Code</td><td id="currency_code"></td></tr>
                     <tr><td>Entity Code</td><td id="entity_code"></td></tr>
                     <tr><td>Jurisdiction Code</td><td id="jurisdiction_code"></td></tr>
@@ -52,23 +46,20 @@
                     <tr><td>Last Updated (UTC)</td><td id="last_updated_utc"></td></tr>
                 </tbody>
             </table>
-            <p class="muted">Structure editor only. COA <em>mapping</em> is managed separately.</p>
         </section>
-
         <section>
             <h2>Account Hierarchy</h2>
             <div id="coa-tree">
-                <!-- Editable Account Hierarchy UI (read-only view below; editor for admins further down) -->
+                <!-- Editable Account Hierarchy UI -->
             </div>
-            <div id="coa-export-controls" style="margin-top:.75rem;">
-                <form method="get" action="{{ url_for('coa_web.coa_export_markdown') }}" style="display:inline;">
+            <div id="coa-export-controls">
+                <form method="get" action="{{ url_for('coa_web.coa_export_markdown') }}">
                     <button type="submit">Export as Markdown</button>
                 </form>
-                <form method="get" action="{{ url_for('coa_web.coa_export_csv') }}" style="display:inline;margin-left:.5rem;">
+                <form method="get" action="{{ url_for('coa_web.coa_export_csv') }}">
                     <button type="submit">Export as CSV</button>
                 </form>
             </div>
-
             {% if user_is_admin %}
             <div id="coa-edit-area">
                 <button id="edit-coa-btn" onclick="toggleEditMode();return false;">Edit COA</button>
@@ -85,7 +76,6 @@
             </div>
             {% endif %}
         </section>
-
         <section>
             <h2>COA Change History (Audit Log)</h2>
             <div id="coa-history">
@@ -104,18 +94,15 @@
                 </table>
             </div>
         </section>
-
         <footer>
             <small>RIGD GROUP LLC — TradeBot v038 | UTC <span id="utc-time"></span></small>
         </footer>
     </div>
-
     <script>
         // UTC clock
         function updateUTC() {
             const now = new Date();
-            const el = document.getElementById("utc-time");
-            if (el) el.textContent = now.toISOString().replace("T", " ").slice(0,19);
+            document.getElementById("utc-time").textContent = now.toISOString().replace("T", " ").slice(0,19);
         }
         setInterval(updateUTC, 1000);
         updateUTC();
@@ -128,55 +115,40 @@
             fetch('{{ url_for("coa_web.coa_api") }}')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.error) {
-                        document.getElementById("coa-metadata-table").innerHTML =
-                          "<tr><td colspan='2' style='color:#c00;'>" + (data.error || "COA unavailable") + "</td></tr>";
+                    coaData = data.accounts || [];
+                    if(data.error){
+                        document.getElementById("coa-metadata-table").innerHTML = "<tr><td colspan='2' style='color:#c00;'>" + data.error + "</td></tr>";
                         document.getElementById("coa-tree").innerHTML = "";
                         document.getElementById("coa-history-table").innerHTML = "";
                         return;
                     }
-
-                    const meta = data.metadata || {};
                     // Metadata
-                    setText("version_id", meta.version_id || "");
-                    setText("currency_code", meta.currency_code || "");
-                    setText("entity_code", meta.entity_code || "");
-                    setText("jurisdiction_code", meta.jurisdiction_code || "");
-                    setText("created_at_utc", meta.created_at_utc || "");
-                    setText("last_updated_utc", meta.last_updated_utc || "");
-
+                    document.getElementById("currency_code").textContent = data.metadata.currency_code;
+                    document.getElementById("entity_code").textContent = data.metadata.entity_code;
+                    document.getElementById("jurisdiction_code").textContent = data.metadata.jurisdiction_code;
+                    document.getElementById("created_at_utc").textContent = data.metadata.created_at_utc;
+                    document.getElementById("last_updated_utc").textContent = data.metadata.last_updated_utc;
                     // Hierarchy (read-only)
-                    coaData = data.accounts || [];
                     document.getElementById("coa-tree").innerHTML = buildCoaTreeHtml(coaData);
-
                     // History
-                    const history = data.history || [];
                     const historyTable = document.getElementById("coa-history-table");
-                    historyTable.innerHTML = history.map(item => `
+                    historyTable.innerHTML = data.history.map(item => `
                         <tr>
-                            <td>${safe(item.timestamp_utc)}</td>
-                            <td>${safe(item.user)}</td>
-                            <td>${safe(item.summary)}</td>
-                            <td><pre>${safe(item.diff)}</pre></td>
+                            <td>${item.timestamp_utc}</td>
+                            <td>${item.user}</td>
+                            <td>${item.summary}</td>
+                            <td><pre>${item.diff}</pre></td>
                         </tr>
                     `).join('');
-                })
-                .catch(err => {
-                    console.error("COA load failed", err);
-                    document.getElementById("coa-metadata-table").innerHTML =
-                      "<tr><td colspan='2' style='color:#c00;'>Failed to load COA metadata</td></tr>";
                 });
         });
-
-        function setText(id, v){ const el = document.getElementById(id); if(el) el.textContent = v; }
-        function safe(v){ return (v === undefined || v === null) ? "" : String(v); }
 
         // Render COA account tree for display (read-only)
         function buildCoaTreeHtml(accounts) {
             function render(accs, depth=0) {
-                return (accs || []).map(acc => `
+                return accs.map(acc => `
                     <div style="margin-left: ${depth * 20}px;">
-                        <strong>${safe(acc.code)}</strong> — ${safe(acc.name)}
+                        <strong>${acc.code}</strong> — ${acc.name}
                         ${acc.children ? render(acc.children, depth + 1) : ''}
                     </div>
                 `).join('');
@@ -186,7 +158,7 @@
 
         // Editable tree for admins
         function renderCoaEditor(accounts, parent, depth=0) {
-            (accounts || []).forEach((acc, idx) => {
+            accounts.forEach((acc, idx) => {
                 const row = document.createElement('div');
                 row.className = 'coa-row';
                 row.style.marginLeft = (depth * 20) + "px";
@@ -195,18 +167,16 @@
                 const code = document.createElement('input');
                 code.type = "text";
                 code.value = acc.code || '';
-                code.size = 10;
-                code.placeholder = "Code";
-                code.onchange = () => acc.code = code.value.trim();
+                code.size = 8;
+                code.onchange = e => acc.code = code.value;
                 row.appendChild(code);
 
                 // Name
                 const name = document.createElement('input');
                 name.type = "text";
                 name.value = acc.name || '';
-                name.size = 28;
-                name.placeholder = "Name";
-                name.onchange = () => acc.name = name.value;
+                name.size = 22;
+                name.onchange = e => acc.name = name.value;
                 row.appendChild(name);
 
                 // Delete button
@@ -233,7 +203,7 @@
                 parent.appendChild(row);
 
                 // Children
-                if(Array.isArray(acc.children) && acc.children.length){
+                if(acc.children && acc.children.length){
                     const kids = document.createElement('div');
                     kids.className = "coa-children";
                     row.appendChild(kids);
@@ -269,12 +239,8 @@
 
         // Save COA edits via hidden field and submit
         function saveCoaEdits() {
-            try {
-                document.getElementById('coa_json').value = JSON.stringify(coaData || [], null, 2);
-                document.getElementById('coa-edit-form').submit();
-            } catch (e) {
-                alert('Failed to serialize COA JSON: ' + e);
-            }
+            document.getElementById('coa_json').value = JSON.stringify(coaData, null, 2);
+            document.getElementById('coa-edit-form').submit();
         }
     </script>
 </body>

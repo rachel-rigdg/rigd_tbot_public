@@ -1,215 +1,130 @@
 # tbot_bot/accounting/ledger_modules/ledger_compliance_filter.py
+
 """
-Ledger compliance filter for validating entries before they are written to the ledger.
+Ledger compliance filter for validating transactions before they are written to the ledger.
+Used by sync, holdings, and any module that creates/imports ledger entries.
 
-Requirements (v048):
-- Pre-write validation: required fields, sane values, date window, mapping exists.
-- Returns (ok, errors); on failure → audit a reject event; NEVER mutate payload.
-
-This module exposes:
-- validate_entries(entries) -> (ok: bool, errors: list[str])
-- validate(batch) and validate_batch(entries) aliases
-- Back-compat helpers: is_compliant_ledger_entry, compliance_filter_ledger_entry, filter_valid_entries
+Key rules:
+- Reject completely blank primary-field entries.
+- Reject unmapped/unsupported actions.
+- Reject non-economic $0.00 "noise" events (partials, status markers) with no fees.
+- Allow legitimate economic events (including fees-only edge cases in the future).
 """
 
-from __future__ import annotations
+from typing import Any, Dict, List, Optional, Tuple
 
-import math
-import os
-from datetime import datetime, timezone, timedelta
-from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+# Primary UI/display fields — used to detect completely blank records
+PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "total_value")
 
-from tbot_bot.accounting.ledger_modules.ledger_audit import log_audit_event
-
-# Optional mapping check (no mutation) to verify mapping exists when account is absent
-try:
-    from tbot_bot.accounting.ledger_modules.ledger_account_map import map_transaction_to_accounts  # type: ignore
-except Exception:  # pragma: no cover
-    map_transaction_to_accounts = None  # type: ignore
-
-# -----------------
-# Config (env-only)
-# -----------------
-_MAX_ABS_AMOUNT = Decimal(os.getenv("LEDGER_MAX_ABS_AMOUNT", "100000000"))  # 100M default
-_ENFORCE_WINDOW = os.getenv("LEDGER_ENFORCE_DATE_WINDOW", "1") == "1"
-_MAX_BACK_DAYS = int(os.getenv("LEDGER_MAX_BACKDATE_DAYS", "14"))
-_MAX_FUTURE_MIN = int(os.getenv("LEDGER_MAX_FUTURE_MINUTES", "10"))
-
-# -----------------
-# Helpers
-# -----------------
-
-_TS_KEYS = ("timestamp_utc", "datetime_utc", "created_at_utc")
+# Actions permitted by the ledger schema & our posting hooks
+_ALLOWED_ACTIONS = {
+    "long", "short", "put", "call", "assignment", "exercise", "expire", "reorg", "inverse", "other",
+    # system/ops hooks (kept for forward compatibility; harmless if unused)
+    "reserve_tax", "reserve_payroll", "float_allocation", "rebalance_buy", "rebalance_sell",
+}
 
 
-def _to_decimal(val: Any) -> Optional[Decimal]:
-    if val is None:
-        return None
-    if isinstance(val, Decimal):
-        return val
+def _is_blank_primary(entry: Dict[str, Any]) -> bool:
+    """True if all primary display fields are None/empty strings."""
+    return all(entry.get(f) is None or str(entry.get(f)).strip() == "" for f in PRIMARY_FIELDS)
+
+
+def _as_float(x: Any, default: float = 0.0) -> float:
     try:
-        d = Decimal(str(val))
-    except (InvalidOperation, ValueError):
-        return None
-    if d.is_nan() or d in (Decimal("Infinity"), Decimal("-Infinity")):
-        return None
-    return d
-
-
-def _parse_utc(ts_val: Any) -> Optional[datetime]:
-    if ts_val is None:
-        return None
-    if isinstance(ts_val, datetime):
-        dt = ts_val
-    elif isinstance(ts_val, str):
-        try:
-            dt = datetime.fromisoformat(ts_val.replace("Z", "+00:00"))
-        except Exception:
-            return None
-    else:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def _find_timestamp(entry: Dict[str, Any]) -> Optional[datetime]:
-    for k in _TS_KEYS:
-        dt = _parse_utc(entry.get(k))
-        if dt is not None:
-            return dt
-    return None
-
-
-def _has_account(entry: Dict[str, Any]) -> bool:
-    acct = str(entry.get("account") or "").strip()
-    return bool(acct) and not acct.startswith("Uncategorized")
-
-
-def _verify_mapping_exists(entry: Dict[str, Any]) -> bool:
-    if _has_account(entry):
-        return True
-    if map_transaction_to_accounts is None:
-        return False
-    # Do not mutate; just verify mapping is resolvable
-    try:
-        _da, _ca, _ver = map_transaction_to_accounts(
-            {
-                "broker": entry.get("broker"),
-                "type": entry.get("type"),
-                "subtype": entry.get("subtype"),
-                "description": entry.get("description"),
-                "code": entry.get("code"),
-            }
-        )
-        return True
+        return float(x)
     except Exception:
-        return False
+        return default
 
 
-def _audit_reject(entry: Dict[str, Any], reason: str) -> None:
-    log_audit_event(
-        action="compliance_reject",
-        entry_id=entry.get("id"),
-        user="system",
-        before=entry,
-        after=None,
-        reason=reason,
-        audit_reference=entry.get("audit_reference"),
-        group_id=entry.get("group_id"),
-        fitid=entry.get("fitid"),
-        extra={"module": "ledger_compliance_filter"},
-    )
+def _is_zero_value_spurious(entry: Dict[str, Any]) -> bool:
+    """
+    Filter out non-economic broker events that normalize into $0.00 entries, e.g.
+    new/accepted/canceled/partial markers with zero qty/price/val and no fees.
+    """
+    qty = _as_float(entry.get("quantity"))
+    price = _as_float(entry.get("price"))
+    # Prefer provided total_value; otherwise compute qty * price
+    total_value = _as_float(entry.get("total_value"), qty * price)
+    fees = _as_float(entry.get("fee")) + _as_float(entry.get("commission"))
+
+    jm = entry.get("json_metadata") or {}
+    raw = jm.get("raw_broker") if isinstance(jm, dict) else {}
+    # Pull a raw broker state hint if present
+    raw_type = str(
+        (raw.get("activity_type") or raw.get("type") or raw.get("order_status") or "")
+    ).upper()
+
+    non_economic_markers = {
+        "NEW", "PENDING_NEW", "ACCEPTED", "CANCELED", "CANCELLED", "REPLACED", "REJECTED", "EXPIRED",
+        "PARTIAL_FILL", "PARTIALLY_FILLED", "PENDING_CANCEL",
+        # We will only drop "FILL" if economics are actually zero
+        "FILL",
+    }
+
+    # If there’s literally no economic effect and no fees, drop it when it looks like a status/partial record
+    if (qty == 0 or price == 0 or total_value == 0) and fees == 0 and raw_type in non_economic_markers:
+        return True
+    return False
 
 
-# -----------------
-# Core validation
-# -----------------
-
-def _validate_entry(entry: Dict[str, Any]) -> Optional[str]:
-    # Type
+def compliance_filter_entry(entry: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """
+    Validate a single entry. Returns (allowed, reason_if_rejected).
+    Conservative: ambiguous items are rejected for upstream review.
+    """
     if not isinstance(entry, dict):
-        return "not_a_dict"
+        return False, "not_a_dict"
 
-    # Required basics for splits (pre-write): account, side, total_value, timestamp
-    # Cash/import pre-mapping entries may not have 'account'; in such case, verify mapping resolvable.
-    if not _has_account(entry):
-        if not _verify_mapping_exists(entry):
-            return "unmapped_or_missing_account"
+    # Primary blank check
+    if _is_blank_primary(entry):
+        return False, "blank_primary_fields"
 
-    side = str(entry.get("side") or "").lower()
-    if side not in ("debit", "credit"):
-        return "invalid_side"
+    # Action check (must already be mapped to ledger actions)
+    action = entry.get("action")
+    if action not in _ALLOWED_ACTIONS:
+        return False, "unmapped_action"
 
-    amount = _to_decimal(entry.get("total_value"))
-    if amount is None:
-        return "invalid_total_value"
+    # Economic noise filter for $0 entries (e.g., partials/cancels)
+    if _is_zero_value_spurious(entry):
+        return False, "zero_value_spurious"
 
-    if amount == 0:
-        # zero-value splits are permitted only if explicitly marked fee-only or system flag says allow
-        if not bool(entry.get("allow_zero_value")):
-            return "zero_total_value_not_allowed"
+    # Basic ID sanity
+    if not entry.get("trade_id"):
+        return False, "missing_trade_id"
 
-    if abs(amount) > _MAX_ABS_AMOUNT:
-        return "amount_exceeds_policy_limit"
-
-    # Timestamp window (UTC)
-    ts = _find_timestamp(entry)
-    if ts is None:
-        return "missing_timestamp"
-
-    if _ENFORCE_WINDOW:
-        now = datetime.now(timezone.utc)
-        if ts < now - timedelta(days=_MAX_BACK_DAYS):
-            return "timestamp_too_old"
-        if ts > now + timedelta(minutes=_MAX_FUTURE_MIN):
-            return "timestamp_in_future"
-
-    return None
+    return True, None
 
 
-def validate_entries(entries: Iterable[Dict[str, Any]]) -> Tuple[bool, List[str]]:
-    """
-    Validate a batch of entries. Returns (ok, errors[list[str]]).
-    On any failure, writes an audit reject event per offending entry.
-    """
-    errors: List[str] = []
+def compliance_filter_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Batch version: returns only entries that pass compliance."""
+    passed: List[Dict[str, Any]] = []
     for e in entries:
-        reason = _validate_entry(e)
-        if reason:
-            errors.append(reason)
-            _audit_reject(e, reason)
-    return (len(errors) == 0), errors
+        ok, _ = compliance_filter_entry(e)
+        if ok:
+            passed.append(e)
+    return passed
 
 
-# Aliases expected by callers
-def validate(batch: Iterable[Dict[str, Any]]) -> Tuple[bool, List[str]]:
-    return validate_entries(batch)
-
-
-def validate_batch(entries: Iterable[Dict[str, Any]]) -> Tuple[bool, List[str]]:
-    return validate_entries(entries)
-
-
-# -----------------
-# Backward compatibility shims
-# -----------------
+# --- Backward compatibility shims ---
 
 def is_compliant_ledger_entry(entry: dict) -> bool:
-    ok, _ = validate_entries([entry])
+    """
+    Legacy boolean wrapper retained for older call sites.
+    """
+    ok, _ = compliance_filter_entry(entry)
     return ok
 
 
 def compliance_filter_ledger_entry(entry: dict):
-    ok, _ = validate_entries([entry])
+    """
+    Legacy entry/None wrapper retained for modules that expect the filtered entry back.
+    Returns the original entry if compliant, otherwise None.
+    """
+    ok, _ = compliance_filter_entry(entry)
     return entry if ok else None
 
 
+# Some tests/modules look for this exact helper name.
+# Make it a thin alias to the batch filter above.
 def filter_valid_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    for e in entries:
-        ok, _ = validate_entries([e])
-        if ok:
-            out.append(e)
-    return out
+    return compliance_filter_entries(entries)

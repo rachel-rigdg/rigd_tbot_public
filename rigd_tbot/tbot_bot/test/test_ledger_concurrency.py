@@ -5,18 +5,11 @@
 import unittest
 import threading
 import time
-from datetime import datetime, timezone
-from pathlib import Path
-import uuid
-
-from tbot_bot.accounting.ledger_modules.ledger_double_entry import (
-    post_ledger_entries_double_entry,
-    validate_double_entry,
-)
-from tbot_bot.accounting.ledger_modules.ledger_deduplication import install_unique_guards
-from tbot_bot.accounting.ledger_modules.ledger_core import get_conn
-from tbot_bot.support.path_resolver import resolve_control_path
+from tbot_bot.accounting.ledger_modules.ledger_db import add_entry, get_db_path
+from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
+from pathlib import Path
+import sqlite3
 
 MAX_TEST_TIME = 90  # seconds per test
 
@@ -24,8 +17,7 @@ CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_ledger_concurrency.flag"
 RUN_ALL_FLAG = CONTROL_DIR / "test_mode.flag"
 
-
-def safe_print(msg: str):
+def safe_print(msg):
     try:
         print(msg, flush=True)
     except Exception:
@@ -35,54 +27,46 @@ def safe_print(msg: str):
     except Exception:
         pass
 
-
-def _utc_now():
-    return datetime.now(timezone.utc).isoformat()
-
-
 class TestLedgerConcurrency(unittest.TestCase):
     def setUp(self):
         if not (Path(TEST_FLAG_PATH).exists() or Path(RUN_ALL_FLAG).exists()):
             self.skipTest("Individual test flag not present. Exiting.")
-        self._t0 = time.time()
-        # Ensure DB guards exist before racing inserts
-        try:
-            install_unique_guards()
-        except Exception:
-            # Best-effort; not fatal if already present
-            pass
+        self.test_start = time.time()
 
     def tearDown(self):
-        try:
-            if Path(TEST_FLAG_PATH).exists():
-                Path(TEST_FLAG_PATH).unlink()
-        finally:
-            elapsed = time.time() - self._t0
-            if elapsed > MAX_TEST_TIME:
-                safe_print(f"[test_ledger_concurrency] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
-                self.fail("Test timeout exceeded")
+        if Path(TEST_FLAG_PATH).exists():
+            Path(TEST_FLAG_PATH).unlink()
 
-    # ------------------------------
-    # Helpers
-    # ------------------------------
+    def test_concurrent_writes(self):
+        safe_print("[test_ledger_concurrency] Starting concurrent ledger write test...")
+        errors = []
+        db_path = get_db_path()
+        def try_write(n):
+            try:
+                # Each thread uses a dedicated connection with a busy_timeout
+                conn = sqlite3.connect(db_path, timeout=5)
+                conn.execute("PRAGMA busy_timeout = 3000;")
+                add_entry({"account": f"concurrent_{n}", "amount": 1.0, "side": "debit"})
+                conn.close()
+            except Exception as e:
+                errors.append(str(e))
+        threads = [threading.Thread(target=try_write, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        safe_print(f"[test_ledger_concurrency] Number of errors: {len(errors)}")
+        # Allow minor race, but not systemic failure; tolerate <=2 busy errors
+        self.assertLessEqual(len(errors), 2)
+        safe_print("[test_ledger_concurrency] Concurrent ledger write test complete.")
+        if (time.time() - self.test_start) > MAX_TEST_TIME:
+            safe_print(f"[test_ledger_concurrency] TIMEOUT: test exceeded {MAX_TEST_TIME} seconds")
+            self.fail("Test timeout exceeded")
 
-    def _post_balanced_group(self, trade_id: str, group_id: str, amount: float = 1.00):
-        """
-        Post a pre-split, balanced (debit/credit) group atomically using the public double-entry API.
-        Avoids mapping so the test doesn't depend on mapping table state.
-        """
-        ts = _utc_now()
-        # Representative accounts; schema doesn't validate account values here
-        debit = {
-            "trade_id": trade_id,
-            "group_id": group_id,
-            "account": "Assets:Test:Cash",
-            "side": "debit",
-            "total_value": amount,
-            "timestamp_utc": ts,
-            "symbol": "TEST",
-            "action": "other",
-        }
-        credit = {
-            "trade_id": trade_id,
-            "group
+def run_test():
+    result = unittest.main(module=__name__, exit=False)
+    status = "PASSED" if result.result.wasSuccessful() else "ERRORS"
+    safe_print(f"[test_ledger_concurrency] FINAL RESULT: {status}.")
+
+if __name__ == "__main__":
+    run_test()

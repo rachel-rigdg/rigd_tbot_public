@@ -3,10 +3,12 @@
 # All monetary actions in this module must result in a ledger entry and audit log.
 # Any function that affects cash, reserve, or ETF allocation must be called via orchestration with user and audit context.
 
+import os
 import math
 from decimal import Decimal, ROUND_DOWN
-from datetime import datetime, timezone
+from datetime import datetime
 from tbot_bot.support.utils_log import get_logger
+from tbot_bot.config.env_bot import load_env_var
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
 
 # Correct imports: LEDGER, not COA!
@@ -14,7 +16,7 @@ from tbot_bot.accounting.ledger import (
     post_tax_reserve_entry,
     post_payroll_reserve_entry,
     post_float_allocation_entry,
-    post_rebalance_entry,
+    post_rebalance_entry
 )
 from tbot_bot.reporting.audit_logger import audit_log_event
 
@@ -132,14 +134,11 @@ def compute_etf_holdings(broker):
         log.error(f"Error computing ETF holdings: {e}")
         return {}
 
-def _utc_now_iso():
-    return datetime.now(timezone.utc).isoformat()
-
 def record_reserve_split(tax_cut, payroll_cut, user="system", audit_reference=None):
     """
     Posts tax and payroll reserve splits to persistent holdings secrets, the LEDGER, and the audit log.
     """
-    now_utc = _utc_now_iso()
+    now_utc = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     # Persist to holdings secrets (internal tracking only)
     secrets = load_holdings_secrets()
     secrets['last_tax_reserve'] = tax_cut
@@ -160,7 +159,7 @@ def record_float_allocation(amount, user="system", audit_reference=None):
     """
     Posts a float allocation event to the LEDGER and audit log.
     """
-    now_utc = _utc_now_iso()
+    now_utc = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     post_float_allocation_entry(amount=amount, datetime_utc=now_utc, notes="Float allocation")
     audit_log_event(
         event_type="float_allocation",
@@ -174,7 +173,7 @@ def record_rebalance(symbol, amount, action, user="system", audit_reference=None
     """
     Posts a rebalance event to the LEDGER and audit log.
     """
-    now_utc = _utc_now_iso()
+    now_utc = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     post_rebalance_entry(symbol=symbol, amount=amount, action=action, datetime_utc=now_utc, notes="Rebalance action")
     audit_log_event(
         event_type="rebalance",

@@ -1,329 +1,185 @@
 # tbot_bot/accounting/ledger_modules/ledger_sync.py
 
-"""
-Ledger sync orchestrator (v048)
-
-- import → normalize → tail-aware filter → compliance → dedupe → post
-- Idempotency enforced (FITID UNIQUE + composite guards)
-- Validation gate: rejects audited; 'timestamp_too_old' is overridden for backfill if:
-    • the ledger is empty, or
-    • the entry is strictly newer than the current ledger tail timestamp
-"""
-
-from __future__ import annotations
-
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
-
-# ---------- BROKER API RESOLUTION (robust fallbacks) ----------
-# Your deployment may expose different names; this resolver normalizes them.
-import importlib
-
-def _resolve_broker_fetchers():
-    api = importlib.import_module("tbot_bot.broker.broker_api")
-    def _pick(names: List[str]):
-        for n in names:
-            fn = getattr(api, n, None)
-            if callable(fn):
-                return fn
-        return None
-
-    trades_fn = _pick([
-        "fetch_all_trades", "fetch_trades", "list_trades", "get_all_trades", "get_trades"
-    ])
-    cash_fn = _pick([
-        "fetch_cash_activity", "list_cash_activity", "get_cash_activity", "cash_activity", "fetch_cash"
-    ])
-    # Optional positions (not strictly required for ledger posting)
-    positions_fn = _pick([
-        "fetch_positions", "list_positions", "get_positions"
-    ])
-    if trades_fn is None:
-        raise ImportError("broker_api is missing a trades fetcher (tried: fetch_all_trades/fetch_trades/list_trades/get_*).")
-    if cash_fn is None:
-        # Some brokers return cash movements mixed with trades; degrade gracefully.
-        def _empty_cash(**_kwargs):  # type: ignore[unused-ignore]
-            return []
-        cash_fn = _empty_cash
-    return trades_fn, cash_fn, positions_fn
-
-_FETCH_TRADES_FN, _FETCH_CASH_FN, _FETCH_POSITIONS_FN = _resolve_broker_fetchers()
-
-def _call_with_dates(fn, start_date: Optional[str], end_date: Optional[str]):
-    # Be liberal in what we accept: kw, positional, only start, or no args.
-    try:
-        return fn(start_date=start_date, end_date=end_date)
-    except TypeError:
-        try:
-            return fn(start_date=start_date)
-        except TypeError:
-            try:
-                return fn(start_date, end_date)
-            except TypeError:
-                try:
-                    return fn(start_date)
-                except TypeError:
-                    return fn()
-
-# --------------------------------------------------------------
-
-from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
-
-from tbot_bot.accounting.ledger_modules.ledger_entry import build_normalized_entry
-from tbot_bot.accounting.ledger_modules.ledger_double_entry import (
-    validate_double_entry,
-    post_ledger_entries_double_entry,
-)
+from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
 from tbot_bot.accounting.ledger_modules.ledger_snapshot import snapshot_ledger_before_sync
-from tbot_bot.accounting.ledger_modules.ledger_core import get_identity_tuple, get_conn
-from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import validate_entries
-from tbot_bot.accounting.ledger_modules.ledger_deduplication import (
-    deduplicate_entries,
-    install_unique_guards,
-)
-from tbot_bot.accounting.ledger_modules.ledger_audit import log_audit_event
+from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_double_entry, post_double_entry
+from tbot_bot.accounting.coa_mapping_table import load_mapping_table
+from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
+from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
+from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
+from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+import sqlite3
+import json
+from datetime import datetime, timezone
 
-# Reconciliation log (support both locations)
+# --- Compliance compatibility (supports old/new filter signatures) ---
 try:
-    from tbot_bot.accounting.ledger_modules.reconciliation_log import log_reconciliation_entry  # type: ignore
-except Exception:  # pragma: no cover
-    from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry  # type: ignore
+    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (
+        is_compliant_ledger_entry as _is_compliant,  # boolean
+    )
+except Exception:
+    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (
+        compliance_filter_ledger_entry as _legacy_filter,  # entry-or-None OR (bool, reason)
+    )
+
+    def _is_compliant(entry: dict) -> bool:
+        res = _legacy_filter(entry)
+        if isinstance(res, tuple):
+            return bool(res[0])
+        return res is not None
+
+PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "total_value")
 
 
-# -----------------
-# Helpers
-# -----------------
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _to_utc_dt(iso_like: Optional[str]) -> Optional[datetime]:
-    if not iso_like:
-        return None
-    try:
-        dt = datetime.fromisoformat(str(iso_like).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
-    except Exception:
-        return None
+def _sanitize_entry(entry):
+    sanitized = {}
+    for k, v in entry.items():
+        if isinstance(v, (dict, list)):
+            sanitized[k] = json.dumps(v, default=str)
+        elif v is None:
+            sanitized[k] = None
+        else:
+            sanitized[k] = v
+    return sanitized
 
 
-def _latest_ledger_timestamp() -> Optional[datetime]:
+def _is_blank_entry(entry):
+    # True if all primary display fields are None/empty
+    return all(
+        entry.get(f) is None or str(entry.get(f)).strip() == "" for f in PRIMARY_FIELDS
+    )
+
+
+def _ensure_group_id(entry: dict) -> dict:
+    """Guarantee group_id exists; default to trade_id."""
+    if not entry.get("group_id"):
+        entry["group_id"] = entry.get("trade_id")
+    return entry
+
+
+def sync_broker_ledger():
     """
-    Return the latest timestamp in trades using the standard COALESCE column set.
-    None if table empty or missing.
-    """
-    try:
-        with get_conn() as conn:
-            row = conn.execute(
-                "SELECT MAX(COALESCE(timestamp_utc, datetime_utc, created_at_utc)) FROM trades"
-            ).fetchone()
-            return _to_utc_dt(row[0]) if row and row[0] else None
-    except Exception:
-        # If trades doesn't exist yet, treat as empty ledger (backfill allowed)
-        return None
-
-
-def _normalize_record_from_normalized(norm: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Canonical field completion (fitid, identity, UTC) from an already normalized broker record.
-    """
-    e = build_normalized_entry(norm)
-    if not e.get("group_id") and e.get("trade_id"):
-        e["group_id"] = e["trade_id"]
-    return e
-
-
-def _recon_log(entry: Dict[str, Any], *, status: str, notes: str, sync_run_id: str) -> None:
-    try:
-        log_reconciliation_entry(
-            trade_id=entry.get("trade_id"),
-            status=status,
-            compare_fields={},
-            sync_run_id=sync_run_id,
-            api_hash=(entry.get("response_hash") or ""),
-            broker=entry.get("broker_code"),
-            raw_record=entry,
-            mapping_version="",
-            notes=notes,
-            entity_code=entry.get("entity_code"),
-            jurisdiction_code=entry.get("jurisdiction_code"),
-            broker_code=entry.get("broker_code"),
-        )
-    except Exception:
-        # Reconciliation logging must not break sync
-        pass
-
-
-# Legacy test shim expected by some tests
-def _sanitize_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
-    return build_normalized_entry(entry)
-
-
-# -----------------
-# Public orchestrator
-# -----------------
-
-def sync_broker_ledger(start_date: str | None = None, end_date: str | None = None) -> Dict[str, Any]:
-    """
-    Orchestrate broker → ledger sync.
-    Tail-aware behavior:
-      • Determine the current ledger tail timestamp.
-      • Only consider entries strictly newer than that timestamp.
-      • If the ledger is empty, allow full backfill (ignore 'timestamp_too_old').
+    Fetch broker data, normalize, filter, dedupe, and write via double-entry posting.
+    - Ensures group_id is set (defaults to trade_id)
+    - Skips blank / non-compliant / unmapped items
+    - Avoids duplicate writes by de-duping raw inputs and relying on DB-level (trade_id, side) check
     """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    sync_run_id = f"sync_{entity_code}_{jurisdiction_code}_{broker_code}_{bot_id}_{_utc_now_iso()}"
 
-    # Point-in-time DB snapshot prior to mutation
+    # Snapshot before mutating the ledger
     snapshot_ledger_before_sync()
 
-    # Ensure DB-level UNIQUE guards (FITID + composite) BEFORE any inserts
-    install_unique_guards()
+    # Mapping table for posting
+    mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
 
-    # Pull broker data (date filters are passed through if provided)
-    trades_raw = _call_with_dates(_FETCH_TRADES_FN, start_date, end_date)
-    cash_raw = _call_with_dates(_FETCH_CASH_FN, start_date, end_date)
-    # positions are optional/one-shot; ignore if not present in this flow
-    # positions_raw = _call_with_dates(_FETCH_POSITIONS_FN, start_date, end_date) if _FETCH_POSITIONS_FN else []
+    # Pull from broker
+    trades_raw = fetch_all_trades(start_date="2025-01-01", end_date=None)
+    cash_acts_raw = fetch_cash_activity(start_date="2025-01-01", end_date=None)
 
-    ledger_tail_dt = _latest_ledger_timestamp()
-
-    normalized: List[Dict[str, Any]] = []
-    skipped_noise = 0
-    skipped_older = 0
-
-    # Normalize once via broker normalizer, respect skip, then complete canonical fields
-    for raw in list(trades_raw) + list(cash_raw):
-        if not isinstance(raw, dict):
+    # Normalize + filter trades
+    trades = []
+    for t in trades_raw:
+        if not isinstance(t, dict):
+            print("NON-DICT TRADE DETECTED:", type(t), t)
             continue
-
-        norm = normalize_trade(raw) or {}
-        if norm.get("skip_insert"):
-            skipped_noise += 1
-            log_audit_event(
-                action="sync_skip",
-                entry_id=None,
-                user="system",
-                before={"raw": raw},
-                after=None,
-                reason=(norm.get("json_metadata") or {}).get("unmapped_action", "skip_insert"),
-                audit_reference=sync_run_id,
-                group_id=None,
-                fitid=None,
-                extra={"phase": "normalize"},
-            )
+        normalized = normalize_trade(t)
+        if normalized.get("skip_insert", False):
+            print("SKIP INVALID TRADE ACTION:",
+                  (normalized.get("json_metadata") or {}).get("unmapped_action", "unknown"),
+                  "| RAW:", t)
             continue
-
-        e = _normalize_record_from_normalized(norm)
-        # Tail-aware filter: only accept entries strictly newer than ledger tail
-        ts_dt = _to_utc_dt(e.get("timestamp_utc"))
-        if ledger_tail_dt is not None and ts_dt is not None and ts_dt <= ledger_tail_dt:
-            skipped_older += 1
-            _recon_log(e, status="rejected", notes="older_than_ledger_tail", sync_run_id=sync_run_id)
+        _ensure_group_id(normalized)
+        if _is_blank_entry(normalized):
+            print("SKIP BLANK TRADE ENTRY:", normalized)
             continue
-
-        normalized.append(e)
-
-    # Validation gate (pre-write compliance)
-    rejects = 0
-    backfill_overrides = 0
-    valid_entries: List[Dict[str, Any]] = []
-    for e in normalized:
-        ok, errs = validate_entries([e])
-        if ok:
-            valid_entries.append(e)
+        if not _is_compliant(normalized):
+            print("SKIP NON-COMPLIANT TRADE ENTRY:", normalized)
             continue
+        trades.append(normalized)
 
-        errs_list = list(errs or [])
-        # Backfill override: if ONLY 'timestamp_too_old' blocks the entry, allow it when:
-        #   • ledger is empty (tail None), or
-        #   • entry is strictly newer than the current tail (we already enforced that above)
-        if errs_list and set(errs_list) == {"timestamp_too_old"}:
-            backfill_overrides += 1
-            valid_entries.append(e)
-            _recon_log(e, status="matched", notes="timestamp_too_old_overridden_by_tail_rule", sync_run_id=sync_run_id)
-            log_audit_event(
-                action="sync_backfill_override",
-                entry_id=None,
-                user="system",
-                before=e,
-                after=None,
-                reason="timestamp_too_old_overridden_by_tail_rule",
-                audit_reference=sync_run_id,
-                group_id=e.get("group_id"),
-                fitid=e.get("fitid"),
-                extra={"phase": "validation"},
-            )
+    # Normalize + filter cash activities
+    cash_acts = []
+    for c in cash_acts_raw:
+        if not isinstance(c, dict):
+            print("NON-DICT CASH ACTIVITY DETECTED:", type(c), c)
             continue
+        normalized = normalize_trade(c)
+        if normalized.get("skip_insert", False):
+            print("SKIP INVALID CASH ACTION:",
+                  (normalized.get("json_metadata") or {}).get("unmapped_action", "unknown"),
+                  "| RAW:", c)
+            continue
+        _ensure_group_id(normalized)
+        if _is_blank_entry(normalized):
+            print("SKIP BLANK CASH ENTRY:", normalized)
+            continue
+        if not _is_compliant(normalized):
+            print("SKIP NON-COMPLIANT CASH ENTRY:", normalized)
+            continue
+        cash_acts.append(normalized)
 
-        # Hard reject (other reasons)
-        rejects += 1
-        _recon_log(e, status="rejected", notes=";".join(errs_list or ["validation_failed"]), sync_run_id=sync_run_id)
-        log_audit_event(
-            action="sync_reject",
-            entry_id=None,
-            user="system",
-            before=e,
-            after=None,
-            reason=";".join(errs_list or ["validation_failed"]),
-            audit_reference=sync_run_id,
-            group_id=e.get("group_id"),
-            fitid=e.get("fitid"),
-            extra={"phase": "validation"},
+    # Combine and dedupe raw normalized entries before posting
+    # Use (trade_id, action, datetime_utc, total_value) as a stable key to avoid double-posting
+    combined = trades + cash_acts
+    seen = set()
+    deduped_entries = []
+    for e in combined:
+        key = (
+            e.get("trade_id"),
+            e.get("action"),
+            e.get("datetime_utc"),
+            float(e.get("total_value") or 0.0),
         )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped_entries.append(e)
 
-    summary: Dict[str, Any] = {
-        "identity": {
-            "entity_code": entity_code,
-            "jurisdiction_code": jurisdiction_code,
-            "broker_code": broker_code,
-            "bot_id": bot_id,
-        },
-        "sync_run_id": sync_run_id,
-        "fetched": len(trades_raw) + len(cash_raw),
-        "normalized": len(normalized),
-        "skipped_noise": skipped_noise,
-        "skipped_older": skipped_older,
-        "backfill_overrides": backfill_overrides,
-        "rejected": rejects,
-        "posted_groups": 0,
-        "inserted_rows": 0,
-        "dedup_skipped": 0,
-        "status": "aborted" if rejects > 0 else "posted",
-        "ledger_tail_utc": ledger_tail_dt.isoformat() if ledger_tail_dt else None,
-    }
+    # Optional: pad missing schema fields (defensive; post_double_entry also hardens)
+    def _fill_defaults(entry):
+        for k in TRADES_FIELDS:
+            if k not in entry or entry[k] is None:
+                entry[k] = None
+        return entry
 
-    # Abort export/posting if any rejects detected
-    if rejects > 0:
-        return summary
+    all_entries = [_fill_defaults(e) for e in deduped_entries]
 
-    # In-memory dedupe (FITID→canonical key)
-    deduped = deduplicate_entries(valid_entries)
-    summary["dedup_skipped"] = len(valid_entries) - len(deduped)
+    # Sanitize complex types -> JSON strings (safe for sqlite bindings downstream if needed)
+    sanitized_entries = [_sanitize_entry(e) for e in all_entries]
 
-    # Post (double-entry; atomic per group; idempotent at DB via UNIQUE guards)
-    post_result = post_ledger_entries_double_entry(deduped)
-    # Accept updated return shape (dict) or legacy list
-    if isinstance(post_result, dict):
-        inserted_ids = list(post_result.get("inserted_ids", []))
-    else:
-        inserted_ids = list(post_result or [])
+    # Post using double-entry helper (handles account mapping, amount signs, and DB de-dup on (trade_id, side))
+    post_double_entry(sanitized_entries, mapping_table)
 
-    summary["inserted_rows"] = len(inserted_ids)
-    # Count groups by group_id to be accurate
-    try:
-        summary["posted_groups"] = len({e.get("group_id") for e in deduped})
-    except Exception:
-        summary["posted_groups"] = len(deduped)
-
-    # Double-entry integrity validation
+    # Validate double-entry integrity
     validate_double_entry()
 
-    # Reconciliation: mark matched for all posted entries
-    for e in deduped:
-        _recon_log(e, status="matched", notes="Imported by sync", sync_run_id=sync_run_id)
+    # Write reconciliation records
+    sync_run_id = f"sync_{entity_code}_{jurisdiction_code}_{broker_code}_{bot_id}_{datetime.now(timezone.utc).isoformat()}"
 
-    return summary
+    for entry in all_entries:
+        trade_id = entry.get("trade_id")
+        api_hash = ""
+        jm = entry.get("json_metadata")
+        if isinstance(jm, dict):
+            api_hash = jm.get("api_hash", "") or jm.get("credential_hash", "")
+        elif isinstance(jm, str):
+            try:
+                jm_obj = json.loads(jm)
+                api_hash = jm_obj.get("api_hash", "") or jm_obj.get("credential_hash", "")
+            except Exception:
+                pass
+
+        log_reconciliation_entry(
+            trade_id=trade_id,
+            status="matched",
+            compare_fields={},
+            sync_run_id=sync_run_id,
+            api_hash=api_hash,
+            broker=broker_code,
+            raw_record=entry,
+            mapping_version=str(mapping_table.get("version", "")),
+            notes="Imported by sync",
+            entity_code=entity_code,
+            jurisdiction_code=jurisdiction_code,
+            broker_code=broker_code,
+        )

@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="/static/css/components/buttons.css">
     <link rel="stylesheet" href="/static/css/pages/ledger.css">
     <style>
-      .ledger-table td, .ledger-table th { padding: 4px 6px; vertical-align: top; }
+      .ledger-table td, .ledger-table th { padding: 4px 6px; }
       .ledger-table .row-top { background: #f8f8fa; }
       .ledger-table .row-bottom { background: #f3f3f5; }
       .ledger-table .action-cell { white-space: nowrap; }
@@ -21,14 +21,10 @@
       .collapse-btn { cursor: pointer; color: #0040c0; text-decoration: underline; background: none; border: none; padding: 0 6px; }
       .expand-toggle { margin-left:.5rem; font-size: .9em; color:#333; }
       .toolbar { display:flex; align-items:center; gap:1rem; margin:.75rem 0; }
-      .toolbar .right { margin-left:auto; display:flex; gap:.75rem; align-items:center; }
+      .toolbar .right { margin-left:auto; }
       .status-mismatch { color:#b30000; font-weight:600; }
       .resolved-tag { color:#0a7; font-weight:600; }
       .status-ok { color:#333; }
-      .balance-table th, .balance-table td { padding: 4px 6px; }
-      .btn-link { display:inline-block; padding:.5rem .75rem; border:1px solid #ccc; border-radius:6px; background:#fafafa; text-decoration:none; color:#222; }
-      .btn-link:hover { background:#f0f0f6; }
-      .subnote { font-size:.85em; color:#666; }
     </style>
     <script src="/static/js/ledger.js"></script>
 </head>
@@ -57,15 +53,11 @@
         <button type="submit">Sync Broker Ledger</button>
       </form>
 
-      <a class="btn-link" href="{{ url_for('coa_mapping_web.view_mapping') }}">Open COA Mapping</a>
-
-      <div class="right">
-        <!-- Master collapse/expand toggle: checked = collapse all -->
-        <label>
-          <input type="checkbox" id="collapse-all" />
-          Collapse all
-        </label>
-      </div>
+      <!-- Master collapse/expand toggle: checked = collapse all -->
+      <label class="right">
+        <input type="checkbox" id="collapse-all" />
+        Collapse all
+      </label>
     </div>
 
     <div class="reconcile-container">
@@ -74,16 +66,15 @@
       <table class="ledger-table">
         <thead>
           <tr>
-            <th class="sortable" data-col="datetime_utc" onclick="sortLedgerTable('datetime_utc')">DTPOSTED (UTC)</th>
+            <th class="sortable" data-col="datetime_utc" onclick="sortLedgerTable('datetime_utc')">Date (UTC)</th>
             <th class="sortable" data-col="symbol" onclick="sortLedgerTable('symbol')">Symbol</th>
-            <!-- Representative leg account for collapsed/top row -->
-            <th class="sortable" data-col="account" onclick="sortLedgerTable('account')">Account (COA path)</th>
-            <th class="sortable" data-col="trntype" onclick="sortLedgerTable('trntype')">TRNTYPE</th>
+            <!-- NEW: Account column (sortable) -->
+            <th class="sortable" data-col="account" onclick="sortLedgerTable('account')">Account</th>
             <th class="sortable" data-col="action" onclick="sortLedgerTable('action')">Action</th>
             <th class="sortable" data-col="quantity" onclick="sortLedgerTable('quantity')">Quantity</th>
             <th class="sortable" data-col="price" onclick="sortLedgerTable('price')">Price</th>
             <th class="sortable" data-col="fee" onclick="sortLedgerTable('fee')">Fee</th>
-            <th class="sortable" data-col="total_value" onclick="sortLedgerTable('total_value')">Amount</th>
+            <th class="sortable" data-col="total_value" onclick="sortLedgerTable('total_value')">Total Value</th>
             <th class="sortable" data-col="status" onclick="sortLedgerTable('status')">Status</th>
             <th class="sortable" data-col="running_balance" onclick="sortLedgerTable('running_balance')">Running Balance</th>
           </tr>
@@ -93,8 +84,9 @@
             <th>Strategy</th>
             <th>Tags</th>
             <th>Notes</th>
-            <th>Side</th>
-            <th colspan="5" class="subnote">Expanded rows show per-leg COA account & side</th>
+            <th>Action</th>
+            <th>Add Entry Button</th>
+            <th colspan="2"></th>
           </tr>
         </thead>
 
@@ -102,27 +94,37 @@
           {% for entry in entries %}
             {% if (entry.symbol and entry.symbol|string|trim) or
                   (entry.datetime_utc and entry.datetime_utc|string|trim) or
-                  (entry.timestamp_utc and entry.timestamp_utc|string|trim) or
                   (entry.action and entry.action|string|trim) or
                   (entry.price is not none and entry.price|string not in ("", "None")) or
                   (entry.quantity is not none and entry.quantity|string not in ("", "None")) or
                   (entry.total_value is not none and entry.total_value|string not in ("", "None"))
             %}
-              <!-- Top (representative / collapsed) row -->
               <tr class="row-top {{ entry.status }}">
                 <td>
+                  {# +/- button sends intended target state #}
                   <button
                     class="collapse-btn"
                     type="button"
                     onclick="toggleCollapse('{{ entry.group_id or entry.trade_id }}', {{ 'true' if entry.collapsed else 'false' }})"
                     title="{{ 'Expand' if entry.collapsed else 'Collapse' }}">
-                    {{ "+" if entry.collapsed else "−" }}
+                    {{ "+" if entry.collapsed else "-" }}
                   </button>
-                  {{ (entry.timestamp_utc or entry.datetime_utc or entry.created_at_utc)[:19] if (entry.timestamp_utc or entry.datetime_utc or entry.created_at_utc) }}
+
+                  {# Checkbox: checked = expanded (persisted) #}
+                  <label class="expand-toggle">
+                    <input
+                      type="checkbox"
+                      class="toggle-group"
+                      data-group-id="{{ entry.group_id or entry.trade_id }}"
+                      {% if not entry.collapsed %}checked{% endif %}/>
+                    expand
+                  </label>
+
+                  {{ entry.datetime_utc.split('T')[0] if entry.datetime_utc }}
                 </td>
                 <td>{{ entry.symbol or "" }}</td>
+                <!-- NEW: show representative leg's account in collapsed/top row -->
                 <td>{{ entry.account or "" }}</td>
-                <td>{{ entry.trntype or entry.type or "" }}</td>
                 <td>{{ entry.action or "" }}</td>
                 <td>{{ entry.quantity or "" }}</td>
                 <td>{{ entry.price or "" }}</td>
@@ -140,47 +142,61 @@
                 <td>{{ entry.running_balance if entry.running_balance is defined else "" }}</td>
               </tr>
 
-              <!-- Expanded sub-entries for collapsed groups -->
-              {% if entry.collapsed and entry.sub_entries %}
+              {% if not entry.collapsed and entry.sub_entries %}
                 {% for sub in entry.sub_entries %}
                   <tr class="row-bottom {{ sub.status }}">
                     <td>{{ sub.trade_id or "" }}</td>
+
+                    <!-- NEW: inline COA account editor per leg -->
                     <td>
-                      {{ sub.account or "" }}
+                      <form method="post" action="{{ url_for('ledger_web.update_account', entry_id=sub.id) }}">
+                        <select name="account" required>
+                          {% for code, name in coa_accounts %}
+                            <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
+                              {{ name }} ({{ code }})
+                            </option>
+                          {% endfor %}
+                        </select>
+                        <button type="submit">Save</button>
+                      </form>
                     </td>
+
                     <td>{{ sub.strategy or "" }}</td>
                     <td>{{ sub.tags or "" }}</td>
                     <td>{{ sub.notes or "" }}</td>
-                    <td>{{ sub.side or "" }}</td>
-                    <td colspan="5" class="subnote">
-                      DTPOSTED: {{ (sub.timestamp_utc or sub.datetime_utc or sub.created_at_utc)[:19] if (sub.timestamp_utc or sub.datetime_utc or sub.created_at_utc) }}
-                      &nbsp; • &nbsp; TRNTYPE: {{ sub.trntype or sub.type or "" }}
-                      &nbsp; • &nbsp; Amount: {{ sub.total_value or "" }}
-                    </td>
+                    <td colspan="3"></td>
+                    <td></td>
                   </tr>
                 {% endfor %}
               {% endif %}
             {% endif %}
           {% endfor %}
 
-          <!-- Add-entry rows -->
+          {# Add-entry rows #}
           <tr class="row-top">
             <form method="post" action="{{ url_for('ledger_web.add_ledger_entry_route') }}">
-              <td><input type="text" name="datetime_utc" placeholder="YYYY-MM-DDTHH:MM:SSZ" required></td>
+              <td><input type="text" name="datetime_utc" placeholder="YYYY-MM-DD" required></td>
               <td><input type="text" name="symbol" placeholder="Symbol"></td>
-              <td><!-- Account shown in bottom add-row --></td>
+              <!-- placeholder cell for Account column in top row -->
+              <td></td>
               <td>
-                <input type="text" name="action" placeholder="TRNTYPE/Action (e.g., long, short, fee)">
+                <select name="action">
+                  <option value="">NONE</option>
+                  <option value="long">long</option>
+                  <option value="short">short</option>
+                  <option value="put">put</option>
+                  <option value="inverse">inverse</option>
+                </select>
               </td>
               <td><input type="text" name="quantity" placeholder="Qty"></td>
               <td><input type="text" name="price" placeholder="Price"></td>
               <td><input type="text" name="fee" placeholder="Fee"></td>
-              <td><input type="text" name="total_value" placeholder="Amount"></td>
+              <td><input type="text" name="total_value" placeholder="Total Value"></td>
               <td></td>
               <td></td>
           </tr>
           <tr class="row-bottom">
-              <td><input type="text" name="trade_id" placeholder="Trade ID / Group"></td>
+              <td><input type="text" name="trade_id" placeholder="Trade ID"></td>
               <td>
                 <select name="account" required>
                   <option value="">Select Account</option>
@@ -203,33 +219,25 @@
               <td colspan="2">
                 <button type="submit" class="add-btn">Add Entry</button>
               </td>
-              <td colspan="3"></td>
+              <td></td>
+              <td></td>
             </form>
           </tr>
         </tbody>
       </table>
 
-      <div class="ledger-balance-summary" style="margin-top:1.5rem;">
+      <div class="ledger-balance-summary">
         <h3>Account Balances</h3>
         {% if balances %}
           <table class="balance-table">
             <thead>
-              <tr>
-                <th>Account</th>
-                <th>Opening</th>
-                <th>Debits</th>
-                <th>Credits</th>
-                <th>Closing</th>
-              </tr>
+              <tr><th>Account</th><th>Balance</th></tr>
             </thead>
             <tbody>
-              {% for acct, vals in balances.items() %}
+              {% for account, balance in balances.items() %}
                 <tr>
-                  <td>{{ acct }}</td>
-                  <td>{{ vals.opening_balance if vals.opening_balance is defined else vals['opening_balance'] }}</td>
-                  <td>{{ vals.debits if vals.debits is defined else vals['debits'] }}</td>
-                  <td>{{ vals.credits if vals.credits is defined else vals['credits'] }}</td>
-                  <td>{{ vals.closing_balance if vals.closing_balance is defined else vals['closing_balance'] }}</td>
+                  <td>{{ account }}</td>
+                  <td>{{ balance }}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -237,10 +245,9 @@
         {% else %}
           <p>No balance data available.</p>
         {% endif %}
-        <p class="subnote">Closing = Opening + Debits − Credits (all values as of DTPOSTED window).</p>
       </div>
 
-      <div class="audit-log-info" style="margin-top:1rem;">
+      <div class="audit-log-info">
         <p>All edits, resolutions, and reconciliation actions are logged with UTC timestamp and user ID for compliance.</p>
         <p>Only admin users can resolve or edit ledger entries.</p>
       </div>

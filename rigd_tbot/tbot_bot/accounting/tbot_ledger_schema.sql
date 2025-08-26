@@ -1,6 +1,5 @@
 -- tbot_bot/accounting/tbot_ledger_schema.sql
 -- PRODUCTION-GRADE, MAXIMUM-COMPLETENESS LEDGER SCHEMA (INTERNATIONAL, AUDIT, COMPLIANCE, EXTENSIBLE)
--- NOTE: Runtime should enable WAL for concurrency: PRAGMA journal_mode=WAL;
 
 PRAGMA foreign_keys = ON;
 
@@ -152,49 +151,47 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     bot_id TEXT DEFAULT NULL
 );
 
--- Table: Trades (normalized view, legacy, for bot-internal trade logic) — unified v048 (OFX-aligned, no duplicates)
+-- Table: Trades (normalized view, legacy, for bot-internal trade logic)
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ledger_entry_id INTEGER REFERENCES ledger_entries(id) ON DELETE CASCADE,
-
-    -- OFX-aligned core
-    TRNTYPE TEXT,                          -- BUY/SELL/DIV/INT/FEE/XFER/WITHDRAWAL/DEPOSIT/OTHER/POS
-    DTPOSTED TEXT,                         -- ISO-8601 UTC '...Z'
-    FITID TEXT,                            -- OFX idempotency key (nullable, unique when present)
-    group_id TEXT,                         -- grouping identifier (UUIDv5 or similar)
-
-    -- identity tags
-    entity_code TEXT NOT NULL,
-    jurisdiction_code TEXT NOT NULL REFERENCES jurisdictions(code),
-    broker_code TEXT NOT NULL REFERENCES brokers(code),
-    bot_id TEXT DEFAULT NULL,
-
-    -- business semantics
-    action TEXT CHECK(action IN ('long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg')) NOT NULL,
-    side TEXT CHECK(side IN ('debit','credit')) NOT NULL,
+    datetime_utc TEXT NOT NULL,
     symbol TEXT NOT NULL,
     symbol_full TEXT,
+    action TEXT CHECK(action IN ('long', 'short', 'put', 'inverse', 'call', 'assignment', 'exercise', 'expire', 'reorg')) NOT NULL,
     quantity REAL CHECK(quantity >= 0.0) NOT NULL,
     quantity_type TEXT,
     price REAL CHECK(price >= 0.0) NOT NULL,
     total_value REAL NOT NULL,
     amount REAL NOT NULL,
-
+    side TEXT CHECK(side IN ('debit','credit')) NOT NULL,
     commission REAL DEFAULT 0.0 CHECK(commission >= 0.0),
     fee REAL DEFAULT 0.0 CHECK(fee >= 0.0),
-    currency TEXT,                         -- unified (replaces legacy currency_code)
-
+    broker_code TEXT NOT NULL REFERENCES brokers(code),
     account TEXT NOT NULL,
     trade_id TEXT NOT NULL,
-
-    -- optional metadata
+    group_id TEXT, -- Optionally used for grouping double-entry pairs
     strategy TEXT,
     tags TEXT DEFAULT '',
     notes TEXT DEFAULT '',
-    status TEXT,
+    jurisdiction_code TEXT NOT NULL REFERENCES jurisdictions(code),
+    entity_code TEXT NOT NULL,
+    language TEXT DEFAULT 'en',
+    created_by TEXT DEFAULT 'system',
+    updated_by TEXT DEFAULT NULL,
+    approved_by TEXT DEFAULT NULL,
     approval_status TEXT CHECK(approval_status IN ('pending', 'approved', 'rejected')) DEFAULT 'approved',
-
-    -- instrument/FX metadata
+    status TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT NULL,
+    gdpr_compliant BOOLEAN DEFAULT 1,
+    ccpa_compliant BOOLEAN DEFAULT 1,
+    pipeda_compliant BOOLEAN DEFAULT 1,
+    hipaa_sensitive BOOLEAN DEFAULT 0,
+    iso27001_tag TEXT DEFAULT '',
+    soc2_type TEXT DEFAULT '',
+    currency_code TEXT,
+    language_code TEXT DEFAULT 'en',
     price_currency TEXT,
     fx_rate REAL,
     commission_currency TEXT,
@@ -209,31 +206,15 @@ CREATE TABLE IF NOT EXISTS trades (
     description TEXT,
     counterparty TEXT,
     sub_account TEXT,
-
-    -- hashes / runtime
-    response_hash TEXT,
-    sync_run_id TEXT,
-
-    -- JSON/meta
     extra_fields TEXT DEFAULT '{}',
     json_metadata TEXT DEFAULT '{}',
     raw_broker_json TEXT DEFAULT '{}',
-
-    -- UTC timestamps (unified; replaces legacy created_at/updated_at)
-    created_at_utc TEXT DEFAULT (datetime('now')),
-    updated_at_utc TEXT,
-
+    bot_id TEXT DEFAULT NULL,
     FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
 );
 
--- Indices (unified)
+-- Index for (trade_id, side) to support deduplication and quick double-entry lookup
 CREATE INDEX IF NOT EXISTS idx_trades_tradeid_side ON trades (trade_id, side);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_fitid ON trades (FITID) WHERE FITID IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_trades_group_id ON trades (group_id);
-CREATE INDEX IF NOT EXISTS idx_trades_symbol_time ON trades (symbol, DTPOSTED);
-CREATE INDEX IF NOT EXISTS idx_trades_entity ON trades (entity_code);
-CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades (strategy);
-
 -- Table: Events (compliance, audit, info/warning/error)
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -378,8 +359,6 @@ CREATE TABLE IF NOT EXISTS option_contracts (
     updated_at TEXT DEFAULT NULL,
     json_metadata TEXT DEFAULT '{}'
 );
-
--- Reconciliation Log (append-only)
 CREATE TABLE IF NOT EXISTS reconciliation_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     trade_id TEXT,
@@ -394,8 +373,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_log (
     ledger_entry_id TEXT,
     broker_balance REAL,
     delta REAL,
-    -- expanded allowed statuses (union of legacy + new set)
-    status TEXT CHECK(status IN ('pending','matched','mismatched','resolved','missing_broker','missing_ledger','corrected','rejected')),
+    status TEXT CHECK(status IN ('pending', 'matched', 'mismatched', 'resolved')),
     resolution TEXT,
     resolved_by TEXT,
     resolved_at TEXT,
@@ -411,13 +389,17 @@ CREATE TABLE IF NOT EXISTS reconciliation_log (
     imported_at TEXT,
     updated_at TEXT,
     user_action TEXT,
-    mapping_version TEXT,
-    -- additions for grouping and diffs (backward-compatible)
-    group_id TEXT,
-    diff_json TEXT DEFAULT '{}'
+    mapping_version TEXT
 );
 
--- Indices for other tables
+
+
+
+-- Compound Indexes & Foreign Key Indexes
+
+CREATE INDEX IF NOT EXISTS idx_trades_symbol_time ON trades (symbol, datetime_utc);
+CREATE INDEX IF NOT EXISTS idx_trades_entity ON trades (entity_code);
+CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades (strategy);
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_datetime ON ledger_entries (datetime_utc, entry_type);
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_entity ON ledger_entries (entity_code);
 CREATE INDEX IF NOT EXISTS idx_events_type_time ON events (type, event_time_utc);
@@ -429,172 +411,3 @@ CREATE INDEX IF NOT EXISTS idx_extstat_broker_date ON external_statements (broke
 CREATE INDEX IF NOT EXISTS idx_exttrans_broker_tradeid ON external_transactions (broker_code, trade_id);
 CREATE INDEX IF NOT EXISTS idx_acct_balances_broker_entity ON account_balances (broker_code, entity_code, currency_code);
 CREATE INDEX IF NOT EXISTS idx_option_contracts_symbol ON option_contracts (symbol, expiration, strike, option_type);
-
--- ====================================================================
--- ADDITIVE v048 MODULES (no deletions of legacy objects; unified schema)
--- ====================================================================
-
--- Chart of Accounts (normalized; additive to coa_accounts JSON form)
-CREATE TABLE IF NOT EXISTS accounts (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    code              TEXT NOT NULL,
-    name              TEXT NOT NULL,
-    type              TEXT NOT NULL CHECK (type IN ('Asset','Liability','Equity','Income','Expense','Memo')),
-    parent_code       TEXT,
-    entity_code       TEXT NOT NULL,
-    jurisdiction_code TEXT NOT NULL,
-    broker_code       TEXT NOT NULL,
-    bot_id            TEXT NOT NULL,
-    coa_version       TEXT NOT NULL,
-    currency_code     TEXT NOT NULL DEFAULT 'USD',
-    language_code     TEXT NOT NULL DEFAULT 'en',
-    active            INTEGER NOT NULL DEFAULT 1,
-    created_at_utc    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at_utc    TEXT,
-    UNIQUE(code, entity_code, jurisdiction_code, broker_code, bot_id),
-    FOREIGN KEY (parent_code) REFERENCES accounts(code) ON UPDATE CASCADE
-);
-
--- Journal Entry headers (double-entry)
-CREATE TABLE IF NOT EXISTS entries (
-    group_id          TEXT PRIMARY KEY,                       -- UUIDv4 or deterministic by FITID set
-    fitid             TEXT UNIQUE,                            -- OFX idempotency
-    timestamp_utc     TEXT NOT NULL,
-    entity_code       TEXT NOT NULL,
-    jurisdiction_code TEXT NOT NULL,
-    broker_code       TEXT NOT NULL,
-    bot_id            TEXT NOT NULL,
-    strategy          TEXT,
-    tags              TEXT,
-    description       TEXT,
-    response_hash     TEXT,
-    sync_run_id       TEXT,
-    mapping_version   TEXT,
-    currency_code     TEXT NOT NULL DEFAULT 'USD',
-    language_code     TEXT NOT NULL DEFAULT 'en',
-    status            TEXT DEFAULT 'ok',
-    approval_status   TEXT DEFAULT 'pending' CHECK (approval_status IN ('pending','approved','rejected')),
-    finalized         INTEGER NOT NULL DEFAULT 0,
-    created_by        TEXT DEFAULT 'system',
-    updated_by        TEXT,
-    created_at_utc    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at_utc    TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_entries_ts ON entries (timestamp_utc);
-CREATE INDEX IF NOT EXISTS idx_entries_sync ON entries (sync_run_id);
-CREATE INDEX IF NOT EXISTS idx_entries_entity ON entries (entity_code, jurisdiction_code, broker_code);
-
--- Splits (double-entry legs)
-CREATE TABLE IF NOT EXISTS splits (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    group_id          TEXT NOT NULL REFERENCES entries(group_id) ON DELETE CASCADE,
-    side              TEXT NOT NULL CHECK (LOWER(side) IN ('debit','credit')),
-    account_code      TEXT NOT NULL,
-    account           TEXT NOT NULL,
-    symbol            TEXT,
-    symbol_full       TEXT,
-    quantity          REAL,
-    quantity_type     TEXT,
-    price             REAL,
-    price_currency    TEXT,
-    fx_rate           REAL,
-    total_value       REAL NOT NULL,                          -- debit=+, credit=-
-    amount            REAL,
-    commission        REAL DEFAULT 0.0,
-    commission_currency TEXT,
-    fee               REAL DEFAULT 0.0,
-    fee_currency      TEXT,
-    accrued_interest  REAL,
-    accrued_interest_currency TEXT,
-    tax               REAL,
-    tax_currency      TEXT,
-    net_amount        REAL,
-    currency          TEXT,
-    action            TEXT NOT NULL CHECK (action IN ('long','short','put','call','assignment','exercise','expire','reorg','inverse','other',
-                                                      'reserve_tax','reserve_payroll','float_allocation','rebalance_buy','rebalance_sell','correction_reversal')),
-    trade_id          TEXT,
-    description       TEXT,
-    counterparty      TEXT,
-    sub_account       TEXT,
-    status            TEXT DEFAULT 'ok',
-    approval_status   TEXT DEFAULT 'pending' CHECK (approval_status IN ('pending','approved','rejected')),
-    created_by        TEXT DEFAULT 'system',
-    updated_by        TEXT,
-    json_metadata     TEXT,
-    raw_broker_json   TEXT,
-    language_code     TEXT NOT NULL DEFAULT 'en',
-    timestamp_utc     TEXT NOT NULL,
-    created_at_utc    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at_utc    TEXT,
-    entity_code       TEXT NOT NULL,
-    jurisdiction_code TEXT NOT NULL,
-    broker_code       TEXT NOT NULL,
-    bot_id            TEXT NOT NULL,
-    FOREIGN KEY (account_code, entity_code, jurisdiction_code, broker_code, bot_id)
-        REFERENCES accounts(code, entity_code, jurisdiction_code, broker_code, bot_id) ON UPDATE CASCADE
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_splits_trade_side ON splits (trade_id, side);
-CREATE INDEX IF NOT EXISTS idx_splits_group ON splits (group_id);
-CREATE INDEX IF NOT EXISTS idx_splits_ts ON splits (timestamp_utc, id);
-CREATE INDEX IF NOT EXISTS idx_splits_account ON splits (account);
-CREATE INDEX IF NOT EXISTS idx_splits_symbol ON splits (symbol);
-
--- Double-entry integrity: enforce sum(splits)=0 when finalized
-CREATE TRIGGER IF NOT EXISTS trg_entries_finalize_balance
-AFTER UPDATE OF finalized ON entries
-FOR EACH ROW
-WHEN NEW.finalized = 1
-BEGIN
-    SELECT
-      CASE
-        WHEN ROUND((
-            SELECT COALESCE(SUM(total_value),0.0)
-              FROM splits
-             WHERE group_id = NEW.group_id
-        ), 4) <> 0.0000
-        THEN RAISE(ABORT, 'Double-entry imbalance for group_id')
-      END;
-END;
-
--- Snapshot tables (daily balances & positions at UTC boundaries)
-CREATE TABLE IF NOT EXISTS daily_account_balances (
-    snapshot_date_utc TEXT NOT NULL,
-    entity_code       TEXT NOT NULL,
-    jurisdiction_code TEXT NOT NULL,
-    broker_code       TEXT NOT NULL,
-    bot_id            TEXT NOT NULL,
-    account           TEXT NOT NULL,
-    opening_balance   REAL NOT NULL,
-    debits            REAL NOT NULL,
-    credits           REAL NOT NULL,
-    closing_balance   REAL NOT NULL,
-    currency_code     TEXT,
-    language_code     TEXT,
-    created_at_utc    TEXT NOT NULL,
-    updated_at_utc    TEXT NOT NULL,
-    PRIMARY KEY (snapshot_date_utc, entity_code, jurisdiction_code, broker_code, bot_id, account)
-);
-
-CREATE TABLE IF NOT EXISTS daily_positions (
-    snapshot_date_utc TEXT NOT NULL,
-    entity_code       TEXT NOT NULL,
-    jurisdiction_code TEXT NOT NULL,
-    broker_code       TEXT NOT NULL,
-    bot_id            TEXT NOT NULL,
-    symbol            TEXT NOT NULL,
-    quantity          REAL NOT NULL,
-    gross_cost        REAL,
-    net_amount        REAL,
-    currency_code     TEXT,
-    language_code     TEXT,
-    created_at_utc    TEXT NOT NULL,
-    updated_at_utc    TEXT NOT NULL,
-    PRIMARY KEY (snapshot_date_utc, entity_code, jurisdiction_code, broker_code, bot_id, symbol)
-);
-
--- Reconciliation indexes (additive)
-CREATE INDEX IF NOT EXISTS idx_recon_sync_group ON reconciliation_log (sync_run_id, group_id);
-CREATE INDEX IF NOT EXISTS idx_recon_ts ON reconciliation_log (timestamp_utc);
-CREATE INDEX IF NOT EXISTS idx_recon_trade ON reconciliation_log (trade_id);

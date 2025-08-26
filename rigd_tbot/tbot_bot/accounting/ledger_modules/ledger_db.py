@@ -1,212 +1,79 @@
 # tbot_bot/accounting/ledger_modules/ledger_db.py
 
-"""
-Ledger DB helpers (v048)
-- Resolve DB path via path_resolver + utils_identity (no inline decrypts).
-- Provide migrations runner.
-- Use pragma-configured connections via ledger_core (busy_timeout, WAL, foreign_keys=ON).
-- Ensure indices/UNIQUE guards exist; sqlite3.Row row_factory; thread-safe contexts.
-"""
-
-from __future__ import annotations
-
-import json
+import os
 import sqlite3
+import json
+from cryptography.fernet import Fernet
 from pathlib import Path
-from typing import Iterable, Optional, Set, Tuple, List
-
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
-from tbot_bot.accounting.ledger_modules.ledger_core import get_conn, tx_context
 
-
-# ---- Compliance (v048 preferred) ----
+# ---- Compliance filter (backwards compatible) ----
 try:
+    # Preferred: boolean helper
     from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (
-        validate_entries as _validate_entries,  # type: ignore
+        is_compliant_ledger_entry as _is_compliant,  # type: ignore
+    )
+except Exception:
+    # Legacy helper that might return entry/None or (bool, reason)
+    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (  # type: ignore
+        compliance_filter_ledger_entry as _legacy_compliance,
     )
 
     def _is_compliant(entry: dict) -> bool:
-        ok, _ = _validate_entries([entry])
-        return bool(ok)
+        res = _legacy_compliance(entry)
+        if isinstance(res, tuple):
+            return bool(res[0])
+        return res is not None
 
-except Exception:
-    try:
-        from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (  # type: ignore
-            is_compliant_ledger_entry as _legacy_is_compliant,
-        )
-
-        def _is_compliant(entry: dict) -> bool:
-            return bool(_legacy_is_compliant(entry))
-
-    except Exception:
-
-        def _is_compliant(entry: dict) -> bool:  # type: ignore
-            return True  # last-resort permissive (should not happen in prod)
-
-
+BOT_ID = get_bot_identity()
 CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 
-def _identity_tuple() -> tuple[str, str, str, str]:
+def _read_identity_tuple():
     """
-    (entity_code, jurisdiction_code, broker_code, bot_id) from BOT identity.
+    Decrypts identity and returns (entity_code, jurisdiction_code, broker_code, bot_id).
     """
-    parts = str(get_bot_identity()).split("_")
-    if len(parts) < 4:
-        raise ValueError("Invalid BOT identity; expected 'ENTITY_JURISDICTION_BROKER_BOTID'")
-    return parts[0], parts[1], parts[2], parts[3]
+    key_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "keys" / "bot_identity.key"
+    enc_path = Path(__file__).resolve().parents[3] / "tbot_bot" / "storage" / "secrets" / "bot_identity.json.enc"
+    key = key_path.read_bytes()
+    cipher = Fernet(key)
+    plaintext = cipher.decrypt(enc_path.read_bytes())
+    bot_identity_data = json.loads(plaintext.decode("utf-8"))
+    entity_code, jurisdiction_code, broker_code, bot_id = bot_identity_data.get("BOT_IDENTITY_STRING").split("_")
+    return entity_code, jurisdiction_code, broker_code, bot_id
 
 
-def get_db_path() -> str:
-    """
-    Resolved ledger DB path for current identity (compat helper).
-    """
-    ec, jc, bc, bid = _identity_tuple()
-    return str(resolve_ledger_db_path(ec, jc, bc, bid))
+def get_db_path():
+    entity_code, jurisdiction_code, broker_code, bot_id = _read_identity_tuple()
+    return resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
 
 
-# ---------------------------
-# Connection helpers (read-only convenience)
-# ---------------------------
-
-def get_readonly_conn() -> sqlite3.Connection:
+def validate_ledger_schema(db_path=None, schema_path=None):
     """
-    Open a fresh, thread-safe (per-call) readonly connection with PRAGMAs and Row row_factory.
-    Use tx_context()/get_conn() for writes/transactions.
+    Validates the ledger DB against the reference schema. Returns True if valid, False if not.
     """
-    dsn = get_db_path()
-    uri = f"file:{dsn}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True, check_same_thread=False, isolation_level=None)
-    _apply_pragmas(conn)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _apply_pragmas(conn: sqlite3.Connection) -> None:
-    """
-    Best-effort PRAGMA application (idempotent).
-    get_conn()/tx_context() should already configure these; we enforce again locally when needed.
-    """
+    db_path = db_path or get_db_path()
+    schema_path = schema_path or resolve_ledger_schema_path()
     try:
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-    except Exception:
-        # ignore pragma errors; do not raise during checks
-        pass
-
-
-# ---------------------------
-# Schema validators / guards
-# ---------------------------
-
-def _get_table_columns(conn: sqlite3.Connection, table: str) -> Set[str]:
-    """
-    Return set of column names for a given table using PRAGMA table_info.
-    """
-    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    return {str(r[1]) for r in rows}
-
-
-def validate_ledger_schema(db_path: Optional[str] = None, schema_path: Optional[str] = None) -> bool:
-    """
-    Validates the ledger DB with three gates (in order):
-      1) PRAGMA integrity_check → must return only 'ok'
-      2) Required columns exist in trades:
-         {'TRNTYPE','DTPOSTED','FITID','group_id','entity_code','jurisdiction_code','broker_code','bot_id','total_value','account','created_at_utc'}
-      3) EXPLAIN pass across reference schema statements (syntax for explainable statements only)
-    Returns True if all checks pass, else False.
-    """
-    try:
-        dsn = db_path or get_db_path()
-        schema_file = schema_path or resolve_ledger_schema_path()
-        with open(schema_file, "r", encoding="utf-8") as f:
-            schema = f.read()
-
-        with get_conn() as conn:
-            _apply_pragmas(conn)
-            conn.row_factory = sqlite3.Row
-
-            # 1) Corruption/integrity check
-            ic_rows = conn.execute("PRAGMA integrity_check").fetchall()
-            if not ic_rows or any(str(row[0]).lower() != "ok" for row in ic_rows):
-                return False
-
-            # 2) Required columns in trades
-            required = {
-                "TRNTYPE",
-                "DTPOSTED",
-                "FITID",
-                "group_id",
-                "entity_code",
-                "jurisdiction_code",
-                "broker_code",
-                "bot_id",
-                "total_value",
-                "account",
-                "created_at_utc",
-            }
-            cols = _get_table_columns(conn, "trades")
-            if not required.issubset(cols):
-                return False
-
-            # 3) Secondary EXPLAIN pass: only for statements SQLite can EXPLAIN
+        with sqlite3.connect(db_path) as conn:
+            with open(schema_path, "r", encoding="utf-8") as f:
+                schema = f.read()
             cursor = conn.cursor()
-            for raw in schema.split(";"):
-                stmt = raw.strip()
+            for stmt in schema.split(";"):
+                stmt = stmt.strip()
                 if not stmt:
-                    continue
-                leading = stmt.split(None, 1)[0].upper() if stmt.split() else ""
-                if not leading or leading.startswith("--") or leading in {
-                    "PRAGMA", "CREATE", "ALTER", "DROP", "VACUUM",
-                    "BEGIN", "COMMIT", "END",
-                }:
                     continue
                 try:
                     cursor.execute(f"EXPLAIN {stmt}")
                 except sqlite3.DatabaseError:
                     return False
-
-        return True
     except Exception:
         return False
+    return True
 
-
-def ensure_schema_guards() -> None:
-    """
-    Ensure UNIQUE(FITID) and performance indices exist.
-    Runs inside a single transactional context for thread-safety.
-    """
-    with tx_context() as conn:
-        _apply_pragmas(conn)
-        conn.row_factory = sqlite3.Row
-
-        # Unique guard on FITID
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ux_trades_fitid ON trades(FITID)"
-        )
-        # Common query accelerators
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS ix_trades_dtposted ON trades(DTPOSTED)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS ix_trades_group_id ON trades(group_id)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS ix_trades_account ON trades(account)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS ix_trades_entity_scope ON trades(entity_code, jurisdiction_code, broker_code, bot_id)"
-        )
-
-
-# ---------------------------
-# Insert / posting helpers
-# ---------------------------
 
 def _map_action(action: str | None) -> str:
     if not action or not isinstance(action, str):
@@ -223,21 +90,22 @@ def _map_action(action: str | None) -> str:
 
 def _sanitize_for_sqlite(entry: dict) -> dict:
     """
-    Fill required fields, set identity defaults, compute amount/side defaults,
-    and JSON-encode complex objects to avoid sqlite binding errors.
+    Fill required fields, set identity, compute amount/side defaults,
+    and JSON-encode any complex objects to avoid sqlite binding errors.
     """
     e = dict(entry)
 
     # Identity fields (NOT NULL in schema)
-    ec, jc, bc, bid = _identity_tuple()
-    e.setdefault("entity_code", ec)
-    e.setdefault("jurisdiction_code", jc)
-    e.setdefault("broker_code", bc)
-    e.setdefault("bot_id", bid)
+    entity_code, jurisdiction_code, broker_code, bot_id = _read_identity_tuple()
+    e.setdefault("entity_code", entity_code)
+    e.setdefault("jurisdiction_code", jurisdiction_code)
+    e.setdefault("broker_code", broker_code)
+    e.setdefault("bot_id", bot_id)
 
     # Ensure trade_id / group_id
     if not e.get("trade_id"):
-        e["trade_id"] = f"{bc}_{bid}_{hash(frozenset(e.items()))}"
+        # hash of items — safe-ish placeholder
+        e["trade_id"] = f"{broker_code}_{bot_id}_{hash(frozenset(e.items()))}"
     if not e.get("group_id"):
         e["group_id"] = e.get("trade_id")
 
@@ -265,6 +133,7 @@ def _sanitize_for_sqlite(entry: dict) -> dict:
 
     # Account default (schema marks NOT NULL)
     if not e.get("account"):
+        # Fallback to generic bucket depending on side for safety
         e["account"] = "Uncategorized:Credit" if e["side"].lower() == "credit" else "Uncategorized:Debit"
 
     # Normalize action/status
@@ -285,48 +154,50 @@ def _sanitize_for_sqlite(entry: dict) -> dict:
     return e
 
 
-def add_entry(entry: dict) -> None:
+def add_entry(entry):
     """
     Adds a single ledger entry to the trades table.
-    Enforces compliance and sanitization to prevent invalid rows.
+    Enforces compliance and sanitization to prevent bad/incompatible rows.
     """
     if not isinstance(entry, dict):
         raise RuntimeError("Entry must be a dict")
-
+    # Compliance check (bool)
     if not _is_compliant(entry):
-        return  # ignore non-compliant entries (already audited by compliance module)
+        return  # silently ignore non-compliant entries
 
+    db_path = get_db_path()
     e = _sanitize_for_sqlite(entry)
 
     keys = ", ".join(TRADES_FIELDS)
     placeholders = ", ".join("?" for _ in TRADES_FIELDS)
     values = tuple(e.get(k) for k in TRADES_FIELDS)
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(f"INSERT INTO trades ({keys}) VALUES ({placeholders})", values)
+            conn.commit()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to add ledger entry: {exc}")
 
-    with tx_context() as conn:
-        _apply_pragmas(conn)
-        conn.row_factory = sqlite3.Row
-        conn.execute(f"INSERT INTO trades ({keys}) VALUES ({placeholders})", values)
 
-
-def _schema_has_amount_side() -> bool:
+def _schema_has_amount_side(db_path):
     """
     Checks if the trades table has 'amount' and 'side' columns.
     """
     try:
-        with get_conn() as conn:
-            conn.row_factory = sqlite3.Row
-            cols = [row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()]
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.execute("PRAGMA table_info(trades)")
+            cols = [row[1] for row in cursor.fetchall()]
             return ("amount" in cols) and ("side" in cols)
     except Exception:
         return False
 
 
-def post_double_entry(entries: Iterable[dict], mapping_table: Optional[dict] = None):
+def post_double_entry(entries, mapping_table=None):
     """
     Posts balanced double-entry records using the double-entry helper module.
     Applies compliance to each raw entry before delegating.
     """
-    from tbot_bot.accounting.ledger_modules.ledger_double_entry import (  # local import to avoid cycles
+    from tbot_bot.accounting.ledger_modules.ledger_double_entry import (
         post_double_entry as _post_double_entry_helper,
     )
 
@@ -335,43 +206,31 @@ def post_double_entry(entries: Iterable[dict], mapping_table: Optional[dict] = N
     if not filtered:
         return []
 
-    ensure_schema_guards()
     return _post_double_entry_helper(filtered, mapping_table)
 
 
-# ---------------------------
-# Migrations / reconcile
-# ---------------------------
-
-def run_schema_migration(migration_sql_path: str) -> None:
+def run_schema_migration(migration_sql_path):
     """
-    Runs a single schema migration SQL script on the ledger DB (atomic).
+    Runs a schema migration SQL script on the ledger DB.
     """
-    with open(migration_sql_path, "r", encoding="utf-8") as f:
-        migration_sql = f.read()
-    with tx_context() as conn:
-        _apply_pragmas(conn)
-        conn.executescript(migration_sql)
+    db_path = get_db_path()
+    try:
+        with open(migration_sql_path, "r", encoding="utf-8") as f:
+            migration_sql = f.read()
+        with sqlite3.connect(db_path) as conn:
+            conn.executescript(migration_sql)
+            conn.commit()
+    except Exception as e:
+        raise RuntimeError(f"Failed to run schema migration: {e}")
 
 
-def run_migrations_dir(migrations_dir: str) -> None:
-    """
-    Runs all *.sql migrations in a directory in lexical order.
-    """
-    p = Path(migrations_dir)
-    files = sorted([f for f in p.iterdir() if f.suffix.lower() == ".sql"])
-    for f in files:
-        run_schema_migration(str(f))
-
-
-def reconcile_ledger_with_coa() -> bool:
+def reconcile_ledger_with_coa():
     """
     Placeholder for reconciliation logic between ledger entries and COA accounts.
     """
+    db_path = get_db_path()
     try:
-        with get_conn() as conn:
-            _apply_pragmas(conn)
-            conn.row_factory = sqlite3.Row
+        with sqlite3.connect(db_path):
             pass
         return True
     except Exception as e:
