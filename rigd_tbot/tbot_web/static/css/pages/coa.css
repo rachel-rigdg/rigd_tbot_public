@@ -4,15 +4,15 @@
 */
 
 :root {
-    --coa-bg: #fafbfe;
-    --coa-panel: #ffffff;
-    --coa-border: #e2e5ee;
-    --coa-muted: #6b7280;
-    --coa-text: #1f2937;
-    --coa-accent: #334155;
+    --coa-bg: #333333;
+    --coa-panel: #444444;
+    --coa-border: #222222;
+    --coa-muted: #666666;
+    --coa-text: #999999;
+    --coa-accent: #555555;
     --coa-accent-2: #0ea5e9;
     --coa-danger: #c2410c;
-    --coa-dotted: #cbd5e1;
+    --coa-dotted: #666666;
   }
   
   /* ---------- Metadata ---------- */

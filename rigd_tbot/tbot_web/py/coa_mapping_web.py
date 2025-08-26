@@ -9,7 +9,9 @@ from flask import (
     Blueprint, render_template, request, jsonify, redirect,
     url_for, flash, current_app
 )
-from flask_login import login_required, current_user
+
+# Use app's RBAC utilities instead of flask_login
+from tbot_web.support.auth_web import rbac_required, get_current_user
 
 from tbot_bot.accounting.coa_mapping_table import (
     load_mapping_table,
@@ -82,17 +84,22 @@ def _validate_mapping_payload(payload: dict) -> list[str]:
     return errors
 
 
+def _username() -> str:
+    u = get_current_user()
+    return getattr(u, "username", None) or (str(u) if u else "anonymous")
+
+
 # -----------------
 # Views
 # -----------------
 
 @coa_mapping_web.route("/coa_mapping", methods=["GET"])
-@login_required
+@rbac_required()  # viewer/trader/admin may view
 def view_mapping():
     """Render the COA mapping management page."""
     mapping = load_mapping_table()
     current_ver = int(mapping.get("meta", {}).get("version_id", mapping.get("version", 1)))
-    return render_template("coa_mapping.html", mapping=mapping, user=current_user, version=current_ver)
+    return render_template("coa_mapping.html", mapping=mapping, user=get_current_user(), version=current_ver)
 
 
 # -----------------
@@ -100,7 +107,7 @@ def view_mapping():
 # -----------------
 
 @coa_mapping_web.route("/coa_mapping/assign", methods=["POST"])
-@login_required
+@rbac_required(role="admin")  # restrict writes to admin
 def assign_mapping_route():
     """
     Assign or update a COA mapping rule.
@@ -124,34 +131,33 @@ def assign_mapping_route():
         # flatten match keys into top-level for assign_mapping()
         **payload["match"],
     }
-    user = getattr(current_user, "username", None) or str(current_user)
 
     try:
         before_ver = get_version()
-        table = assign_mapping(mapping_rule, user=user, reason=payload["reason"])
+        table = assign_mapping(mapping_rule, user=_username(), reason=payload["reason"])
         after_ver = int(table.get("meta", {}).get("version_id", table.get("version", before_ver)))
         # Surface outcome
         log_event(
             "coa_mapping_web",
-            f"Mapping assigned by {user}: {json.dumps(mapping_rule, ensure_ascii=False)} (reason: {payload['reason']}) -> v{after_ver}",
+            f"Mapping assigned by {_username()}: {json.dumps(mapping_rule, ensure_ascii=False)} (reason: {payload['reason']}) -> v{after_ver}",
             level="info",
         )
         flash(f"Mapping saved. Version bumped to v{after_ver}.", "success")
         return jsonify({"success": True, "version": after_ver})
     except Exception as e:
-        log_event("coa_mapping_web", f"Assign failed for {user}: {e}", level="error")
+        log_event("coa_mapping_web", f"Assign failed for {_username()}: {e}", level="error")
         flash(f"Assign failed: {e}", "danger")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
 @coa_mapping_web.route("/coa_mapping/flag_unmapped", methods=["POST"])
-@login_required
+@rbac_required()  # any role can flag for review
 def flag_unmapped():
     """Flag an unmapped transaction for admin review."""
     txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     try:
-        flag_unmapped_transaction(txn, user=(getattr(current_user, "username", None) or str(current_user)))
-        log_event("coa_mapping_web", f"Unmapped txn flagged by {current_user}: {txn}", level="info")
+        flag_unmapped_transaction(txn, user=_username())
+        log_event("coa_mapping_web", f"Unmapped txn flagged by {_username()}: {txn}", level="info")
         flash("Transaction flagged for review.", "info")
         return jsonify({"success": True})
     except Exception as e:
@@ -165,7 +171,7 @@ def flag_unmapped():
 # -----------------
 
 @coa_mapping_web.route("/coa_mapping/rollback", methods=["POST"])
-@login_required
+@rbac_required(role="admin")
 def rollback_mapping():
     """Rollback to a previous mapping table version (creates a new version that equals the snapshot)."""
     try:
@@ -178,7 +184,7 @@ def rollback_mapping():
         ok = rollback_mapping_version(version)
         if ok:
             new_ver = get_version()
-            log_event("coa_mapping_web", f"Rolled back to v{version} (now current v{new_ver}) by {current_user}", level="info")
+            log_event("coa_mapping_web", f"Rolled back to v{version} (now current v{new_ver}) by {_username()}", level="info")
             flash(f"Rolled back to snapshot v{version}. Current version is now v{new_ver}.", "info")
             return jsonify({"success": True, "version": new_ver})
         flash(f"Version v{version} not found.", "danger")
@@ -190,7 +196,7 @@ def rollback_mapping():
 
 
 @coa_mapping_web.route("/coa_mapping/versions", methods=["GET"])
-@login_required
+@rbac_required()
 def list_versions():
     """List version snapshots with minimal metadata."""
     mapping = load_mapping_table()
@@ -204,13 +210,13 @@ def list_versions():
 # -----------------
 
 @coa_mapping_web.route("/coa_mapping/export", methods=["GET"])
-@login_required
+@rbac_required()  # export allowed for all roles
 def export_mapping():
     """Download/export the current mapping table as JSON (append-only snapshots live on disk)."""
     mapping_json = export_mapping_table()
     identity = get_bot_identity()
     filename = f"coa_mapping_table_{identity}.json"
-    log_event("coa_mapping_web", f"Mapping exported by {current_user} as {filename}", level="info")
+    log_event("coa_mapping_web", f"Mapping exported by {_username()} as {filename}", level="info")
     return current_app.response_class(
         mapping_json,
         mimetype="application/json",
@@ -219,7 +225,7 @@ def export_mapping():
 
 
 @coa_mapping_web.route("/coa_mapping/import", methods=["POST"])
-@login_required
+@rbac_required(role="admin")
 def import_mapping():
     """
     Import a full mapping table JSON.
@@ -232,9 +238,9 @@ def import_mapping():
     file = request.files["file"]
     try:
         data = file.read().decode("utf-8")
-        import_mapping_table(data, user=(getattr(current_user, "username", None) or str(current_user)))
+        import_mapping_table(data, user=_username())
         ver = get_version()
-        log_event("coa_mapping_web", f"Mapping imported by {current_user} -> v{ver}", level="info")
+        log_event("coa_mapping_web", f"Mapping imported by {_username()} -> v{ver}", level="info")
         flash(f"Mapping imported successfully (current version v{ver}).", "success")
     except Exception as e:
         log_event("coa_mapping_web", f"Import failed: {e}", level="error")
@@ -247,7 +253,7 @@ def import_mapping():
 # -----------------
 
 @coa_mapping_web.route("/coa_mapping/get_mapping", methods=["POST"])
-@login_required
+@rbac_required()
 def get_mapping():
     """
     API: fetch the active mapping row for a transaction dict.

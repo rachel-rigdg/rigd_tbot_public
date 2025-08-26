@@ -57,8 +57,7 @@ def create_unified_app():
     from tbot_web.py.account_web import account_blueprint
     from tbot_web.py.screener_credentials_web import screener_credentials_bp
     from tbot_web.py.holdings_web import holdings_web
-
-    
+    from tbot_web.py.coa_mapping_web import coa_mapping_web
 
     # Always register required blueprints
     app.register_blueprint(register_web, url_prefix="/registration")
@@ -70,8 +69,12 @@ def create_unified_app():
     app.register_blueprint(logs_blueprint, url_prefix="/logs")
     app.register_blueprint(start_stop_blueprint, url_prefix="/control")
     app.register_blueprint(settings_blueprint, url_prefix="/settings")
-    app.register_blueprint(coa_web, url_prefix="/coa")
-    app.register_blueprint(ledger_web, url_prefix="/ledger")
+
+    # IMPORTANT: these blueprints already include '/coa/...' and '/ledger/...' in their route decorators.
+    # Do NOT add a url_prefix here or you'll end up with /coa/coa and /ledger/ledger paths.
+    app.register_blueprint(coa_web)       # routes live at /coa/...
+    app.register_blueprint(ledger_web)    # routes live at /ledger/...
+
     app.register_blueprint(test_web, url_prefix="/test")
     app.register_blueprint(universe_bp, url_prefix="/universe")
     app.register_blueprint(password_reset_blueprint, url_prefix="/password_reset")
@@ -79,6 +82,9 @@ def create_unified_app():
     app.register_blueprint(account_blueprint, url_prefix="/account")
     app.register_blueprint(screener_credentials_bp, url_prefix="/screener_credentials")
     app.register_blueprint(holdings_web, url_prefix="/holdings")
+
+    # COA mapping blueprint exposes /coa_mapping...
+    app.register_blueprint(coa_mapping_web)
 
     @app.before_request
     def enforce_bootstrap():

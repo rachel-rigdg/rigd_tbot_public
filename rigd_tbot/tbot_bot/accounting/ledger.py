@@ -9,7 +9,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, getcontext, ROUND_HALF_EVEN
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Sequence, Tuple, Optional
 
 # Public utilities still re-exported for compatibility
 from tbot_bot.accounting.ledger_modules.ledger_account_map import (  # noqa: F401
@@ -17,15 +17,23 @@ from tbot_bot.accounting.ledger_modules.ledger_account_map import (  # noqa: F40
     load_account_number,
     get_account_path,
 )
-from tbot_bot.accounting.ledger_modules.ledger_entry import (  # noqa: F401
-    get_identity_tuple,
-    mark_entry_resolved,
-)
+
+# === Safe imports (avoid hard build-time coupling) ===
+# Edit/delete operations
 from tbot_bot.accounting.ledger_modules.ledger_edit import (  # noqa: F401
     edit_ledger_entry,
     delete_ledger_entry,
 )
-from tbot_bot.accounting.ledger_modules.ledger_double_entry import post_ledger_entries_double_entry  # noqa: F401
+
+# Some deployments provide a resolver module; if not, we shim below.
+try:
+    from tbot_bot.accounting.ledger_modules.ledger_resolve import mark_entry_resolved as _mark_entry_resolved  # type: ignore
+except Exception:  # pragma: no cover
+    _mark_entry_resolved = None  # type: ignore
+
+from tbot_bot.accounting.ledger_modules.ledger_double_entry import (  # noqa: F401
+    post_ledger_entries_double_entry,
+)
 from tbot_bot.accounting.ledger_modules.ledger_hooks import (  # noqa: F401
     post_tax_reserve_entry,
     post_payroll_reserve_entry,
@@ -39,7 +47,7 @@ from tbot_bot.accounting.ledger_modules.ledger_grouping import (  # noqa: F401
     collapse_expand_group,
 )
 
-# Mapping + Compliance (module-level imports with graceful fallbacks)
+# Mapping + Compliance
 from tbot_bot.accounting.coa_mapping_table import apply_mapping_rule  # versioned COA mapping
 
 try:
@@ -61,6 +69,12 @@ try:
 except Exception:  # pragma: no cover
     _lq = None  # type: ignore
 
+# Identity (read-only helper)
+try:
+    from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple  # type: ignore  # noqa: F401
+except Exception:  # pragma: no cover
+    def get_identity_tuple() -> Tuple[str, str, str, str]:  # minimal shim
+        return ("", "", "", "")
 
 # -----------------------
 # Local helpers
@@ -168,16 +182,12 @@ def post_entries(group: Iterable[Dict]) -> Tuple[str, List[int]]:
 
 
 def post_trade(fill: Dict) -> Tuple[str, List[int]]:
-    """
-    Convenience wrapper for a single trade fill dict.
-    """
+    """Convenience wrapper for a single trade fill dict."""
     return post_entries([fill])
 
 
 def post_cash(txn: Dict) -> Tuple[str, List[int]]:
-    """
-    Convenience wrapper for a single cash transaction dict.
-    """
+    """Convenience wrapper for a single cash transaction dict."""
     return post_entries([txn])
 
 
@@ -186,30 +196,39 @@ def post_cash(txn: Dict) -> Tuple[str, List[int]]:
 # -----------------------
 
 def query_entries(**filters):
-    """
-    Proxy to ledger_query.query_entries(**filters)
-    """
+    """Proxy to ledger_query.query_entries(**filters)"""
     if _lq is None or not hasattr(_lq, "query_entries"):
         raise RuntimeError("ledger_query.query_entries is unavailable")
     return _lq.query_entries(**filters)
 
 
 def query_splits(**filters):
-    """
-    Proxy to ledger_query.query_splits(**filters)
-    """
+    """Proxy to ledger_query.query_splits(**filters)"""
     if _lq is None or not hasattr(_lq, "query_splits"):
         raise RuntimeError("ledger_query.query_splits is unavailable")
     return _lq.query_splits(**filters)
 
 
 def query_balances(**filters):
-    """
-    Proxy to ledger_query.query_balances(**filters)
-    """
+    """Proxy to ledger_query.query_balances(**filters)"""
     if _lq is None or not hasattr(_lq, "query_balances"):
         raise RuntimeError("ledger_query.query_balances is unavailable")
     return _lq.query_balances(**filters)
+
+
+# -----------------------
+# Legacy shim: mark_entry_resolved
+# -----------------------
+
+def mark_entry_resolved(entry_id: int, *, user: Optional[str] = None, reason: Optional[str] = None) -> bool:  # noqa: F401
+    """
+    Soft shim so first-boot doesn't crash if the underlying resolver isn't present.
+    Returns False when no resolver is available.
+    """
+    if callable(_mark_entry_resolved):
+        return bool(_mark_entry_resolved(entry_id, user=user, reason=reason))  # type: ignore[misc]
+    # No direct DB access here—intentionally a no-op when resolver module is absent.
+    return False
 
 
 __all__ = [

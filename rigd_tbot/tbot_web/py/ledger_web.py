@@ -26,9 +26,14 @@ from tbot_bot.accounting.ledger import (
     post_ledger_entries_double_entry,
     edit_ledger_entry,
     delete_ledger_entry,
-    mark_entry_resolved,
     sync_broker_ledger,
 )
+
+# Try to import a resolver if present (optional in some deployments)
+try:
+    from tbot_bot.accounting.ledger_modules.ledger_entry import mark_entry_resolved as _mark_entry_resolved  # type: ignore
+except Exception:
+    _mark_entry_resolved = None  # fallback used in route
 
 ledger_web = Blueprint("ledger_web", __name__)
 
@@ -71,19 +76,47 @@ def identity_guard():
 
 def _role_allowed(action: str) -> bool:
     """
-    Very small RBAC: viewer < trader < admin
-    - view: viewer/trader/admin
-    - group toggle: viewer/trader/admin
-    - add/edit/sync: trader/admin
-    - delete: admin
+    RBAC helper compatible with both new and legacy get_user_role signatures.
+
+    Roles:
+      viewer < editor < admin
+
+    Permissions:
+      - view, group_toggle: viewer/editor/admin
+      - add, edit, sync:    editor/admin
+      - delete:             admin
     """
-    role = (get_user_role() or "viewer").lower()
+    # Determine username from current session/user object (string or object)
+    try:
+        u = get_current_user()
+        username = getattr(u, "username", None) or (u if isinstance(u, str) else None)
+    except Exception:
+        username = None
+
+    # Resolve role via get_user_role
+    role = None
+    try:
+        if username is not None:
+            role = get_user_role(username)  # new signature
+        else:
+            role = get_user_role()          # legacy no-arg
+    except TypeError:
+        # Fall back to legacy no-arg if we guessed wrong
+        try:
+            role = get_user_role()
+        except Exception:
+            role = None
+    except Exception:
+        role = None
+
+    role = (role or "viewer").lower()
+
     if action in ("view", "group_toggle"):
-        return role in ("viewer", "trader", "admin")
+        return role in ("viewer", "editor", "admin")
     if action in ("add", "edit", "sync"):
-        return role in ("trader", "admin")
+        return role in ("editor", "admin")
     if action == "delete":
-        return role in ("admin",)
+        return role == "admin"
     return False
 
 
@@ -103,7 +136,7 @@ def _is_display_entry(entry):
 # Routes
 # -----------------
 
-@ledger_web.route('/ledger/reconcile', methods=['GET', 'POST'])
+@ledger_web.route('/reconcile', methods=['GET', 'POST'])
 def ledger_reconcile():
     if provisioning_guard() or identity_guard():
         return render_template(
@@ -126,12 +159,15 @@ def ledger_reconcile():
     try:
         # Balances via ledger_modules (no raw SQL)
         balances_rows = query_balances()
-        balances = {row["account"]: {
-            "opening_balance": str(row["opening_balance"]),
-            "debits": str(row["debits"]),
-            "credits": str(row["credits"]),
-            "closing_balance": str(row["closing_balance"]),
-        } for row in balances_rows}
+        balances = {
+            row["account"]: {
+                "opening_balance": str(row["opening_balance"]),
+                "debits": str(row["debits"]),
+                "credits": str(row["credits"]),
+                "closing_balance": str(row["closing_balance"]),
+            }
+            for row in balances_rows
+        }
 
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = coa_data.get("accounts_flat", [])  # list of (code, name)
@@ -148,7 +184,7 @@ def ledger_reconcile():
         return render_template('ledger.html', entries=[], error=error, balances={}, coa_accounts=[])
 
 
-@ledger_web.route('/ledger/group/<group_id>', methods=['GET'])
+@ledger_web.route('/group/<group_id>', methods=['GET'])
 def ledger_group_detail(group_id):
     if provisioning_guard() or identity_guard():
         return jsonify({"error": "Not permitted"}), 403
@@ -161,7 +197,7 @@ def ledger_group_detail(group_id):
         return jsonify({"error": str(e)}), 404
 
 
-@ledger_web.route('/ledger/collapse_expand/<group_id>', methods=['POST'])
+@ledger_web.route('/collapse_expand/<group_id>', methods=['POST'])
 def ledger_collapse_expand(group_id):
     if provisioning_guard() or identity_guard():
         return jsonify({"ok": False, "error": "Not permitted"}), 403
@@ -185,7 +221,7 @@ def ledger_collapse_expand(group_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@ledger_web.route('/ledger/collapse_all', methods=['POST'])
+@ledger_web.route('/collapse_all', methods=['POST'])
 def ledger_collapse_all():
     """
     Collapse or expand ALL groups in one shot.
@@ -229,7 +265,7 @@ def ledger_collapse_all():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@ledger_web.route('/ledger/search', methods=['GET'])
+@ledger_web.route('/search', methods=['GET'])
 def ledger_search():
     if provisioning_guard() or identity_guard():
         return jsonify({"error": "Not permitted"}), 403
@@ -247,19 +283,57 @@ def ledger_search():
         return jsonify({"error": str(e)}), 500
 
 
-@ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
+@ledger_web.route('/balances', methods=['GET'])
+def ledger_balances():
+    """
+    JSON balances for the UI. Mirrors the summary used in /reconcile.
+    """
+    if provisioning_guard() or identity_guard():
+        return jsonify({"error": "Not permitted"}), 403
+    if not _role_allowed("view"):
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        rows = query_balances()
+        data = [
+            {
+                "account": r["account"],
+                "opening_balance": str(r["opening_balance"]),
+                "debits": str(r["debits"]),
+                "credits": str(r["credits"]),
+                "closing_balance": str(r["closing_balance"]),
+            }
+            for r in rows
+        ]
+        return jsonify({"balances": data})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@ledger_web.route('/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     if not _role_allowed("edit"):
         flash('Not permitted.', 'error')
         return redirect(url_for('ledger_web.ledger_reconcile'))
-    mark_entry_resolved(entry_id)
-    flash('Entry marked as resolved.')
+
+    try:
+        if callable(_mark_entry_resolved):
+            _mark_entry_resolved(entry_id)  # preferred if available
+            flash('Entry marked as resolved.')
+        else:
+            # Fallback: tag via edit if resolver not present
+            edit_ledger_entry(entry_id, {"approval_status": "resolved"})
+            flash('Entry marked as resolved (fallback).')
+    except Exception as e:
+        traceback.print_exc()
+        flash(f"Failed to resolve entry: {e}", "error")
+
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 
-@ledger_web.route('/ledger/add', methods=['POST'])
+@ledger_web.route('/add', methods=['POST'])
 def add_ledger_entry_route():
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
@@ -318,7 +392,7 @@ def add_ledger_entry_route():
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 
-@ledger_web.route('/ledger/edit/<int:entry_id>', methods=['POST'])
+@ledger_web.route('/edit/<int:entry_id>', methods=['POST'])
 def edit_ledger_entry_route(entry_id):
     """
     Full edit (legacy) — keeps behavior for forms that post many fields.
@@ -390,7 +464,7 @@ def _valid_account_code(code: str) -> bool:
         return False
 
 
-@ledger_web.route('/ledger/update_account/<int:entry_id>', methods=['POST'])
+@ledger_web.route('/update_account/<int:entry_id>', methods=['POST'])
 def update_ledger_account_route(entry_id: int):
     """
     Update only the COA account (and optionally strategy) for a single ledger row.
@@ -443,7 +517,7 @@ def update_ledger_account_route(entry_id: int):
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 
-@ledger_web.route('/ledger/update_account_json', methods=['POST'])
+@ledger_web.route('/update_account_json', methods=['POST'])
 def update_ledger_account_json():
     """
     JSON variant for XHR updates.
@@ -492,7 +566,7 @@ def update_ledger_account_json():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@ledger_web.route('/ledger/delete/<int:entry_id>', methods=['POST'])
+@ledger_web.route('/delete/<int:entry_id>', methods=['POST'])
 def delete_ledger_entry_route(entry_id):
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
@@ -504,7 +578,7 @@ def delete_ledger_entry_route(entry_id):
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 
-@ledger_web.route('/ledger/sync', methods=['POST'])
+@ledger_web.route('/sync', methods=['POST'])
 def ledger_sync():
     """
     Kicks off broker->ledger sync using the orchestrator.

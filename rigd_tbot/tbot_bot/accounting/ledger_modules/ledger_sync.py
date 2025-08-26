@@ -15,7 +15,58 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
+# ---------- BROKER API RESOLUTION (robust fallbacks) ----------
+# Your deployment may expose different names; this resolver normalizes them.
+import importlib
+
+def _resolve_broker_fetchers():
+    api = importlib.import_module("tbot_bot.broker.broker_api")
+    def _pick(names: List[str]):
+        for n in names:
+            fn = getattr(api, n, None)
+            if callable(fn):
+                return fn
+        return None
+
+    trades_fn = _pick([
+        "fetch_all_trades", "fetch_trades", "list_trades", "get_all_trades", "get_trades"
+    ])
+    cash_fn = _pick([
+        "fetch_cash_activity", "list_cash_activity", "get_cash_activity", "cash_activity", "fetch_cash"
+    ])
+    # Optional positions (not strictly required for ledger posting)
+    positions_fn = _pick([
+        "fetch_positions", "list_positions", "get_positions"
+    ])
+    if trades_fn is None:
+        raise ImportError("broker_api is missing a trades fetcher (tried: fetch_all_trades/fetch_trades/list_trades/get_*).")
+    if cash_fn is None:
+        # Some brokers return cash movements mixed with trades; degrade gracefully.
+        def _empty_cash(**_kwargs):  # type: ignore[unused-ignore]
+            return []
+        cash_fn = _empty_cash
+    return trades_fn, cash_fn, positions_fn
+
+_FETCH_TRADES_FN, _FETCH_CASH_FN, _FETCH_POSITIONS_FN = _resolve_broker_fetchers()
+
+def _call_with_dates(fn, start_date: Optional[str], end_date: Optional[str]):
+    # Be liberal in what we accept: kw, positional, only start, or no args.
+    try:
+        return fn(start_date=start_date, end_date=end_date)
+    except TypeError:
+        try:
+            return fn(start_date=start_date)
+        except TypeError:
+            try:
+                return fn(start_date, end_date)
+            except TypeError:
+                try:
+                    return fn(start_date)
+                except TypeError:
+                    return fn()
+
+# --------------------------------------------------------------
+
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 
 from tbot_bot.accounting.ledger_modules.ledger_entry import build_normalized_entry
@@ -133,8 +184,10 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
     install_unique_guards()
 
     # Pull broker data (date filters are passed through if provided)
-    trades_raw = fetch_all_trades(start_date=start_date, end_date=end_date)
-    cash_raw = fetch_cash_activity(start_date=start_date, end_date=end_date)
+    trades_raw = _call_with_dates(_FETCH_TRADES_FN, start_date, end_date)
+    cash_raw = _call_with_dates(_FETCH_CASH_FN, start_date, end_date)
+    # positions are optional/one-shot; ignore if not present in this flow
+    # positions_raw = _call_with_dates(_FETCH_POSITIONS_FN, start_date, end_date) if _FETCH_POSITIONS_FN else []
 
     ledger_tail_dt = _latest_ledger_timestamp()
 
@@ -169,7 +222,7 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
         ts_dt = _to_utc_dt(e.get("timestamp_utc"))
         if ledger_tail_dt is not None and ts_dt is not None and ts_dt <= ledger_tail_dt:
             skipped_older += 1
-            _recon_log(e, status="skipped", notes="older_than_ledger_tail", sync_run_id=sync_run_id)
+            _recon_log(e, status="rejected", notes="older_than_ledger_tail", sync_run_id=sync_run_id)
             continue
 
         normalized.append(e)
@@ -191,7 +244,7 @@ def sync_broker_ledger(start_date: str | None = None, end_date: str | None = Non
         if errs_list and set(errs_list) == {"timestamp_too_old"}:
             backfill_overrides += 1
             valid_entries.append(e)
-            _recon_log(e, status="warning", notes="timestamp_too_old_overridden_by_tail_rule", sync_run_id=sync_run_id)
+            _recon_log(e, status="matched", notes="timestamp_too_old_overridden_by_tail_rule", sync_run_id=sync_run_id)
             log_audit_event(
                 action="sync_backfill_override",
                 entry_id=None,

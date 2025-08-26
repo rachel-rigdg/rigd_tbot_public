@@ -1,10 +1,9 @@
 # tbot_bot/accounting/ledger_modules/ledger_query.py
-
 """
-Read-only ledger queries (v048)
+Read-only ledger queries (v048, patched)
 
 - Filterable queries: entity/jurisdiction/broker, date range, account, strategy, symbol, side, group_id.
-- Stable ordering (timestamp_utc then id).
+- Stable ordering (time expr then id), works even if some *_utc columns are missing.
 - Pagination via limit/offset.
 - Returns typed rows (Decimals for numeric money-like fields; ISO-8601 UTC strings for timestamps).
 
@@ -25,7 +24,6 @@ from decimal import Decimal, ROUND_HALF_EVEN, getcontext
 from typing import Any, Dict, List, Optional, Tuple
 
 from tbot_bot.accounting.ledger_modules.ledger_core import get_conn, get_identity_tuple
-from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 from tbot_bot.accounting.ledger_modules.ledger_grouping import (
     fetch_grouped_trades as grouping_fetch_grouped_trades,
     fetch_trade_group_by_id as grouping_fetch_trade_group_by_id,
@@ -36,9 +34,6 @@ getcontext().prec = 28
 getcontext().rounding = ROUND_HALF_EVEN
 _Q = Decimal("0.0001")
 
-_TS_COL = "COALESCE(timestamp_utc, datetime_utc, created_at_utc)"
-
-
 # -----------------
 # Utilities
 # -----------------
@@ -48,7 +43,10 @@ _NUMERIC_FIELDS = {
     "fx_rate", "accrued_interest", "tax", "net_amount",
 }
 
-_TS_FIELDS = {"timestamp_utc", "datetime_utc", "created_at_utc", "updated_at_utc", "trade_date", "settlement_date"}
+_TS_FIELDS = {
+    "timestamp_utc", "datetime_utc", "created_at_utc", "updated_at_utc",
+    "trade_date", "settlement_date", "DTPOSTED", "posted_at_utc"
+}
 
 
 def _to_dec(x: Any) -> Optional[Decimal]:
@@ -83,6 +81,33 @@ def _row_to_typed(row: sqlite3.Row) -> Dict[str, Any]:
     return d
 
 
+def _existing_columns(conn: sqlite3.Connection, table: str) -> List[str]:
+    cols: List[str] = []
+    for r in conn.execute(f"PRAGMA table_info({table})").fetchall():
+        try:
+            cols.append(r[1])  # name
+        except Exception:
+            pass
+    return [c for c in cols if c]
+
+
+def _resolve_ts_expr(conn: sqlite3.Connection, table: str = "trades") -> str:
+    """
+    Build a timestamp expression using only columns that actually exist,
+    preferring canonical UTC fields but falling back to OFX DTPOSTED, etc.
+    Safe for ORDER BY and WHERE.
+    """
+    candidates = ["timestamp_utc", "datetime_utc", "created_at_utc", "DTPOSTED", "posted_at_utc"]
+    present_set = set(_existing_columns(conn, table))
+    present = [c for c in candidates if c in present_set]
+    if not present:
+        # Fall back to a constant so ORDER BY <const>, id is still valid SQL.
+        return "''"
+    if len(present) == 1:
+        return present[0]
+    return "COALESCE(" + ", ".join(present) + ")"
+
+
 def _apply_identity_defaults(filters: Dict[str, Any]) -> Tuple[str, str, str]:
     ec, jc, bc, _ = get_identity_tuple()
     return (
@@ -92,8 +117,8 @@ def _apply_identity_defaults(filters: Dict[str, Any]) -> Tuple[str, str, str]:
     )
 
 
-def _build_where_and_params(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
-    where = []
+def _build_where_and_params(filters: Dict[str, Any], ts_expr: str) -> Tuple[str, List[Any]]:
+    where: List[str] = []
     params: List[Any] = []
 
     # Identity scope (defaults to current identity)
@@ -105,10 +130,10 @@ def _build_where_and_params(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
     start = filters.get("start_utc")
     end = filters.get("end_utc")
     if start:
-        where.append(f"{_TS_COL} >= ?")
+        where.append(f"{ts_expr} >= ?")
         params.append(start)
     if end:
-        where.append(f"{_TS_COL} <= ?")
+        where.append(f"{ts_expr} <= ?")
         params.append(end)
 
     # Account filter (prefix/LIKE)
@@ -118,7 +143,6 @@ def _build_where_and_params(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
             where.append("account LIKE ?")
             params.append(account)
         else:
-            # prefix match on hierarchy
             where.append("account LIKE ?")
             params.append(f"{account}%")
 
@@ -149,8 +173,8 @@ def _build_where_and_params(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
     return clause, params
 
 
-def _order_clause(sort_desc: bool) -> str:
-    return f"ORDER BY {_TS_COL} {'DESC' if sort_desc else 'ASC'}, id {'DESC' if sort_desc else 'ASC'}"
+def _order_clause(ts_expr: str, sort_desc: bool) -> str:
+    return f"ORDER BY {ts_expr} {'DESC' if sort_desc else 'ASC'}, id {'DESC' if sort_desc else 'ASC'}"
 
 
 # -----------------
@@ -193,23 +217,23 @@ def query_entries(
         "trade_id": trade_id,
         "search": search,
     }
-    where, params = _build_where_and_params(filters)
-    order = _order_clause(sort_desc)
-
-    cols = "*"
-    sql = f"SELECT {cols} FROM trades {where} {order} LIMIT ? OFFSET ?"
-    params += [int(limit), int(offset)]
 
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
+        ts_expr = _resolve_ts_expr(conn, "trades")
+        where, params = _build_where_and_params(filters, ts_expr)
+        order = _order_clause(ts_expr, sort_desc)
+
+        cols = "*"
+        sql = f"SELECT {cols} FROM trades {where} {order} LIMIT ? OFFSET ?"
+        params += [int(limit), int(offset)]
+
         rows = conn.execute(sql, tuple(params)).fetchall()
         return [_row_to_typed(r) for r in rows]
 
 
 def query_splits(**kwargs) -> List[Dict[str, Any]]:
-    """
-    Alias for query_entries; callers may conceptually think in 'splits'.
-    """
+    """Alias for query_entries; callers may conceptually think in 'splits'."""
     return query_entries(**kwargs)
 
 
@@ -223,8 +247,9 @@ def query_balances(
 ) -> List[Dict[str, Any]]:
     """
     Per-account balances as of a UTC timestamp, including opening/debits/credits/closing.
+    (Computed from trades totals; if you later migrate to a splits table, switch sums accordingly.)
     """
-    # Identity scope for completeness, though DBs are identity-scoped
+    # Identity scope
     ec, jc, bc = _apply_identity_defaults(
         {"entity_code": entity_code, "jurisdiction_code": jurisdiction_code, "broker_code": broker_code}
     )
@@ -233,41 +258,39 @@ def query_balances(
     as_of = as_of_utc or datetime.now(timezone.utc).isoformat()
     start = window_start_utc
     if not start:
-        # midnight UTC of as_of
         dt = datetime.fromisoformat(as_of.replace("Z", "+00:00")).astimezone(timezone.utc)
         start = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc).isoformat()
-
-    ts_col = _TS_COL
-
-    q_open = f"""
-        SELECT account, SUM(total_value) AS amt
-          FROM trades
-         WHERE entity_code = ? AND jurisdiction_code = ? AND broker_code = ?
-           AND {ts_col} < ?
-         GROUP BY account
-    """
-    q_window = f"""
-        SELECT account,
-               SUM(CASE WHEN (LOWER(COALESCE(side,''))='debit' OR total_value > 0) THEN ABS(total_value) ELSE 0 END) AS debits,
-               SUM(CASE WHEN (LOWER(COALESCE(side,''))='credit' OR total_value < 0) THEN ABS(total_value) ELSE 0 END) AS credits
-          FROM trades
-         WHERE entity_code = ? AND jurisdiction_code = ? AND broker_code = ?
-           AND {ts_col} >= ?
-           AND {ts_col} <= ?
-         GROUP BY account
-    """
-    q_close = f"""
-        SELECT account, SUM(total_value) AS amt
-          FROM trades
-         WHERE entity_code = ? AND jurisdiction_code = ? AND broker_code = ?
-           AND {ts_col} <= ?
-         GROUP BY account
-    """
 
     out: Dict[str, Dict[str, Any]] = {}
 
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
+        ts_expr = _resolve_ts_expr(conn, "trades")
+
+        q_open = f"""
+            SELECT account, SUM(total_value) AS amt
+              FROM trades
+             WHERE entity_code = ? AND jurisdiction_code = ? AND broker_code = ?
+               AND {ts_expr} < ?
+             GROUP BY account
+        """
+        q_window = f"""
+            SELECT account,
+                   SUM(CASE WHEN (LOWER(COALESCE(side,''))='debit' OR total_value > 0) THEN ABS(total_value) ELSE 0 END) AS debits,
+                   SUM(CASE WHEN (LOWER(COALESCE(side,''))='credit' OR total_value < 0) THEN ABS(total_value) ELSE 0 END) AS credits
+              FROM trades
+             WHERE entity_code = ? AND jurisdiction_code = ? AND broker_code = ?
+               AND {ts_expr} >= ?
+               AND {ts_expr} <= ?
+             GROUP BY account
+        """
+        q_close = f"""
+            SELECT account, SUM(total_value) AS amt
+              FROM trades
+             WHERE entity_code = ? AND jurisdiction_code = ? AND broker_code = ?
+               AND {ts_expr} <= ?
+             GROUP BY account
+        """
 
         for r in conn.execute(q_open, (ec, jc, bc, start)).fetchall():
             acct = r["account"]
@@ -324,7 +347,7 @@ def fetch_trade_group_by_id(group_id, *args, **kwargs):
 def search_trades(
     *,
     search_term: Optional[str] = None,
-    sort_by: str = "datetime_utc",   # accepted but ordering is fixed to UTC then id for stability
+    sort_by: str = "datetime_utc",   # accepted but ordering is fixed to time expr then id
     sort_desc: bool = True,
     limit: int = 1000,
     offset: int = 0,
@@ -333,5 +356,4 @@ def search_trades(
     Backward/compat wrapper used by web UI.
     Delegates to query_entries() with free-text 'search' applied.
     """
-    # Note: 'sort_by' is ignored to preserve canonical ordering by UTC timestamp then id.
     return query_entries(search=search_term or None, limit=limit, offset=offset, sort_desc=sort_desc)
