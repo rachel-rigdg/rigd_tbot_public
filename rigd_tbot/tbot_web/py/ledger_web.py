@@ -5,7 +5,8 @@ import io
 import traceback
 import sqlite3
 from pathlib import Path
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from typing import Tuple, Dict, Any, List
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, abort
 
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import (
@@ -24,8 +25,8 @@ from tbot_bot.accounting.ledger_modules.ledger_grouping import (
 )
 from tbot_bot.accounting.ledger_modules.ledger_query import search_trades
 
-# Useful for display sanity (not mutating here)
-from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_running_balances  # noqa: F401
+# Balance/running-balance helpers
+from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_account_balances
 
 ledger_web = Blueprint("ledger_web", __name__)
 
@@ -33,6 +34,9 @@ BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / 
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
 
 
+# ---------------------------
+# Guards / RBAC
+# ---------------------------
 def get_current_bot_state():
     try:
         with open(BOT_STATE_PATH, "r", encoding="utf-8") as f:
@@ -62,8 +66,23 @@ def identity_guard():
         return True
 
 
-def _is_display_entry(entry):
-    # True if at least one primary display field is present/non-empty
+def _current_user_and_role() -> Tuple[Any, str]:
+    user = get_current_user()
+    role = getattr(user, "role", None) or session.get("role") or "viewer"
+    return user, role
+
+
+def _require_admin_post():
+    _, role = _current_user_and_role()
+    if request.method == "POST" and role != "admin":
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    return None
+
+
+# ---------------------------
+# Utilities
+# ---------------------------
+def _is_display_entry(entry: Dict[str, Any]) -> bool:
     return bool(
         (entry.get("symbol") and str(entry.get("symbol")).strip())
         or (entry.get("datetime_utc") and str(entry.get("datetime_utc")).strip())
@@ -74,8 +93,77 @@ def _is_display_entry(entry):
     )
 
 
-@ledger_web.route('/ledger/reconcile', methods=['GET', 'POST'])
+def _valid_account_code(code: str) -> bool:
+    if not code:
+        return False
+    try:
+        coa = load_coa_metadata_and_accounts()
+        valid_codes = {c for c, _n in (coa.get("accounts_flat", []) or [])}
+        return code in valid_codes
+    except Exception:
+        return False
+
+
+def _has_unmapped(entries: List[Dict[str, Any]]) -> bool:
+    for e in entries or []:
+        if e.get("unmapped"):
+            return True
+        for s in (e.get("sub_entries") or []):
+            if s.get("unmapped") or not s.get("account"):
+                return True
+    return False
+
+
+def _sort_key_mapping(field: str) -> str:
+    """
+    Map canonical sort keys (top/bottom header rows) to DB/aggregate fields.
+    """
+    field = (field or "").strip().lower()
+    mapping = {
+        # top header
+        "datetime_utc": "datetime_utc",
+        "symbol": "symbol",
+        "account": "account",            # consolidated account model
+        "action": "action",
+        "quantity": "quantity",
+        "price": "price",
+        "fee": "fee",
+        "total_value": "total_value",
+        "status": "status",
+        "running_balance": "running_balance",
+        # bottom header
+        "trade_id": "trade_id",
+        "strategy": "strategy",
+        "tags": "tags",
+        "notes": "notes",
+        "action_detail": "action",       # map to action as closest
+    }
+    return mapping.get(field, "datetime_utc")
+
+
+def _get_sort_params() -> Tuple[str, bool]:
+    col = request.args.get("sort", request.args.get("sort_by", "datetime_utc"))
+    col = _sort_key_mapping(col)
+    dir_val = request.args.get("dir", None)
+    if dir_val is None:
+        dir_val = "desc" if request.args.get("sort_desc", "1") == "1" else "asc"
+    desc = str(dir_val).lower() not in ("asc", "ascending")
+    return col, desc
+
+
+# ---------------------------
+# Routes
+# ---------------------------
+
+# Alias root to reconcile for convenience
+@ledger_web.route('/ledger', methods=['GET'])
+def ledger_root():
+    return redirect(url_for('ledger_web.ledger_reconcile'))
+
+
+@ledger_web.route('/ledger/reconcile', methods=['GET'])
 def ledger_reconcile():
+    # RBAC: viewers allowed (GET)
     error = None
     entries = []
     balances = {}
@@ -87,39 +175,87 @@ def ledger_reconcile():
             error="Ledger access not available (provisioning or identity incomplete).",
             balances=balances,
             coa_accounts=coa_accounts,
+            user_role="viewer",
+            has_unmapped=False,
         )
     try:
-        from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_account_balances
-        balances = calculate_account_balances()
+        # Include opening equity/initial funding in balances
+        try:
+            balances = calculate_account_balances(include_opening=True)  # prefer explicit flag if supported
+        except TypeError:
+            balances = calculate_account_balances()  # fallback
 
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = coa_data.get("accounts_flat", [])  # list of (code, name)
 
-        # Use grouped view by default (collapsed)
-        entries = fetch_grouped_trades()
+        # grouped + sorted
+        sort_col, sort_desc = _get_sort_params()
+        entries = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
         entries = [e for e in entries if _is_display_entry(e)]
 
-        # Helpful trace for troubleshooting UI emptiness
-        print("LEDGER ENTRIES SERVED (count={}):".format(len(entries)))
-        if entries:
-            print("LEDGER SAMPLE (first entry):", entries[0])
+        user, role = _current_user_and_role()
 
+        return render_template(
+            'ledger.html',
+            entries=entries,
+            error=None,
+            balances=balances,
+            coa_accounts=coa_accounts,
+            user_role=role,
+            has_unmapped=_has_unmapped(entries),
+        )
     except FileNotFoundError:
         error = "Ledger database or table not found. Please initialize via admin tools."
-        entries = []
-        balances = {}
-        coa_accounts = []
     except Exception as e:
         error = f"Ledger error: {e}"
         traceback.print_exc()
-        entries = []
-        balances = {}
-        coa_accounts = []
-    return render_template('ledger.html', entries=entries, error=error, balances=balances, coa_accounts=coa_accounts)
+
+    user, role = _current_user_and_role()
+    return render_template(
+        'ledger.html',
+        entries=[],
+        error=error,
+        balances={},
+        coa_accounts=[],
+        user_role=role,
+        has_unmapped=False,
+    )
+
+
+@ledger_web.route('/ledger/groups', methods=['GET'])
+def ledger_groups():
+    # RBAC: viewers allowed (GET)
+    if provisioning_guard() or identity_guard():
+        return jsonify({"error": "Not permitted"}), 403
+    try:
+        sort_col, sort_desc = _get_sort_params()
+        groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+        groups = [g for g in groups if _is_display_entry(g)]
+        return jsonify(groups)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@ledger_web.route('/ledger/balances', methods=['GET'])
+def ledger_balances():
+    # RBAC: viewers allowed (GET)
+    if provisioning_guard() or identity_guard():
+        return jsonify({"error": "Not permitted"}), 403
+    try:
+        try:
+            bals = calculate_account_balances(include_opening=True)
+        except TypeError:
+            bals = calculate_account_balances()
+        return jsonify(bals)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @ledger_web.route('/ledger/group/<group_id>', methods=['GET'])
 def ledger_group_detail(group_id):
+    # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     try:
@@ -131,21 +267,20 @@ def ledger_group_detail(group_id):
 
 @ledger_web.route('/ledger/collapse_expand/<group_id>', methods=['POST'])
 def ledger_collapse_expand(group_id):
+    # RBAC: admin-only for POST
+    not_ok = _require_admin_post()
+    if not_ok:
+        return not_ok
     if provisioning_guard() or identity_guard():
         return jsonify({"ok": False, "error": "Not permitted"}), 403
     try:
-        # Accept optional explicit state from the client.
-        # convention: collapsed_state = 1 means "collapsed", 0 means "expanded"
         data = request.get_json(silent=True) or {}
         collapsed_state = data.get("collapsed_state", None)
         if collapsed_state is not None:
-            # normalize to 0/1
             collapsed_state = 1 if str(collapsed_state).lower() in ("1", "true", "yes") else 0
             result = collapse_expand_group(group_id, collapsed_state=collapsed_state)
         else:
-            # no state provided -> toggle
             result = collapse_expand_group(group_id)
-
         return jsonify({"ok": True, "result": bool(result), "collapsed_state": collapsed_state})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -153,14 +288,10 @@ def ledger_collapse_expand(group_id):
 
 @ledger_web.route('/ledger/collapse_all', methods=['POST'])
 def ledger_collapse_all():
-    """
-    Collapse or expand ALL groups in one shot.
-    Accepts JSON in any of these shapes:
-      {"collapse": true}          -> collapse all
-      {"collapse": false}         -> expand all
-      {"collapsed_state": 1|0}    -> 1 collapse, 0 expand
-      {"expanded": true|false}    -> inverse of collapsed_state
-    """
+    # RBAC: admin-only for POST
+    not_ok = _require_admin_post()
+    if not_ok:
+        return not_ok
     if provisioning_guard() or identity_guard():
         return jsonify({"ok": False, "error": "Not permitted"}), 403
     try:
@@ -174,7 +305,6 @@ def ledger_collapse_all():
         else:
             return jsonify({"ok": False, "error": "missing collapse/expanded flag"}), 400
 
-        # Fetch current groups (collapsed view is fine; we only need IDs)
         groups = fetch_grouped_trades(collapse=True, limit=10000)
         group_ids = [g.get("group_id") or g.get("trade_id") for g in groups if g]
         group_ids = [gid for gid in group_ids if gid]
@@ -185,7 +315,6 @@ def ledger_collapse_all():
                 collapse_expand_group(gid, collapsed_state=collapsed_state)
                 changed += 1
             except Exception:
-                # keep going; report partial success
                 traceback.print_exc()
 
         return jsonify({"ok": True, "collapsed_state": collapsed_state, "count": changed})
@@ -196,13 +325,13 @@ def ledger_collapse_all():
 
 @ledger_web.route('/ledger/search', methods=['GET'])
 def ledger_search():
+    # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
         return jsonify({"error": "Not permitted"}), 403
     query = request.args.get('q', '').strip()
-    sort_by = request.args.get('sort_by', 'datetime_utc')
-    sort_desc = request.args.get('sort_desc', '1') == '1'
+    sort_col, sort_desc = _get_sort_params()
     try:
-        results = search_trades(search_term=query, sort_by=sort_by, sort_desc=sort_desc)
+        results = search_trades(search_term=query, sort_by=sort_col, sort_desc=sort_desc)
         results = [e for e in results if _is_display_entry(e)]
         return jsonify(results)
     except Exception as e:
@@ -210,8 +339,12 @@ def ledger_search():
         return jsonify({"error": str(e)}), 500
 
 
+# ---------- Legacy resolve/add/edit/delete (admin-only POST) ----------
 @ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
 def resolve_ledger_entry(entry_id):
+    not_ok = _require_admin_post()
+    if not_ok:
+        return not_ok
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import mark_entry_resolved
@@ -222,6 +355,9 @@ def resolve_ledger_entry(entry_id):
 
 @ledger_web.route('/ledger/add', methods=['POST'])
 def add_ledger_entry_route():
+    not_ok = _require_admin_post()
+    if not_ok:
+        return not_ok
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import post_ledger_entries_double_entry
@@ -229,7 +365,7 @@ def add_ledger_entry_route():
     form = request.form
     bot_identity = load_bot_identity()
     entity_code, jurisdiction_code, broker, bot_id = bot_identity.split("_")
-    current_user = get_current_user()
+    current_user, _role = _current_user_and_role()
     config = get_bot_config()
 
     def _num(val, default=None):
@@ -266,8 +402,6 @@ def add_ledger_entry_route():
         "soc2_type": "",
     }
     try:
-        # amount sign/side handled inside double-entry mapping,
-        # but provide a sane numeric default for pre-validation.
         entry_data["amount"] = _num(entry_data.get("total_value"), 0.0) or 0.0
         post_ledger_entries_double_entry([entry_data])
         flash('Ledger entry added (double-entry compliant).')
@@ -283,11 +417,77 @@ def add_ledger_entry_route():
 
 
 @ledger_web.route('/ledger/edit/<int:entry_id>', methods=['POST'])
+def ledger_edit(entry_id: int):
+    """
+    Minimal, audited COA reassignment endpoint used by inline dropdown.
+    Body (JSON or form):
+      - account_code: required, active COA code
+      - reason: optional string
+      - auto_update_mapping: optional bool toggle (default true if configured)
+    """
+    not_ok = _require_admin_post()
+    if not_ok:
+        return not_ok
+    if provisioning_guard() or identity_guard():
+        return jsonify({"ok": False, "error": "Not permitted"}), 403
+
+    data = request.get_json(silent=True) or request.form or {}
+    account_code = (data.get("account_code") or data.get("account") or "").strip()
+    reason = (data.get("reason") or "").strip() or None
+    if not _valid_account_code(account_code):
+        return jsonify({"ok": False, "error": "invalid account code"}), 400
+
+    user, _role = _current_user_and_role()
+    actor = getattr(user, "username", None) or (user if user else "system")
+
+    # Call atomic reassignment with audit (append-only honored inside module)
+    try:
+        from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
+        result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": f"reassign failed: {e}"}), 500
+
+    # Optional mapping auto-update
+    auto_toggle = str(data.get("auto_update_mapping", "true")).lower() not in ("0", "false", "no")
+    if auto_toggle:
+        try:
+            from tbot_bot.accounting.ledger_modules.mapping_auto_update import maybe_upsert_rule_from_leg
+            # best-effort: fetch leg context for rule key
+            try:
+                bot_identity = load_bot_identity()
+                e, j, b, bot_id = bot_identity.split("_")
+                db_path = resolve_ledger_db_path(e, j, b, bot_id)
+                with sqlite3.connect(db_path) as conn:
+                    conn.row_factory = sqlite3.Row
+                    leg = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+                if leg:
+                    maybe_upsert_rule_from_leg(dict(leg), account_code, leg.get("strategy"))
+            except Exception:
+                traceback.print_exc()
+        except Exception:
+            # mapping auto-update module may be behind a feature toggle; ignore if missing
+            pass
+
+    # Return fresh deltas for live UI
+    try:
+        sort_col, sort_desc = _get_sort_params()
+        groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+        try:
+            bals = calculate_account_balances(include_opening=True)
+        except TypeError:
+            bals = calculate_account_balances()
+        return jsonify({"ok": True, "groups": groups, "balances": bals, "result": result})
+    except Exception:
+        # fallback minimal success
+        return jsonify({"ok": True})
+
+# Legacy full edit (retain for forms; admin-only)
+@ledger_web.route('/ledger/edit_legacy/<int:entry_id>', methods=['POST'])
 def edit_ledger_entry_route(entry_id):
-    """
-    Full edit (legacy) — keeps behavior for forms that post many fields.
-    If you only want to change the COA account, use /ledger/update_account/<id>.
-    """
+    not_ok = _require_admin_post()
+    if not_ok:
+        return not_ok
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import edit_ledger_entry
@@ -295,7 +495,7 @@ def edit_ledger_entry_route(entry_id):
     form = request.form
     bot_identity = load_bot_identity()
     entity_code, jurisdiction_code, broker, bot_id = bot_identity.split("_")
-    current_user = get_current_user()
+    current_user, _role = _current_user_and_role()
     config = get_bot_config()
 
     def _num(val, default=None):
@@ -344,142 +544,11 @@ def edit_ledger_entry_route(entry_id):
     return redirect(url_for('ledger_web.ledger_reconcile'))
 
 
-# ---------- NEW: minimal, safe COA account updater (single-row or whole-group) ----------
-
-def _valid_account_code(code: str) -> bool:
-    if not code:
-        return False
-    try:
-        coa = load_coa_metadata_and_accounts()
-        valid_codes = {c for c, _n in (coa.get("accounts_flat", []) or [])}
-        return code in valid_codes
-    except Exception:
-        return False
-
-
-@ledger_web.route('/ledger/update_account/<int:entry_id>', methods=['POST'])
-def update_ledger_account_route(entry_id: int):
-    """
-    Update only the COA account (and optionally strategy) for a single ledger row.
-    Optional form fields:
-      - account (required)
-      - strategy (optional)
-      - apply_to_group: "1" to apply to all rows with the same group_id
-    """
-    if provisioning_guard() or identity_guard():
-        return redirect(url_for('main.root_router'))
-
-    account = (request.form.get("account") or "").strip()
-    strategy = (request.form.get("strategy") or "").strip() or None
-    apply_to_group = str(request.form.get("apply_to_group", "0")).lower() in ("1", "true", "yes")
-
-    if not _valid_account_code(account):
-        flash("Invalid account code.", "error")
-        return redirect(url_for('ledger_web.ledger_reconcile'))
-
-    # Locate DB
-    bot_identity = load_bot_identity()
-    e, j, b, bot_id = bot_identity.split("_")
-    db_path = resolve_ledger_db_path(e, j, b, bot_id)
-
-    try:
-        with sqlite3.connect(db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT id, group_id FROM trades WHERE id = ?", (entry_id,)).fetchone()
-            if not row:
-                flash("Entry not found.", "error")
-                return redirect(url_for('ledger_web.ledger_reconcile'))
-
-            if apply_to_group and row["group_id"]:
-                params = [account]
-                sql = "UPDATE trades SET account = ?"
-                if strategy is not None:
-                    sql += ", strategy = ?"
-                    params.append(strategy)
-                sql += " WHERE group_id = ?"
-                params.append(row["group_id"])
-                conn.execute(sql, tuple(params))
-            else:
-                params = [account]
-                sql = "UPDATE trades SET account = ?"
-                if strategy is not None:
-                    sql += ", strategy = ?"
-                    params.append(strategy)
-                sql += " WHERE id = ?"
-                params.append(entry_id)
-                conn.execute(sql, tuple(params))
-            conn.commit()
-
-        flash("Account updated." + (" (Applied to group.)" if apply_to_group else ""))
-    except Exception as e:
-        traceback.print_exc()
-        flash(f"Failed to update account: {e}", "error")
-
-    return redirect(url_for('ledger_web.ledger_reconcile'))
-
-
-@ledger_web.route('/ledger/update_account_json', methods=['POST'])
-def update_ledger_account_json():
-    """
-    JSON variant for XHR updates.
-    Body: {"entry_id": 123, "account": "Assets:Cash", "strategy":"open", "apply_to_group": true}
-    """
-    if provisioning_guard() or identity_guard():
-        return jsonify({"ok": False, "error": "Not permitted"}), 403
-
-    data = request.get_json(silent=True) or {}
-    try:
-        entry_id = int(data.get("entry_id"))
-    except Exception:
-        return jsonify({"ok": False, "error": "missing/invalid entry_id"}), 400
-
-    account = (data.get("account") or "").strip()
-    strategy = (data.get("strategy") or "").strip() or None
-    apply_to_group = bool(data.get("apply_to_group", False))
-
-    if not _valid_account_code(account):
-        return jsonify({"ok": False, "error": "invalid account code"}), 400
-
-    # Locate DB
-    bot_identity = load_bot_identity()
-    e, j, b, bot_id = bot_identity.split("_")
-    db_path = resolve_ledger_db_path(e, j, b, bot_id)
-
-    try:
-        with sqlite3.connect(db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT id, group_id FROM trades WHERE id = ?", (entry_id,)).fetchone()
-            if not row:
-                return jsonify({"ok": False, "error": "entry not found"}), 404
-
-            if apply_to_group and row["group_id"]:
-                params = [account]
-                sql = "UPDATE trades SET account = ?"
-                if strategy is not None:
-                    sql += ", strategy = ?"
-                    params.append(strategy)
-                sql += " WHERE group_id = ?"
-                params.append(row["group_id"])
-                conn.execute(sql, tuple(params))
-            else:
-                params = [account]
-                sql = "UPDATE trades SET account = ?"
-                if strategy is not None:
-                    sql += ", strategy = ?"
-                    params.append(strategy)
-                sql += " WHERE id = ?"
-                params.append(entry_id)
-                conn.execute(sql, tuple(params))
-            conn.commit()
-
-        return jsonify({"ok": True})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
 @ledger_web.route('/ledger/delete/<int:entry_id>', methods=['POST'])
 def delete_ledger_entry_route(entry_id):
+    not_ok = _require_admin_post()
+    if not_ok:
+        return not_ok
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     from tbot_bot.accounting.ledger import delete_ledger_entry
@@ -490,16 +559,17 @@ def delete_ledger_entry_route(entry_id):
 
 @ledger_web.route('/ledger/sync', methods=['POST'])
 def ledger_sync():
-    """
-    Kicks off broker->ledger sync. Adds verbose traces so we can see when it ran and what it did.
-    """
+    # RBAC: admin-only
+    not_ok = _require_admin_post()
+    if not_ok:
+        return not_ok
     if provisioning_guard() or identity_guard():
         return redirect(url_for('main.root_router'))
     try:
         print("[WEB] /ledger/sync: invoked")
         from tbot_bot.accounting.ledger import sync_broker_ledger
         sync_broker_ledger()
-        # quick post-check for sanity & flash useful info
+        # post-check
         try:
             bot_identity = load_bot_identity()
             e, j, b, bot_id = bot_identity.split("_")

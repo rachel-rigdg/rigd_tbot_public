@@ -21,10 +21,17 @@
       .collapse-btn { cursor: pointer; color: #0040c0; text-decoration: underline; background: none; border: none; padding: 0 6px; }
       .expand-toggle { margin-left:.5rem; font-size: .9em; color:#333; }
       .toolbar { display:flex; align-items:center; gap:1rem; margin:.75rem 0; }
-      .toolbar .right { margin-left:auto; }
+      .toolbar .right { margin-left:auto; display:flex; gap:.75rem; align-items:center; }
       .status-mismatch { color:#b30000; font-weight:600; }
       .resolved-tag { color:#0a7; font-weight:600; }
       .status-ok { color:#333; }
+      .badge-unmapped { background:#ffe3e3; color:#900; padding:.25rem .5rem; border-radius:.25rem; margin:.5rem 0; display:inline-block; }
+      .inline-links { font-size:.85em; margin-top:.25rem; }
+      .inline-links a { margin-right:.5rem; }
+      .disabled { opacity:.6; pointer-events:none; }
+      .balances-panel { margin-top:1rem; }
+      /* keep hidden account column for sort alignment without showing duplicate header */
+      th.hidden-account, td.hidden-account { display:none; }
     </style>
     <script src="/static/js/ledger.js"></script>
 </head>
@@ -53,12 +60,26 @@
         <button type="submit">Sync Broker Ledger</button>
       </form>
 
-      <!-- Master collapse/expand toggle: checked = collapse all -->
-      <label class="right">
-        <input type="checkbox" id="collapse-all" />
-        Collapse all
-      </label>
+      <div class="right">
+        <!-- Persistent COA Mapping button: visible to all; disabled for non-admin -->
+        <button id="btn-coa-mapping"
+                type="button"
+                onclick="window.location.href='{{ url_for('coa_mapping_web.render_mapping') if 'coa_mapping_web.render_mapping' in globals() else '/coa_mapping' }}'"
+                {% if user_role is defined and user_role != 'admin' %}disabled class="disabled"{% endif %}>
+          COA Mapping
+        </button>
+
+        <!-- Master collapse/expand toggle: checked = collapse all -->
+        <label>
+          <input type="checkbox" id="collapse-all" />
+          Collapse all
+        </label>
+      </div>
     </div>
+
+    {% if has_unmapped %}
+      <div class="badge-unmapped">Unmapped transactions detected. Use inline Account selector or open COA Mapping to resolve.</div>
+    {% endif %}
 
     <div class="reconcile-container">
       <h2>Reconciliation Table</h2>
@@ -68,8 +89,8 @@
           <tr>
             <th class="sortable" data-col="datetime_utc" onclick="sortLedgerTable('datetime_utc')">Date (UTC)</th>
             <th class="sortable" data-col="symbol" onclick="sortLedgerTable('symbol')">Symbol</th>
-            <!-- NEW: Account column (sortable) -->
-            <th class="sortable" data-col="account" onclick="sortLedgerTable('account')">Account</th>
+            <!-- hidden placeholder to preserve column index for JS sort; no visible duplicate header -->
+            <th class="hidden-account" data-col="account"></th>
             <th class="sortable" data-col="action" onclick="sortLedgerTable('action')">Action</th>
             <th class="sortable" data-col="quantity" onclick="sortLedgerTable('quantity')">Quantity</th>
             <th class="sortable" data-col="price" onclick="sortLedgerTable('price')">Price</th>
@@ -79,13 +100,13 @@
             <th class="sortable" data-col="running_balance" onclick="sortLedgerTable('running_balance')">Running Balance</th>
           </tr>
           <tr>
-            <th>Trade ID</th>
-            <th>Account</th>
-            <th>Strategy</th>
-            <th>Tags</th>
-            <th>Notes</th>
-            <th>Action</th>
-            <th>Add Entry Button</th>
+            <th class="sortable" data-col="trade_id" onclick="sortLedgerTable('trade_id')">Trade ID</th>
+            <th class="sortable" data-col="account" onclick="sortLedgerTable('account')">Account</th>
+            <th class="sortable" data-col="strategy" onclick="sortLedgerTable('strategy')">Strategy</th>
+            <th class="sortable" data-col="tags" onclick="sortLedgerTable('tags')">Tags</th>
+            <th class="sortable" data-col="notes" onclick="sortLedgerTable('notes')">Notes</th>
+            <th class="sortable" data-col="action_detail" onclick="sortLedgerTable('action_detail')">Action</th>
+            <th><!-- Add Entry Button --></th>
             <th colspan="2"></th>
           </tr>
         </thead>
@@ -101,7 +122,6 @@
             %}
               <tr class="row-top {{ entry.status }}">
                 <td>
-                  {# +/- button sends intended target state #}
                   <button
                     class="collapse-btn"
                     type="button"
@@ -109,22 +129,11 @@
                     title="{{ 'Expand' if entry.collapsed else 'Collapse' }}">
                     {{ "+" if entry.collapsed else "-" }}
                   </button>
-
-                  {# Checkbox: checked = expanded (persisted) #}
-                  <label class="expand-toggle">
-                    <input
-                      type="checkbox"
-                      class="toggle-group"
-                      data-group-id="{{ entry.group_id or entry.trade_id }}"
-                      {% if not entry.collapsed %}checked{% endif %}/>
-                    expand
-                  </label>
-
                   {{ entry.datetime_utc.split('T')[0] if entry.datetime_utc }}
                 </td>
                 <td>{{ entry.symbol or "" }}</td>
-                <!-- NEW: show representative leg's account in collapsed/top row -->
-                <td>{{ entry.account or "" }}</td>
+                <!-- hidden account cell to align with JS sort index; no visible duplicate -->
+                <td class="hidden-account">{{ entry.account or "" }}</td>
                 <td>{{ entry.action or "" }}</td>
                 <td>{{ entry.quantity or "" }}</td>
                 <td>{{ entry.price or "" }}</td>
@@ -147,18 +156,23 @@
                   <tr class="row-bottom {{ sub.status }}">
                     <td>{{ sub.trade_id or "" }}</td>
 
-                    <!-- NEW: inline COA account editor per leg -->
+                    <!-- Inline COA account editor per leg (admin-only enabled) -->
                     <td>
-                      <form method="post" action="{{ url_for('ledger_web.update_account', entry_id=sub.id) }}">
-                        <select name="account" required>
-                          {% for code, name in coa_accounts %}
-                            <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
-                              {{ name }} ({{ code }})
-                            </option>
-                          {% endfor %}
-                        </select>
-                        <button type="submit">Save</button>
-                      </form>
+                      <select class="coa-select"
+                              name="account"
+                              data-entry-id="{{ sub.id }}"
+                              {% if user_role is defined and user_role != 'admin' %}disabled{% endif %}>
+                        {% for code, name in coa_accounts %}
+                          <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
+                            {{ name }} ({{ code }})
+                          </option>
+                        {% endfor %}
+                      </select>
+                      <div class="inline-links">
+                        <a href="{{ url_for('coa_web.render_coa') if 'coa_web.render_coa' in globals() else '/coa' }}" target="_blank">View COA</a>
+                        <a href="{{ (url_for('coa_mapping_web.render_mapping') if 'coa_mapping_web.render_mapping' in globals() else '/coa_mapping') ~ '?from=ledger&entry_id=' ~ (sub.id|string) }}" target="_blank">View Mapping Rule</a>
+                        {% if sub.unmapped %}<span class="badge-unmapped">Unmapped</span>{% endif %}
+                      </div>
                     </td>
 
                     <td>{{ sub.strategy or "" }}</td>
@@ -172,13 +186,13 @@
             {% endif %}
           {% endfor %}
 
-          {# Add-entry rows #}
+          <!-- Add-entry rows -->
           <tr class="row-top">
             <form method="post" action="{{ url_for('ledger_web.add_ledger_entry_route') }}">
               <td><input type="text" name="datetime_utc" placeholder="YYYY-MM-DD" required></td>
               <td><input type="text" name="symbol" placeholder="Symbol"></td>
-              <!-- placeholder cell for Account column in top row -->
-              <td></td>
+              <!-- hidden placeholder to keep column alignment -->
+              <td class="hidden-account"></td>
               <td>
                 <select name="action">
                   <option value="">NONE</option>
@@ -226,7 +240,7 @@
         </tbody>
       </table>
 
-      <div class="ledger-balance-summary">
+      <div class="ledger-balance-summary balances-panel">
         <h3>Account Balances</h3>
         {% if balances %}
           <table class="balance-table">
