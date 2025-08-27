@@ -4,18 +4,54 @@
 
 import os
 import json
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app, send_file
+from functools import wraps
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
+
+# Core mapping table APIs
 from tbot_bot.accounting.coa_mapping_table import (
-    load_mapping_table, assign_mapping, get_mapping_for_transaction,
-    flag_unmapped_transaction, rollback_mapping_version,
-    export_mapping_table, import_mapping_table
+    load_mapping_table,
+    assign_mapping,
+    get_mapping_for_transaction,
+    flag_unmapped_transaction,
+    rollback_mapping_version,
+    export_mapping_table,
+    import_mapping_table,
+    upsert_rule,  # programmatic API (internal helper endpoint)
 )
+
+# Identity / logging
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.utils_log import log_event
 
+# Optional CSRF exemption (internal-only helper); define no-op if not available
+try:
+    from flask_wtf.csrf import csrf_exempt
+except Exception:  # pragma: no cover
+    def csrf_exempt(fn):
+        return fn
+
 coa_mapping_web = Blueprint("coa_mapping_web", __name__, template_folder="../templates")
 
+# ---------------------------
+# RBAC helpers
+# ---------------------------
+def admin_required(f):
+    @wraps(f)
+    def _wrap(*args, **kwargs):
+        if not current_user.is_authenticated or getattr(current_user, "role", "viewer") != "admin":
+            # JSON for API calls; flash+redirect for browser posts
+            if request.is_json or request.headers.get("Accept", "").startswith("application/json"):
+                return jsonify({"ok": False, "error": "forbidden"}), 403
+            flash("Forbidden: admin role required.", "danger")
+            return redirect(url_for("coa_mapping_web.view_mapping"))
+        return f(*args, **kwargs)
+    return _wrap
+
+
+# ---------------------------
+# Pages / Views
+# ---------------------------
 @coa_mapping_web.route("/coa_mapping", methods=["GET"])
 @login_required
 def view_mapping():
@@ -23,80 +59,104 @@ def view_mapping():
     mapping = load_mapping_table()
     return render_template("coa_mapping.html", mapping=mapping, user=current_user)
 
+
+# ---------------------------
+# CRUD / Assignment
+# ---------------------------
 @coa_mapping_web.route("/coa_mapping/assign", methods=["POST"])
 @login_required
+@admin_required
 def assign_mapping_route():
-    """Assign or update a COA mapping rule via form or API."""
-    data = request.get_json() if request.is_json else request.form.to_dict()
+    """Assign or update a COA mapping rule via form or API (admin-only)."""
+    data = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     mapping_rule = {
         "broker": data.get("broker"),
         "type": data.get("type"),
         "subtype": data.get("subtype"),
         "description": data.get("description"),
-        "coa_account": data.get("coa_account")
+        "coa_account": data.get("coa_account"),
     }
     reason = data.get("reason", "manual assignment")
     assign_mapping(mapping_rule, user=current_user.username, reason=reason)
     log_event(
         "coa_mapping_web",
         f"Mapping assigned/updated by {current_user.username}: {mapping_rule} (reason: {reason})",
-        level="info"
+        level="info",
     )
     flash("Mapping assigned/updated.", "success")
     return jsonify({"success": True})
 
+
 @coa_mapping_web.route("/coa_mapping/flag_unmapped", methods=["POST"])
 @login_required
 def flag_unmapped():
-    """Flag an unmapped transaction for admin review."""
-    txn = request.get_json() if request.is_json else request.form.to_dict()
+    """Flag an unmapped transaction for admin review (viewer allowed to report)."""
+    txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     flag_unmapped_transaction(txn, user=current_user.username)
     log_event(
         "coa_mapping_web",
         f"Transaction flagged unmapped by {current_user.username}: {txn}",
-        level="info"
+        level="info",
     )
     return jsonify({"success": True})
 
+
+# ---------------------------
+# Versioning / Import / Export (RBAC-gated)
+# ---------------------------
+@coa_mapping_web.route("/coa_mapping/versions", methods=["GET"])
+@login_required
+def list_versions():
+    """List all mapping table version snapshots (viewer allowed)."""
+    mapping = load_mapping_table()
+    history = mapping.get("history", [])
+    return jsonify(history)
+
+
 @coa_mapping_web.route("/coa_mapping/rollback", methods=["POST"])
 @login_required
+@admin_required
 def rollback_mapping():
-    """Rollback to a previous mapping table version."""
-    version = int(request.form.get("version", 0) or 0)
+    """Rollback to a previous mapping table version (admin-only)."""
+    version = int((request.form.get("version") or request.json.get("version") if request.is_json else 0) or 0)
     if rollback_mapping_version(version):
         log_event(
             "coa_mapping_web",
             f"Mapping table rolled back to version {version} by {current_user.username}",
-            level="info"
+            level="info",
         )
         flash(f"Rolled back to mapping version {version}.", "info")
         return jsonify({"success": True})
     else:
         flash(f"Version {version} not found.", "danger")
-        return jsonify({"success": False, "error": "Version not found"})
+        return jsonify({"success": False, "error": "Version not found"}), 404
+
 
 @coa_mapping_web.route("/coa_mapping/export", methods=["GET"])
 @login_required
+@admin_required
 def export_mapping():
-    """Download/export the current mapping table as JSON."""
+    """Download/export the current mapping table as JSON (admin-only)."""
     mapping_json = export_mapping_table()
     identity = get_bot_identity()
     filename = f"coa_mapping_table_{identity}.json"
     log_event(
         "coa_mapping_web",
         f"Mapping table exported by {current_user.username} as {filename}",
-        level="info"
+        level="info",
     )
     return current_app.response_class(
         mapping_json,
         mimetype="application/json",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
 
 @coa_mapping_web.route("/coa_mapping/import", methods=["POST"])
 @login_required
+@admin_required
 def import_mapping():
-    """Import mapping table from uploaded JSON."""
+    """Import mapping table from uploaded JSON (admin-only)."""
     if "file" not in request.files:
         flash("No file uploaded", "danger")
         return redirect(url_for("coa_mapping_web.view_mapping"))
@@ -104,28 +164,70 @@ def import_mapping():
     try:
         data = file.read().decode("utf-8")
         import_mapping_table(data, user=current_user.username)
-        log_event(
-            "coa_mapping_web",
-            f"Mapping table imported by {current_user.username}.",
-            level="info"
-        )
+        log_event("coa_mapping_web", f"Mapping table imported by {current_user.username}.", level="info")
         flash("Mapping table imported successfully.", "success")
+        return redirect(url_for("coa_mapping_web.view_mapping"))
     except Exception as e:
+        log_event("coa_mapping_web", f"Import failed: {e}", level="error")
         flash(f"Import failed: {e}", "danger")
-    return redirect(url_for("coa_mapping_web.view_mapping"))
+        return redirect(url_for("coa_mapping_web.view_mapping"))
 
+
+# ---------------------------
+# Query helper
+# ---------------------------
 @coa_mapping_web.route("/coa_mapping/get_mapping", methods=["POST"])
 @login_required
 def get_mapping():
-    """API endpoint: fetch the mapping for a specific transaction."""
-    txn = request.get_json() if request.is_json else request.form.to_dict()
+    """API endpoint: fetch the mapping for a specific transaction (viewer allowed)."""
+    txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     mapping = get_mapping_for_transaction(txn)
     return jsonify(mapping or {})
 
-@coa_mapping_web.route("/coa_mapping/versions", methods=["GET"])
+
+# ---------------------------
+# INTERNAL helper for inline edit hook (admin-only + CSRF-exempt)
+# ---------------------------
+@coa_mapping_web.route("/coa_mapping/_internal/upsert_rule", methods=["POST"])
+@csrf_exempt
 @login_required
-def list_versions():
-    """List all mapping table version snapshots (for rollback or audit)."""
-    mapping = load_mapping_table()
-    history = mapping.get("history", [])
-    return jsonify(history)
+@admin_required
+def internal_upsert_rule():
+    """
+    CSRF-exempt internal endpoint used by inline COA edit hook.
+    Body (JSON or form):
+      - rule_key: str (stable key derived from context)  OR provide sufficient context_meta to derive it downstream
+      - account_code: str (active COA code)
+      - context_meta: dict (optional; symbol/memo/broker_code/strategy/etc)
+      - actor: str (optional; defaults to current_user.username)
+    Returns:
+      { "ok": true, "version_id": "<id>" }
+    """
+    data = request.get_json(silent=True) or request.form.to_dict()
+    rule_key = (data.get("rule_key") or "").strip()
+    account_code = (data.get("account_code") or data.get("coa_account") or "").strip()
+    actor = (data.get("actor") or getattr(current_user, "username", "system")).strip()
+    # context_meta may come in as JSON string via form
+    context_meta_raw = data.get("context_meta")
+    if isinstance(context_meta_raw, str):
+        try:
+            context_meta = json.loads(context_meta_raw)
+        except Exception:
+            context_meta = {"raw": context_meta_raw}
+    else:
+        context_meta = context_meta_raw or {}
+
+    if not account_code:
+        return jsonify({"ok": False, "error": "missing account_code"}), 400
+    # rule_key may be empty if downstream derives from context
+    try:
+        version_id = upsert_rule(rule_key=rule_key, account_code=account_code, context_meta=context_meta, actor=actor)
+        log_event(
+            "coa_mapping_web",
+            f"internal upsert_rule by {actor}: rule_key={rule_key}, account_code={account_code}",
+            level="info",
+        )
+        return jsonify({"ok": True, "version_id": version_id})
+    except Exception as e:
+        log_event("coa_mapping_web", f"internal upsert_rule failed: {e}", level="error")
+        return jsonify({"ok": False, "error": str(e)}), 500

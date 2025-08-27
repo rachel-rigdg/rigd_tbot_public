@@ -22,7 +22,7 @@ PROJECT_ROOT = get_project_root()
 env_path = Path(PROJECT_ROOT) / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=str(env_path), override=True)
-    with open(env_path, "r") as f:
+    with open(env_path, "r", encoding="utf-8") as f:
         for line in f:
             if "=" in line and not line.strip().startswith("#"):
                 k, v = line.strip().split("=", 1)
@@ -33,31 +33,40 @@ CONTROL_DIR = resolve_control_path()
 MAX_TEST_TIME = 90  # seconds per test
 MAX_STRATEGY_TIME = 60  # seconds per strategy
 
+# Canonical test list — must match test_web.py + static/js/test_ui.js
 ALL_TESTS = [
-    "broker_sync",
-    "coa_mapping",
-    "universe_cache",
-    "strategy_selfcheck",
-    "screener_random",
-    "screener_integration",
-    "main_bot",
-    "ledger_schema",
-    "env_bot",
-    "coa_web_endpoints",
-    "coa_consistency",
-    "broker_trade_stub",
+    "integration_test_runner",
     "backtest_engine",
-    "logging_format",
+    "broker_sync",
+    "broker_trade_stub",
+    "coa_consistency",
+    "coa_mapping",
+    "coa_web_endpoints",
+    "env_bot",
     "fallback_logic",
     "holdings_manager",
-    "ledger_write_failure",
-    "ledger_double_entry",
-    "ledger_corruption",
+    "holdings_web_endpoints",
+    "ledger_coa_edit",
     "ledger_concurrency",
+    "ledger_corruption",
+    "ledger_double_entry",
     "ledger_migration",
     "ledger_reconciliation",
-    "universe_cache"
+    "ledger_schema",
+    "ledger_write_failure",
+    "logging_format",
+    "main_bot",
+    "mapping_upsert",
+    "opening_balance",
+    "screener_credentials",
+    "screener_integration",
+    "screener_random",
+    "strategy_selfcheck",
+    "strategy_tuner",
+    "symbol_universe_refresh",
+    "universe_cache",
 ]
+
 TEST_STATUS_PATH = get_output_path("logs", "test_status.json")
 TEST_LOG_PATH = get_output_path("logs", "test_mode.log")
 
@@ -80,7 +89,7 @@ def check_output_artifacts():
             print(f"Found output file: {file}")
             if path.suffix == ".json":
                 try:
-                    with path.open() as f:
+                    with path.open(encoding="utf-8") as f:
                         data = json.load(f)
                         if isinstance(data, list) and data:
                             print(f"   → {len(data)} entries")
@@ -111,7 +120,7 @@ def _clear_flag(flag_path):
         pass
 
 def detect_individual_test_flag():
-    all_flags = list(CONTROL_DIR.glob("test_mode_*.flag"))
+    all_flags = list(Path(CONTROL_DIR).glob("test_mode_*.flag"))
     if any(flag.name == "test_mode.flag" for flag in all_flags):
         return None
     for flag in all_flags:
@@ -121,16 +130,18 @@ def detect_individual_test_flag():
 
 def set_test_status(status_dict):
     try:
-        os.makedirs(os.path.dirname(TEST_STATUS_PATH), exist_ok=True)
-        with open(TEST_STATUS_PATH, "w", encoding="utf-8") as f:
+        status_path = Path(TEST_STATUS_PATH)
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        with status_path.open("w", encoding="utf-8") as f:
             json.dump(status_dict, f, indent=2)
     except Exception:
         pass
 
 def update_test_status(test_name, status):
     try:
-        if os.path.exists(TEST_STATUS_PATH):
-            with open(TEST_STATUS_PATH, "r", encoding="utf-8") as f:
+        status_path = Path(TEST_STATUS_PATH)
+        if status_path.exists():
+            with status_path.open("r", encoding="utf-8") as f:
                 status_dict = json.load(f)
         else:
             status_dict = {t: "" for t in ALL_TESTS}
@@ -177,33 +188,44 @@ def run_subprocess_with_realtime_log(cmd, **kwargs):
         proc.kill()
     return proc
 
-def run_single_test_module(flag):
-    test_name = flag.name.replace("test_mode_", "").replace(".flag", "")
-    test_map = {
-        "broker_sync": "tbot_bot.test.test_broker_sync",
-        "coa_mapping": "tbot_bot.test.test_coa_mapping",
-     
-        "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
-        "screener_random": "tbot_bot.test.test_screener_random",
-        "screener_integration": "tbot_bot.test.test_screener_integration",
-        "main_bot": "tbot_bot.test.test_main_bot",
-        "ledger_schema": "tbot_bot.test.test_ledger_schema",
-        "env_bot": "tbot_bot.test.test_env_bot",
-        "coa_web_endpoints": "tbot_bot.test.test_coa_web_endpoints",
-        "coa_consistency": "tbot_bot.test.test_coa_consistency",
-        "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
+def _test_module_map():
+    # Centralized mapping for both individual and full-run execution
+    return {
+        "integration_test_runner": "tbot_bot.test.integration_test_runner",
         "backtest_engine": "tbot_bot.test.test_backtest_engine",
-        "logging_format": "tbot_bot.test.test_logging_format",
+        "broker_sync": "tbot_bot.test.test_broker_sync",
+        "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
+        "coa_consistency": "tbot_bot.test.test_coa_consistency",
+        "coa_mapping": "tbot_bot.test.test_coa_mapping",
+        "coa_web_endpoints": "tbot_bot.test.test_coa_web_endpoints",
+        "env_bot": "tbot_bot.test.test_env_bot",
         "fallback_logic": "tbot_bot.test.test_fallback_logic",
         "holdings_manager": "tbot_bot.test.test_holdings_manager",
-        "ledger_write_failure": "tbot_bot.test.test_ledger_write_failure",
-        "ledger_double_entry": "tbot_bot.test.test_ledger_double_entry",
-        "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
+        "holdings_web_endpoints": "tbot_bot.test.test_holdings_web_endpoints",
+        "ledger_coa_edit": "tbot_bot.test.test_ledger_coa_edit",
         "ledger_concurrency": "tbot_bot.test.test_ledger_concurrency",
+        "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
+        "ledger_double_entry": "tbot_bot.test.test_ledger_double_entry",
         "ledger_migration": "tbot_bot.test.test_ledger_migration",
         "ledger_reconciliation": "tbot_bot.test.test_ledger_reconciliation",
-        "universe_cache": "tbot_bot.test.test_universe_cache"
+        "ledger_schema": "tbot_bot.test.test_ledger_schema",
+        "ledger_write_failure": "tbot_bot.test.test_ledger_write_failure",
+        "logging_format": "tbot_bot.test.test_logging_format",
+        "main_bot": "tbot_bot.test.test_main_bot",
+        "mapping_upsert": "tbot_bot.test.test_mapping_upsert",
+        "opening_balance": "tbot_bot.test.test_opening_balance",
+        "screener_credentials": "tbot_bot.test.test_screener_credentials",
+        "screener_integration": "tbot_bot.test.test_screener_integration",
+        "screener_random": "tbot_bot.test.test_screener_random",
+        "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
+        "strategy_tuner": "tbot_bot.test.test_strategy_tuner",
+        "symbol_universe_refresh": "tbot_bot.test.test_symbol_universe_refresh",
+        "universe_cache": "tbot_bot.test.test_universe_cache",
     }
+
+def run_single_test_module(flag):
+    test_name = flag.name.replace("test_mode_", "").replace(".flag", "")
+    test_map = _test_module_map()
     module = test_map.get(test_name)
     if module:
         print(f"[integration_test_runner] Detected individual test flag: {flag}. Running {module}")
@@ -241,9 +263,9 @@ def run_integration_test():
 
     log_event("integration_test", "Starting integration test runner...")
 
-    # Clear logs before running all tests
+    # Clear logs before running all tests (fix: wrap path with Path)
     try:
-        log_path = TEST_LOG_PATH
+        log_path = Path(TEST_LOG_PATH)
         if log_path.exists():
             log_path.unlink()
     except Exception:
@@ -252,30 +274,7 @@ def run_integration_test():
     reset_all_status()
 
     config = get_bot_config()
-    test_map = {
-        "broker_sync": "tbot_bot.test.test_broker_sync",
-        "coa_mapping": "tbot_bot.test.test_coa_mapping",
-        "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
-        "screener_random": "tbot_bot.test.test_screener_random",
-        "screener_integration": "tbot_bot.test.test_screener_integration",
-        "main_bot": "tbot_bot.test.test_main_bot",
-        "ledger_schema": "tbot_bot.test.test_ledger_schema",
-        "env_bot": "tbot_bot.test.test_env_bot",
-        "coa_web_endpoints": "tbot_bot.test.test_coa_web_endpoints",
-        "coa_consistency": "tbot_bot.test.test_coa_consistency",
-        "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
-        "backtest_engine": "tbot_bot.test.test_backtest_engine",
-        "logging_format": "tbot_bot.test.test_logging_format",
-        "fallback_logic": "tbot_bot.test.test_fallback_logic",
-        "holdings_manager": "tbot_bot.test.test_holdings_manager",
-        "ledger_write_failure": "tbot_bot.test.test_ledger_write_failure",
-        "ledger_double_entry": "tbot_bot.test.test_ledger_double_entry",
-        "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
-        "ledger_concurrency": "tbot_bot.test.test_ledger_concurrency",
-        "ledger_migration": "tbot_bot.test.test_ledger_migration",
-        "ledger_reconciliation": "tbot_bot.test.test_ledger_reconciliation",
-        "universe_cache": "tbot_bot.test.test_universe_cache"
-    }
+    test_map = _test_module_map()
 
     test_results = {}
 
@@ -288,8 +287,8 @@ def run_integration_test():
                     update_test_status(test_name, "ERRORS")
                     test_results[test_name] = "ERRORS"
                     continue
-                flag_path = CONTROL_DIR / f"test_mode_{test_name}.flag"
-                with open(flag_path, "w") as f:
+                flag_path = Path(CONTROL_DIR) / f"test_mode_{test_name}.flag"
+                with flag_path.open("w", encoding="utf-8") as f:
                     f.write("1\n")
                 proc = subprocess.Popen(
                     ["python3", "-u", "-m", module],
@@ -316,7 +315,7 @@ def run_integration_test():
                 if flag_path.exists():
                     flag_path.unlink()
                 time.sleep(1)
-            except Exception as test_exc:
+            except Exception:
                 update_test_status(test_name, "ERRORS")
                 test_results[test_name] = "ERRORS"
                 tb_str = traceback.format_exc()
@@ -339,19 +338,24 @@ def run_integration_test():
     except Exception as e:
         tb = traceback.format_exc()
         log_event("integration_test", f"Fatal error during test: {e}")
-        for test_name in ALL_TESTS:
-            if os.path.exists(TEST_STATUS_PATH):
-                with open(TEST_STATUS_PATH, "r", encoding="utf-8") as f:
+        # Mark any RUNNING tests as ERRORS
+        try:
+            status_path = Path(TEST_STATUS_PATH)
+            if status_path.exists():
+                with status_path.open("r", encoding="utf-8") as f:
                     status_dict = json.load(f)
             else:
                 status_dict = {}
-            if status_dict.get(test_name) == "RUNNING":
-                update_test_status(test_name, "ERRORS")
+            for test_name in ALL_TESTS:
+                if status_dict.get(test_name) == "RUNNING":
+                    update_test_status(test_name, "ERRORS")
+        except Exception:
+            pass
         with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
             logf.write("Integration test failed with error:\n" + tb + "\n")
         sys.exit(1)
     finally:
-        flag = CONTROL_DIR / "test_mode.flag"
+        flag = Path(CONTROL_DIR) / "test_mode.flag"
         if flag.exists():
             flag.unlink()
 

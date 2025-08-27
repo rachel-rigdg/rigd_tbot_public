@@ -86,30 +86,39 @@ def remove_test_flag(test_name: str = None):
     if flag_path.exists():
         flag_path.unlink()
 
-# Full, current canonical test list for UI and backend
+# Full, current canonical test list for UI and backend (must match UI)
 ALL_TESTS = [
-    "broker_sync", 
-    "coa_mapping",
-    "universe_cache",
-    "strategy_selfcheck",
-    "screener_random",
-    "screener_integration",
-    "main_bot",
-    "ledger_schema",
-    "env_bot",
-    "coa_web_endpoints",
-    "coa_consistency",
-    "broker_trade_stub",
+    "integration_test_runner",
     "backtest_engine",
-    "logging_format",
+    "broker_sync",
+    "broker_trade_stub",
+    "coa_consistency",
+    "coa_mapping",
+    "coa_web_endpoints",
+    "env_bot",
     "fallback_logic",
     "holdings_manager",
-    "ledger_write_failure",
-    "ledger_double_entry",
-    "ledger_corruption",
+    "holdings_web_endpoints",
+    "ledger_coa_edit",
     "ledger_concurrency",
+    "ledger_corruption",
+    "ledger_double_entry",
     "ledger_migration",
-    "ledger_reconciliation"
+    "ledger_reconciliation",
+    "ledger_schema",
+    "ledger_write_failure",
+    "logging_format",
+    "main_bot",
+    "mapping_upsert",
+    "opening_balance",
+    "screener_credentials",
+    "screener_integration",
+    "screener_random",
+    "strategy_selfcheck",
+    "strategy_tuner",
+    "symbol_universe_refresh",
+    # optional/legacy key (harmless if missing)
+    "universe_cache",
 ]
 
 def patch_env_from_dotenv():
@@ -117,7 +126,7 @@ def patch_env_from_dotenv():
     if env_path.exists():
         from dotenv import load_dotenv
         load_dotenv(dotenv_path=str(env_path), override=True)
-        with open(env_path, "r") as f:
+        with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
                 if "=" in line and not line.strip().startswith("#"):
                     k, v = line.strip().split("=", 1)
@@ -145,8 +154,8 @@ def trigger_test_mode():
         set_test_status({t: "QUEUED" for t in ALL_TESTS})
         create_test_flag()
         log_path = get_test_log_path()
-        with open(log_path, "a") as log_file:
-            proc = subprocess.Popen(
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            subprocess.Popen(
                 ["python3", "-u", "-m", "tbot_bot.test.integration_test_runner"],
                 stdout=log_file,
                 stderr=log_file,
@@ -165,28 +174,36 @@ def run_individual_test(test_name):
             return jsonify({"result": "already_running"})
         patch_env_from_dotenv()
         test_map = {
-            "broker_sync": "tbot_bot.test.test_broker_sync",
-            "coa_mapping": "tbot_bot.test.test_coa_mapping",
-            "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
-            "screener_random": "tbot_bot.test.test_screener_random",
-            "screener_integration": "tbot_bot.test.test_screener_integration",
-            "main_bot": "tbot_bot.test.test_main_bot",
-            "ledger_schema": "tbot_bot.test.test_ledger_schema",
-            "env_bot": "tbot_bot.test.test_env_bot",
-            "coa_web_endpoints": "tbot_bot.test.test_coa_web_endpoints",
-            "coa_consistency": "tbot_bot.test.test_coa_consistency",
-            "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
+            "integration_test_runner": "tbot_bot.test.integration_test_runner",
             "backtest_engine": "tbot_bot.test.test_backtest_engine",
-            "logging_format": "tbot_bot.test.test_logging_format",
+            "broker_sync": "tbot_bot.test.test_broker_sync",
+            "broker_trade_stub": "tbot_bot.test.test_broker_trade_stub",
+            "coa_consistency": "tbot_bot.test.test_coa_consistency",
+            "coa_mapping": "tbot_bot.test.test_coa_mapping",
+            "coa_web_endpoints": "tbot_bot.test.test_coa_web_endpoints",
+            "env_bot": "tbot_bot.test.test_env_bot",
             "fallback_logic": "tbot_bot.test.test_fallback_logic",
             "holdings_manager": "tbot_bot.test.test_holdings_manager",
-            "ledger_write_failure": "tbot_bot.test.test_ledger_write_failure",
-            "ledger_double_entry": "tbot_bot.test.test_ledger_double_entry",
-            "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
+            "holdings_web_endpoints": "tbot_bot.test.test_holdings_web_endpoints",
+            "ledger_coa_edit": "tbot_bot.test.test_ledger_coa_edit",
             "ledger_concurrency": "tbot_bot.test.test_ledger_concurrency",
+            "ledger_corruption": "tbot_bot.test.test_ledger_corruption",
+            "ledger_double_entry": "tbot_bot.test.test_ledger_double_entry",
             "ledger_migration": "tbot_bot.test.test_ledger_migration",
             "ledger_reconciliation": "tbot_bot.test.test_ledger_reconciliation",
-            "universe_cache": "tbot_bot.test.test_universe_cache"
+            "ledger_schema": "tbot_bot.test.test_ledger_schema",
+            "ledger_write_failure": "tbot_bot.test.test_ledger_write_failure",
+            "logging_format": "tbot_bot.test.test_logging_format",
+            "main_bot": "tbot_bot.test.test_main_bot",
+            "mapping_upsert": "tbot_bot.test.test_mapping_upsert",
+            "opening_balance": "tbot_bot.test.test_opening_balance",
+            "screener_credentials": "tbot_bot.test.test_screener_credentials",
+            "screener_integration": "tbot_bot.test.test_screener_integration",
+            "screener_random": "tbot_bot.test.test_screener_random",
+            "strategy_selfcheck": "tbot_bot.test.test_strategy_selfcheck",
+            "strategy_tuner": "tbot_bot.test.test_strategy_tuner",
+            "symbol_universe_refresh": "tbot_bot.test.test_symbol_universe_refresh",
+            "universe_cache": "tbot_bot.test.test_universe_cache",
         }
         module = test_map.get(test_name)
         if not module:
@@ -221,7 +238,7 @@ def run_individual_test(test_name):
             env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
         )
         threading.Thread(target=write_subprocess_log, args=(proc, log_path), daemon=True).start()
-        threading.Thread(target=wait_and_update_status, args=(test_name, proc)).start()
+        threading.Thread(target=wait_and_update_status, args=(test_name, proc), daemon=True).start()
     return jsonify({"result": "started", "test": test_name})
 
 def wait_and_update_status(test_name, proc):
@@ -229,9 +246,8 @@ def wait_and_update_status(test_name, proc):
     proc.wait()
     logs = read_test_logs()
     status = "PASSED"
-    # Only error if *this test* failed; show details per-test in web UI
-    # (Do not use global logs, filter last lines for this test if desired.)
-    if "FAILED" in logs or "FAIL" in logs or "ERROR" in logs or "Traceback" in logs:
+    # Simple heuristic: if errors detected in recent logs during this run, mark as ERRORS
+    if any(s in logs for s in ("FAILED", "FAIL: ", "ERROR", "Traceback")):
         status = "ERRORS"
     update_test_status(test_name, status)
     remove_test_flag(test_name)
@@ -243,6 +259,7 @@ def get_test_logs():
     status = get_test_status()
     return jsonify({"logs": logs, "status": status})
 
+@Test_web_route = "/test_status"
 @test_web.route("/test_status", methods=["GET"])
 @admin_required
 def get_test_status_endpoint():

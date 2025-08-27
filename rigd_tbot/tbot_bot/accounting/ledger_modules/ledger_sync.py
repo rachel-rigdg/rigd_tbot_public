@@ -3,11 +3,17 @@
 from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
 from tbot_bot.accounting.ledger_modules.ledger_snapshot import snapshot_ledger_before_sync
 from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_double_entry, post_double_entry
-from tbot_bot.accounting.coa_mapping_table import load_mapping_table
+from tbot_bot.accounting.coa_mapping_table import (
+    load_mapping_table,
+    get_mapping_for_transaction,
+    flag_unmapped_transaction,
+)
 from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+from tbot_bot.accounting.ledger_modules.ledger_opening_balance import post_opening_balances_if_needed
+
 import sqlite3
 import json
 from datetime import datetime, timezone
@@ -27,6 +33,7 @@ except Exception:
         if isinstance(res, tuple):
             return bool(res[0])
         return res is not None
+
 
 PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "total_value")
 
@@ -61,13 +68,29 @@ def sync_broker_ledger():
     """
     Fetch broker data, normalize, filter, dedupe, and write via double-entry posting.
     - Ensures group_id is set (defaults to trade_id)
-    - Skips blank / non-compliant / unmapped items
-    - Avoids duplicate writes by de-duping raw inputs and relying on DB-level (trade_id, side) check
+    - Skips blank / non-compliant / unmapped items (emits unmapped summary)
+    - Tags all posted rows with sync_run_id
+    - Calls Opening Balance post helper once on empty ledgers
+    - Relies on atomic batch behavior of posting layer per Doc 050
     """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    sync_run_id = f"sync_{entity_code}_{jurisdiction_code}_{broker_code}_{bot_id}_{datetime.now(timezone.utc).isoformat()}"
 
     # Snapshot before mutating the ledger
     snapshot_ledger_before_sync()
+
+    # Post opening balances if needed (detects empty ledger; no-op otherwise)
+    try:
+        broker_snapshot = {
+            "as_of_utc": datetime.now(timezone.utc).isoformat(),
+            # Optional hints if available from broker-specific layers (left minimal here):
+            "cash": None,
+            "positions": [],
+        }
+        post_opening_balances_if_needed(sync_run_id=sync_run_id, broker_snapshot=broker_snapshot)
+    except Exception as e:
+        # Non-fatal; continue normal ingest
+        print("Opening balance helper error (continuing):", repr(e))
 
     # Mapping table for posting
     mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
@@ -84,9 +107,12 @@ def sync_broker_ledger():
             continue
         normalized = normalize_trade(t)
         if normalized.get("skip_insert", False):
-            print("SKIP INVALID TRADE ACTION:",
-                  (normalized.get("json_metadata") or {}).get("unmapped_action", "unknown"),
-                  "| RAW:", t)
+            print(
+                "SKIP INVALID TRADE ACTION:",
+                (normalized.get("json_metadata") or {}).get("unmapped_action", "unknown"),
+                "| RAW:",
+                t,
+            )
             continue
         _ensure_group_id(normalized)
         if _is_blank_entry(normalized):
@@ -105,9 +131,12 @@ def sync_broker_ledger():
             continue
         normalized = normalize_trade(c)
         if normalized.get("skip_insert", False):
-            print("SKIP INVALID CASH ACTION:",
-                  (normalized.get("json_metadata") or {}).get("unmapped_action", "unknown"),
-                  "| RAW:", c)
+            print(
+                "SKIP INVALID CASH ACTION:",
+                (normalized.get("json_metadata") or {}).get("unmapped_action", "unknown"),
+                "| RAW:",
+                c,
+            )
             continue
         _ensure_group_id(normalized)
         if _is_blank_entry(normalized):
@@ -135,17 +164,46 @@ def sync_broker_ledger():
         seen.add(key)
         deduped_entries.append(e)
 
-    # Optional: pad missing schema fields (defensive; post_double_entry also hardens)
+    # Tag all with sync_run_id and pad missing schema fields (defensive)
     def _fill_defaults(entry):
         for k in TRADES_FIELDS:
-            if k not in entry or entry[k] is None:
+            if k not in entry:
                 entry[k] = None
+        entry["sync_run_id"] = sync_run_id
         return entry
 
     all_entries = [_fill_defaults(e) for e in deduped_entries]
 
+    # Enforce skip-on-unmapped; emit unmapped summary into mapping table for UI
+    mapped_entries = []
+    unmapped = []
+    for e in all_entries:
+        m = get_mapping_for_transaction(e, mapping_table)
+        if not m:
+            unmapped.append(
+                {
+                    "trade_id": e.get("trade_id"),
+                    "action": e.get("action"),
+                    "datetime_utc": e.get("datetime_utc"),
+                    "symbol": e.get("symbol"),
+                    "notes": e.get("notes"),
+                }
+            )
+            try:
+                flag_unmapped_transaction(
+                    {"broker": broker_code, "type": e.get("action"), "symbol": e.get("symbol"), "notes": e.get("notes")},
+                    user="sync",
+                )
+            except Exception:
+                pass
+            continue
+        mapped_entries.append(e)
+
+    if unmapped:
+        print(f"[SYNC] Unmapped entries skipped: {len(unmapped)} (details recorded for UI)")
+
     # Sanitize complex types -> JSON strings (safe for sqlite bindings downstream if needed)
-    sanitized_entries = [_sanitize_entry(e) for e in all_entries]
+    sanitized_entries = [_sanitize_entry(e) for e in mapped_entries]
 
     # Post using double-entry helper (handles account mapping, amount signs, and DB de-dup on (trade_id, side))
     post_double_entry(sanitized_entries, mapping_table)
@@ -154,9 +212,7 @@ def sync_broker_ledger():
     validate_double_entry()
 
     # Write reconciliation records
-    sync_run_id = f"sync_{entity_code}_{jurisdiction_code}_{broker_code}_{bot_id}_{datetime.now(timezone.utc).isoformat()}"
-
-    for entry in all_entries:
+    for entry in mapped_entries:
         trade_id = entry.get("trade_id")
         api_hash = ""
         jm = entry.get("json_metadata")
@@ -177,7 +233,7 @@ def sync_broker_ledger():
             api_hash=api_hash,
             broker=broker_code,
             raw_record=entry,
-            mapping_version=str(mapping_table.get("version", "")),
+            mapping_version=str(load_mapping_table().get("version", "")),
             notes="Imported by sync",
             entity_code=entity_code,
             jurisdiction_code=jurisdiction_code,

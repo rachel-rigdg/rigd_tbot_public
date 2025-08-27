@@ -6,28 +6,37 @@ let currentTest = null;
 
 // Keep this in sync with ALL_TESTS in the backend.
 let allTests = [
-    "broker_sync",
-    "coa_mapping",
-    "universe_cache",
-    "strategy_selfcheck",
-    "screener_random",
-    "screener_integration",
-    "main_bot",
-    "ledger_schema",
-    "env_bot",
-    "coa_web_endpoints",
-    "coa_consistency",
-    "broker_trade_stub",
+    "integration_test_runner",
     "backtest_engine",
-    "logging_format",
+    "broker_sync",
+    "broker_trade_stub",
+    "coa_consistency",
+    "coa_mapping",
+    "coa_web_endpoints",
+    "env_bot",
     "fallback_logic",
     "holdings_manager",
-    "ledger_write_failure",
-    "ledger_double_entry",
-    "ledger_corruption",
+    "holdings_web_endpoints",
+    "ledger_coa_edit",
     "ledger_concurrency",
+    "ledger_corruption",
+    "ledger_double_entry",
     "ledger_migration",
-    "ledger_reconciliation"
+    "ledger_reconciliation",
+    "ledger_schema",
+    "ledger_write_failure",
+    "logging_format",
+    "main_bot",
+    "mapping_upsert",
+    "opening_balance",
+    "screener_credentials",
+    "screener_integration",
+    "screener_random",
+    "strategy_selfcheck",
+    "strategy_tuner",
+    "symbol_universe_refresh",
+    // optional legacy UI/test key; harmless if not present in backend/UI
+    "universe_cache"
 ];
 
 function startLogPolling() {
@@ -68,7 +77,7 @@ function fetchTestStatus() {
                 ind.className = "test-status-indicator";
                 if (status === "RUNNING") ind.classList.add("test-status-running");
                 else if (status === "PASSED") ind.classList.add("test-status-passed");
-                else if (status === "ERRORS") ind.classList.add("test-status-errors");
+                else if (status === "ERRORS" || status === "FAILED") ind.classList.add("test-status-errors");
             });
 
             let isAnyRunning = Object.values(statusDict).some(st => st === "RUNNING");
@@ -76,7 +85,8 @@ function fetchTestStatus() {
                 enableButtons();
                 stopPolling();
                 currentTest = null;
-                document.getElementById('running-test-label').textContent = '';
+                const lbl = document.getElementById('running-test-label');
+                if (lbl) lbl.textContent = '';
             }
         });
 }
@@ -99,7 +109,8 @@ function clearLogs() {
 function runAllTests() {
     disableButtons();
     currentTest = "ALL TESTS";
-    document.getElementById('running-test-label').textContent = "Running: ALL TESTS";
+    const lbl = document.getElementById('running-test-label');
+    if (lbl) lbl.textContent = "Running: ALL TESTS";
     allTests.forEach(test => setIndicator(test, ""));
     clearLogs();
     fetch("/test/trigger", { method: "POST" })
@@ -112,7 +123,8 @@ function runAllTests() {
 function runIndividualTest(testName) {
     disableButtons();
     currentTest = testName;
-    document.getElementById('running-test-label').textContent = "Running: " + testName;
+    const lbl = document.getElementById('running-test-label');
+    if (lbl) lbl.textContent = "Running: " + testName;
     setIndicator(testName, "RUNNING");
     clearLogs();
     fetch("/test/run/" + encodeURIComponent(testName), { method: "POST" })
@@ -122,12 +134,12 @@ function runIndividualTest(testName) {
                 setIndicator(testName, "RUNNING");
                 enableButtons();
                 currentTest = null;
-                document.getElementById('running-test-label').textContent = '';
+                if (lbl) lbl.textContent = '';
             } else if (data.result === "unknown_test") {
                 setIndicator(testName, "ERRORS");
                 enableButtons();
                 currentTest = null;
-                document.getElementById('running-test-label').textContent = '';
+                if (lbl) lbl.textContent = '';
             } else {
                 startLogPolling();
                 startStatusPolling();
@@ -142,7 +154,7 @@ function setIndicator(test, status) {
     ind.className = "test-status-indicator";
     if (status === "RUNNING") ind.classList.add("test-status-running");
     else if (status === "PASSED") ind.classList.add("test-status-passed");
-    else if (status === "ERRORS") ind.classList.add("test-status-errors");
+    else if (status === "ERRORS" || status === "FAILED") ind.classList.add("test-status-errors");
 }
 
 window.onload = function () {

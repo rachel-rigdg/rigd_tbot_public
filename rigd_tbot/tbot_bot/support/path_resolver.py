@@ -52,9 +52,12 @@ BOOTSTRAP_ONLY_LOGS = [
 ]
 
 def get_bot_identity(explicit_identity: str = None) -> str:
+    """
+    Returns a validated BOT_IDENTITY_STRING or None during first bootstrap.
+    """
     if is_first_bootstrap():
         return explicit_identity if explicit_identity else None
-    identity = explicit_identity if explicit_identity else load_bot_identity(default=None)
+    identity = explicit_identity if explicit_identity else load_bot_identity()
     if not identity or not get_bot_identity_string_regex().match(identity):
         return None
     return identity
@@ -96,6 +99,10 @@ def get_output_path(category: str = None, filename: str = None, bot_identity: st
     return str(subdir / filename) if filename else str(subdir)
 
 def resolve_ledger_snapshot_dir(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
+    """
+    Directory where pre/post sync snapshots are stored.
+    Used by: ledger_snapshot, runtime sync wrapper.
+    """
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
     snapshot_dir = PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers" / "snapshots"
@@ -140,6 +147,11 @@ def resolve_coa_schema_path():
     return str(PROJECT_ROOT / "tbot_bot" / "accounting" / "coa_schema.sql")
 
 def resolve_coa_json_path(bot_identity: str = None) -> str:
+    """
+    Path to the active COA JSON used by:
+      - utils_coa_web.load_coa_metadata_and_accounts
+      - ledger_opening_balance (account resolution)
+    """
     identity = get_bot_identity(bot_identity)
     if not identity:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
@@ -163,6 +175,9 @@ def resolve_coa_audit_log_path(bot_identity: str = None) -> str:
 def resolve_coa_mapping_json_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> Path:
     """
     Returns the absolute Path to the COA mapping table JSON for this bot identity.
+    Used by:
+      - coa_mapping_table (load/save/upsert/version)
+      - mapping_auto_update (inline edit → rule upsert)
     """
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
@@ -185,6 +200,12 @@ def resolve_output_path(rel_path):
     return str(out_path)
 
 def resolve_ledger_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
+    """
+    SQLite ledger DB used by:
+      - ledger_balance (balances/rollups)
+      - ledger_edit (audited account reassignment)
+      - ledger_opening_balance (OB batch)
+    """
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
     return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_ledger.db")
@@ -309,11 +330,14 @@ def resolve_trade_logger_path() -> str:
 def resolve_status_logger_path() -> str:
     return resolve_runtime_script_path("status_logger.py")
 
+def resolve_symbol_universe_refresh_path() -> str:
+    """
+    Path to the symbol_universe_refresh runtime (for screeners refresh jobs).
+    """
+    return str(PROJECT_ROOT / "tbot_bot" / "runtime" / "symbol_universe_refresh.py")
+
 def resolve_integration_test_runner_path() -> str:
     return resolve_test_script_path("integration_test_runner.py")
-
-def get_enhancements_path() -> str:
-    return str(PROJECT_ROOT / "tbot_bot" / "enhancements")
 
 def resolve_nasdaqlisted_txt_path() -> str:
     base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"

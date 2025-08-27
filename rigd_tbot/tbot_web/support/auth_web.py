@@ -1,4 +1,4 @@
-# tbot_web/py/auth_web.py
+# tbot_web/py/support/auth_web.py
 # Handles web user authentication, RBAC, and password validation (2024-06 specs compliant)
 
 import os
@@ -70,6 +70,8 @@ def get_user_role(username: str) -> str:
     Fetches the user's role from SYSTEM_USERS.db.
     Returns 'viewer' if not found or on error.
     """
+    if not username:
+        return "viewer"
     conn = get_db_connection()
     try:
         cursor = conn.execute(
@@ -207,7 +209,7 @@ def rbac_required(role: str = None):
                 user = session.get("user", None)
                 if not user:
                     abort(401)
-                actual_role = get_user_role(user)
+                actual_role = get_user_role(user)  # returns 'viewer' on failure
                 if actual_role != role:
                     abort(403)
             return f(*args, **kwargs)

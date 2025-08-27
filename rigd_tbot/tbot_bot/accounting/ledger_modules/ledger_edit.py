@@ -2,21 +2,216 @@
 
 """
 Ledger edit/update helpers.
-Handles updating and deleting ledger entries in the trades table.
-All transactional logic (posting, mapping, etc.) is handled elsewhere.
+
+Adds audited COA reassignment for a single leg (entry) while preserving append-only policy
+for financial amounts/dates (no mutation to amount/date fields).
 """
 
 import sqlite3
-from tbot_bot.support.path_resolver import resolve_ledger_db_path
+from datetime import datetime, timezone
+from typing import Dict, Any, Tuple, Set, List
+
+from tbot_bot.support.path_resolver import (
+    resolve_ledger_db_path,
+    resolve_coa_json_path,
+)
 from tbot_bot.support.decrypt_secrets import load_bot_identity
+
+# Strict, structured audit (required)
+from tbot_bot.accounting.ledger_modules.ledger_audit import append as audit_append  # emits immutable JSONL
+
+# Existing utilities (kept as-is for legacy callers)
 from tbot_web.support.auth_web import get_current_user
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 
-def get_identity_tuple():
-    identity = load_bot_identity()
-    return tuple(identity.split("_"))
 
+def get_identity_tuple() -> Tuple[str, str, str, str]:
+    identity = load_bot_identity()
+    return tuple(identity.split("_"))  # (entity_code, jurisdiction_code, broker_code, bot_id)
+
+
+# ------------------------
+# NEW: audited COA reassignment
+# ------------------------
+def _active_coa_codes() -> Set[str]:
+    """
+    Load COA (via path_resolver) and return set of ACTIVE account codes.
+    Accepts either:
+      - list of account dicts (hierarchical)
+      - {"accounts": [...]}
+    Accounts are considered active if 'active' missing or truthy.
+    """
+    import json, os
+
+    p = resolve_coa_json_path()
+    if not os.path.exists(p):
+        raise FileNotFoundError("COA file not found")
+
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    def walk(nodes: List[Dict[str, Any]], out: Set[str]):
+        for n in nodes or []:
+            code = str(n.get("code") or "").strip()
+            active = n.get("active", True)
+            if code and active:
+                out.add(code)
+            children = n.get("children") or []
+            if isinstance(children, list) and children:
+                walk(children, out)
+
+    codes: Set[str] = set()
+    if isinstance(data, dict) and isinstance(data.get("accounts"), list):
+        walk(data["accounts"], codes)
+    elif isinstance(data, list):
+        walk(data, codes)
+    return codes
+
+
+def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reason: str = None) -> Dict[str, Any]:
+    """
+    Reassign the COA account for a single ledger leg (row in trades table).
+
+    - Validates new_account_code exists and is active in COA.
+    - Updates ONLY 'account' field (no amount/date mutation).
+    - Emits immutable audit log event: event='coa_reassign'.
+    - Wraps operations in a single DB transaction; rollback on any failure.
+
+    Returns:
+        {
+            "entry_id": int,
+            "group_id": str|None,
+            "old_account": str|None,
+            "new_account": str,
+            "ts_utc": iso8601,
+        }
+    """
+    new_account_code = (new_account_code or "").strip()
+    if not new_account_code:
+        raise ValueError("new_account_code required")
+
+    # Validate COA account active
+    active_codes = _active_coa_codes()
+    if new_account_code not in active_codes:
+        raise ValueError(f"Account code '{new_account_code}' is not active in COA")
+
+    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
+
+    ts_utc = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    result: Dict[str, Any] = {}
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN")
+
+        # Fetch the leg + parent group
+        leg = conn.execute(
+            "SELECT id, group_id, account AS old_account, total_value, datetime_utc, trade_id, symbol, action, strategy "
+            "FROM trades WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        if not leg:
+            raise ValueError(f"Entry id {entry_id} not found")
+
+        old_account = leg["old_account"]
+
+        # Early no-op (but still audit)
+        if old_account == new_account_code:
+            # Still emit an audit event to preserve an explicit operator intent trace.
+            audit_append(
+                event="coa_reassign",
+                ts_utc=ts_utc,
+                actor=actor or "system",
+                entry_id=entry_id,
+                group_id=leg["group_id"],
+                old_account=old_account,
+                new_account=new_account_code,
+                reason=reason or "no-op (same account)",
+                broker_code=broker_code,
+                entity_code=entity_code,
+                jurisdiction_code=jurisdiction_code,
+            )
+            result = {
+                "entry_id": entry_id,
+                "group_id": leg["group_id"],
+                "old_account": old_account,
+                "new_account": new_account_code,
+                "ts_utc": ts_utc,
+            }
+            conn.commit()
+            return result
+
+        # Update ONLY the account field; do not mutate amount/date fields
+        conn.execute(
+            "UPDATE trades SET account = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_account_code, entry_id),
+        )
+
+        # (Optional) touch group row to invalidate caches if such table exists
+        # Safe, idempotent no-op if table/column doesn't exist.
+        try:
+            if leg["group_id"]:
+                conn.execute(
+                    "UPDATE trade_groups SET updated_at = CURRENT_TIMESTAMP WHERE group_id = ?",
+                    (leg["group_id"],),
+                )
+        except Exception:
+            # ignore if trade_groups doesn't exist
+            pass
+
+        # Commit before audit append? We append audit after a successful DB write;
+        # if audit fails, we still keep DB change but raise to surface the issue.
+        conn.commit()
+
+        # Structured immutable audit
+        audit_append(
+            event="coa_reassign",
+            ts_utc=ts_utc,
+            actor=actor or "system",
+            entry_id=entry_id,
+            group_id=leg["group_id"],
+            old_account=old_account,
+            new_account=new_account_code,
+            reason=reason,
+            broker_code=broker_code,
+            entity_code=entity_code,
+            jurisdiction_code=jurisdiction_code,
+            symbol=leg["symbol"],
+            action=leg["action"],
+            strategy=leg["strategy"],
+            trade_id=leg["trade_id"],
+            datetime_utc=leg["datetime_utc"],
+            amount=leg["total_value"],
+        )
+
+        result = {
+            "entry_id": entry_id,
+            "group_id": leg["group_id"],
+            "old_account": old_account,
+            "new_account": new_account_code,
+            "ts_utc": ts_utc,
+        }
+        return result
+
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+# ------------------------
+# Legacy edit/delete (unchanged; retained for backward compatibility)
+# ------------------------
 def edit_ledger_entry(entry_id, updated_data):
     """
     Update a ledger entry in the trades table by ID.
@@ -50,6 +245,7 @@ def edit_ledger_entry(entry_id, updated_data):
     )
     conn.commit()
     conn.close()
+
 
 def delete_ledger_entry(entry_id):
     """
