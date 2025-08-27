@@ -616,7 +616,8 @@ def ledger_sync():
         return redirect(url_for('main.root_router'))
     try:
         print("[WEB] /ledger/sync: invoked")
-        from tbot_bot.accounting.ledger import sync_broker_ledger
+        # Use the new sync pipeline under ledger_modules
+        from tbot_bot.accounting.ledger_modules.ledger_sync import sync_broker_ledger
         sync_broker_ledger()
         # post-check
         try:
