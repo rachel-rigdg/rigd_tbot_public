@@ -90,3 +90,27 @@ RECONCILIATION_LOG_FIELDS = [
 ALLOWED_TRADE_ACTIONS = [
     "long", "short", "put", "inverse", "call", "assignment", "exercise", "expire", "reorg", "other"
 ]
+
+# Canonical audit trail schema (append-only JSONL). Must be a superset of all audit events.
+AUDIT_TRAIL_FIELDS = [
+    "ts_utc",                # ISO8601 UTC timestamp
+    "event",                 # e.g., 'coa_reassign', 'opening_balance_posted', etc.
+    "actor",                 # username or system actor
+    "entry_id",              # affected trades.id (if applicable)
+    "group_id",              # logical group identifier
+    "trade_id",              # external trade id (if applicable)
+    "old_account_code",      # prior COA code (when reassigning)
+    "new_account_code",      # new COA code (when reassigning)
+    "reason",                # free-form reason/comment
+    "entity_code",
+    "jurisdiction_code",
+    "broker_code",
+    "bot_id",
+    "sync_run_id",           # sync correlation id (if any)
+    "source",                # 'inline_edit', 'sync', 'migration', etc.
+    "notes",                 # optional extra notes
+    "request_id",            # optional correlation id from web/API
+    "ip",                    # optional client ip (web)
+    "user_agent",            # optional UA (web)
+    "extra"                  # JSON blob for additional structured context
+]
