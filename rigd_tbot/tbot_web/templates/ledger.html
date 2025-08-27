@@ -64,7 +64,7 @@
         <!-- COA Mapping: direct to known endpoint; no globals() in Jinja -->
         <button id="btn-coa-mapping"
                 type="button"
-                onclick="window.location.href='{{ url_for('coa_mapping_web.view_mapping') }}'">
+                onclick="window.location.href='/coa_mapping'">
           COA Mapping
         </button>
 
@@ -171,7 +171,7 @@
                         <!-- Simple, stable link to COA overview (if present) -->
                         <a href="/coa" target="_blank">View COA</a>
                         <!-- Context-aware deep link into mapping UI with entry_id -->
-                        <a href="{{ url_for('coa_mapping_web.view_mapping') ~ '?from=ledger&entry_id=' ~ (sub.id|string) }}" target="_blank">View Mapping Rule</a>
+                        <a href="/coa_mapping?from=ledger&entry_id={{ sub.id }}" target="_blank">View Mapping Rule</a>
                         {% if sub.unmapped %}<span class="badge-unmapped">Unmapped</span>{% endif %}
                       </div>
                     </td>
