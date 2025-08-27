@@ -1,6 +1,6 @@
 # tbot_bot/accounting/ledger_modules/ledger_double_entry.py
 
-from typing import Optional
+from typing import Optional, Tuple, List
 from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_path  # kept for downstream imports
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table, apply_mapping_rule
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
@@ -9,9 +9,10 @@ from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 import sqlite3
 import json
 
+
 # ---- Compliance filter (backwards-compatible import) ----
 try:
-    # New-style boolean function
+    # Preferred new-style boolean function
     from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (
         is_compliant_ledger_entry as _is_compliant_ledger_entry,  # type: ignore
     )
@@ -28,124 +29,174 @@ except Exception:
         return res is not None
 
 
-def post_ledger_entries_double_entry(entries):
-    """
-    Public entry point used by hooks and other modules.
-    Loads mapping table from identity and posts compliant entries.
-    """
-    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
-    mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
-    # Apply compliance filter to all entries before posting
-    filtered_entries = [e for e in entries if _is_compliant_ledger_entry(e)]
-    return post_double_entry(filtered_entries, mapping_table)
+# ---------------------------
+# Helpers
+# ---------------------------
 
-
-def get_identity_tuple():
+def get_identity_tuple() -> Tuple[str, str, str, str]:
     identity = load_bot_identity() or ""
     parts = identity.split("_")
-    # defensive padding to length 4
     while len(parts) < 4:
         parts.append("")
-    return tuple(parts[:4])
+    return tuple(parts[:4])  # (entity_code, jurisdiction_code, broker_code, bot_id)
+
+
+def _as_float(x, default=0.0) -> float:
+    try:
+        if x is None:
+            return default
+        if isinstance(x, str) and x.strip() in ("", "None"):
+            return default
+        return float(x)
+    except Exception:
+        return default
 
 
 def _map_action(action: Optional[str]) -> str:
-    # Map broker actions to ledger schema actions
+    """Map broker/raw actions to normalized ledger schema actions."""
     if not action or not isinstance(action, str):
         return "other"
-    action_lower = action.lower()
-    if action_lower in ("buy", "long"):
+    a = action.strip().lower()
+    if a in ("buy", "long"):
         return "long"
-    if action_lower in ("sell", "short"):
+    if a in ("sell", "short"):
         return "short"
-    if action_lower in ("put", "call", "assignment", "exercise", "expire", "reorg", "inverse"):
-        return action_lower
-    # Default fallback
+    if a in ("put", "call", "assignment", "exercise", "expire", "reorg", "inverse"):
+        return a
     return "other"
 
 
-def _add_required_fields(entry, entity_code, jurisdiction_code, broker_code, bot_id):
+def _jsonify_if_needed(v):
+    """SQLite bindings must not see dict/list; encode to JSON string."""
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, ensure_ascii=False, default=str)
+    return v
+
+
+def _ensure_json_fields(entry: dict) -> None:
     """
-    Ensure mandatory columns exist, coerce numerics, and JSON-encode complex values
-    so SQLite bindings never see dict/list objects.
+    Ensure json-bearing columns exist and are strings, not dicts.
+    Keep keys consistent with TRADES_FIELDS: json_metadata, raw_broker_json.
     """
-    entry = dict(entry)
+    # If upstream provided dicts, keep them but serialize before insert
+    if "json_metadata" not in entry or entry["json_metadata"] is None:
+        entry["json_metadata"] = "{}"
+    if "raw_broker_json" not in entry or entry["raw_broker_json"] is None:
+        entry["raw_broker_json"] = "{}"
 
-    # Identity context
-    entry["entity_code"] = entity_code
-    entry["jurisdiction_code"] = jurisdiction_code
-    entry["broker_code"] = broker_code
-    entry["bot_id"] = bot_id
 
-    # Defaults
-    entry["fee"] = 0.0 if entry.get("fee") is None else entry.get("fee")
-    entry["commission"] = 0.0 if entry.get("commission") is None else entry.get("commission")
+def _add_required_fields(entry: dict,
+                         entity_code: str,
+                         jurisdiction_code: str,
+                         broker_code: str,
+                         bot_id: str) -> dict:
+    """
+    Ensure mandatory columns exist, coerce numerics, normalize actions, set IDs,
+    and JSON-encode complex values so SQLite bindings never see dict/list objects.
+    """
+    e = dict(entry or {})
 
-    # Ensure trade_id / group_id exist
-    if not entry.get("trade_id"):
-        entry["trade_id"] = f"{broker_code}_{bot_id}_{hash(frozenset(entry.items()))}"
-    if not entry.get("group_id"):
-        entry["group_id"] = entry.get("trade_id")
+    # Identity context (always present)
+    e["entity_code"] = entity_code
+    e["jurisdiction_code"] = jurisdiction_code
+    e["broker_code"] = broker_code
+    e["bot_id"] = bot_id
 
-    if "total_value" not in entry or entry["total_value"] is None:
-        entry["total_value"] = 0.0
+    # Normalize action/status
+    e["action"] = _map_action(e.get("action"))
+    if not e.get("status"):
+        e["status"] = "ok"
 
-    # Compute amount sign from side when missing
-    if "amount" not in entry or entry["amount"] is None:
-        try:
-            val = float(entry.get("total_value", 0.0))
-        except Exception:
-            val = 0.0
-        side = entry.get("side", "")
-        if isinstance(side, str) and side.lower() == "credit":
-            entry["amount"] = -abs(val)
+    # Numerics (don’t throw)
+    e["fee"] = _as_float(e.get("fee"), 0.0)
+    e["commission"] = _as_float(e.get("commission"), 0.0)
+    e["price"] = _as_float(e.get("price"), e.get("price") or 0.0)
+    e["quantity"] = _as_float(e.get("quantity"), e.get("quantity") or 0.0)
+
+    # Total value default
+    if "total_value" not in e or e["total_value"] is None:
+        # If upstream didn’t compute, leave 0.0 (mapping may have set it already)
+        e["total_value"] = _as_float(e.get("total_value"), 0.0)
+
+    # Compute amount sign from side when missing (credit ⇒ negative; debit ⇒ positive)
+    if e.get("amount") is None:
+        val = _as_float(e.get("total_value"), 0.0)
+        side = (e.get("side") or "").strip().lower()
+        if side == "credit":
+            e["amount"] = -abs(val)
         else:
-            entry["amount"] = abs(val)
+            e["amount"] = abs(val)
 
-    # Normalize action and status
-    entry["action"] = _map_action(entry.get("action"))
-    if "status" not in entry or not entry["status"]:
-        entry["status"] = "ok"
+    # Ensure IDs
+    if not e.get("trade_id"):
+        # Deterministic fallback
+        e["trade_id"] = f"{broker_code}_{bot_id}_{abs(hash(frozenset(e.items())))}"
+    if not e.get("group_id"):
+        e["group_id"] = e.get("trade_id")
 
-    # Fill any missing schema fields with None
+    # JSON-bearing fields
+    _ensure_json_fields(e)
+
+    # Fill any missing schema fields with None; then sanitize complex types
     for k in TRADES_FIELDS:
-        if k not in entry or entry[k] is None:
-            entry[k] = None
+        if k not in e:
+            e[k] = None
 
-    # --- CRITICAL SANITATION: JSON-encode complex values so sqlite bindings are safe ---
-    for k, v in list(entry.items()):
-        if isinstance(v, (dict, list)):
-            entry[k] = json.dumps(v, default=str)
+    # Sanitize: JSON-encode complex types
+    for k, v in list(e.items()):
+        e[k] = _jsonify_if_needed(v)
 
-    return entry
+    return e
 
 
-def post_double_entry(entries, mapping_table=None):
+# ---------------------------
+# Public API
+# ---------------------------
+
+def post_ledger_entries_double_entry(entries: List[dict]):
+    """
+    Public entry point used by hooks and other modules.
+    Loads mapping table from identity and posts compliant entries.
+    Returns list of (debit_trade_id, credit_trade_id) pairs that were (attempted to be) inserted.
+    """
+    entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+    mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
+
+    # Apply compliance filter before posting
+    filtered_entries = [e for e in (entries or []) if _is_compliant_ledger_entry(e)]
+    return post_double_entry(filtered_entries, mapping_table)
+
+
+def post_double_entry(entries: List[dict], mapping_table=None):
     """
     Low-level poster: maps each raw entry to debit/credit legs and writes both.
     Assumes entries have already passed compliance when called via the public wrapper.
     """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    inserted_ids = []
+    inserted_ids: List[Tuple[Optional[str], Optional[str]]] = []
+
     if mapping_table is None:
         mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
 
     with sqlite3.connect(db_path) as conn:
-        for entry in entries:
+        for entry in entries or []:
+            # Map to legs
             debit_entry, credit_entry = apply_mapping_rule(entry, mapping_table)
 
+            # Normalize/sanitize payloads for DB
             debit_entry = _add_required_fields(debit_entry, entity_code, jurisdiction_code, broker_code, bot_id)
             credit_entry = _add_required_fields(credit_entry, entity_code, jurisdiction_code, broker_code, bot_id)
 
-            # Deduplication logic: (trade_id, side) unique constraint
+            # Dedupe guard: (trade_id, side) must be unique
             for side_entry in (debit_entry, credit_entry):
                 cur = conn.execute(
                     "SELECT 1 FROM trades WHERE trade_id = ? AND side = ?",
                     (side_entry.get("trade_id"), side_entry.get("side")),
                 )
                 if cur.fetchone():
-                    continue  # Skip duplicate
+                    # already present; skip insert
+                    continue
 
                 columns = TRADES_FIELDS
                 placeholders = ", ".join(["?"] * len(columns))
@@ -156,18 +207,20 @@ def post_double_entry(entries, mapping_table=None):
 
             conn.commit()
             inserted_ids.append((debit_entry.get("trade_id"), credit_entry.get("trade_id")))
+
     return inserted_ids
 
 
-def validate_double_entry():
+def validate_double_entry() -> bool:
     """
-    Validates that each trade_id sums to zero across its legs.
+    Validates that each trade_id sums to ~0 across its legs (double-entry).
+    Raises if imbalance found.
     """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute("SELECT trade_id, SUM(total_value) FROM trades GROUP BY trade_id")
-        imbalances = [(trade_id, total) for trade_id, total in cursor.fetchall() if trade_id and abs(total) > 1e-8]
+        imbalances = [(tid, total) for tid, total in cursor.fetchall() if tid and abs(total or 0.0) > 1e-8]
         if imbalances:
             raise RuntimeError(f"Double-entry imbalance detected for trade_ids: {imbalances}")
     return True

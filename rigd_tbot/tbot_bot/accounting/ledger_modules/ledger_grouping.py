@@ -1,12 +1,14 @@
 # tbot_bot/accounting/ledger_modules/ledger_grouping.py
 
+from typing import List, Dict, Any, Optional, Tuple
 import sqlite3
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 
 COLLAPSED_TABLE = "trade_group_collapsed"
 
-def _ensure_collapsed_table(db_path):
+
+def _ensure_collapsed_table(db_path: str) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             f"""
@@ -16,66 +18,106 @@ def _ensure_collapsed_table(db_path):
             )
             """
         )
+        conn.commit()
 
-def get_trades_grouped_by_group_id(group_id=None, limit=100, offset=0):
+
+def _safe(v: Any) -> Any:
+    # Normalize Nones/odd strings so sort comparisons don’t explode
+    if v is None:
+        return ""
+    return v
+
+
+def _sort_records(rows: List[Dict[str, Any]], sort_by: Optional[str], sort_desc: bool) -> List[Dict[str, Any]]:
+    """
+    Sort a flat list of rows (collapsed reps or expanded legs).
+    Tie-break on datetime_utc to keep chronology stable.
+    """
+    key = sort_by or "datetime_utc"
+    try:
+        rows.sort(key=lambda r: (_safe(r.get(key)), _safe(r.get("datetime_utc"))), reverse=bool(sort_desc))
+    except Exception:
+        # ultra-safe fallback
+        rows.sort(key=lambda r: _safe(r.get("datetime_utc")), reverse=bool(sort_desc))
+    return rows
+
+
+def get_trades_grouped_by_group_id(group_id: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[List[Dict[str, Any]]]:
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    results = []
+    results: List[List[Dict[str, Any]]] = []
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         if group_id:
             rows = conn.execute(
                 "SELECT * FROM trades WHERE group_id = ? ORDER BY datetime_utc ASC",
-                (group_id,)
+                (group_id,),
             ).fetchall()
             if rows:
                 results.append([dict(row) for row in rows])
         else:
             group_rows = conn.execute(
-                "SELECT group_id, MAX(datetime_utc) as max_dt FROM trades WHERE group_id IS NOT NULL GROUP BY group_id ORDER BY max_dt DESC LIMIT ? OFFSET ?",
-                (limit, offset)
+                """
+                SELECT group_id, MAX(datetime_utc) AS max_dt
+                FROM trades
+                WHERE group_id IS NOT NULL AND group_id <> ''
+                GROUP BY group_id
+                ORDER BY max_dt DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
             ).fetchall()
             for group in group_rows:
                 gid = group["group_id"]
                 rows = conn.execute(
                     "SELECT * FROM trades WHERE group_id = ? ORDER BY datetime_utc ASC",
-                    (gid,)
+                    (gid,),
                 ).fetchall()
-                results.append([dict(row) for row in rows])
+                if rows:
+                    results.append([dict(row) for row in rows])
     return results
 
-def get_trades_grouped_by_trade_id(trade_id=None, limit=100, offset=0):
+
+def get_trades_grouped_by_trade_id(trade_id: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[List[Dict[str, Any]]]:
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    results = []
+    results: List[List[Dict[str, Any]]] = []
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         if trade_id:
             rows = conn.execute(
                 "SELECT * FROM trades WHERE trade_id = ? ORDER BY datetime_utc ASC",
-                (trade_id,)
+                (trade_id,),
             ).fetchall()
             if rows:
                 results.append([dict(row) for row in rows])
         else:
             trade_rows = conn.execute(
-                "SELECT trade_id, MAX(datetime_utc) as max_dt FROM trades WHERE trade_id IS NOT NULL GROUP BY trade_id ORDER BY max_dt DESC LIMIT ? OFFSET ?",
-                (limit, offset)
+                """
+                SELECT trade_id, MAX(datetime_utc) AS max_dt
+                FROM trades
+                WHERE trade_id IS NOT NULL AND trade_id <> ''
+                GROUP BY trade_id
+                ORDER BY max_dt DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
             ).fetchall()
             for t in trade_rows:
                 tid = t["trade_id"]
                 rows = conn.execute(
                     "SELECT * FROM trades WHERE trade_id = ? ORDER BY datetime_utc ASC",
-                    (tid,)
+                    (tid,),
                 ).fetchall()
-                results.append([dict(row) for row in rows])
+                if rows:
+                    results.append([dict(row) for row in rows])
     return results
 
-def _pick_representative_leg(trades_group):
+
+def _pick_representative_leg(trades_group: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Choose one leg to represent the economic transaction in collapsed view.
-    Prefer a 'debit' leg if present (so quantity/price/total_value match the buy/open leg),
-    otherwise fall back to the first row.
+    Prefer a 'debit' leg (buy/open side). Fallback to the first row.
     """
     if not trades_group:
         return {}
@@ -87,11 +129,11 @@ def _pick_representative_leg(trades_group):
             pass
     return trades_group[0]
 
-def collapse_group(trades_group):
+
+def collapse_group(trades_group: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Build a collapsed view that shows ONE leg's economics (representative),
-    not the sum of both legs. This avoids doubled quantity and total_value=0 issues.
-    All original legs are still available in 'sub_entries' (attached later).
+    not the sum of both legs, to avoid doubling qty and total_value=0 artifacts.
     """
     if not trades_group:
         return {}
@@ -99,7 +141,7 @@ def collapse_group(trades_group):
     rep = _pick_representative_leg(trades_group)
     collapsed = dict(rep)  # start from representative leg
 
-    # Defensive numeric helper
+    # Numeric helper
     def _f(x, default=0.0):
         try:
             return float(x)
@@ -119,35 +161,51 @@ def collapse_group(trades_group):
     collapsed["fee"] = rep.get("fee")
     collapsed["commission"] = rep.get("commission")
 
-    # Keep metadata for debugging/inspection
+    # Keep metadata for inspection
     collapsed["sides"] = [t.get("side") for t in trades_group]
     collapsed["ids"] = [t.get("id") for t in trades_group]
     return collapsed
 
-def get_collapsed_groups_by_group_id(limit=100, offset=0):
+
+def get_collapsed_groups_by_group_id(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
     groups = get_trades_grouped_by_group_id(None, limit, offset)
-    # Always historical order within group
     for g in groups:
-        g.sort(key=lambda row: row.get("datetime_utc") or "")
+        g.sort(key=lambda row: _safe(row.get("datetime_utc")))
     return [collapse_group(g) for g in groups if g]
 
-def get_collapsed_groups_by_trade_id(limit=100, offset=0):
+
+def get_collapsed_groups_by_trade_id(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
     groups = get_trades_grouped_by_trade_id(None, limit, offset)
     for g in groups:
-        g.sort(key=lambda row: row.get("datetime_utc") or "")
+        g.sort(key=lambda row: _safe(row.get("datetime_utc")))
     return [collapse_group(g) for g in groups if g]
 
-def _get_collapsed_map(db_path, group_ids):
+
+def _get_collapsed_map(db_path: str, group_ids: List[str]) -> Dict[str, int]:
     if not group_ids:
         return {}
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
             f"SELECT group_id, collapsed FROM {COLLAPSED_TABLE} WHERE group_id IN ({','.join(['?']*len(group_ids))})",
-            tuple(group_ids)
+            tuple(group_ids),
         ).fetchall()
     return {row[0]: row[1] for row in rows}
 
-def fetch_grouped_trades(by="group_id", collapse=True, limit=100, offset=0, show_expanded_groups=None):
+
+def fetch_grouped_trades(
+    by: str = "group_id",
+    collapse: bool = True,
+    limit: int = 100,
+    offset: int = 0,
+    show_expanded_groups: Optional[List[str]] = None,
+    *,
+    sort_by: Optional[str] = None,
+    sort_desc: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch grouped trades as either collapsed representatives (with sub_entries) or expanded legs.
+    Accepts sort_by/sort_desc to keep the web UI happy. Sorting is applied to the final flat list.
+    """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     _ensure_collapsed_table(db_path)
@@ -159,44 +217,54 @@ def fetch_grouped_trades(by="group_id", collapse=True, limit=100, offset=0, show
         groups = get_trades_grouped_by_group_id(None, limit, offset)
         group_ids = [g[0].get("group_id") for g in groups if g]
 
-    collapsed_map = _get_collapsed_map(db_path, group_ids)
-    result = []
+    collapsed_map = _get_collapsed_map(db_path, [gid for gid in group_ids if gid])
+    result: List[Dict[str, Any]] = []
 
     for group in groups:
         if not group:
             continue
-        group.sort(key=lambda row: row.get("datetime_utc") or "")  # strict historical order, forensic
+        # Stable historical order within each group
+        group.sort(key=lambda row: _safe(row.get("datetime_utc")))
+
         group_id = group[0].get("group_id") if by != "trade_id" else group[0].get("trade_id")
         collapsed_state = collapsed_map.get(group_id, 1)
-        force_expand = show_expanded_groups and group_id in show_expanded_groups
+        force_expand = bool(show_expanded_groups) and group_id in show_expanded_groups
+
         if collapse and collapsed_state and not force_expand:
-            collapsed = collapse_group(group)
-            collapsed["collapsed"] = True
-            collapsed["group_id"] = group_id
-            collapsed["sub_entries"] = group
-            result.append(collapsed)
+            collapsed_row = collapse_group(group)
+            collapsed_row["collapsed"] = True
+            collapsed_row["group_id"] = group_id
+            collapsed_row["sub_entries"] = group
+            result.append(collapsed_row)
         else:
+            # Return each leg, annotated
             for entry in group:
                 entry["collapsed"] = False
                 entry["group_id"] = group_id
                 entry["sub_entries"] = []
             result.extend(group)
-    return result
 
-def fetch_trade_group_by_id(group_id, by="group_id"):
+    # Apply requested sort to the final flat list
+    return _sort_records(result, sort_by, sort_desc)
+
+
+def fetch_trade_group_by_id(group_id: str, by: str = "group_id") -> List[Dict[str, Any]]:
     if by == "trade_id":
         group = get_trades_grouped_by_trade_id(trade_id=group_id)
     else:
         group = get_trades_grouped_by_group_id(group_id=group_id)
-    # All returned entries are marked as not collapsed and sorted in historical order
-    for entry in group[0] if group else []:
+    # Mark as expanded; keep historical order
+    rows = group[0] if group else []
+    for entry in rows:
         entry["collapsed"] = False
-    if group and group[0]:
-        group[0].sort(key=lambda row: row.get("datetime_utc") or "")
-        return group[0]
+        entry["sub_entries"] = []
+    if rows:
+        rows.sort(key=lambda row: _safe(row.get("datetime_utc")))
+        return rows
     return []
 
-def collapse_expand_group(group_id, by="group_id", collapsed_state=None):
+
+def collapse_expand_group(group_id: str, by: str = "group_id", collapsed_state: Optional[int] = None) -> bool:
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
     _ensure_collapsed_table(db_path)

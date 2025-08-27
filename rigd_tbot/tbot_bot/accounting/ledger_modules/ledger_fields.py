@@ -91,26 +91,27 @@ ALLOWED_TRADE_ACTIONS = [
     "long", "short", "put", "inverse", "call", "assignment", "exercise", "expire", "reorg", "other"
 ]
 
-# Canonical audit trail schema (append-only JSONL). Must be a superset of all audit events.
+# Canonical audit trail schema used by ledger_audit.log_audit_event().
+# Keep these names in sync with the INSERT keys there and the audit_trail table.
 AUDIT_TRAIL_FIELDS = [
-    "ts_utc",                # ISO8601 UTC timestamp
-    "event",                 # e.g., 'coa_reassign', 'opening_balance_posted', etc.
-    "actor",                 # username or system actor
-    "entry_id",              # affected trades.id (if applicable)
-    "group_id",              # logical group identifier
-    "trade_id",              # external trade id (if applicable)
-    "old_account_code",      # prior COA code (when reassigning)
-    "new_account_code",      # new COA code (when reassigning)
-    "reason",                # free-form reason/comment
+    "timestamp",           # ISO8601 UTC timestamp
+    "action",              # e.g., 'coa_reassign', 'opening_balance_posted', etc.
+    "related_id",          # affected trades.id / ledger entry id (if applicable)
+    "actor",               # username or system actor
+    "old_value",           # JSON (string) of previous state (nullable)
+    "new_value",           # JSON (string) of new state (nullable)
+    # Context / optional columns (safe to be NULL)
     "entity_code",
     "jurisdiction_code",
     "broker_code",
     "bot_id",
-    "sync_run_id",           # sync correlation id (if any)
-    "source",                # 'inline_edit', 'sync', 'migration', etc.
-    "notes",                 # optional extra notes
-    "request_id",            # optional correlation id from web/API
-    "ip",                    # optional client ip (web)
-    "user_agent",            # optional UA (web)
-    "extra"                  # JSON blob for additional structured context
+    "group_id",
+    "trade_id",
+    "sync_run_id",
+    "source",              # 'inline_edit', 'sync', 'migration', etc.
+    "notes",
+    "request_id",
+    "ip",
+    "user_agent",
+    "extra"                # JSON blob for additional structured context
 ]

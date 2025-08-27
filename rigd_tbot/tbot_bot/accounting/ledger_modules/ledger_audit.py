@@ -33,46 +33,67 @@ def _resolve_db_path() -> str:
 
 def append(event: str, **kwargs) -> int:
     """
-    Structured audit writer. Fields are aligned to AUDIT_TRAIL_FIELDS / schema.sql.
+    Structured audit writer aligned to AUDIT_TRAIL_FIELDS.
 
     Required:
-      - event (str)
+      - event (str) → stored in 'action'
 
-    Optional kwargs (common):
-      - actor, entry_id, group_id, trade_id
-      - old_account_code, new_account_code, reason
+    Optional kwargs:
+      - actor, related_id (or entry_id), group_id, trade_id
+      - old_value, new_value (or before/after)
       - sync_run_id, source, notes, request_id, ip, user_agent
       - extra (dict | list | str | None)
+      - old_account_code, new_account_code, reason  (packed into extra)
 
     Identity fields (entity_code, jurisdiction_code, broker_code, bot_id) are injected automatically.
-    Returns the inserted row id.
+    Returns the inserted row id (0 iff TEST_MODE_FLAG present).
     """
     if TEST_MODE_FLAG.exists():
         return 0
 
     entity_code, jurisdiction_code, broker_code, bot_id = load_bot_identity().split("_")
 
-    extra = kwargs.get("extra")
-    if isinstance(extra, (dict, list)):
-        extra = json.dumps(extra, ensure_ascii=False)
+    # Normalize old/new values (accept before/after aliases)
+    old_val = kwargs.get("old_value", kwargs.get("before"))
+    new_val = kwargs.get("new_value", kwargs.get("after"))
+    if isinstance(old_val, (dict, list)):
+        old_val = json.dumps(old_val, ensure_ascii=False)
+    if isinstance(new_val, (dict, list)):
+        new_val = json.dumps(new_val, ensure_ascii=False)
 
+    # Merge optional granular info into extra blob
+    extra_blob = kwargs.get("extra")
+    if isinstance(extra_blob, (dict, list)):
+        extra_base = extra_blob
+    elif isinstance(extra_blob, str) and extra_blob.strip():
+        # leave as-is string
+        extra_base = extra_blob
+    else:
+        extra_base = {}
+
+    if isinstance(extra_base, dict):
+        for k in ("old_account_code", "new_account_code", "reason"):
+            if k in kwargs and kwargs[k] is not None:
+                extra_base[k] = kwargs[k]
+        extra = json.dumps(extra_base, ensure_ascii=False)
+    else:
+        extra = extra_base  # string passthrough
+
+    # Build record with canonical column names
     record = {
-        # required core
-        "ts_utc": _now_iso_utc(),
-        "event": event,
-        # identity
+        "timestamp": _now_iso_utc(),
+        "action": event,
+        "related_id": kwargs.get("related_id") or kwargs.get("entry_id"),
+        "actor": kwargs.get("actor") or kwargs.get("user") or "system",
+        "old_value": old_val,
+        "new_value": new_val,
+        # optional context
         "entity_code": entity_code,
         "jurisdiction_code": jurisdiction_code,
         "broker_code": broker_code,
         "bot_id": bot_id,
-        # passthroughs
-        "actor": kwargs.get("actor") or kwargs.get("user") or "system",
-        "entry_id": kwargs.get("entry_id"),
         "group_id": kwargs.get("group_id"),
         "trade_id": kwargs.get("trade_id"),
-        "old_account_code": kwargs.get("old_account_code"),
-        "new_account_code": kwargs.get("new_account_code"),
-        "reason": kwargs.get("reason"),
         "sync_run_id": kwargs.get("sync_run_id"),
         "source": kwargs.get("source"),
         "notes": kwargs.get("notes"),
@@ -82,7 +103,7 @@ def append(event: str, **kwargs) -> int:
         "extra": extra,
     }
 
-    # Ensure all required columns exist; fill missing with None
+    # Fill any missing fields required by the schema with None
     for k in AUDIT_TRAIL_FIELDS:
         record.setdefault(k, None)
 
@@ -101,12 +122,12 @@ def append(event: str, **kwargs) -> int:
 def log_audit_event(action: str, entry_id, user, before=None, after=None) -> int:
     """
     Legacy signature used by older code. Maps to structured append().
-    Stores `before`/`after` blobs inside `extra`.
     """
     return append(
         event=action,
-        entry_id=entry_id,
+        related_id=entry_id,
         actor=user,
+        old_value=before,
+        new_value=after,
         source="legacy",
-        extra={"before": before, "after": after},
     )

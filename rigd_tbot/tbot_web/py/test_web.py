@@ -4,10 +4,11 @@ import os
 import threading
 import time
 import json
-from flask import Blueprint, render_template, request, jsonify, send_file
-from tbot_web.support.utils_web import admin_required
 from pathlib import Path
 import subprocess
+from flask import Blueprint, render_template, request, jsonify
+
+from tbot_web.support.utils_web import admin_required
 from tbot_bot.support.path_resolver import (
     resolve_control_path,
     get_output_path,
@@ -20,12 +21,20 @@ LOCK = threading.Lock()
 
 test_web = Blueprint("test_web", __name__, template_folder="../templates")
 
-def get_test_log_path():
+# ---------- paths ----------
+def get_test_log_path() -> str:
     return get_output_path("logs", "test_mode.log")
 
-def get_test_status_path():
+def get_test_status_path() -> str:
     return get_output_path("logs", "test_status.json")
 
+def _ensure_logs_dir():
+    lp = get_test_log_path()
+    sp = get_test_status_path()
+    os.makedirs(os.path.dirname(lp), exist_ok=True)
+    os.makedirs(os.path.dirname(sp), exist_ok=True)
+
+# ---------- flags ----------
 def get_test_flag_path(test_name: str = None) -> Path:
     if test_name:
         return CONTROL_DIR / f"test_mode_{test_name}.flag"
@@ -42,14 +51,29 @@ def any_test_active() -> bool:
             return True
     return False
 
-def read_test_logs():
+def create_test_flag(test_name: str = None):
+    flag_path = get_test_flag_path(test_name)
+    flag_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(flag_path, "w", encoding="utf-8") as f:
+        f.write("1\n")
+
+def remove_test_flag(test_name: str = None):
+    flag_path = get_test_flag_path(test_name)
+    if flag_path.exists():
+        flag_path.unlink()
+
+# ---------- status & logs ----------
+def read_test_logs() -> str:
     log_path = get_test_log_path()
     if not os.path.exists(log_path):
         return ""
-    with open(log_path, "r", encoding="utf-8") as f:
-        return f.read()[-50000:]  # Slightly larger slice to better catch module output
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()[-50000:]  # larger slice to catch module output
+    except Exception:
+        return ""
 
-def get_test_status():
+def get_test_status() -> dict:
     status_path = get_test_status_path()
     if not os.path.exists(status_path):
         return {}
@@ -59,13 +83,13 @@ def get_test_status():
     except Exception:
         return {}
 
-def set_test_status(test_status):
+def set_test_status(test_status: dict):
+    _ensure_logs_dir()
     status_path = get_test_status_path()
-    os.makedirs(os.path.dirname(status_path), exist_ok=True)
     with open(status_path, "w", encoding="utf-8") as f:
         json.dump(test_status, f, indent=2)
 
-def update_test_status(test_name, status):
+def update_test_status(test_name: str, status: str):
     st = get_test_status()
     st[test_name] = status
     set_test_status(st)
@@ -75,16 +99,97 @@ def reset_all_status(status_dict=None):
         status_dict = {}
     set_test_status(status_dict)
 
-def create_test_flag(test_name: str = None):
-    flag_path = get_test_flag_path(test_name)
-    flag_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(flag_path, "w") as f:
-        f.write("1\n")
+# ---------- env ----------
+def patch_env_from_dotenv():
+    env_path = Path(PROJECT_ROOT) / ".env"
+    if not env_path.exists():
+        return
+    try:
+        from dotenv import load_dotenv  # optional
+    except Exception:
+        # If python-dotenv isn't installed, just skip quietly
+        return
+    load_dotenv(dotenv_path=str(env_path), override=True)
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if "=" in line and not line.strip().startswith("#"):
+                    k, v = line.strip().split("=", 1)
+                    os.environ[k] = v
+    except Exception:
+        pass
 
-def remove_test_flag(test_name: str = None):
-    flag_path = get_test_flag_path(test_name)
-    if flag_path.exists():
-        flag_path.unlink()
+# ---------- background helpers ----------
+def _wait_and_finalize_generic(proc: subprocess.Popen):
+    """Wait on the integration test runner; then clean the global flag & finalize ambiguous statuses."""
+    proc.wait()
+    # If any tests still marked QUEUED/RUNNING, set based on return code
+    st = get_test_status()
+    default_status = "PASSED" if proc.returncode == 0 else "ERRORS"
+    updated = False
+    for k, v in list(st.items()):
+        if v in ("QUEUED", "RUNNING"):
+            st[k] = default_status
+            updated = True
+    if updated:
+        set_test_status(st)
+    remove_test_flag(None)
+
+def _write_subprocess_log(proc: subprocess.Popen, log_file_path: str):
+    """Stream both stdout and stderr to a single log file to avoid deadlocks and keep one canonical log."""
+    with open(log_file_path, "a", encoding="utf-8", errors="replace") as logf:
+        while True:
+            out = proc.stdout.readline() if proc.stdout else b""
+            err = proc.stderr.readline() if proc.stderr else b""
+            if not out and not err and proc.poll() is not None:
+                break
+            if out:
+                try:
+                    logf.write(out.decode(errors="replace"))
+                except Exception:
+                    logf.write(str(out))
+                logf.flush()
+            if err:
+                try:
+                    logf.write(err.decode(errors="replace"))
+                except Exception:
+                    logf.write(str(err))
+                logf.flush()
+
+def wait_and_update_status(test_name: str, proc: subprocess.Popen, start_size: int = 0):
+    """Per-test watcher: decide status by return code; fallback to log heuristic if needed."""
+    update_test_status(test_name, "RUNNING")
+    proc.wait()
+    status = "PASSED" if proc.returncode == 0 else "ERRORS"
+
+    # Fallback heuristic only if return code is 0 but logs show obvious failure markers since this run
+    if status == "PASSED":
+        logs = ""
+        log_path = get_test_log_path()
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                f.seek(min(start_size, os.path.getsize(log_path)))
+                logs = f.read()
+        except Exception:
+            logs = read_test_logs()
+        if any(s in logs for s in ("FAILED", "FAIL: ", "ERROR", "Traceback")):
+            status = "ERRORS"
+
+    update_test_status(test_name, status)
+    remove_test_flag(test_name)
+
+# ---------- routes ----------
+@test_web.route("/", methods=["GET"])
+@admin_required
+def test_page():
+    logs = read_test_logs()
+    return render_template(
+        "test.html",
+        test_active=any_test_active(),
+        test_status=get_test_status(),
+        test_logs=logs,
+        all_tests=ALL_TESTS
+    )
 
 # Full, current canonical test list for UI and backend (must match UI)
 ALL_TESTS = [
@@ -117,32 +222,8 @@ ALL_TESTS = [
     "strategy_selfcheck",
     "strategy_tuner",
     "symbol_universe_refresh",
-    # optional/legacy key (harmless if missing)
     "universe_cache",
 ]
-
-def patch_env_from_dotenv():
-    env_path = Path(PROJECT_ROOT) / ".env"
-    if env_path.exists():
-        from dotenv import load_dotenv
-        load_dotenv(dotenv_path=str(env_path), override=True)
-        with open(env_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if "=" in line and not line.strip().startswith("#"):
-                    k, v = line.strip().split("=", 1)
-                    os.environ[k] = v
-
-@test_web.route("/", methods=["GET"])
-@admin_required
-def test_page():
-    logs = read_test_logs()
-    return render_template(
-        "test.html",
-        test_active=any_test_active(),
-        test_status=get_test_status(),
-        test_logs=logs,
-        all_tests=ALL_TESTS
-    )
 
 @test_web.route("/trigger", methods=["POST"])
 @admin_required
@@ -151,19 +232,22 @@ def trigger_test_mode():
         if any_test_active():
             return jsonify({"result": "already_running"})
         patch_env_from_dotenv()
+        _ensure_logs_dir()
         set_test_status({t: "QUEUED" for t in ALL_TESTS})
         create_test_flag()
         log_path = get_test_log_path()
-        with open(log_path, "a", encoding="utf-8") as log_file:
-            subprocess.Popen(
-                ["python3", "-u", "-m", "tbot_bot.test.integration_test_runner"],
-                stdout=log_file,
-                stderr=log_file,
-                bufsize=1,
-                close_fds=True,
-                cwd=str(PROJECT_ROOT),
-                env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
-            )
+        logf = open(log_path, "a", encoding="utf-8")  # will be closed by the OS after proc exit
+        proc = subprocess.Popen(
+            ["python3", "-u", "-m", "tbot_bot.test.integration_test_runner"],
+            stdout=logf,
+            stderr=logf,
+            bufsize=1,
+            close_fds=True,
+            cwd=str(PROJECT_ROOT),
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+        )
+        # Watcher to clean the generic flag and finalize statuses when runner ends
+        threading.Thread(target=_wait_and_finalize_generic, args=(proc,), daemon=True).start()
     return jsonify({"result": "started"})
 
 @test_web.route("/run/<test_name>", methods=["POST"])
@@ -173,6 +257,8 @@ def run_individual_test(test_name):
         if any_test_active():
             return jsonify({"result": "already_running"})
         patch_env_from_dotenv()
+        _ensure_logs_dir()
+
         test_map = {
             "integration_test_runner": "tbot_bot.test.integration_test_runner",
             "backtest_engine": "tbot_bot.test.test_backtest_engine",
@@ -208,25 +294,15 @@ def run_individual_test(test_name):
         module = test_map.get(test_name)
         if not module:
             return jsonify({"result": "unknown_test"})
+
+        # Initialize status: mark requested test RUNNING, others QUEUED
         status_dict = {t: "QUEUED" for t in ALL_TESTS}
         status_dict[test_name] = "RUNNING"
         set_test_status(status_dict)
+
         create_test_flag(test_name)
         log_path = get_test_log_path()
-
-        def write_subprocess_log(proc, log_file_path):
-            with open(log_file_path, "a", encoding="utf-8") as logf:
-                while True:
-                    out = proc.stdout.readline()
-                    err = proc.stderr.readline()
-                    if not out and not err and proc.poll() is not None:
-                        break
-                    if out:
-                        logf.write(out.decode(errors="replace"))
-                        logf.flush()
-                    if err:
-                        logf.write(err.decode(errors="replace"))
-                        logf.flush()
+        start_size = os.path.getsize(log_path) if os.path.exists(log_path) else 0
 
         proc = subprocess.Popen(
             ["python3", "-u", "-m", module],
@@ -237,20 +313,9 @@ def run_individual_test(test_name):
             cwd=str(PROJECT_ROOT),
             env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
         )
-        threading.Thread(target=write_subprocess_log, args=(proc, log_path), daemon=True).start()
-        threading.Thread(target=wait_and_update_status, args=(test_name, proc), daemon=True).start()
+        threading.Thread(target=_write_subprocess_log, args=(proc, log_path), daemon=True).start()
+        threading.Thread(target=wait_and_update_status, args=(test_name, proc, start_size), daemon=True).start()
     return jsonify({"result": "started", "test": test_name})
-
-def wait_and_update_status(test_name, proc):
-    update_test_status(test_name, "RUNNING")
-    proc.wait()
-    logs = read_test_logs()
-    status = "PASSED"
-    # Simple heuristic: if errors detected in recent logs during this run, mark as ERRORS
-    if any(s in logs for s in ("FAILED", "FAIL: ", "ERROR", "Traceback")):
-        status = "ERRORS"
-    update_test_status(test_name, status)
-    remove_test_flag(test_name)
 
 @test_web.route("/logs", methods=["GET"])
 @admin_required
@@ -264,6 +329,7 @@ def get_test_logs():
 def get_test_status_endpoint():
     return jsonify(get_test_status())
 
+# Optional safety: clears stale flags if someone leaves UI open forever
 def auto_reset_test_flag():
     for _ in range(60):
         if not any_test_active():

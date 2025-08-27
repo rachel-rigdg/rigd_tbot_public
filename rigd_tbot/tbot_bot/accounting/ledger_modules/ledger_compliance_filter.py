@@ -12,16 +12,16 @@ Key rules:
 """
 
 from typing import Any, Dict, List, Optional, Tuple
+from tbot_bot.accounting.ledger_modules.ledger_fields import ALLOWED_TRADE_ACTIONS as _CANON_ACTIONS
 
 # Primary UI/display fields — used to detect completely blank records
 PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "total_value")
 
-# Actions permitted by the ledger schema & our posting hooks
-_ALLOWED_ACTIONS = {
-    "long", "short", "put", "call", "assignment", "exercise", "expire", "reorg", "inverse", "other",
-    # system/ops hooks (kept for forward compatibility; harmless if unused)
+# Keep ops/system hooks allowed in addition to canonical trade actions
+_OPS_ACTIONS = {
     "reserve_tax", "reserve_payroll", "float_allocation", "rebalance_buy", "rebalance_sell",
 }
+_ALLOWED_ACTIONS = set(_CANON_ACTIONS) | _OPS_ACTIONS
 
 
 def _is_blank_primary(entry: Dict[str, Any]) -> bool:
@@ -31,6 +31,9 @@ def _is_blank_primary(entry: Dict[str, Any]) -> bool:
 
 def _as_float(x: Any, default: float = 0.0) -> float:
     try:
+        # guard against "", None, "None"
+        if x is None or (isinstance(x, str) and x.strip() in ("", "None")):
+            return default
         return float(x)
     except Exception:
         return default
@@ -40,6 +43,7 @@ def _is_zero_value_spurious(entry: Dict[str, Any]) -> bool:
     """
     Filter out non-economic broker events that normalize into $0.00 entries, e.g.
     new/accepted/canceled/partial markers with zero qty/price/val and no fees.
+    This function must be completely safe if metadata/raw payloads are missing.
     """
     qty = _as_float(entry.get("quantity"))
     price = _as_float(entry.get("price"))
@@ -47,8 +51,14 @@ def _is_zero_value_spurious(entry: Dict[str, Any]) -> bool:
     total_value = _as_float(entry.get("total_value"), qty * price)
     fees = _as_float(entry.get("fee")) + _as_float(entry.get("commission"))
 
+    # SAFELY unwrap metadata/raw hints (no AttributeError on None)
     jm = entry.get("json_metadata") or {}
-    raw = jm.get("raw_broker") if isinstance(jm, dict) else {}
+    raw = {}
+    if isinstance(jm, dict):
+        raw = jm.get("raw_broker") or jm.get("raw") or {}
+        if not isinstance(raw, dict):
+            raw = {}
+
     # Pull a raw broker state hint if present
     raw_type = str(
         (raw.get("activity_type") or raw.get("type") or raw.get("order_status") or "")

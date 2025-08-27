@@ -14,7 +14,7 @@ from tbot_bot.support.path_resolver import (
     get_bot_identity_string_regex,
     resolve_ledger_db_path,
 )
-from tbot_web.support.auth_web import get_current_user, get_user_role  # ← use DB-backed RBAC
+from tbot_web.support.auth_web import get_current_user, get_user_role  # DB-backed RBAC
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts
 
@@ -162,7 +162,6 @@ def _python_sort_groups(entries: List[Dict[str, Any]], sort_col: str, sort_desc:
     """
     Stable fallback sort in Python when fetch_grouped_trades() doesn't support sort kwargs yet.
     """
-    # map secondary row fields to a concrete visible column
     col_map = {
         "trade_id": "datetime_utc",
         "strategy": "action",
@@ -183,25 +182,26 @@ def _python_sort_groups(entries: List[Dict[str, Any]], sort_col: str, sort_desc:
 
 
 # ---------------------------
-# Routes
+# Routes  (dual aliases to avoid /ledger/ledger/* issues)
 # ---------------------------
 
-# Alias root to reconcile for convenience
-@ledger_web.route('/ledger', methods=['GET'])
+@ledger_web.route("/", methods=["GET"])
+@ledger_web.route("/ledger", methods=["GET"])  # legacy alias
 def ledger_root():
-    return redirect(url_for('ledger_web.ledger_reconcile'))
+    return redirect(url_for("ledger_web.ledger_reconcile"))
 
 
-@ledger_web.route('/ledger/reconcile', methods=['GET'])
+@ledger_web.route("/reconcile", methods=["GET"])
+@ledger_web.route("/ledger/reconcile", methods=["GET"])  # legacy alias
 def ledger_reconcile():
     # RBAC: viewers allowed (GET)
     error = None
-    entries = []
-    balances = {}
-    coa_accounts = []
+    entries: List[Dict[str, Any]] = []
+    balances: Dict[str, Any] = {}
+    coa_accounts: List[Tuple[str, str]] = []
     if provisioning_guard() or identity_guard():
         return render_template(
-            'ledger.html',
+            "ledger.html",
             entries=entries,
             error="Ledger access not available (provisioning or identity incomplete).",
             balances=balances,
@@ -215,6 +215,8 @@ def ledger_reconcile():
             balances = calculate_account_balances(include_opening=True)
         except TypeError:
             balances = calculate_account_balances()
+        except Exception:
+            balances = {}
 
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = coa_data.get("accounts_flat", [])  # list of (code, name)
@@ -231,7 +233,7 @@ def ledger_reconcile():
         _user, role = _current_user_and_role()
 
         return render_template(
-            'ledger.html',
+            "ledger.html",
             entries=entries,
             error=None,
             balances=balances,
@@ -247,7 +249,7 @@ def ledger_reconcile():
 
     _user, role = _current_user_and_role()
     return render_template(
-        'ledger.html',
+        "ledger.html",
         entries=[],
         error=error,
         balances={},
@@ -257,7 +259,8 @@ def ledger_reconcile():
     )
 
 
-@ledger_web.route('/ledger/groups', methods=['GET'])
+@ledger_web.route("/groups", methods=["GET"])
+@ledger_web.route("/ledger/groups", methods=["GET"])  # legacy alias
 def ledger_groups():
     # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
@@ -276,7 +279,8 @@ def ledger_groups():
         return jsonify({"error": str(e)}), 500
 
 
-@ledger_web.route('/ledger/balances', methods=['GET'])
+@ledger_web.route("/balances", methods=["GET"])
+@ledger_web.route("/ledger/balances", methods=["GET"])  # legacy alias
 def ledger_balances():
     # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
@@ -286,17 +290,20 @@ def ledger_balances():
             bals = calculate_account_balances(include_opening=True)
         except TypeError:
             bals = calculate_account_balances()
+        except Exception:
+            bals = {}
         return jsonify(bals)
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
-@ledger_web.route('/ledger/group/<group_id>', methods=['GET'])
+@ledger_web.route("/group/<group_id>", methods=["GET"])
+@ledger_web.route("/ledger/group/<group_id>", methods=["GET"])  # legacy alias
 def ledger_group_detail(group_id):
     # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
-        return redirect(url_for('main.root_router'))
+        return redirect(url_for("main.root_router"))
     try:
         group = fetch_trade_group_by_id(group_id)
         return jsonify(group)
@@ -304,7 +311,8 @@ def ledger_group_detail(group_id):
         return jsonify({"error": str(e)}), 404
 
 
-@ledger_web.route('/ledger/collapse_expand/<group_id>', methods=['POST'])
+@ledger_web.route("/collapse_expand/<group_id>", methods=["POST"])
+@ledger_web.route("/ledger/collapse_expand/<group_id>", methods=["POST"])  # legacy alias
 def ledger_collapse_expand(group_id):
     # RBAC: admin-only for POST
     not_ok = _require_admin_post()
@@ -325,7 +333,8 @@ def ledger_collapse_expand(group_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@ledger_web.route('/ledger/collapse_all', methods=['POST'])
+@ledger_web.route("/collapse_all", methods=["POST"])
+@ledger_web.route("/ledger/collapse_all", methods=["POST"])  # legacy alias
 def ledger_collapse_all():
     # RBAC: admin-only for POST
     not_ok = _require_admin_post()
@@ -367,12 +376,13 @@ def ledger_collapse_all():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@ledger_web.route('/ledger/search', methods=['GET'])
+@ledger_web.route("/search", methods=["GET"])
+@ledger_web.route("/ledger/search", methods=["GET"])  # legacy alias
 def ledger_search():
     # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
         return jsonify({"error": "Not permitted"}), 403
-    query = request.args.get('q', '').strip()
+    query = request.args.get("q", "").strip()
     sort_col, sort_desc = _get_sort_params()
     try:
         results = search_trades(search_term=query, sort_by=sort_col, sort_desc=sort_desc)
@@ -384,26 +394,28 @@ def ledger_search():
 
 
 # ---------- Legacy resolve/add/edit/delete (admin-only POST) ----------
-@ledger_web.route('/ledger/resolve/<int:entry_id>', methods=['POST'])
+@ledger_web.route("/resolve/<int:entry_id>", methods=["POST"])
+@ledger_web.route("/ledger/resolve/<int:entry_id>", methods=["POST"])  # legacy alias
 def resolve_ledger_entry(entry_id):
     not_ok = _require_admin_post()
     if not_ok:
         return not_ok
     if provisioning_guard() or identity_guard():
-        return redirect(url_for('main.root_router'))
+        return redirect(url_for("main.root_router"))
     from tbot_bot.accounting.ledger import mark_entry_resolved
     mark_entry_resolved(entry_id)
-    flash('Entry marked as resolved.')
-    return redirect(url_for('ledger_web.ledger_reconcile'))
+    flash("Entry marked as resolved.")
+    return redirect(url_for("ledger_web.ledger_reconcile"))
 
 
-@ledger_web.route('/ledger/add', methods=['POST'])
+@ledger_web.route("/add", methods=["POST"])
+@ledger_web.route("/ledger/add", methods=["POST"])  # legacy alias
 def add_ledger_entry_route():
     not_ok = _require_admin_post()
     if not_ok:
         return not_ok
     if provisioning_guard() or identity_guard():
-        return redirect(url_for('main.root_router'))
+        return redirect(url_for("main.root_router"))
     from tbot_bot.accounting.ledger import post_ledger_entries_double_entry
 
     form = request.form
@@ -444,11 +456,15 @@ def add_ledger_entry_route():
         "hipaa_sensitive": False,
         "iso27001_tag": "",
         "soc2_type": "",
+        # Amount: non-null for double-entry helpers
+        "amount": _num(form.get("total_value"), 0.0) or 0.0,
+        # Minimal metadata so compliance filter won't choke
+        "json_metadata": {},
+        "raw_broker_json": {},
     }
     try:
-        entry_data["amount"] = _num(entry_data.get("total_value"), 0.0) or 0.0
         post_ledger_entries_double_entry([entry_data])
-        flash('Ledger entry added (double-entry compliant).')
+        flash("Ledger entry added (double-entry compliant).")
     except sqlite3.IntegrityError as e:
         if "UNIQUE constraint failed: trades.trade_id" in str(e):
             flash("Trade ID already exists. Please use a unique Trade ID.", "error")
@@ -457,10 +473,11 @@ def add_ledger_entry_route():
     except Exception as e:
         traceback.print_exc()
         flash(f"Ledger error: {e}", "error")
-    return redirect(url_for('ledger_web.ledger_reconcile'))
+    return redirect(url_for("ledger_web.ledger_reconcile"))
 
 
-@ledger_web.route('/ledger/edit/<int:entry_id>', methods=['POST'])
+@ledger_web.route("/edit/<int:entry_id>", methods=["POST"])
+@ledger_web.route("/ledger/edit/<int:entry_id>", methods=["POST"])  # legacy alias
 def ledger_edit(entry_id: int):
     """
     Minimal, audited COA reassignment endpoint used by inline dropdown.
@@ -525,6 +542,8 @@ def ledger_edit(entry_id: int):
             bals = calculate_account_balances(include_opening=True)
         except TypeError:
             bals = calculate_account_balances()
+        except Exception:
+            bals = {}
         return jsonify({"ok": True, "groups": groups, "balances": bals, "result": result})
     except Exception:
         # minimal success if refresh fails
@@ -532,13 +551,14 @@ def ledger_edit(entry_id: int):
 
 
 # Legacy full edit (retain for forms; admin-only)
-@ledger_web.route('/ledger/edit_legacy/<int:entry_id>', methods=['POST'])
+@ledger_web.route("/edit_legacy/<int:entry_id>", methods=["POST"])
+@ledger_web.route("/ledger/edit_legacy/<int:entry_id>", methods=["POST"])  # legacy alias
 def edit_ledger_entry_route(entry_id):
     not_ok = _require_admin_post()
     if not_ok:
         return not_ok
     if provisioning_guard() or identity_guard():
-        return redirect(url_for('main.root_router'))
+        return redirect(url_for("main.root_router"))
     from tbot_bot.accounting.ledger import edit_ledger_entry
 
     form = request.form
@@ -577,11 +597,13 @@ def edit_ledger_entry_route(entry_id):
         "hipaa_sensitive": False,
         "iso27001_tag": "",
         "soc2_type": "",
+        "amount": _num(form.get("total_value"), 0.0) or 0.0,
+        "json_metadata": {},
+        "raw_broker_json": {},
     }
     try:
-        updated_data["amount"] = _num(updated_data.get("total_value"), 0.0) or 0.0
         edit_ledger_entry(entry_id, updated_data)
-        flash('Ledger entry updated.')
+        flash("Ledger entry updated.")
     except sqlite3.IntegrityError as e:
         if "UNIQUE constraint failed: trades.trade_id" in str(e):
             flash("Trade ID already exists. Please use a unique Trade ID.", "error")
@@ -590,35 +612,38 @@ def edit_ledger_entry_route(entry_id):
     except Exception as e:
         traceback.print_exc()
         flash(f"Ledger error: {e}", "error")
-    return redirect(url_for('ledger_web.ledger_reconcile'))
+    return redirect(url_for("ledger_web.ledger_reconcile"))
 
 
-@ledger_web.route('/ledger/delete/<int:entry_id>', methods=['POST'])
+@ledger_web.route("/delete/<int:entry_id>", methods=["POST"])
+@ledger_web.route("/ledger/delete/<int:entry_id>", methods=["POST"])  # legacy alias
 def delete_ledger_entry_route(entry_id):
     not_ok = _require_admin_post()
     if not_ok:
         return not_ok
     if provisioning_guard() or identity_guard():
-        return redirect(url_for('main.root_router'))
+        return redirect(url_for("main.root_router"))
     from tbot_bot.accounting.ledger import delete_ledger_entry
     delete_ledger_entry(entry_id)
-    flash('Ledger entry deleted.')
-    return redirect(url_for('ledger_web.ledger_reconcile'))
+    flash("Ledger entry deleted.")
+    return redirect(url_for("ledger_web.ledger_reconcile"))
 
 
-@ledger_web.route('/ledger/sync', methods=['POST'])
+@ledger_web.route("/sync", methods=["POST"])
+@ledger_web.route("/ledger/sync", methods=["POST"])  # legacy alias
 def ledger_sync():
     # RBAC: admin-only
     not_ok = _require_admin_post()
     if not_ok:
         return not_ok
     if provisioning_guard() or identity_guard():
-        return redirect(url_for('main.root_router'))
+        return redirect(url_for("main.root_router"))
     try:
         print("[WEB] /ledger/sync: invoked")
         # Use the new sync pipeline under ledger_modules
         from tbot_bot.accounting.ledger_modules.ledger_sync import sync_broker_ledger
         sync_broker_ledger()
+
         # post-check
         try:
             bot_identity = load_bot_identity()
@@ -626,9 +651,13 @@ def ledger_sync():
             db_path = resolve_ledger_db_path(e, j, b, bot_id)
             with sqlite3.connect(db_path) as conn:
                 total = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
-                empty_groups = conn.execute("SELECT COUNT(*) FROM trades WHERE group_id IS NULL OR group_id=''").fetchone()[0]
+                empty_groups = conn.execute(
+                    "SELECT COUNT(*) FROM trades WHERE group_id IS NULL OR group_id=''"
+                ).fetchone()[0]
             print(f"[WEB] /ledger/sync: completed OK - rows={total}, empty_group_id={empty_groups}")
-            if empty_groups:
+            if total == 0:
+                flash("Broker ledger sync completed, but no rows were imported. Check mapping and source data.", "error")
+            elif empty_groups:
                 flash(f"Broker ledger synced. {total} rows present; {empty_groups} missing group_id.")
             else:
                 flash(f"Broker ledger synced successfully. {total} rows present.")
@@ -638,5 +667,5 @@ def ledger_sync():
     except Exception as e:
         traceback.print_exc()
         print("[WEB] /ledger/sync: ERROR:", repr(e))
-        flash(f"Broker ledger sync failed: {e}")
-    return redirect(url_for('ledger_web.ledger_reconcile'))
+        flash(f"Broker ledger sync failed: {e}", "error")
+    return redirect(url_for("ledger_web.ledger_reconcile"))
