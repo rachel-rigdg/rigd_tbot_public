@@ -1,6 +1,6 @@
 # tbot_bot/accounting/ledger_modules/ledger_double_entry.py
 
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict, Any
 from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_path  # kept for downstream imports
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table, apply_mapping_rule
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
@@ -30,8 +30,12 @@ except Exception:
 
 
 # ---------------------------
-# Helpers
+# Constants / Helpers
 # ---------------------------
+
+SUSPENSE = "3999_SUSPENSE"
+PNL = "5000_TRADING_PNL"
+
 
 def get_identity_tuple() -> Tuple[str, str, str, str]:
     identity = load_bot_identity() or ""
@@ -78,7 +82,6 @@ def _ensure_json_fields(entry: dict) -> None:
     Ensure json-bearing columns exist and are strings, not dicts.
     Keep keys consistent with TRADES_FIELDS: json_metadata, raw_broker_json.
     """
-    # If upstream provided dicts, keep them but serialize before insert
     if "json_metadata" not in entry or entry["json_metadata"] is None:
         entry["json_metadata"] = "{}"
     if "raw_broker_json" not in entry or entry["raw_broker_json"] is None:
@@ -115,22 +118,21 @@ def _add_required_fields(entry: dict,
 
     # Total value default
     if "total_value" not in e or e["total_value"] is None:
-        # If upstream didn’t compute, leave 0.0 (mapping may have set it already)
         e["total_value"] = _as_float(e.get("total_value"), 0.0)
 
     # Compute amount sign from side when missing (credit ⇒ negative; debit ⇒ positive)
     if e.get("amount") is None:
         val = _as_float(e.get("total_value"), 0.0)
         side = (e.get("side") or "").strip().lower()
-        if side == "credit":
-            e["amount"] = -abs(val)
-        else:
-            e["amount"] = abs(val)
+        e["amount"] = -abs(val) if side == "credit" else abs(val)
 
-    # Ensure IDs
+    # Ensure IDs (make hashing safe if dict/list present)
     if not e.get("trade_id"):
-        # Deterministic fallback
-        e["trade_id"] = f"{broker_code}_{bot_id}_{abs(hash(frozenset(e.items())))}"
+        try:
+            h = hash(frozenset(e.items()))
+        except TypeError:
+            h = hash(repr(sorted(e.items())))
+        e["trade_id"] = f"{broker_code}_{bot_id}_{abs(h)}"
     if not e.get("group_id"):
         e["group_id"] = e.get("trade_id")
 
@@ -147,6 +149,22 @@ def _add_required_fields(entry: dict,
         e[k] = _jsonify_if_needed(v)
 
     return e
+
+
+def _fallback_unmapped_legs(entry_in: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    When no mapping rule exists, route to Suspense vs P&L so rows are not dropped.
+    Ensures zero-sum across legs.
+    """
+    e = dict(entry_in or {})
+    val = _as_float(e.get("total_value"), 0.0)
+    if val >= 0:
+        debit = {**e, "side": "debit",  "account": SUSPENSE, "total_value": abs(val),  "amount":  abs(val)}
+        credit= {**e, "side": "credit", "account": PNL,      "total_value": -abs(val), "amount": -abs(val)}
+    else:
+        debit = {**e, "side": "debit",  "account": PNL,      "total_value": abs(val),  "amount":  abs(val)}
+        credit= {**e, "side": "credit", "account": SUSPENSE, "total_value": -abs(val), "amount": -abs(val)}
+    return debit, credit
 
 
 # ---------------------------
@@ -181,8 +199,14 @@ def post_double_entry(entries: List[dict], mapping_table=None):
 
     with sqlite3.connect(db_path) as conn:
         for entry in entries or []:
-            # Map to legs
-            debit_entry, credit_entry = apply_mapping_rule(entry, mapping_table)
+            # Try rule-based mapping; fallback to Suspense/PNL if mapping missing/invalid
+            try:
+                debit_entry, credit_entry = apply_mapping_rule(entry, mapping_table)
+                if (not debit_entry or not credit_entry
+                        or not debit_entry.get("account") or not credit_entry.get("account")):
+                    raise ValueError("unmapped_rule")
+            except Exception:
+                debit_entry, credit_entry = _fallback_unmapped_legs(entry)
 
             # Normalize/sanitize payloads for DB
             debit_entry = _add_required_fields(debit_entry, entity_code, jurisdiction_code, broker_code, bot_id)
@@ -195,8 +219,7 @@ def post_double_entry(entries: List[dict], mapping_table=None):
                     (side_entry.get("trade_id"), side_entry.get("side")),
                 )
                 if cur.fetchone():
-                    # already present; skip insert
-                    continue
+                    continue  # already present; skip insert
 
                 columns = TRADES_FIELDS
                 placeholders = ", ".join(["?"] * len(columns))

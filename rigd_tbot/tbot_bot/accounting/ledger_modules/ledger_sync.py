@@ -68,7 +68,7 @@ def sync_broker_ledger():
     """
     Fetch broker data, normalize, filter, dedupe, and write via double-entry posting.
     - Ensures group_id is set (defaults to trade_id)
-    - Skips blank / non-compliant / unmapped items (emits unmapped summary)
+    - Does NOT drop unmapped items: flags them for UI but still posts (fallback to Suspense/PNL occurs in posting layer)
     - Tags all posted rows with sync_run_id
     - Calls Opening Balance post helper once on empty ledgers
     - Relies on atomic batch behavior of posting layer per Doc 050
@@ -83,7 +83,6 @@ def sync_broker_ledger():
     try:
         broker_snapshot = {
             "as_of_utc": datetime.now(timezone.utc).isoformat(),
-            # Optional hints if available from broker-specific layers (left minimal here):
             "cash": None,
             "positions": [],
         }
@@ -99,7 +98,7 @@ def sync_broker_ledger():
     trades_raw = fetch_all_trades(start_date="2025-01-01", end_date=None)
     cash_acts_raw = fetch_cash_activity(start_date="2025-01-01", end_date=None)
 
-    # Normalize + filter trades
+    # Normalize + compliance-filter trades
     trades = []
     for t in trades_raw:
         if not isinstance(t, dict):
@@ -123,7 +122,7 @@ def sync_broker_ledger():
             continue
         trades.append(normalized)
 
-    # Normalize + filter cash activities
+    # Normalize + compliance-filter cash activities
     cash_acts = []
     for c in cash_acts_raw:
         if not isinstance(c, dict):
@@ -174,21 +173,15 @@ def sync_broker_ledger():
 
     all_entries = [_fill_defaults(e) for e in deduped_entries]
 
-    # Enforce skip-on-unmapped; emit unmapped summary into mapping table for UI
-    mapped_entries = []
-    unmapped = []
+    # Flag unmapped for the UI, but DO NOT drop them (posting layer will fallback to Suspense/PNL)
+    unmapped_count = 0
     for e in all_entries:
-        m = get_mapping_for_transaction(e, mapping_table)
+        try:
+            m = get_mapping_for_transaction(e, mapping_table)
+        except Exception:
+            m = None
         if not m:
-            unmapped.append(
-                {
-                    "trade_id": e.get("trade_id"),
-                    "action": e.get("action"),
-                    "datetime_utc": e.get("datetime_utc"),
-                    "symbol": e.get("symbol"),
-                    "notes": e.get("notes"),
-                }
-            )
+            unmapped_count += 1
             try:
                 flag_unmapped_transaction(
                     {"broker": broker_code, "type": e.get("action"), "symbol": e.get("symbol"), "notes": e.get("notes")},
@@ -196,23 +189,22 @@ def sync_broker_ledger():
                 )
             except Exception:
                 pass
-            continue
-        mapped_entries.append(e)
 
-    if unmapped:
-        print(f"[SYNC] Unmapped entries skipped: {len(unmapped)} (details recorded for UI)")
+    if unmapped_count:
+        print(f"[SYNC] Unmapped entries detected: {unmapped_count} (flagged for UI). Importing via Suspense/PNL fallback.")
 
     # Sanitize complex types -> JSON strings (safe for sqlite bindings downstream if needed)
-    sanitized_entries = [_sanitize_entry(e) for e in mapped_entries]
+    sanitized_entries = [_sanitize_entry(e) for e in all_entries]
 
-    # Post using double-entry helper (handles account mapping, amount signs, and DB de-dup on (trade_id, side))
+    # Post using double-entry helper (handles account mapping or Suspense/PNL fallback, and DB de-dup on (trade_id, side))
     post_double_entry(sanitized_entries, mapping_table)
 
     # Validate double-entry integrity
     validate_double_entry()
 
     # Write reconciliation records
-    for entry in mapped_entries:
+    mapping_version = str((mapping_table or {}).get("version", ""))
+    for entry in all_entries:
         trade_id = entry.get("trade_id")
         api_hash = ""
         jm = entry.get("json_metadata")
@@ -233,7 +225,7 @@ def sync_broker_ledger():
             api_hash=api_hash,
             broker=broker_code,
             raw_record=entry,
-            mapping_version=str(load_mapping_table().get("version", "")),
+            mapping_version=mapping_version,
             notes="Imported by sync",
             entity_code=entity_code,
             jurisdiction_code=jurisdiction_code,
