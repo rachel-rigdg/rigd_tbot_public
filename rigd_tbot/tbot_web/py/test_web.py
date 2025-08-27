@@ -259,7 +259,6 @@ def get_test_logs():
     status = get_test_status()
     return jsonify({"logs": logs, "status": status})
 
-@Test_web_route = "/test_status"
 @test_web.route("/test_status", methods=["GET"])
 @admin_required
 def get_test_status_endpoint():
