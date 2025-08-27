@@ -6,7 +6,7 @@ import traceback
 import sqlite3
 from pathlib import Path
 from typing import Tuple, Dict, Any, List
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, abort
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import (
@@ -14,7 +14,7 @@ from tbot_bot.support.path_resolver import (
     get_bot_identity_string_regex,
     resolve_ledger_db_path,
 )
-from tbot_web.support.auth_web import get_current_user
+from tbot_web.support.auth_web import get_current_user, get_user_role  # ← use DB-backed RBAC
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts
 
@@ -67,12 +67,19 @@ def identity_guard():
 
 
 def _current_user_and_role() -> Tuple[Any, str]:
+    """
+    Return (user_object_or_username, role) with role fetched live from SYSTEM_USERS (viewer on failure).
+    """
     user = get_current_user()
-    role = getattr(user, "role", None) or session.get("role") or "viewer"
-    return user, role
+    username = getattr(user, "username", None) or user or session.get("user")
+    role = get_user_role(username) if username else "viewer"
+    return (user or username), role
 
 
 def _require_admin_post():
+    """
+    Enforce: viewer → GET only; admin → POST allowed.
+    """
     _, role = _current_user_and_role()
     if request.method == "POST" and role != "admin":
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -136,7 +143,7 @@ def _sort_key_mapping(field: str) -> str:
         "strategy": "strategy",
         "tags": "tags",
         "notes": "notes",
-        "action_detail": "action",       # map to action as closest
+        "action_detail": "action",       # closest proxy
     }
     return mapping.get(field, "datetime_utc")
 
@@ -149,6 +156,30 @@ def _get_sort_params() -> Tuple[str, bool]:
         dir_val = "desc" if request.args.get("sort_desc", "1") == "1" else "asc"
     desc = str(dir_val).lower() not in ("asc", "ascending")
     return col, desc
+
+
+def _python_sort_groups(entries: List[Dict[str, Any]], sort_col: str, sort_desc: bool) -> List[Dict[str, Any]]:
+    """
+    Stable fallback sort in Python when fetch_grouped_trades() doesn't support sort kwargs yet.
+    """
+    # map secondary row fields to a concrete visible column
+    col_map = {
+        "trade_id": "datetime_utc",
+        "strategy": "action",
+        "tags": "action",
+        "notes": "action",
+        "action_detail": "action",
+    }
+    key = col_map.get(sort_col, sort_col or "datetime_utc")
+
+    def safe(v):
+        return "" if v is None else v
+
+    try:
+        entries.sort(key=lambda e: (safe(e.get(key)), safe(e.get("datetime_utc"))), reverse=bool(sort_desc))
+    except Exception:
+        entries.sort(key=lambda e: safe(e.get("datetime_utc")), reverse=bool(sort_desc))
+    return entries
 
 
 # ---------------------------
@@ -179,21 +210,25 @@ def ledger_reconcile():
             has_unmapped=False,
         )
     try:
-        # Include opening equity/initial funding in balances
+        # Include opening equity/initial funding in balances (fallback if older signature)
         try:
-            balances = calculate_account_balances(include_opening=True)  # prefer explicit flag if supported
+            balances = calculate_account_balances(include_opening=True)
         except TypeError:
-            balances = calculate_account_balances()  # fallback
+            balances = calculate_account_balances()
 
         coa_data = load_coa_metadata_and_accounts()
         coa_accounts = coa_data.get("accounts_flat", [])  # list of (code, name)
 
-        # grouped + sorted
+        # grouped + sorted (server-side if supported; else Python fallback)
         sort_col, sort_desc = _get_sort_params()
-        entries = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
-        entries = [e for e in entries if _is_display_entry(e)]
+        try:
+            entries = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+        except TypeError:
+            entries = fetch_grouped_trades()
+            entries = _python_sort_groups(entries, sort_col, sort_desc)
 
-        user, role = _current_user_and_role()
+        entries = [e for e in entries if _is_display_entry(e)]
+        _user, role = _current_user_and_role()
 
         return render_template(
             'ledger.html',
@@ -210,7 +245,7 @@ def ledger_reconcile():
         error = f"Ledger error: {e}"
         traceback.print_exc()
 
-    user, role = _current_user_and_role()
+    _user, role = _current_user_and_role()
     return render_template(
         'ledger.html',
         entries=[],
@@ -229,7 +264,11 @@ def ledger_groups():
         return jsonify({"error": "Not permitted"}), 403
     try:
         sort_col, sort_desc = _get_sort_params()
-        groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+        try:
+            groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+        except TypeError:
+            groups = fetch_grouped_trades()
+            groups = _python_sort_groups(groups, sort_col, sort_desc)
         groups = [g for g in groups if _is_display_entry(g)]
         return jsonify(groups)
     except Exception as e:
@@ -305,7 +344,12 @@ def ledger_collapse_all():
         else:
             return jsonify({"ok": False, "error": "missing collapse/expanded flag"}), 400
 
-        groups = fetch_grouped_trades(collapse=True, limit=10000)
+        # universal fetch with fallback signature
+        try:
+            groups = fetch_grouped_trades(collapse=True, limit=10000)
+        except TypeError:
+            groups = fetch_grouped_trades()
+
         group_ids = [g.get("group_id") or g.get("trade_id") for g in groups if g]
         group_ids = [gid for gid in group_ids if gid]
 
@@ -440,7 +484,7 @@ def ledger_edit(entry_id: int):
     user, _role = _current_user_and_role()
     actor = getattr(user, "username", None) or (user if user else "system")
 
-    # Call atomic reassignment with audit (append-only honored inside module)
+    # Atomic reassignment with audit
     try:
         from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
         result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
@@ -453,7 +497,7 @@ def ledger_edit(entry_id: int):
     if auto_toggle:
         try:
             from tbot_bot.accounting.ledger_modules.mapping_auto_update import maybe_upsert_rule_from_leg
-            # best-effort: fetch leg context for rule key
+            # fetch leg context for rule key
             try:
                 bot_identity = load_bot_identity()
                 e, j, b, bot_id = bot_identity.split("_")
@@ -466,21 +510,26 @@ def ledger_edit(entry_id: int):
             except Exception:
                 traceback.print_exc()
         except Exception:
-            # mapping auto-update module may be behind a feature toggle; ignore if missing
+            # feature may be toggled off; ignore
             pass
 
     # Return fresh deltas for live UI
     try:
         sort_col, sort_desc = _get_sort_params()
-        groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+        try:
+            groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+        except TypeError:
+            groups = fetch_grouped_trades()
+            groups = _python_sort_groups(groups, sort_col, sort_desc)
         try:
             bals = calculate_account_balances(include_opening=True)
         except TypeError:
             bals = calculate_account_balances()
         return jsonify({"ok": True, "groups": groups, "balances": bals, "result": result})
     except Exception:
-        # fallback minimal success
+        # minimal success if refresh fails
         return jsonify({"ok": True})
+
 
 # Legacy full edit (retain for forms; admin-only)
 @ledger_web.route('/ledger/edit_legacy/<int:entry_id>', methods=['POST'])

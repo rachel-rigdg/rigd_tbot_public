@@ -61,11 +61,10 @@
       </form>
 
       <div class="right">
-        <!-- Persistent COA Mapping button: visible to all; disabled for non-admin -->
+        <!-- COA Mapping: direct to known endpoint; no globals() in Jinja -->
         <button id="btn-coa-mapping"
                 type="button"
-                onclick="window.location.href='{{ url_for('coa_mapping_web.render_mapping') if 'coa_mapping_web.render_mapping' in globals() else '/coa_mapping' }}'"
-                {% if user_role is defined and user_role != 'admin' %}disabled class="disabled"{% endif %}>
+                onclick="window.location.href='{{ url_for('coa_mapping_web.view_mapping') }}'">
           COA Mapping
         </button>
 
@@ -169,8 +168,10 @@
                         {% endfor %}
                       </select>
                       <div class="inline-links">
-                        <a href="{{ url_for('coa_web.render_coa') if 'coa_web.render_coa' in globals() else '/coa' }}" target="_blank">View COA</a>
-                        <a href="{{ (url_for('coa_mapping_web.render_mapping') if 'coa_mapping_web.render_mapping' in globals() else '/coa_mapping') ~ '?from=ledger&entry_id=' ~ (sub.id|string) }}" target="_blank">View Mapping Rule</a>
+                        <!-- Simple, stable link to COA overview (if present) -->
+                        <a href="/coa" target="_blank">View COA</a>
+                        <!-- Context-aware deep link into mapping UI with entry_id -->
+                        <a href="{{ url_for('coa_mapping_web.view_mapping') ~ '?from=ledger&entry_id=' ~ (sub.id|string) }}" target="_blank">View Mapping Rule</a>
                         {% if sub.unmapped %}<span class="badge-unmapped">Unmapped</span>{% endif %}
                       </div>
                     </td>
