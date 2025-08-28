@@ -11,7 +11,7 @@ from tbot_bot.support import path_resolver
 start_stop_blueprint = Blueprint("start_stop_web", __name__)
 
 # Resolve CONTROL_DIR via path_resolver, allow ENV override
-PROJECT_ROOT = path_resolver.resolve_project_root()
+PROJECT_ROOT = path_resolver.get_project_root()  # fixed: was resolve_project_root()
 CONTROL_DIR = Path(os.getenv("CONTROL_DIR", PROJECT_ROOT / "tbot_bot" / "control"))
 
 # Flag files use .flag suffix

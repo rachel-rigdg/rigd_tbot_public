@@ -97,22 +97,101 @@ def _ob_clause(column_group_id: str = "group_id") -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
-def calculate_account_balances() -> Dict[str, float]:
+def calculate_account_balances(include_opening: bool = False) -> Dict[str, object]:
     """
-    Legacy/simple summary:
-      Computes SUM(total_value) grouped by account from the trades table.
-      Includes Opening Balance legs implicitly (no date filter).
-    Returns:
-      {account_code: balance_float}
+    Backward-compatible summary with optional rich payload.
+
+    Legacy (no-arg / include_opening=False):
+      Returns a simple mapping of balances by account:
+        {account_code: balance_float}
+
+    New (include_opening=True):
+      Returns a structured payload used by the web UI:
+        {
+          "as_of_utc": "...Z",
+          "totals": { "assets": "0.00", "liabilities": "0.00", "equity": "0.00" },
+          "by_account": [
+            { "account_code": "1030", "name": "Cash — Broker", "balance": "123.45" },
+            ...
+          ],
+          "running_balance": "123.45"
+        }
+
+      Notes:
+        - OB (opening balance) legs are included.
+        - Totals are derived from COA roots.
     """
+    # --- Test mode short-circuit ---
     if TEST_MODE_FLAG.exists():
-        return {}
+        if not include_opening:
+            return {}
+        return {
+            "as_of_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+            "totals": {"assets": "0.00", "liabilities": "0.00", "equity": "0.00"},
+            "by_account": [],
+            "running_balance": "0.00",
+        }
+
+    if not include_opening:
+        # ---- Legacy shape ----
+        with _open_db() as conn:
+            cur = conn.execute(
+                "SELECT account, COALESCE(SUM(total_value),0.0) AS balance "
+                "FROM trades GROUP BY account"
+            )
+            return {row["account"]: float(row["balance"] or 0.0) for row in cur.fetchall() if row["account"]}
+
+    # ---- Rich payload for UI (include OB) ----
+    code_to_name, code_to_root = _build_coa_indexes()
+
+    # by-account balances (including OB)
+    by_acct_rows: List[dict] = []
     with _open_db() as conn:
         cur = conn.execute(
-            "SELECT account, COALESCE(SUM(total_value),0.0) AS balance "
-            "FROM trades GROUP BY account"
+            "SELECT account AS account_code, COALESCE(SUM(total_value),0.0) AS balance "
+            "FROM trades "
+            "WHERE account IS NOT NULL AND account <> '' "
+            "GROUP BY account"
         )
-        return {row["account"]: float(row["balance"] or 0.0) for row in cur.fetchall() if row["account"]}
+        for row in cur.fetchall():
+            code = str(row["account_code"])
+            bal = float(row["balance"] or 0.0)
+            by_acct_rows.append(
+                {
+                    "account_code": code,
+                    "name": code_to_name.get(code, ""),
+                    "balance": f"{bal:.2f}",
+                }
+            )
+
+        # running balance = sum of all total_value (including OB)
+        running_row = conn.execute(
+            "SELECT COALESCE(SUM(total_value),0.0) FROM trades"
+        ).fetchone()
+        running_total = float(running_row[0] or 0.0)
+
+    # section totals via COA root
+    assets = liabilities = equity = 0.0
+    for r in by_acct_rows:
+        root = code_to_root.get(r["account_code"], "")
+        bal = float(r["balance"])
+        if root.lower().startswith("asset"):
+            assets += bal
+        elif root.lower().startswith("liabil"):
+            liabilities += bal
+        elif root.lower().startswith("equity"):
+            equity += bal
+
+    return {
+        "as_of_utc": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+        "totals": {
+            "assets": f"{assets:.2f}",
+            "liabilities": f"{liabilities:.2f}",
+            "equity": f"{equity:.2f}",
+        },
+        "by_account": by_acct_rows,
+        "running_balance": f"{running_total:.2f}",
+    }
 
 
 def calculate_running_balances() -> List[dict]:

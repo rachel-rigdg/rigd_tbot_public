@@ -206,6 +206,46 @@ def _python_sort_groups(entries: List[Dict[str, Any]], sort_col: str, sort_desc:
     return entries
 
 
+# --- Audit-trail migration helpers (surgical, non-blocking) ---
+def _table_exists(conn, table: str) -> bool:
+    try:
+        return bool(
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                (table,),
+            ).fetchone()
+        )
+    except Exception:
+        return False
+
+
+def _ensure_audit_trail_columns():
+    """
+    Backwards-compatible migration: add columns audit logger expects if they're missing.
+    Safe on SQLite: ADD COLUMN with NULL default is instant and non-destructive.
+    Never blocks the UI; logs tracebacks only.
+    """
+    try:
+        bot_identity = load_bot_identity() or ""
+        e, j, b, bot_id = bot_identity.split("_", 3)
+        db_path = resolve_ledger_db_path(e, j, b, bot_id)
+        if not db_path:
+            return
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if not _table_exists(conn, "audit_trail"):
+                return
+            # PRAGMA table_info columns: (cid, name, type, notnull, dflt_value, pk)
+            have = {row[1] for row in conn.execute("PRAGMA table_info(audit_trail)").fetchall()}
+            needed = ["entity_code", "jurisdiction_code", "broker_code", "bot_id", "actor", "reason"]
+            for col in needed:
+                if col not in have:
+                    conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col} TEXT")
+    except Exception:
+        # never block UI because of migration; the write will still fail if something else is wrong
+        traceback.print_exc()
+
+
 # ---------------------------
 # Routes  (dual aliases to avoid /ledger/ledger/* issues)
 # ---------------------------
@@ -574,6 +614,7 @@ def ledger_edit(entry_id: int):
 
     # Atomic reassignment with audit
     try:
+        _ensure_audit_trail_columns()  # <-- ensure audit_trail has required columns before write
         from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
         result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
     except Exception as e:

@@ -84,7 +84,10 @@ def coa_management():
 @coa_web.route("/coa_mapping", methods=["GET"])
 @coa_web.route("/ledger/coa_mapping", methods=["GET"])  # legacy alias if blueprint is registered without prefix
 @rbac_required()
-def coa_mapping_alias():
+def coa_mapping():
+    """
+    Stable endpoint name 'coa_mapping' so url_for('coa_web.coa_mapping') works.
+    """
     if identity_guard():
         return redirect(url_for("coa_web.coa_management"))
     # Preserve any query params (e.g., from=ledger, rule_key, entry_id)

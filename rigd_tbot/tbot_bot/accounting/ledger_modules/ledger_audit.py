@@ -64,7 +64,6 @@ def _audit_ensure_schema(conn: sqlite3.Connection) -> None:
         return
     for col in AUDIT_TRAIL_FIELDS:
         if col not in have:
-            # keep it simple/safe for SQLite; TEXT NULL covers our usage
             conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col} TEXT")
 
 
@@ -112,11 +111,11 @@ def append(event: str, **kwargs) -> int:
         for k in ("old_account_code", "new_account_code", "reason"):
             if k in kwargs and kwargs[k] is not None:
                 extra_base[k] = kwargs[k]
-        extra = json.dumps(extra_base, ensure_ascii=False)
+        extra_value = json.dumps(extra_base, ensure_ascii=False)
     else:
-        extra = extra_base  # string passthrough
+        extra_value = extra_base  # string passthrough
 
-    # Build record with canonical column names
+    # Build a full record dict with canonical keys
     record = {
         "timestamp": _now_iso_utc(),
         "action": event,
@@ -138,26 +137,21 @@ def append(event: str, **kwargs) -> int:
         "request_id": kwargs.get("request_id"),
         "ip": kwargs.get("ip"),
         "user_agent": kwargs.get("user_agent"),
-        "extra": extra,
+        "extra": extra_value,
     }
 
-    # Fill any missing fields required by the schema with None
+    # Ensure every column in the schema has a value (None if not provided)
     for k in AUDIT_TRAIL_FIELDS:
         record.setdefault(k, None)
+
+    cols = AUDIT_TRAIL_FIELDS[:]  # write EXACTLY these columns in this order
+    placeholders = ", ".join(["?"] * len(cols))
+    vals = [record[k] for k in cols]
 
     db_path = _resolve_db_path()
     with sqlite3.connect(db_path) as conn:
         # Ensure schema is at least as new as our writer
         _audit_ensure_schema(conn)
-
-        # Filter to columns that actually exist (extra safety)
-        have = _audit_existing_cols(conn)
-        cols = [c for c in AUDIT_TRAIL_FIELDS if c in have]
-        if not cols:
-            raise RuntimeError("audit_trail has no usable columns")
-
-        placeholders = ", ".join(["?"] * len(cols))
-        vals = [record[c] for c in cols]
 
         cur = conn.execute(
             f"INSERT INTO audit_trail ({', '.join(cols)}) VALUES ({placeholders})",

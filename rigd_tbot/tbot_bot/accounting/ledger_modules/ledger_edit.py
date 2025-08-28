@@ -76,7 +76,7 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
     - Validates new_account_code exists and is active in COA.
     - Updates ONLY 'account' field (no amount/date mutation).
     - Emits immutable audit log event: event='coa_reassign'.
-    - Wraps operations in a single DB transaction; rollback on any failure.
+    - DB write is committed before audit append; if audit fails we raise to surface the issue.
 
     Returns:
         {
@@ -120,19 +120,28 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
 
         # Early no-op (but still audit)
         if old_account == new_account_code:
-            # Still emit an audit event to preserve an explicit operator intent trace.
             audit_append(
                 event="coa_reassign",
-                ts_utc=ts_utc,
+                related_id=entry_id,
                 actor=actor or "system",
-                entry_id=entry_id,
                 group_id=leg["group_id"],
-                old_account=old_account,
-                new_account=new_account_code,
+                trade_id=leg["trade_id"],
+                # old/new go into old_value/new_value
+                before=old_account,
+                after=new_account_code,
+                # reason goes into extra automatically
                 reason=reason or "no-op (same account)",
-                broker_code=broker_code,
-                entity_code=entity_code,
-                jurisdiction_code=jurisdiction_code,
+                # pack extra context
+                extra={
+                    "old_account_code": old_account,
+                    "new_account_code": new_account_code,
+                    "symbol": leg["symbol"],
+                    "action": leg["action"],
+                    "strategy": leg["strategy"],
+                    "datetime_utc": leg["datetime_utc"],
+                    "amount": leg["total_value"],
+                    "source": "web_inline",
+                },
             )
             result = {
                 "entry_id": entry_id,
@@ -151,7 +160,6 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
         )
 
         # (Optional) touch group row to invalidate caches if such table exists
-        # Safe, idempotent no-op if table/column doesn't exist.
         try:
             if leg["group_id"]:
                 conn.execute(
@@ -162,29 +170,29 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
             # ignore if trade_groups doesn't exist
             pass
 
-        # Commit before audit append? We append audit after a successful DB write;
-        # if audit fails, we still keep DB change but raise to surface the issue.
+        # Commit DB mutation first
         conn.commit()
 
-        # Structured immutable audit
+        # Structured immutable audit (identity fields injected by audit module)
         audit_append(
             event="coa_reassign",
-            ts_utc=ts_utc,
+            related_id=entry_id,
             actor=actor or "system",
-            entry_id=entry_id,
             group_id=leg["group_id"],
-            old_account=old_account,
-            new_account=new_account_code,
-            reason=reason,
-            broker_code=broker_code,
-            entity_code=entity_code,
-            jurisdiction_code=jurisdiction_code,
-            symbol=leg["symbol"],
-            action=leg["action"],
-            strategy=leg["strategy"],
             trade_id=leg["trade_id"],
-            datetime_utc=leg["datetime_utc"],
-            amount=leg["total_value"],
+            before=old_account,
+            after=new_account_code,
+            reason=reason,
+            extra={
+                "old_account_code": old_account,
+                "new_account_code": new_account_code,
+                "symbol": leg["symbol"],
+                "action": leg["action"],
+                "strategy": leg["strategy"],
+                "datetime_utc": leg["datetime_utc"],
+                "amount": leg["total_value"],
+                "source": "web_inline",
+            },
         )
 
         result = {
