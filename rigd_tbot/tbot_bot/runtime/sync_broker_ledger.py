@@ -83,6 +83,8 @@ def main():
             },
             level="info",
         )
+        # Concise completion line (human-friendly)
+        log_event("sync_broker_ledger", f"sync completed @ {end_ts}")
 
         print(json.dumps({"ok": True, "sync_run_id": sync_run_id, **metrics}))
         sys.exit(0)

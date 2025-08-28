@@ -18,6 +18,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_snapshot_dir
 from tbot_bot.support.decrypt_secrets import load_bot_identity
+from tbot_bot.support.utils_log import log_event  # <- added
 
 def get_identity_tuple():
     identity = load_bot_identity()
@@ -58,6 +59,9 @@ def main():
         print(f"[ledger_snapshot] trades table export error: {e}")
 
     conn.close()
+    # concise completion log
+    end_ts = datetime.now(timezone.utc).isoformat()
+    log_event("ledger_snapshot", f"snapshot completed @ {end_ts}")  # <- added
     print("[ledger_snapshot] Snapshot completed successfully.")
 
 if __name__ == "__main__":

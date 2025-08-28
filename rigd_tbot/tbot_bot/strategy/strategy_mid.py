@@ -1,7 +1,11 @@
 # tbot_bot/strategy/strategy_mid.py
 # summary: Implements VWAP-based mid-day reversal strategy with full bi-directional logic and env-driven parameters; compresses analysis/monitor window to 1min if TEST_MODE
+# additions: pre-run bot_state gate, idempotent daily stamp, write start stamp on launch
 
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
+from pathlib import Path
+import importlib
+
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now, now_local
 from tbot_bot.support.utils_log import log_event
@@ -13,8 +17,7 @@ from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
-from pathlib import Path
-import importlib
+from tbot_bot.support import path_resolver  # ensure control path consistency
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
@@ -33,8 +36,11 @@ CANDIDATE_MULTIPLIER = int(config["CANDIDATE_MULTIPLIER"])
 FRACTIONAL = str(config.get("FRACTIONAL", "false")).lower() == "true"
 WEIGHTS = [float(w) for w in config["WEIGHTS"].split(",")]
 
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
-TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+# --- Control/stamps (use tbot_bot/control via resolver) ---
+CONTROL_DIR        = path_resolver.resolve_project_root() / "tbot_bot" / "control"
+BOT_STATE_PATH     = CONTROL_DIR / "bot_state.txt"
+MID_STAMP_PATH     = CONTROL_DIR / "last_strategy_mid_utc.txt"
+TEST_MODE_FLAG     = CONTROL_DIR / "test_mode.flag"
 
 SESSION_LOGS = []
 
@@ -47,6 +53,30 @@ def self_check():
 def get_broker_api():
     broker_api = importlib.import_module("tbot_bot.broker.broker_api")
     return broker_api
+
+# ------------------------
+# Idempotency helpers
+# ------------------------
+def _read_iso_utc(path: Path):
+    if not path.exists():
+        return None
+    try:
+        txt = path.read_text(encoding="utf-8").strip()
+        if txt.endswith("Z"):
+            txt = txt.replace("Z", "+00:00")
+        return datetime.fromisoformat(txt)
+    except Exception:
+        return None
+
+def _write_iso_utc(path: Path, when_dt: datetime):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ts = when_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    path.write_text(ts, encoding="utf-8")
+
+def _has_mid_run_today(now_dt: datetime) -> bool:
+    ts = _read_iso_utc(MID_STAMP_PATH)
+    return bool(ts and ts.date() == now_dt.date())
+# ------------------------
 
 def analyze_vwap_signals(start_time, screener_class):
     log_event("strategy_mid", "Starting VWAP deviation analysis...")
@@ -218,6 +248,25 @@ def execute_mid_trades(signals, start_time):
     return trades
 
 def run_mid_strategy(screener_class):
+    # Pre-run gate: bot must be in 'running'
+    try:
+        state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
+    except Exception:
+        state = ""
+    if state != "running":
+        log_event("strategy_mid", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
+        return StrategyResult(skipped=True)
+
+    # Idempotency: if already launched today, exit quietly
+    now = utc_now()
+    if _has_mid_run_today(now):
+        log_event("strategy_mid", "Detected existing daily stamp — strategy_mid already launched today; exiting.")
+        return StrategyResult(skipped=True)
+
+    # Successful start: write daily stamp immediately (prevents duplicate concurrent launches)
+    _write_iso_utc(MID_STAMP_PATH, now)
+    log_event("strategy_mid", f"Launching strategy_mid (stamp written {now.isoformat().replace('+00:00','Z')})")
+
     if not self_check():
         log_event("strategy_mid", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)

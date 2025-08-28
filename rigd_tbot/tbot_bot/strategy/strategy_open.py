@@ -1,8 +1,12 @@
 # tbot_bot/strategy/strategy_open.py
 # summary: Implements opening range breakout strategy with full bi-directional support and updated env references; compresses analysis/monitor window to 1min if TEST_MODE
+# additions: pre-run bot_state gate, idempotent daily stamp, write start stamp on launch
 
 import time
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
+from pathlib import Path
+import importlib
+
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now, now_local
 from tbot_bot.support.utils_log import log_event
@@ -14,31 +18,34 @@ from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
-from pathlib import Path
-import importlib
+from tbot_bot.support import path_resolver  # ensure control path consistency
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
 BROKER_CODE = broker_creds.get("BROKER_CODE", "").lower()
 
-STRAT_OPEN_ENABLED = config["STRAT_OPEN_ENABLED"]
-STRAT_OPEN_BUFFER = float(config["STRAT_OPEN_BUFFER"])
-OPEN_ANALYSIS_TIME = int(config["OPEN_ANALYSIS_TIME"])
-OPEN_BREAKOUT_TIME = int(config["OPEN_BREAKOUT_TIME"])
-OPEN_MONITORING_TIME = int(config["OPEN_MONITORING_TIME"])
-SHORT_TYPE_OPEN = config["SHORT_TYPE_OPEN"]
-ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
-MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
+STRAT_OPEN_ENABLED     = config["STRAT_OPEN_ENABLED"]
+STRAT_OPEN_BUFFER      = float(config["STRAT_OPEN_BUFFER"])
+OPEN_ANALYSIS_TIME     = int(config["OPEN_ANALYSIS_TIME"])
+OPEN_BREAKOUT_TIME     = int(config["OPEN_BREAKOUT_TIME"])
+OPEN_MONITORING_TIME   = int(config["OPEN_MONITORING_TIME"])
+SHORT_TYPE_OPEN        = config["SHORT_TYPE_OPEN"]
+ACCOUNT_BALANCE        = float(config["ACCOUNT_BALANCE"])
+MAX_RISK_PER_TRADE     = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
-MAX_TRADES = int(config["MAX_TRADES"])
-CANDIDATE_MULTIPLIER = int(config["CANDIDATE_MULTIPLIER"])
-FRACTIONAL = str(config.get("FRACTIONAL", "false")).lower() == "true"
-WEIGHTS = [float(w) for w in config["WEIGHTS"].split(",")]
+MAX_TRADES             = int(config["MAX_TRADES"])
+CANDIDATE_MULTIPLIER   = int(config["CANDIDATE_MULTIPLIER"])
+FRACTIONAL             = str(config.get("FRACTIONAL", "false")).lower() == "true"
+WEIGHTS                = [float(w) for w in config["WEIGHTS"].split(",")]
 
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
-TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+# --- Control/stamps (ensure we use tbot_bot/control, not project root/control) ---
+CONTROL_DIR     = path_resolver.resolve_project_root() / "tbot_bot" / "control"
+BOT_STATE_PATH  = CONTROL_DIR / "bot_state.txt"
+OPEN_STAMP_PATH = CONTROL_DIR / "last_strategy_open_utc.txt"
+TEST_MODE_FLAG  = CONTROL_DIR / "test_mode.flag"
 
 SESSION_LOGS = []
+range_data = {}
 
 def is_test_mode_active():
     return TEST_MODE_FLAG.exists()
@@ -46,11 +53,34 @@ def is_test_mode_active():
 def self_check():
     return STRAT_OPEN_ENABLED and STRAT_OPEN_BUFFER > 0
 
-range_data = {}
-
 def get_broker_api():
     broker_api = importlib.import_module("tbot_bot.broker.broker_api")
     return broker_api
+
+# ------------------------
+# Idempotency helpers
+# ------------------------
+def _read_iso_utc(path: Path):
+    if not path.exists():
+        return None
+    try:
+        txt = path.read_text(encoding="utf-8").strip()
+        if txt.endswith("Z"):
+            txt = txt.replace("Z", "+00:00")
+        return datetime.fromisoformat(txt)
+    except Exception:
+        return None
+
+def _write_iso_utc(path: Path, when_dt: datetime):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ts = when_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    path.write_text(ts, encoding="utf-8")
+
+def _has_open_run_today(now_dt: datetime) -> bool:
+    ts = _read_iso_utc(OPEN_STAMP_PATH)
+    return bool(ts and ts.date() == now_dt.date())
+
+# ------------------------
 
 def analyze_opening_range(start_time, screener_class):
     log_event("strategy_open", "Starting opening range analysis...")
@@ -160,7 +190,6 @@ def detect_breakouts(start_time, screener_class):
         low = range_data[symbol]["low"]
         long_trigger = high * (1 + STRAT_OPEN_BUFFER)
         short_trigger = low * (1 - STRAT_OPEN_BUFFER)
-        trade_placed = False
 
         # Long breakout
         if price > long_trigger:
@@ -178,7 +207,6 @@ def detect_breakouts(start_time, screener_class):
                     if result:
                         trades.append(result)
                         log_event("strategy_open", f"LONG breakout for {symbol} at {price}")
-                        trade_placed = True
                 except Exception as e:
                     handle_error("strategy_open", "BrokerError", e)
             range_data.pop(symbol, None)
@@ -232,7 +260,6 @@ def detect_breakouts(start_time, screener_class):
                         if result:
                             trades.append(result)
                             log_event("strategy_open", f"SHORT breakout for {symbol} at {price} using {instrument}")
-                            trade_placed = True
                     except Exception as e:
                         handle_error("strategy_open", "BrokerError", e)
             range_data.pop(symbol, None)
@@ -240,6 +267,25 @@ def detect_breakouts(start_time, screener_class):
     return trades
 
 def run_open_strategy(screener_class):
+    # Pre-run gate: bot must be in 'running'
+    try:
+        state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
+    except Exception:
+        state = ""
+    if state != "running":
+        log_event("strategy_open", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
+        return StrategyResult(skipped=True)
+
+    # Idempotency: if already launched today, exit quietly
+    now = utc_now()
+    if _has_open_run_today(now):
+        log_event("strategy_open", "Detected existing daily stamp — strategy_open already launched today; exiting.")
+        return StrategyResult(skipped=True)
+
+    # Successful start: write daily stamp immediately (prevents duplicate concurrent launches)
+    _write_iso_utc(OPEN_STAMP_PATH, now)
+    log_event("strategy_open", f"Launching strategy_open (stamp written {now.isoformat().replace('+00:00','Z')})")
+
     if not self_check():
         log_event("strategy_open", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)

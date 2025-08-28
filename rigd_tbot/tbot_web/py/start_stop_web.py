@@ -1,78 +1,88 @@
 # tbot_web/py/start_stop_web.py
-# Writes control_start.txt / control_stop.txt / control_kill.txt to signal bot lifecycle
+# Writes control_start.flag / control_stop.flag / control_kill.flag to signal bot lifecycle
 
 import os
-from flask import Blueprint, redirect, url_for
-from tbot_web.py.login_web import login_required  # Corrected import per directory spec
-from tbot_bot.support.bootstrap_utils import is_first_bootstrap  # Updated import path
+from flask import Blueprint, redirect, url_for, flash
+from tbot_web.py.login_web import login_required  # keep existing import path
+from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from pathlib import Path
+from tbot_bot.support import path_resolver
 
 start_stop_blueprint = Blueprint("start_stop_web", __name__)
 
-# Define control directory and flag files
-BASE_DIR = Path(__file__).resolve().parents[2]
-CONTROL_DIR = Path(os.getenv("CONTROL_DIR", BASE_DIR / "tbot_bot" / "control"))
-START_FLAG = CONTROL_DIR / "control_start.txt"
-STOP_FLAG = CONTROL_DIR / "control_stop.txt"
-KILL_FLAG = CONTROL_DIR / "control_kill.txt"
+# Resolve CONTROL_DIR via path_resolver, allow ENV override
+PROJECT_ROOT = path_resolver.resolve_project_root()
+CONTROL_DIR = Path(os.getenv("CONTROL_DIR", PROJECT_ROOT / "tbot_bot" / "control"))
+
+# Flag files use .flag suffix
+START_FLAG = CONTROL_DIR / "control_start.flag"
+STOP_FLAG  = CONTROL_DIR / "control_stop.flag"
+KILL_FLAG  = CONTROL_DIR / "control_kill.flag"
+BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 # Ensure control directory exists
-os.makedirs(CONTROL_DIR, exist_ok=True)
+CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+
 
 @start_stop_blueprint.route("/start", methods=["POST"])
 @login_required
 def trigger_start():
     """
-    Writes control_start.txt to signal bot start and deletes stop/kill flags if they exist.
+    Writes control_start.flag to signal bot start and deletes stop/kill flags if they exist.
+    POST-only.
     """
     if is_first_bootstrap():
+        flash("First bootstrap not complete. Configure the bot first.", "warning")
         return redirect(url_for("configuration_web.show_configuration"))
-    if STOP_FLAG.exists():
-        STOP_FLAG.unlink()
-    if KILL_FLAG.exists():
-        KILL_FLAG.unlink()
-    with open(START_FLAG, "w", encoding="utf-8") as f:
-        f.write("start")
-    # Immediately set bot_state.txt to "running" to reflect the actual state
-    BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
-    BOT_STATE_PATH.write_text("running", encoding="utf-8")
+    try:
+        STOP_FLAG.unlink(missing_ok=True)
+        KILL_FLAG.unlink(missing_ok=True)
+        START_FLAG.write_text("start", encoding="utf-8")
+        # Immediate UI feedback; supervisor will also update state on flag detection
+        BOT_STATE_PATH.write_text("running", encoding="utf-8")
+        flash("Start signal issued.", "success")
+    except Exception as e:
+        flash(f"Failed to issue start signal: {e}", "error")
     return redirect(url_for("main.main_page"))
+
 
 @start_stop_blueprint.route("/stop", methods=["POST"])
 @login_required
 def trigger_stop():
     """
-    Writes control_stop.txt to signal bot shutdown and deletes start/kill flags if they exist.
+    Writes control_stop.flag to signal bot stop and deletes start/kill flags if they exist.
+    POST-only.
     """
     if is_first_bootstrap():
+        flash("First bootstrap not complete. Configure the bot first.", "warning")
         return redirect(url_for("configuration_web.show_configuration"))
-    if START_FLAG.exists():
-        START_FLAG.unlink()
-    if KILL_FLAG.exists():
-        KILL_FLAG.unlink()
-    with open(STOP_FLAG, "w", encoding="utf-8") as f:
-        f.write("stop")
-    # Immediately set bot_state.txt to "idle" to reflect requested idle state
-    BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
-    BOT_STATE_PATH.write_text("idle", encoding="utf-8")
+    try:
+        START_FLAG.unlink(missing_ok=True)
+        KILL_FLAG.unlink(missing_ok=True)
+        STOP_FLAG.write_text("stop", encoding="utf-8")
+        BOT_STATE_PATH.write_text("idle", encoding="utf-8")
+        flash("Stop signal issued.", "success")
+    except Exception as e:
+        flash(f"Failed to issue stop signal: {e}", "error")
     return redirect(url_for("main.main_page"))
+
 
 @start_stop_blueprint.route("/kill", methods=["POST"])
 @login_required
 def trigger_kill():
     """
-    Writes control_kill.txt to signal immediate bot shutdown and deletes start/stop flags if they exist.
-    Only writes kill flag if explicitly requested by POST to this route.
+    Writes control_kill.flag to request immediate shutdown and deletes start/stop flags if they exist.
+    POST-only.
     """
     if is_first_bootstrap():
+        flash("First bootstrap not complete. Configure the bot first.", "warning")
         return redirect(url_for("configuration_web.show_configuration"))
-    if START_FLAG.exists():
-        START_FLAG.unlink()
-    if STOP_FLAG.exists():
-        STOP_FLAG.unlink()
-    with open(KILL_FLAG, "w", encoding="utf-8") as f:
-        f.write("kill")
-    # Immediately set bot_state.txt to "idle" for hard kill (all positions closed, bot ready but not running)
-    BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
-    BOT_STATE_PATH.write_text("idle", encoding="utf-8")
+    try:
+        START_FLAG.unlink(missing_ok=True)
+        STOP_FLAG.unlink(missing_ok=True)
+        KILL_FLAG.write_text("kill", encoding="utf-8")
+        BOT_STATE_PATH.write_text("idle", encoding="utf-8")
+        flash("Kill signal issued.", "success")
+    except Exception as e:
+        flash(f"Failed to issue kill signal: {e}", "error")
     return redirect(url_for("main.main_page"))

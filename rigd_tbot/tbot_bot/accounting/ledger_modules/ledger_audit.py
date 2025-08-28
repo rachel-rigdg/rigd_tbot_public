@@ -31,6 +31,43 @@ def _resolve_db_path() -> str:
     return resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
 
 
+# -------- Schema compatibility helpers (safe on SQLite) --------
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    try:
+        return bool(
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                (table,),
+            ).fetchone()
+        )
+    except Exception:
+        return False
+
+
+def _audit_existing_cols(conn: sqlite3.Connection) -> set:
+    if not _table_exists(conn, "audit_trail"):
+        return set()
+    rows = conn.execute("PRAGMA table_info(audit_trail)").fetchall()
+    # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
+    return {row[1] for row in rows}
+
+
+def _audit_ensure_schema(conn: sqlite3.Connection) -> None:
+    """
+    One-time upgrade: add any missing columns we intend to write.
+    Uses AUDIT_TRAIL_FIELDS; columns are added as TEXT with NULL default
+    (fine for SQLite and non-destructive).
+    """
+    have = _audit_existing_cols(conn)
+    if not have:
+        return
+    for col in AUDIT_TRAIL_FIELDS:
+        if col not in have:
+            # keep it simple/safe for SQLite; TEXT NULL covers our usage
+            conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col} TEXT")
+
+
 def append(event: str, **kwargs) -> int:
     """
     Structured audit writer aligned to AUDIT_TRAIL_FIELDS.
@@ -87,11 +124,12 @@ def append(event: str, **kwargs) -> int:
         "actor": kwargs.get("actor") or kwargs.get("user") or "system",
         "old_value": old_val,
         "new_value": new_val,
-        # optional context
+        # identity context
         "entity_code": entity_code,
         "jurisdiction_code": jurisdiction_code,
         "broker_code": broker_code,
         "bot_id": bot_id,
+        # optional context
         "group_id": kwargs.get("group_id"),
         "trade_id": kwargs.get("trade_id"),
         "sync_run_id": kwargs.get("sync_run_id"),
@@ -107,13 +145,24 @@ def append(event: str, **kwargs) -> int:
     for k in AUDIT_TRAIL_FIELDS:
         record.setdefault(k, None)
 
-    cols = ", ".join(AUDIT_TRAIL_FIELDS)
-    placeholders = ", ".join(["?"] * len(AUDIT_TRAIL_FIELDS))
-    vals = [record[k] for k in AUDIT_TRAIL_FIELDS]
-
     db_path = _resolve_db_path()
     with sqlite3.connect(db_path) as conn:
-        cur = conn.execute(f"INSERT INTO audit_trail ({cols}) VALUES ({placeholders})", vals)
+        # Ensure schema is at least as new as our writer
+        _audit_ensure_schema(conn)
+
+        # Filter to columns that actually exist (extra safety)
+        have = _audit_existing_cols(conn)
+        cols = [c for c in AUDIT_TRAIL_FIELDS if c in have]
+        if not cols:
+            raise RuntimeError("audit_trail has no usable columns")
+
+        placeholders = ", ".join(["?"] * len(cols))
+        vals = [record[c] for c in cols]
+
+        cur = conn.execute(
+            f"INSERT INTO audit_trail ({', '.join(cols)}) VALUES ({placeholders})",
+            vals,
+        )
         conn.commit()
         return int(cur.lastrowid)
 

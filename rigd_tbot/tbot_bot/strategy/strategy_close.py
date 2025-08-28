@@ -1,7 +1,11 @@
 # tbot_bot/strategy/strategy_close.py
 # summary: Implements Late-day momentum/fade strategy with VIX gating and bi-directional logic; compresses analysis/monitor window to 1min if TEST_MODE
+# additions: pre-run bot_state gate, idempotent daily stamp, write start stamp on launch
 
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
+from pathlib import Path
+import importlib
+
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now, now_local
 from tbot_bot.support.utils_log import log_event
@@ -14,28 +18,30 @@ from tbot_bot.enhancements.vix_gatekeeper import is_vix_above_threshold
 from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
-from pathlib import Path
-import importlib
+from tbot_bot.support import path_resolver  # ensure control path consistency
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
 BROKER_CODE = broker_creds.get("BROKER_CODE", "").lower()
 
-STRAT_CLOSE_ENABLED = config["STRAT_CLOSE_ENABLED"]
-CLOSE_ANALYSIS_TIME = int(config["CLOSE_ANALYSIS_TIME"])
+STRAT_CLOSE_ENABLED   = config["STRAT_CLOSE_ENABLED"]
+CLOSE_ANALYSIS_TIME   = int(config["CLOSE_ANALYSIS_TIME"])
 CLOSE_MONITORING_TIME = int(config["CLOSE_MONITORING_TIME"])
-VIX_THRESHOLD = float(config["STRAT_CLOSE_VIX_THRESHOLD"])
-SHORT_TYPE_CLOSE = config["SHORT_TYPE_CLOSE"]
-ACCOUNT_BALANCE = float(config["ACCOUNT_BALANCE"])
-MAX_RISK_PER_TRADE = float(config["MAX_RISK_PER_TRADE"])
+VIX_THRESHOLD         = float(config["STRAT_CLOSE_VIX_THRESHOLD"])
+SHORT_TYPE_CLOSE      = config["SHORT_TYPE_CLOSE"]
+ACCOUNT_BALANCE       = float(config["ACCOUNT_BALANCE"])
+MAX_RISK_PER_TRADE    = float(config["MAX_RISK_PER_TRADE"])
 DEFAULT_CAPITAL_PER_TRADE = ACCOUNT_BALANCE * MAX_RISK_PER_TRADE
-MAX_TRADES = int(config["MAX_TRADES"])
-CANDIDATE_MULTIPLIER = int(config["CANDIDATE_MULTIPLIER"])
-FRACTIONAL = str(config.get("FRACTIONAL", "false")).lower() == "true"
-WEIGHTS = [float(w) for w in config["WEIGHTS"].split(",")]
+MAX_TRADES            = int(config["MAX_TRADES"])
+CANDIDATE_MULTIPLIER  = int(config["CANDIDATE_MULTIPLIER"])
+FRACTIONAL            = str(config.get("FRACTIONAL", "false")).lower() == "true"
+WEIGHTS               = [float(w) for w in config["WEIGHTS"].split(",")]
 
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
-TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+# --- Control/stamps (use tbot_bot/control via resolver) ---
+CONTROL_DIR        = path_resolver.resolve_project_root() / "tbot_bot" / "control"
+BOT_STATE_PATH     = CONTROL_DIR / "bot_state.txt"
+CLOSE_STAMP_PATH   = CONTROL_DIR / "last_strategy_close_utc.txt"
+TEST_MODE_FLAG     = CONTROL_DIR / "test_mode.flag"
 
 SESSION_LOGS = []
 
@@ -48,6 +54,30 @@ def self_check():
 def get_broker_api():
     broker_api = importlib.import_module("tbot_bot.broker.broker_api")
     return broker_api
+
+# ------------------------
+# Idempotency helpers
+# ------------------------
+def _read_iso_utc(path: Path):
+    if not path.exists():
+        return None
+    try:
+        txt = path.read_text(encoding="utf-8").strip()
+        if txt.endswith("Z"):
+            txt = txt.replace("Z", "+00:00")
+        return datetime.fromisoformat(txt)
+    except Exception:
+        return None
+
+def _write_iso_utc(path: Path, when_dt: datetime):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ts = when_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    path.write_text(ts, encoding="utf-8")
+
+def _has_close_run_today(now_dt: datetime) -> bool:
+    ts = _read_iso_utc(CLOSE_STAMP_PATH)
+    return bool(ts and ts.date() == now_dt.date())
+# ------------------------
 
 def analyze_closing_signals(start_time, screener_class):
     log_event("strategy_close", "Starting EOD momentum/fade analysis...")
@@ -237,6 +267,25 @@ def monitor_closing_trades(signals, start_time):
     return trades
 
 def run_close_strategy(screener_class):
+    # Pre-run gate: bot must be in 'running'
+    try:
+        state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
+    except Exception:
+        state = ""
+    if state != "running":
+        log_event("strategy_close", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
+        return StrategyResult(skipped=True)
+
+    # Idempotency: if already launched today, exit quietly
+    now = utc_now()
+    if _has_close_run_today(now):
+        log_event("strategy_close", "Detected existing daily stamp — strategy_close already launched today; exiting.")
+        return StrategyResult(skipped=True)
+
+    # Successful start: write daily stamp immediately (prevents duplicate concurrent launches)
+    _write_iso_utc(CLOSE_STAMP_PATH, now)
+    log_event("strategy_close", f"Launching strategy_close (stamp written {now.isoformat().replace('+00:00','Z')})")
+
     if not self_check():
         log_event("strategy_close", "Strategy self_check() failed — skipping.")
         return StrategyResult(skipped=True)

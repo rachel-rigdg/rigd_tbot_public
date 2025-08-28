@@ -140,3 +140,54 @@ def update_env_var(key: str, value: Any) -> None:
         f.write(updated_encrypted)
 
 load_env_bot_config = get_bot_config
+
+# ----------------------------------------------------------------------
+# NEW: Explicit getters for schedule values
+# NOTE: RUNTIME MUST USE ONLY THE *_UTC GETTERS BELOW.
+# *_LOCAL getters are provided for UI/display; do not use them in scheduling logic.
+# ----------------------------------------------------------------------
+
+def get_open_time_utc() -> str:
+    """Return START_TIME_OPEN as 'HH:MM' (UTC)."""
+    v = load_env_var("START_TIME_OPEN", "")
+    return str(v or "").strip()
+
+def get_mid_time_utc() -> str:
+    """Return START_TIME_MID as 'HH:MM' (UTC)."""
+    v = load_env_var("START_TIME_MID", "")
+    return str(v or "").strip()
+
+def get_close_time_utc() -> str:
+    """Return START_TIME_CLOSE as 'HH:MM' (UTC)."""
+    v = load_env_var("START_TIME_CLOSE", "")
+    return str(v or "").strip()
+
+def get_market_close_utc() -> str:
+    """Return MARKET_CLOSE_UTC as 'HH:MM' (UTC)."""
+    v = load_env_var("MARKET_CLOSE_UTC", "")
+    return str(v or "").strip()
+
+def get_timezone() -> str:
+    """
+    Return configured TIMEZONE (IANA tz like 'America/New_York').
+    Not required by REQUIRED_KEYS; defaults to 'UTC' if missing.
+    """
+    v = load_env_var("TIMEZONE", "UTC")
+    return str(v or "UTC").strip()
+
+# --- UI-only LOCAL getters (for display/forms). DO NOT use in runtime scheduling. ---
+
+def get_open_time_local() -> str:
+    """UI-only: START_TIME_OPEN_LOCAL as 'HH:MM' in configured TIMEZONE."""
+    v = load_env_var("START_TIME_OPEN_LOCAL", "")
+    return str(v or "").strip()
+
+def get_mid_time_local() -> str:
+    """UI-only: START_TIME_MID_LOCAL as 'HH:MM' in configured TIMEZONE."""
+    v = load_env_var("START_TIME_MID_LOCAL", "")
+    return str(v or "").strip()
+
+def get_close_time_local() -> str:
+    """UI-only: START_TIME_CLOSE_LOCAL as 'HH:MM' in configured TIMEZONE."""
+    v = load_env_var("START_TIME_CLOSE_LOCAL", "")
+    return str(v or "").strip()

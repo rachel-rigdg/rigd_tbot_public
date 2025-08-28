@@ -9,13 +9,79 @@ from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 import subprocess
 import logging
 
+# ----------------------------
+# [SCHEDULE LOCAL→UTC] minimal additions
+# ----------------------------
+import re
+from datetime import datetime, timezone
+try:
+    from zoneinfo import ZoneInfo  # py>=3.9
+except Exception:  # pragma: no cover
+    ZoneInfo = None
+
+HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+def _validate_hhmm(label: str, v: str) -> str:
+    v = (v or "").strip()
+    if not HHMM_RE.match(v):
+        raise ValueError(f"{label} must be HH:MM (24h). Got '{v}'.")
+    return v
+
+def _validate_timezone(v: str) -> str:
+    v = (v or "").strip() or "UTC"
+    if ZoneInfo is None and v != "UTC":
+        raise ValueError("Timezone support unavailable; only 'UTC' allowed on this host.")
+    try:
+        _ = ZoneInfo(v) if ZoneInfo else None
+        return v
+    except Exception:
+        raise ValueError(f"Invalid IANA timezone: '{v}'")
+
+def _local_hhmm_to_utc_hhmm(hhmm: str, tzname: str) -> str:
+    """Convert today's local HH:MM in tzname to UTC HH:MM (DST-aware)."""
+    if ZoneInfo is None:
+        # Fallback: treat provided value as already UTC
+        return hhmm
+    tz = ZoneInfo(tzname)
+    now_local = datetime.now(tz)
+    hh, mm = map(int, hhmm.split(":"))
+    local_dt = datetime(now_local.year, now_local.month, now_local.day, hh, mm, tzinfo=tz)
+    utc_dt = local_dt.astimezone(timezone.utc)
+    return utc_dt.strftime("%H:%M")
+
+def _update_env_lines(env_text: str, kv: dict) -> str:
+    """Idempotently upsert keys in .env_bot while preserving comments/ordering."""
+    lines = env_text.splitlines()
+    pos = { }
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("#") or "=" not in line:
+            continue
+        k = line.split("=", 1)[0].strip()
+        if k not in pos:
+            pos[k] = i
+    for k, v in kv.items():
+        new_line = f"{k}={v}"
+        if k in pos:
+            lines[pos[k]] = new_line
+        else:
+            lines.append(new_line)
+    out = "\n".join(lines)
+    if not out.endswith("\n"):
+        out += "\n"
+    return out
+
+# ----------------------------
+
 configuration_blueprint = Blueprint("configuration_web", __name__, url_prefix="/configuration")
 
 RUNTIME_CONFIG_KEY_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "runtime_config.key"
-RUNTIME_CONFIG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
-PROVISION_FLAG_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
-BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
-SECRETS_TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "tools" / "secrets_template.json"
+RUNTIME_CONFIG_PATH     = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
+PROVISION_FLAG_PATH     = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
+BOT_STATE_PATH          = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
+SECRETS_TEMPLATE_PATH   = Path(__file__).resolve().parents[2] / "tools"    / "secrets_template.json"
+
+# [SCHEDULE LOCAL→UTC] .env_bot path (no path_resolver dependency to keep changes minimal)
+ENV_BOT_PATH            = Path(__file__).resolve().parents[2] / ".env_bot"
 
 from tbot_bot.config import config_encryption
 
@@ -76,6 +142,20 @@ def show_configuration():
     config = load_runtime_config()
     if not config and state == "initialize":
         config = load_defaults()
+
+    # ----------------------------
+    # [SCHEDULE LOCAL→UTC] ensure both LOCAL inputs and UTC previews exist
+    # ----------------------------
+    config.setdefault("TIMEZONE", "UTC")
+    config.setdefault("START_TIME_OPEN_LOCAL",  "09:30")
+    config.setdefault("START_TIME_MID_LOCAL",   "12:00")
+    config.setdefault("START_TIME_CLOSE_LOCAL", "15:45")
+    config.setdefault("START_TIME_OPEN",  config.get("START_TIME_OPEN",  ""))   # UTC preview
+    config.setdefault("START_TIME_MID",   config.get("START_TIME_MID",   ""))   # UTC preview
+    config.setdefault("START_TIME_CLOSE", config.get("START_TIME_CLOSE", ""))   # UTC preview
+    config.setdefault("MARKET_CLOSE_UTC", config.get("MARKET_CLOSE_UTC", ""))   # UTC preview
+    # ----------------------------
+
     return render_template("configuration.html", config=config)
 
 @configuration_blueprint.route("/", methods=["POST"])
@@ -118,8 +198,31 @@ def save_configuration():
     alert_channels = form.get("alert_channels", "").strip() or "email"
     debug_log_level = form.get("debug_log_level", "").strip() or "quiet"
 
-    # --- TIMEZONE support (add to config if present) ---
+    # --- TIMEZONE support (existing behavior retained) ---
     timezone_val = form.get("timezone", "").strip() or "UTC"
+
+    # ----------------------------
+    # [SCHEDULE LOCAL→UTC] validate inputs and derive UTC once
+    # ----------------------------
+    try:
+        tz_valid     = _validate_timezone(timezone_val)
+        open_local   = _validate_hhmm("Open (Local)",  form.get("start_time_open_local",  "09:30"))
+        mid_local    = _validate_hhmm("Mid (Local)",   form.get("start_time_mid_local",   "12:00"))
+        close_local  = _validate_hhmm("Close (Local)", form.get("start_time_close_local", "15:45"))
+
+        open_utc     = _local_hhmm_to_utc_hhmm(open_local,  tz_valid)
+        mid_utc      = _local_hhmm_to_utc_hhmm(mid_local,   tz_valid)
+        close_utc    = _local_hhmm_to_utc_hhmm(close_local, tz_valid)
+        # Market close default 16:00 local; if later you add a local field, convert that instead.
+        market_close_utc = _local_hhmm_to_utc_hhmm("16:00", tz_valid)
+    except ValueError as ve:
+        flash(str(ve), "error")
+        return redirect(url_for("configuration_web.show_configuration"))
+    except Exception as e:
+        logger.error(f"[configuration_web] Local→UTC conversion failed: {e}")
+        flash("Failed to convert local schedule times to UTC. Check timezone and HH:MM inputs.", "error")
+        return redirect(url_for("configuration_web.show_configuration"))
+    # ----------------------------
 
     config = {
         "bot_identity":    bot_identity_data,
@@ -130,7 +233,19 @@ def save_configuration():
         "language_code":   language_code,
         "alert_channels":  alert_channels,
         "DEBUG_LOG_LEVEL": debug_log_level,
-        "TIMEZONE":        timezone_val,
+        # ----------------------------
+        # [SCHEDULE LOCAL→UTC] persist both LOCAL inputs and derived UTC to runtime_config
+        # ----------------------------
+        "TIMEZONE":                 tz_valid,
+        "SCHEDULE_INPUT_TZ":        "UTC",  # runtime strictly reads UTC keys
+        "START_TIME_OPEN_LOCAL":    open_local,
+        "START_TIME_MID_LOCAL":     mid_local,
+        "START_TIME_CLOSE_LOCAL":   close_local,
+        "START_TIME_OPEN":          open_utc,
+        "START_TIME_MID":           mid_utc,
+        "START_TIME_CLOSE":         close_utc,
+        "MARKET_CLOSE_UTC":         market_close_utc,
+        # ----------------------------
     }
 
     try:
@@ -152,6 +267,32 @@ def save_configuration():
         flash("Failed to save configuration. See logs.", "error")
         return redirect(url_for("configuration_web.show_configuration"))
 
+    # ----------------------------
+    # [SCHEDULE LOCAL→UTC] upsert schedule block into plain .env_bot (atomic-ish)
+    # ----------------------------
+    try:
+        ENV_BOT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        existing = ENV_BOT_PATH.read_text(encoding="utf-8") if ENV_BOT_PATH.exists() else ""
+        upserts = {
+            "TIMEZONE":               tz_valid,
+            "SCHEDULE_INPUT_TZ":      "UTC",
+            "START_TIME_OPEN_LOCAL":  open_local,
+            "START_TIME_MID_LOCAL":   mid_local,
+            "START_TIME_CLOSE_LOCAL": close_local,
+            "START_TIME_OPEN":        open_utc,
+            "START_TIME_MID":         mid_utc,
+            "START_TIME_CLOSE":       close_utc,
+            "MARKET_CLOSE_UTC":       market_close_utc,
+        }
+        merged = _update_env_lines(existing, upserts)
+        tmp = ENV_BOT_PATH.with_suffix(".tmp")
+        tmp.write_text(merged, encoding="utf-8")
+        tmp.replace(ENV_BOT_PATH)
+    except Exception as e:
+        logger.error(f"[configuration_web] ERROR writing .env_bot: {e}")
+        flash("Configuration saved, but failed to update .env_bot schedule keys. See logs.", "warning")
+    # ----------------------------
+
     first_bootstrap = is_first_bootstrap()
     try:
         if first_bootstrap:
@@ -163,12 +304,24 @@ def save_configuration():
             logger.info("[configuration_web] provisioning_runner.py launched")
             session["trigger_provisioning"] = True
             session.modified = True
-            flash("Configuration saved. Proceeding to provisioning...", "success")
+            flash(
+                f"Configuration saved. Times (Local→UTC): "
+                f"Open {open_local}→{open_utc}, Mid {mid_local}→{mid_utc}, Close {close_local}→{close_utc}, MarketClose →{market_close_utc} UTC. "
+                f"Proceeding to provisioning...",
+                "success"
+            )
             return render_template("wait.html", bot_state="provisioning")
         else:
-            flash("Configuration saved.", "success")
+            flash(
+                f"Configuration saved. Times (Local→UTC): "
+                f"Open {open_local}→{open_utc}, Mid {mid_local}→{mid_utc}, Close {close_local}→{close_utc}, MarketClose →{market_close_utc} UTC.",
+                "success"
+            )
             return redirect(url_for("configuration_web.show_configuration"))
     except Exception as e:
         logger.error(f"[configuration_web] ERROR during provisioning trigger: {e}")
-        flash("Configuration saved, but provisioning trigger failed. Check logs.", "warning")
+        flash(
+            f"Configuration saved (Local→UTC persisted), but provisioning trigger failed. Check logs.",
+            "warning"
+        )
         return redirect(url_for("configuration_web.show_configuration"))

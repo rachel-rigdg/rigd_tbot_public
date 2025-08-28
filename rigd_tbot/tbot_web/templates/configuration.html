@@ -14,126 +14,217 @@
 <body>
     <div class="container-config">
         <div class="title">
-        <h1>T-BOT Initial Configuration</h1>  
+            <h1>T-BOT Initial Configuration</h1>
         </div>
-        
+
         <form id="config-form" method="POST" action="{{ url_for('configuration_web.save_configuration') }}">
             <div class="fieldblock-config">
-            <fieldset >
-                <legend>Identity Settings</legend>
-                <label for="entity_code">ENTITY_CODE</label>
-                <input type="text" id="entity_code" name="entity_code" maxlength="6" required value="{{ config['bot_identity']['ENTITY_CODE'] if config.get('bot_identity') else 'TEST' }}" />
-                <br><br>
-                <label for="jurisdiction_code">JURISDICTION_CODE</label>
-                <input type="text" id="jurisdiction_code" name="jurisdiction_code" maxlength="4" required value="{{ config['bot_identity']['JURISDICTION_CODE'] if config.get('bot_identity') else 'USA' }}" />
-                <br><br>
-                <label for="bot_id">BOT_ID</label>
-                <input type="text" id="bot_id" name="bot_id" maxlength="6" required value="{{ config['bot_identity']['BOT_ID'] if config.get('bot_identity') else '01' }}" />
-                <br><br>
-                <label for="language_code">Language Code</label>
-                <input type="text" id="language_code" name="language_code" maxlength="8" value="{{ config.get('language_code', 'en') }}" />
-                <br><br>
-                <!-- TIMEZONE configuration -->
-                <label for="timezone">Timezone</label>
-                <select id="timezone" name="timezone" required>
-                    {% set tzval = config.get('TIMEZONE', 'UTC') %}
-                    <option value="America/New_York" {% if tzval == 'America/New_York' %}selected{% endif %}>New York (NYSE/NASDAQ, Eastern Time)</option>
-                    <option value="Europe/London" {% if tzval == 'Europe/London' %}selected{% endif %}>London (LSE, UK)</option>
-                    <option value="Asia/Tokyo" {% if tzval == 'Asia/Tokyo' %}selected{% endif %}>Tokyo (TSE, Japan)</option>
-                    <option value="Asia/Hong_Kong" {% if tzval == 'Asia/Hong_Kong' %}selected{% endif %}>Hong Kong (HKEX)</option>
-                    <option value="Asia/Shanghai" {% if tzval == 'Asia/Shanghai' %}selected{% endif %}>Shanghai (SSE, China)</option>
-                    <option value="Europe/Frankfurt" {% if tzval == 'Europe/Frankfurt' %}selected{% endif %}>Frankfurt (Xetra, Germany)</option>
-                    <option value="Asia/Singapore" {% if tzval == 'Asia/Singapore' %}selected{% endif %}>Singapore (SGX)</option>
-                    <option value="Australia/Sydney" {% if tzval == 'Australia/Sydney' %}selected{% endif %}>Sydney (ASX, Australia)</option>
-                    <option value="America/Sao_Paulo" {% if tzval == 'America/Sao_Paulo' %}selected{% endif %}>São Paulo (B3, Brazil)</option>
-                    <option value="Africa/Johannesburg" {% if tzval == 'Africa/Johannesburg' %}selected{% endif %}>Johannesburg (JSE, South Africa)</option>
-                    <option value="UTC" {% if tzval == 'UTC' %}selected{% endif %}>UTC (Coordinated Universal Time)</option>
-                </select>
-            </fieldset>
+                <fieldset>
+                    <legend>Identity Settings</legend>
+                    <label for="entity_code">ENTITY_CODE</label>
+                    <input type="text" id="entity_code" name="entity_code" maxlength="6" required value="{{ config['bot_identity']['ENTITY_CODE'] if config.get('bot_identity') else 'TEST' }}" />
+                    <br><br>
+                    <label for="jurisdiction_code">JURISDICTION_CODE</label>
+                    <input type="text" id="jurisdiction_code" name="jurisdiction_code" maxlength="4" required value="{{ config['bot_identity']['JURISDICTION_CODE'] if config.get('bot_identity') else 'USA' }}" />
+                    <br><br>
+                    <label for="bot_id">BOT_ID</label>
+                    <input type="text" id="bot_id" name="bot_id" maxlength="6" required value="{{ config['bot_identity']['BOT_ID'] if config.get('bot_identity') else '01' }}" />
+                    <br><br>
+                    <label for="language_code">Language Code</label>
+                    <input type="text" id="language_code" name="language_code" maxlength="8" value="{{ config.get('language_code', 'en') }}" />
+                    <br><br>
+
+                    <!-- TIMEZONE configuration (LOCAL input; backend derives UTC at save) -->
+                    <label for="timezone">Timezone</label>
+                    <select id="timezone" name="timezone" required>
+                        {% set tzval = config.get('TIMEZONE', 'UTC') %}
+                        <option value="America/New_York" {% if tzval == 'America/New_York' %}selected{% endif %}>New York (NYSE/NASDAQ, Eastern Time)</option>
+                        <option value="Europe/London" {% if tzval == 'Europe/London' %}selected{% endif %}>London (LSE, UK)</option>
+                        <option value="Asia/Tokyo" {% if tzval == 'Asia/Tokyo' %}selected{% endif %}>Tokyo (TSE, Japan)</option>
+                        <option value="Asia/Hong_Kong" {% if tzval == 'Asia/Hong_Kong' %}selected{% endif %}>Hong Kong (HKEX)</option>
+                        <option value="Asia/Shanghai" {% if tzval == 'Asia/Shanghai' %}selected{% endif %}>Shanghai (SSE, China)</option>
+                        <option value="Europe/Frankfurt" {% if tzval == 'Europe/Frankfurt' %}selected{% endif %}>Frankfurt (Xetra, Germany)</option>
+                        <option value="Asia/Singapore" {% if tzval == 'Asia/Singapore' %}selected{% endif %}>Singapore (SGX)</option>
+                        <option value="Australia/Sydney" {% if tzval == 'Australia/Sydney' %}selected{% endif %}>Sydney (ASX, Australia)</option>
+                        <option value="America/Sao_Paulo" {% if tzval == 'America/Sao_Paulo' %}selected{% endif %}>São Paulo (B3, Brazil)</option>
+                        <option value="Africa/Johannesburg" {% if tzval == 'Africa/Johannesburg' %}selected{% endif %}>Johannesburg (JSE, South Africa)</option>
+                        <option value="UTC" {% if tzval == 'UTC' %}selected{% endif %}>UTC (Coordinated Universal Time)</option>
+                    </select>
+                </fieldset>
             </div>
+
             <br><br>
-        <div class="fieldblock-config">
-            <fieldset >
-                <legend>Alert & Email Settings</legend>
-                <label for="alert_email">Alert Email</label>
-                <input type="email" id="alert_email" name="alert_email" required value="{{ config['smtp']['ALERT_EMAIL'] if config.get('smtp') else 'alerts@example.com' }}" />
-                <br><br>
-                <label for="smtp_user">SMTP User</label>
-                <input type="text" id="smtp_user" name="smtp_user" required value="{{ config['smtp']['SMTP_USER'] if config.get('smtp') else 'smtpuser' }}" />
-                <br><br>
-                <label for="smtp_pass">SMTP Password</label>
-                <input type="password" id="smtp_pass" name="smtp_pass" value="" placeholder="Enter new password or leave blank to keep existing" />
-                <br><br>
-                <label for="smtp_host">SMTP Host</label>
-                <input type="text" id="smtp_host" name="smtp_host" required value="{{ config['smtp']['SMTP_HOST'] if config.get('smtp') else 'smtp.example.com' }}" />
-                <br><br>
-                <label for="smtp_port">SMTP Port</label>
-                <input type="number" id="smtp_port" name="smtp_port" min="1" max="65535" required value="{{ config['smtp']['SMTP_PORT'] if config.get('smtp') else '475' }}" />
-            </fieldset>
-        </div><br><br>
-        <div class="fieldblock-config">
-            <fieldset >
-                <legend>Network Settings</legend>
-                <label for="hostname">Hostname</label>
-                <input type="text" id="hostname" name="hostname" maxlength="64" required value="{{ config['network_config']['HOSTNAME'] if config.get('network_config') else 'REMOTE' }}" />
-                <br><br>
-                <label for="ip">IP Address</label>
-                <input type="text" id="ip" name="ip" pattern="^(\d{1,3}\.){3}\d{1,3}$" placeholder="e.g. 192.168.1.67" required value="{{ config['network_config']['HOST_IP'] if config.get('network_config') else '192.168.1.67' }}" />
-                <br><br>
-                <label for="port">Port</label>
-                <input type="number" id="port" name="port" min="1" max="65535" required value="{{ config['network_config']['PORT'] if config.get('network_config') else '6900' }}" />
-            </fieldset>
-        </div><br><br>
-    
-        <div class="fieldblock-config">
-            <fieldset >
-                <legend>Broker Settings</legend>
-                <label for="broker_code">Broker Code</label>
-                <input type="text" id="broker_code" name="broker_code" maxlength="32" required value="{{ config['broker']['BROKER_CODE'] if config.get('broker') else 'ALPACA' }}" />
-                <br><br>
-                <label for="broker_url">Broker URL</label>
-                <input type="text" id="broker_url" name="broker_url" value="{{ config['broker']['BROKER_URL'] if config.get('broker') else '' }}" />
-                <br><br>
-                <label for="broker_api_key">Broker API Key</label>
-                <input type="text" id="broker_api_key" name="broker_api_key" value="{{ config['broker']['BROKER_API_KEY'] if config.get('broker') else '' }}" />
-                <br><br>
-                <label for="broker_secret_key">Broker Secret Key</label>
-                <input type="text" id="broker_secret_key" name="broker_secret_key" value="{{ config['broker']['BROKER_SECRET_KEY'] if config.get('broker') else '' }}" />
-                <br><br>
-                <label for="broker_username">Broker Username</label>
-                <input type="text" id="broker_username" name="broker_username" value="{{ config['broker']['BROKER_USERNAME'] if config.get('broker') else '' }}" />
-                <br><br>
-                <label for="broker_password">Broker Password</label>
-                <input type="password" id="broker_password" name="broker_password" value="" placeholder="Enter new password or leave blank to keep existing" />
-                <br><br>
-                <label for="broker_account_number">Broker Account Number</label>
-                <input type="text" id="broker_account_number" name="broker_account_number" value="{{ config['broker']['BROKER_ACCOUNT_NUMBER'] if config.get('broker') else '' }}" />
-                <br><br>
-                <label for="broker_token">Broker Token (optional)</label>
-                <input type="text" id="broker_token" name="broker_token" value="{{ config['broker']['BROKER_TOKEN'] if config.get('broker') else '' }}" />
-            </fieldset>
-        </div><br><br>
-        <div class="fieldblock-config">
-            <fieldset>
-                <legend>Alert Channels</legend>
-                <label for="alert_channels">Alert Channels (comma-separated)</label>
-                <input type="text" id="alert_channels" name="alert_channels" placeholder="e.g. email, slack, sms" value="{{ config['alert_channels'] if config.get('alert_channels') else 'email' }}" />
-            </fieldset>
-        </div><br><br>
-        <div class="fieldblock-config">
-            <fieldset>
-                <legend>Logging Verbosity</legend>
-                <label for="debug_log_level">Log Level</label>
-                <select id="debug_log_level" name="debug_log_level">
-                    <option value="quiet" {% if config.get('DEBUG_LOG_LEVEL', 'quiet') == 'quiet' %}selected{% endif %}>Quiet (errors only)</option>
-                    <option value="info" {% if config.get('DEBUG_LOG_LEVEL') == 'info' %}selected{% endif %}>Info</option>
-                    <option value="debug" {% if config.get('DEBUG_LOG_LEVEL') == 'debug' %}selected{% endif %}>Debug (all logs)</option>
-                </select>
-            </fieldset>
+
+            <!-- Trading Session Times -->
+            <div class="fieldblock-config">
+                <fieldset>
+                    <legend>Trading Session Times</legend>
+
+                    <!-- Local inputs (editable) -->
+                    <p class="help-text">Enter local market times (HH:MM 24h). The backend will derive and persist the UTC equivalents on save.</p>
+                    <label for="start_time_open_local">Open (Local)</label>
+                    <input type="text"
+                           id="start_time_open_local"
+                           name="start_time_open_local"
+                           pattern="^([01]\d|2[0-3]):[0-5]\d$"
+                           placeholder="09:30"
+                           required
+                           value="{{ config.get('START_TIME_OPEN_LOCAL', '09:30') }}" />
+                    <br><br>
+
+                    <label for="start_time_mid_local">Mid (Local)</label>
+                    <input type="text"
+                           id="start_time_mid_local"
+                           name="start_time_mid_local"
+                           pattern="^([01]\d|2[0-3]):[0-5]\d$"
+                           placeholder="12:00"
+                           required
+                           value="{{ config.get('START_TIME_MID_LOCAL', '12:00') }}" />
+                    <br><br>
+
+                    <label for="start_time_close_local">Close (Local)</label>
+                    <input type="text"
+                           id="start_time_close_local"
+                           name="start_time_close_local"
+                           pattern="^([01]\d|2[0-3]):[0-5]\d$"
+                           placeholder="15:45"
+                           required
+                           value="{{ config.get('START_TIME_CLOSE_LOCAL', '15:45') }}" />
+                    <br><br>
+
+                    <!-- Derived UTC (read-only previews; NOT submitted) -->
+                    <hr>
+                    <p class="help-text">Derived UTC previews (read-only). Runtime uses only these UTC values.</p>
+
+                    <label for="start_time_open_utc_preview">Open (UTC)</label>
+                    <input type="text"
+                           id="start_time_open_utc_preview"
+                           value="{{ config.get('START_TIME_OPEN', '') }}"
+                           readonly
+                           disabled />
+                    <br><br>
+
+                    <label for="start_time_mid_utc_preview">Mid (UTC)</label>
+                    <input type="text"
+                           id="start_time_mid_utc_preview"
+                           value="{{ config.get('START_TIME_MID', '') }}"
+                           readonly
+                           disabled />
+                    <br><br>
+
+                    <label for="start_time_close_utc_preview">Close (UTC)</label>
+                    <input type="text"
+                           id="start_time_close_utc_preview"
+                           value="{{ config.get('START_TIME_CLOSE', '') }}"
+                           readonly
+                           disabled />
+                    <br><br>
+
+                    <label for="market_close_utc_preview">Market Close (UTC)</label>
+                    <input type="text"
+                           id="market_close_utc_preview"
+                           value="{{ config.get('MARKET_CLOSE_UTC', '') }}"
+                           readonly
+                           disabled />
+                </fieldset>
+            </div>
+
             <br><br>
-            <button type="submit">Save Configuration & Start Bot</button>
-        </div>
+
+            <div class="fieldblock-config">
+                <fieldset>
+                    <legend>Alert & Email Settings</legend>
+                    <label for="alert_email">Alert Email</label>
+                    <input type="email" id="alert_email" name="alert_email" required value="{{ config['smtp']['ALERT_EMAIL'] if config.get('smtp') else 'alerts@example.com' }}" />
+                    <br><br>
+                    <label for="smtp_user">SMTP User</label>
+                    <input type="text" id="smtp_user" name="smtp_user" required value="{{ config['smtp']['SMTP_USER'] if config.get('smtp') else 'smtpuser' }}" />
+                    <br><br>
+                    <label for="smtp_pass">SMTP Password</label>
+                    <input type="password" id="smtp_pass" name="smtp_pass" value="" placeholder="Enter new password or leave blank to keep existing" />
+                    <br><br>
+                    <label for="smtp_host">SMTP Host</label>
+                    <input type="text" id="smtp_host" name="smtp_host" required value="{{ config['smtp']['SMTP_HOST'] if config.get('smtp') else 'smtp.example.com' }}" />
+                    <br><br>
+                    <label for="smtp_port">SMTP Port</label>
+                    <input type="number" id="smtp_port" name="smtp_port" min="1" max="65535" required value="{{ config['smtp']['SMTP_PORT'] if config.get('smtp') else '475' }}" />
+                </fieldset>
+            </div>
+
+            <br><br>
+
+            <div class="fieldblock-config">
+                <fieldset>
+                    <legend>Network Settings</legend>
+                    <label for="hostname">Hostname</label>
+                    <input type="text" id="hostname" name="hostname" maxlength="64" required value="{{ config['network_config']['HOSTNAME'] if config.get('network_config') else 'REMOTE' }}" />
+                    <br><br>
+                    <label for="ip">IP Address</label>
+                    <input type="text" id="ip" name="ip" pattern="^(\d{1,3}\.){3}\d{1,3}$" placeholder="e.g. 192.168.1.67" required value="{{ config['network_config']['HOST_IP'] if config.get('network_config') else '192.168.1.67' }}" />
+                    <br><br>
+                    <label for="port">Port</label>
+                    <input type="number" id="port" name="port" min="1" max="65535" required value="{{ config['network_config']['PORT'] if config.get('network_config') else '6900' }}" />
+                </fieldset>
+            </div>
+
+            <br><br>
+
+            <div class="fieldblock-config">
+                <fieldset>
+                    <legend>Broker Settings</legend>
+                    <label for="broker_code">Broker Code</label>
+                    <input type="text" id="broker_code" name="broker_code" maxlength="32" required value="{{ config['broker']['BROKER_CODE'] if config.get('broker') else 'ALPACA' }}" />
+                    <br><br>
+                    <label for="broker_url">Broker URL</label>
+                    <input type="text" id="broker_url" name="broker_url" value="{{ config['broker']['BROKER_URL'] if config.get('broker') else '' }}" />
+                    <br><br>
+                    <label for="broker_api_key">Broker API Key</label>
+                    <input type="text" id="broker_api_key" name="broker_api_key" value="{{ config['broker']['BROKER_API_KEY'] if config.get('broker') else '' }}" />
+                    <br><br>
+                    <label for="broker_secret_key">Broker Secret Key</label>
+                    <input type="text" id="broker_secret_key" name="broker_secret_key" value="{{ config['broker']['BROKER_SECRET_KEY'] if config.get('broker') else '' }}" />
+                    <br><br>
+                    <label for="broker_username">Broker Username</label>
+                    <input type="text" id="broker_username" name="broker_username" value="{{ config['broker']['BROKER_USERNAME'] if config.get('broker') else '' }}" />
+                    <br><br>
+                    <label for="broker_password">Broker Password</label>
+                    <input type="password" id="broker_password" name="broker_password" value="" placeholder="Enter new password or leave blank to keep existing" />
+                    <br><br>
+                    <label for="broker_account_number">Broker Account Number</label>
+                    <input type="text" id="broker_account_number" name="broker_account_number" value="{{ config['broker']['BROKER_ACCOUNT_NUMBER'] if config.get('broker') else '' }}" />
+                    <br><br>
+                    <label for="broker_token">Broker Token (optional)</label>
+                    <input type="text" id="broker_token" name="broker_token" value="{{ config['broker']['BROKER_TOKEN'] if config.get('broker') else '' }}" />
+                </fieldset>
+            </div>
+
+            <br><br>
+
+            <div class="fieldblock-config">
+                <fieldset>
+                    <legend>Alert Channels</legend>
+                    <label for="alert_channels">Alert Channels (comma-separated)</label>
+                    <input type="text" id="alert_channels" name="alert_channels" placeholder="e.g. email, slack, sms" value="{{ config['alert_channels'] if config.get('alert_channels') else 'email' }}" />
+                </fieldset>
+            </div>
+
+            <br><br>
+
+            <div class="fieldblock-config">
+                <fieldset>
+                    <legend>Logging Verbosity</legend>
+                    <label for="debug_log_level">Log Level</label>
+                    <select id="debug_log_level" name="debug_log_level">
+                        <option value="quiet" {% if config.get('DEBUG_LOG_LEVEL', 'quiet') == 'quiet' %}selected{% endif %}>Quiet (errors only)</option>
+                        <option value="info" {% if config.get('DEBUG_LOG_LEVEL') == 'info' %}selected{% endif %}>Info</option>
+                        <option value="debug" {% if config.get('DEBUG_LOG_LEVEL') == 'debug' %}selected{% endif %}>Debug (all logs)</option>
+                    </select>
+                </fieldset>
+                <br><br>
+                <button type="submit">Save Configuration & Start Bot</button>
+            </div>
         </form>
+
         <br><br><br><br><br><br><br><br><br><br><br>
     </div>
 </body>

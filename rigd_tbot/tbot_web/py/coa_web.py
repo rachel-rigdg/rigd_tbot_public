@@ -15,7 +15,7 @@ from tbot_web.support.utils_coa_web import (
     get_coa_audit_log,
     compute_coa_diff,
     validate_coa_json,
-    resolve_mapping_rule_by_context,   # <-- for /coa_mapping/resolve
+    resolve_mapping_rule_by_context,   # for /coa_mapping/resolve
 )
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
@@ -39,6 +39,7 @@ def identity_guard():
 
 # --- COA Management Page ---
 @coa_web.route("/coa", methods=["GET"])
+@coa_web.route("/ledger/coa", methods=["GET"])  # legacy alias if blueprint is registered without prefix
 @rbac_required()
 def coa_management():
     # Debug helps verify session/role wiring during setup
@@ -81,6 +82,7 @@ def coa_management():
 
 # ---- Alias: /coa_mapping → redirect to /coa (preserve query string) ----
 @coa_web.route("/coa_mapping", methods=["GET"])
+@coa_web.route("/ledger/coa_mapping", methods=["GET"])  # legacy alias if blueprint is registered without prefix
 @rbac_required()
 def coa_mapping_alias():
     if identity_guard():
@@ -94,6 +96,7 @@ def coa_mapping_alias():
 
 # --- COA API: metadata, hierarchy, audit log (JSON) ---
 @coa_web.route("/coa/api", methods=["GET"])
+@coa_web.route("/ledger/coa/api", methods=["GET"])  # legacy alias
 @rbac_required()
 def coa_api():
     if identity_guard():
@@ -115,12 +118,14 @@ def coa_api():
 
 # ---- Alias: /coa_mapping/api → same payload as /coa/api ----
 @coa_web.route("/coa_mapping/api", methods=["GET"])
+@coa_web.route("/ledger/coa_mapping/api", methods=["GET"])  # legacy alias
 @rbac_required()
 def coa_mapping_api_alias():
     return coa_api()
 
 # --- COA Edit (Admin Only) ---
 @coa_web.route("/coa/edit", methods=["POST"])
+@coa_web.route("/ledger/coa/edit", methods=["POST"])  # legacy alias
 @rbac_required(role="admin")
 def coa_edit():
     if identity_guard():
@@ -139,6 +144,7 @@ def coa_edit():
 
 # --- Export: Markdown ---
 @coa_web.route("/coa/export/markdown", methods=["GET"])
+@coa_web.route("/ledger/coa/export/markdown", methods=["GET"])  # legacy alias
 @rbac_required()
 def coa_export_markdown():
     if identity_guard():
@@ -157,6 +163,7 @@ def coa_export_markdown():
 
 # --- Export: CSV ---
 @coa_web.route("/coa/export/csv", methods=["GET"])
+@coa_web.route("/ledger/coa/export/csv", methods=["GET"])  # legacy alias
 @rbac_required()
 def coa_export_csv():
     if identity_guard():
@@ -175,17 +182,20 @@ def coa_export_csv():
 
 # --- RBAC API: (for JS/Frontend/CI Testing) ---
 @coa_web.route("/coa/rbac", methods=["GET"])
+@coa_web.route("/ledger/coa/rbac", methods=["GET"])  # legacy alias
 def coa_rbac_status():
     user_is_admin = session.get("role", "") == "admin"
     return jsonify({"user_is_admin": user_is_admin})
 
 # ---- Alias: /coa_mapping/rbac → same as /coa/rbac ----
 @coa_web.route("/coa_mapping/rbac", methods=["GET"])
+@coa_web.route("/ledger/coa_mapping/rbac", methods=["GET"])  # legacy alias
 def coa_mapping_rbac_alias():
     return coa_rbac_status()
 
 # --- Mapping resolution helper (for deep-links from ledger) ---
 @coa_web.route("/coa_mapping/resolve", methods=["GET"])
+@coa_web.route("/ledger/coa_mapping/resolve", methods=["GET"])  # legacy alias
 @rbac_required()
 def coa_mapping_resolve():
     """

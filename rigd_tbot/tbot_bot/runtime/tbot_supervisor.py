@@ -15,12 +15,26 @@ from datetime import datetime, timedelta, timezone
 from tbot_bot.support import path_resolver
 from tbot_bot.support.utils_time import utc_now, parse_time_utc
 
+# --- NEW: read schedule strictly via env_bot getters (UTC) ---
+from tbot_bot.config.env_bot import (
+    get_open_time_utc,
+    get_mid_time_utc,
+    get_close_time_utc,
+    get_market_close_utc,
+)
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 CONTROL_START_FLAG = CONTROL_DIR / "control_start.flag"
 CONTROL_STOP_FLAG = CONTROL_DIR / "control_stop.flag"
+CONTROL_KILL_FLAG = CONTROL_DIR / "control_kill.flag"  # honor .flag suffix
+
+# Per-day guard stamps (ISO-8601 UTC instants)
+LAST_OPEN_STAMP  = CONTROL_DIR / "last_strategy_open_utc.txt"
+LAST_MID_STAMP   = CONTROL_DIR / "last_strategy_mid_utc.txt"
+LAST_CLOSE_STAMP = CONTROL_DIR / "last_strategy_close_utc.txt"
 
 STATUS_BOT_PATH = path_resolver.resolve_runtime_script_path("status_bot.py")
 WATCHDOG_BOT_PATH = path_resolver.resolve_runtime_script_path("watchdog_bot.py")
@@ -43,6 +57,9 @@ UNIVERSE_TIMESTAMP_PATH = ROOT_DIR / "tbot_bot" / "output" / "screeners" / "symb
 REBUILD_DELAY_HOURS = 4
 
 BOOT_PHASES = ("initialize", "provisioning", "bootstrapping", "registration")
+
+# One-off processes that must NOT be auto-restarted
+NON_RESTARTABLE = {"strategy_open", "strategy_mid", "strategy_close", "universe_orchestrator"}
 
 def read_env_var(key, default=None):
     from tbot_bot.config.env_bot import load_env_bot_config
@@ -71,6 +88,28 @@ def ensure_singleton(process_name):
 def find_individual_test_flags():
     return list(CONTROL_DIR.glob("test_mode_*.flag"))
 
+def _read_stamp(path: Path):
+    if not path.exists():
+        return None
+    try:
+        txt = path.read_text(encoding="utf-8").strip()
+        if txt.endswith("Z"):
+            txt = txt.replace("Z", "+00:00")
+        return datetime.fromisoformat(txt)
+    except Exception:
+        return None
+
+def _write_stamp(path: Path, when: datetime):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(when.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z"), encoding="utf-8")
+    except Exception as e:
+        print(f"[tbot_supervisor] WARN failed to write stamp {path.name}: {e}")
+
+def _has_run_today(stamp_path: Path, now_utc: datetime) -> bool:
+    ts = _read_stamp(stamp_path)
+    return bool(ts and ts.date() == now_utc.date())
+
 def is_time_for_universe_rebuild():
     if not UNIVERSE_TIMESTAMP_PATH.exists():
         return True
@@ -87,7 +126,7 @@ def is_time_for_universe_rebuild():
     except Exception:
         build_time = datetime.utcfromtimestamp(UNIVERSE_TIMESTAMP_PATH.stat().st_mtime)
     now = utc_now()
-    market_close_str = read_env_var("MARKET_CLOSE_UTC", "21:00")
+    market_close_str = get_market_close_utc() or "21:00"  # getter (UTC HH:MM)
     close_time = parse_time_utc(market_close_str)
     today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
     if now < today_close:
@@ -97,7 +136,7 @@ def is_time_for_universe_rebuild():
     scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
     return now >= scheduled_time and build_time < scheduled_time
 
-# --- BROKER SYNC NIGHTLY LAUNCH LOGIC (timezone-safe) ---
+# --- BROKER SYNC NIGHTLY LAUNCH LOGIC (timezone-safe; market close via getter) ---
 def get_last_sync_broker_ledger_timestamp():
     ts_path = CONTROL_DIR / "last_broker_sync_utc.txt"
     if not ts_path.exists():
@@ -113,7 +152,7 @@ def set_last_sync_broker_ledger_timestamp(dt: datetime):
 
 def is_time_for_broker_sync():
     now = utc_now()
-    market_close_str = read_env_var("MARKET_CLOSE_UTC", "21:00")
+    market_close_str = get_market_close_utc() or "21:00"
     sync_delay_min = int(read_env_var("BROKER_SYNC_DELAY_MIN", "30"))
     close_time = parse_time_utc(market_close_str)
     today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
@@ -142,7 +181,7 @@ def set_last_ledger_snapshot_timestamp(dt: datetime):
 def is_time_for_ledger_snapshot():
     # Uses the same window as broker sync (30min after close)
     now = utc_now()
-    market_close_str = read_env_var("MARKET_CLOSE_UTC", "21:00")
+    market_close_str = get_market_close_utc() or "21:00"
     snapshot_delay_min = int(read_env_var("LEDGER_SNAPSHOT_DELAY_MIN", "30"))
     close_time = parse_time_utc(market_close_str)
     today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
@@ -154,30 +193,57 @@ def is_time_for_ledger_snapshot():
     already_snapshotted_today = last_snapshot and last_snapshot.date() == now.date() and last_snapshot > snap_time - timedelta(minutes=5)
     return now >= snap_time and not already_snapshotted_today
 
-def launch_strategy_if_time(strategy_name, strategy_path, processes):
-    from tbot_bot.config.env_bot import load_env_bot_config
-    env = load_env_bot_config()
+def _scheduled_run_datetime(hhmm_utc: str, now: datetime) -> datetime:
+    t = parse_time_utc(hhmm_utc)
+    run_dt = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+    return run_dt
+
+def launch_strategy_if_time(strategy_name, strategy_path, processes, state):
+    """Launch strategy within ±300s window; per-day guard; state == 'running' required."""
+    if state != "running":
+        return
+
     now = utc_now()
-    open_time = env.get("START_TIME_OPEN", "13:30")
-    mid_time = env.get("START_TIME_MID", "16:00")
-    close_time = env.get("START_TIME_CLOSE", "20:45")
-    # All times UTC as per .env_bot
     if strategy_name == "strategy_open":
-        target_time = parse_time_utc(open_time)
+        hhmm = get_open_time_utc() or "13:30"
+        stamp = LAST_OPEN_STAMP
     elif strategy_name == "strategy_mid":
-        target_time = parse_time_utc(mid_time)
+        hhmm = get_mid_time_utc() or "16:00"
+        stamp = LAST_MID_STAMP
     elif strategy_name == "strategy_close":
-        target_time = parse_time_utc(close_time)
+        hhmm = get_close_time_utc() or "19:45"
+        stamp = LAST_CLOSE_STAMP
     else:
         return
-    run_time = now.replace(hour=target_time.hour, minute=target_time.minute, second=0, microsecond=0)
-    # Allow relaunch only if within 60 seconds of the scheduled time, and not already running
-    if abs((now - run_time).total_seconds()) < 60:
-        if not ensure_singleton(os.path.basename(str(strategy_path))):
-            print(f"[tbot_supervisor] Launching {strategy_name} at scheduled time...")
+
+    # Per-day guard
+    if _has_run_today(stamp, now):
+        return
+
+    run_time = _scheduled_run_datetime(hhmm, now)
+    window_sec = 300  # widened from ±60s to ±300s
+    delta = (now - run_time).total_seconds()
+    if abs(delta) <= window_sec:
+        script_name = os.path.basename(str(strategy_path))
+        if not ensure_singleton(script_name):
+            print(f"[tbot_supervisor] Launching {strategy_name} at scheduled time {hhmm}Z...")
             processes[strategy_name] = launch_subprocess(strategy_path)
+            _write_stamp(stamp, now)  # mark launched to prevent duplicates
         else:
             print(f"[tbot_supervisor] {strategy_name} already running.")
+
+def _late_open_catchup(processes):
+    """One-time catch-up for OPEN if we just transitioned to running and missed the window by ≤300s."""
+    now = utc_now()
+    hhmm = get_open_time_utc() or "13:30"
+    run_time = _scheduled_run_datetime(hhmm, now)
+    # Only if scheduled time has passed, but not too far (≤300s), and not yet run today
+    if 0 < (now - run_time).total_seconds() <= 300 and not _has_run_today(LAST_OPEN_STAMP, now):
+        script_name = os.path.basename(str(STRATEGY_OPEN_PATH))
+        if not ensure_singleton(script_name):
+            print(f"[tbot_supervisor] Late launch: strategy_open (scheduled {hhmm}Z, actual {now.strftime('%H:%M:%SZ')})")
+            processes["strategy_open"] = launch_subprocess(STRATEGY_OPEN_PATH)
+            _write_stamp(LAST_OPEN_STAMP, now)
 
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.")
@@ -204,14 +270,14 @@ def main():
         ("strategy_close", STRATEGY_CLOSE_PATH),
     ]
 
-    persistent_state = None
+    previous_state = None
     is_first_bootstrap = False
     if BOT_STATE_PATH.exists():
-        persistent_state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        if persistent_state not in (
+        previous_state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        if previous_state not in (
             "idle", "running", "started", "trading", "monitoring", "analyzing", "updating", "stopped"
         ):
-            persistent_state = "idle"
+            previous_state = "idle"
     else:
         is_first_bootstrap = True
 
@@ -242,24 +308,35 @@ def main():
     try:
         while True:
             state = read_bot_state()
+
+            if CONTROL_KILL_FLAG.exists():
+                BOT_STATE_PATH.write_text("shutdown", encoding="utf-8")
+                print("[tbot_supervisor] CONTROL_KILL_FLAG detected. Set bot state to 'shutdown'.")
+                CONTROL_KILL_FLAG.unlink(missing_ok=True)
+
             if state in ("shutdown", "shutdown_triggered", "error"):
                 print(f"[tbot_supervisor] Detected shutdown/error state: {state}. Terminating subprocesses and exiting.")
                 break
 
-            # Only launch holdings_manager and broker_sync AFTER provisioning/bootstrapping complete
+            # Only after provisioning/bootstrapping complete
             if state not in BOOT_PHASES:
-                for name, path in persistent_ops:
-                    if not ensure_singleton(os.path.basename(str(path))):
-                        print(f"[tbot_supervisor] Launching {name} as persistent worker...")
-                        processes[name] = launch_subprocess(path)
-                    else:
-                        print(f"[tbot_supervisor] {name} already running.")
-
-                # Scheduled strategy launches (open, mid, close)
+                # Gate holdings_manager on {'idle','running'}
+                if state in {"idle", "running"}:
+                    for name, path in persistent_ops:
+                        if not ensure_singleton(os.path.basename(str(path))):
+                            print(f"[tbot_supervisor] Launching {name} as persistent worker...")
+                            processes[name] = launch_subprocess(path)
+                        else:
+                            print(f"[tbot_supervisor] {name} already running.")
+                # Scheduled strategy launches (only when state == 'running')
                 for strat_name, strat_path in strategy_launchers:
-                    launch_strategy_if_time(strat_name, strat_path, processes)
+                    launch_strategy_if_time(strat_name, strat_path, processes, state)
 
-                # ---- BROKER SYNC NIGHTLY (30min after market close, once per day, using timezone utils) ----
+                # One-time late catch-up for OPEN on transition to 'running'
+                if previous_state != "running" and state == "running":
+                    _late_open_catchup(processes)
+
+                # ---- BROKER SYNC NIGHTLY (once per day) ----
                 if is_time_for_broker_sync():
                     if not ensure_singleton("sync_broker_ledger.py"):
                         print("[tbot_supervisor] Launching nightly broker sync (sync_broker_ledger.py)...")
@@ -268,7 +345,7 @@ def main():
                     else:
                         print("[tbot_supervisor] Broker sync already running.")
 
-                # ---- LEDGER SNAPSHOT NIGHTLY (30min after market close, once per day, using timezone utils) ----
+                # ---- LEDGER SNAPSHOT NIGHTLY (once per day) ----
                 if is_time_for_ledger_snapshot():
                     if not ensure_singleton("ledger_snapshot.py"):
                         print("[tbot_supervisor] Launching nightly EOD ledger snapshot (ledger_snapshot.py)...")
@@ -310,28 +387,31 @@ def main():
                 CONTROL_STOP_FLAG.unlink(missing_ok=True)
 
             if is_time_for_universe_rebuild():
+                # Treat universe build as one-off
                 if not ensure_singleton("universe_orchestrator.py"):
                     print("[tbot_supervisor] Triggering universe cache rebuild (universe_orchestrator.py)...")
                     processes["universe_orchestrator"] = launch_subprocess(UNIVERSE_ORCHESTRATOR_PATH)
                 else:
                     print("[tbot_supervisor] Universe cache rebuild already running.")
 
-            if persistent_state == "running" and state != "running" and state == "idle":
-                BOT_STATE_PATH.write_text("running", encoding="utf-8")
-                print("[tbot_supervisor] Restored bot state to 'running' after restart.")
-
-            for name, proc in processes.items():
+            # Restart policy (exclude one-offs; remove finished from tracking)
+            to_remove = []
+            for name, proc in list(processes.items()):
                 if proc.poll() is not None:
-                    print(f"[tbot_supervisor] {name} has died. Restarting...")
-                    all_targets = launch_targets + persistent_ops + strategy_launchers
-                    restart_path = None
-                    for t_name, t_path in all_targets:
-                        if t_name == name:
-                            restart_path = t_path
-                            break
-                    if restart_path:
-                        processes[name] = launch_subprocess(restart_path)
+                    if name in NON_RESTARTABLE:
+                        print(f"[tbot_supervisor] {name} finished (one-off). Not restarting.")
+                        to_remove.append(name)
+                    else:
+                        print(f"[tbot_supervisor] {name} has died. Restarting...")
+                        # Find path and restart
+                        for t_name, t_path in (launch_targets + persistent_ops + strategy_launchers):
+                            if t_name == name:
+                                processes[name] = launch_subprocess(t_path)
+                                break
+            for name in to_remove:
+                processes.pop(name, None)
 
+            previous_state = state
             time.sleep(2)
 
     except KeyboardInterrupt:
@@ -344,7 +424,7 @@ def main():
                 proc.terminate()
             except Exception as e:
                 print(f"[tbot_supervisor] Exception terminating {pname}: {e}")
-        if status_bot_proc:
+        if 'status_bot_proc' in locals() and status_bot_proc:
             try:
                 print("[tbot_supervisor] Terminating status_bot.py process...")
                 status_bot_proc.terminate()
