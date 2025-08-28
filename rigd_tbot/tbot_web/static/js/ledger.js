@@ -65,6 +65,14 @@ function getColIdx(col) {
   return mapping[col] || 1;
 }
 
+// Prefer data-sort attribute if present (clean sort key), otherwise text
+function _cellSortValue(td) {
+  if (!td) return '';
+  const ds = td.getAttribute('data-sort');
+  if (ds !== null && ds !== undefined) return ds;
+  return (td.innerText || '').trim();
+}
+
 // -----------------------------
 // Client-side sorting (for current DOM) with unified indicators
 // -----------------------------
@@ -84,8 +92,10 @@ function sortLedgerTable(col, dirOpt) {
   const asc = dir === 'asc';
 
   rows.sort((a, b) => {
-    let av = a.querySelector(`td:nth-child(${idx})`)?.innerText.trim();
-    let bv = b.querySelector(`td:nth-child(${idx})`)?.innerText.trim();
+    const atd = a.querySelector(`td:nth-child(${idx})`);
+    const btd = b.querySelector(`td:nth-child(${idx})`);
+    let av = _cellSortValue(atd);
+    let bv = _cellSortValue(btd);
     // numeric compare if both numbers
     const aNum = parseFloat(av); const bNum = parseFloat(bv);
     if (!isNaN(aNum) && !isNaN(bNum)) { av = aNum; bv = bNum; }
@@ -176,6 +186,11 @@ function setAllCollapsed(collapse) {
 // -----------------------------
 // Rendering helpers (AJAX refresh)
 // -----------------------------
+function _td(val, extra = '', sortVal = null) {
+  const sAttr = sortVal !== null && sortVal !== undefined ? ` data-sort="${String(sortVal)}"` : '';
+  return `<td${sAttr}${extra ? ' ' + extra : ''}>${val ?? ''}</td>`;
+}
+
 function renderLedgerRows(data) {
   const tbody = document.getElementById('ledger-tbody');
   if (!tbody) return;
@@ -193,49 +208,50 @@ function renderLedgerRows(data) {
     if (!hasContent) return;
 
     const gid = entry.group_id || entry.trade_id || '';
+    const dateOnly = entry.datetime_utc ? entry.datetime_utc.split('T')[0] : "";
+
+    // ---- Top row (10 columns; add data-sort for clean sorting) ----
     const trTop = document.createElement('tr');
     trTop.className = "row-top " + (entry.status || "");
-    trTop.innerHTML = `
-      <td>
-        <button class="collapse-btn" onclick="toggleCollapse('${gid}', ${entry.collapsed ? 'true' : 'false'})" title="${entry.collapsed ? 'Expand' : 'Collapse'}">
+    trTop.innerHTML =
+      _td(
+        `<button class="collapse-btn" onclick="toggleCollapse('${gid}', ${entry.collapsed ? 'true' : 'false'})" title="${entry.collapsed ? 'Expand' : 'Collapse'}">
           ${entry.collapsed ? "+" : "-"}
-        </button>
-        <label style="margin-left:.5rem;">
-          <input type="checkbox" class="toggle-group" data-group-id="${gid}" ${entry.collapsed ? '' : 'checked'} />
-          expand
-        </label>
-        ${entry.datetime_utc ? entry.datetime_utc.split('T')[0] : ""}
-      </td>
-      <td>${entry.symbol || ""}</td>
-      <!-- hidden account cell to align with JS sort index; no visible duplicate -->
-      <td class="hidden-account">${entry.account || ""}</td>
-      <td>${entry.action || ""}</td>
-      <td>${entry.quantity || ""}</td>
-      <td>${entry.price || ""}</td>
-      <td>${entry.fee || ""}</td>
-      <td>${entry.total_value || ""}</td>
-      <td>${entry.status || ""}</td>
-      <td>${entry.running_balance !== undefined ? entry.running_balance : ""}</td>
-    `;
+        </button> ${dateOnly}`,
+        '',
+        dateOnly
+      ) +
+      _td(entry.symbol || "", '', entry.symbol || '') +
+      `<td class="hidden-account" data-sort="${entry.account || ''}">${entry.account || ""}</td>` +
+      _td(entry.action || "", '', entry.action || '') +
+      _td(entry.quantity || "", '', entry.quantity ?? '') +
+      _td(entry.price || "", '', entry.price ?? '') +
+      _td(entry.fee || "", '', entry.fee ?? '') +
+      _td(entry.total_value || "", '', entry.total_value ?? '') +
+      _td(entry.status || "", '', entry.status || '') +
+      _td(entry.running_balance !== undefined ? entry.running_balance : "", '', entry.running_balance ?? '');
+
     tbody.appendChild(trTop);
 
-    if (!entry.collapsed && entry.sub_entries && entry.sub_entries.length) {
-      entry.sub_entries.forEach(function(sub) {
-        const trSub = document.createElement('tr');
-        trSub.className = "row-bottom " + (sub.status || "");
-        // NOTE: inline select is rendered server-side; here we show read view on refresh
-        trSub.innerHTML = `
-          <td>${sub.trade_id || ""}</td>
-          <td>${sub.account || ""}</td>
-          <td>${sub.strategy || ""}</td>
-          <td>${sub.tags || ""}</td>
-          <td>${sub.notes || ""}</td>
-          <td colspan="3"></td>
-          <td></td>
-        `;
-        tbody.appendChild(trSub);
-      });
-    }
+    // ---- Bottom row(s): ALWAYS show at least one when collapsed ----
+    const subs = Array.isArray(entry.sub_entries) ? entry.sub_entries : [];
+    const toRender = entry.collapsed ? subs.slice(0, 1) : subs;
+
+    toRender.forEach(function(sub) {
+      const trSub = document.createElement('tr');
+      trSub.className = "row-bottom " + (sub.status || "");
+      // Keep 10 columns alignment: 5 data cols + 1 action cell + (colspan=3) + 1 trailing blank = 10
+      trSub.innerHTML =
+        _td(sub.trade_id || "", '', sub.trade_id || '') +
+        _td(sub.account || "", '', sub.account || '') +
+        _td(sub.strategy || "", '', sub.strategy || '') +
+        _td(sub.tags || "", '', sub.tags || '') +
+        _td(sub.notes || "", '', sub.notes || '') +
+        _td('', 'class="action-cell"') +
+        `<td colspan="3"></td>` +
+        _td('');
+      tbody.appendChild(trSub);
+    });
   });
 
   // Re-apply sort indicators to match state; sorting is client-side for current DOM

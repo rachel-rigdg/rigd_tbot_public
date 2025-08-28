@@ -85,6 +85,7 @@
 
       <table class="ledger-table">
         <thead>
+          <!-- Header row 1 (10 columns) -->
           <tr>
             <th class="sortable" data-col="datetime_utc" onclick="sortLedgerTable('datetime_utc')">Date (UTC)</th>
             <th class="sortable" data-col="symbol" onclick="sortLedgerTable('symbol')">Symbol</th>
@@ -98,6 +99,7 @@
             <th class="sortable" data-col="status" onclick="sortLedgerTable('status')">Status</th>
             <th class="sortable" data-col="running_balance" onclick="sortLedgerTable('running_balance')">Running Balance</th>
           </tr>
+          <!-- Header row 2 (ensure 10 columns total) -->
           <tr>
             <th class="sortable" data-col="trade_id" onclick="sortLedgerTable('trade_id')">Trade ID</th>
             <th class="sortable" data-col="account" onclick="sortLedgerTable('account')">Account</th>
@@ -106,6 +108,7 @@
             <th class="sortable" data-col="notes" onclick="sortLedgerTable('notes')">Notes</th>
             <th class="sortable" data-col="action_detail" onclick="sortLedgerTable('action_detail')">Action</th>
             <th><!-- Add Entry Button --></th>
+            <th></th> <!-- spacer to reach 10 -->
             <th colspan="2"></th>
           </tr>
         </thead>
@@ -119,6 +122,7 @@
                   (entry.quantity is not none and entry.quantity|string not in ("", "None")) or
                   (entry.total_value is not none and entry.total_value|string not in ("", "None"))
             %}
+              <!-- Top row (10 columns) -->
               <tr class="row-top {{ entry.status }}">
                 <td>
                   <button
@@ -150,38 +154,44 @@
                 <td>{{ entry.running_balance if entry.running_balance is defined else "" }}</td>
               </tr>
 
-              {% if not entry.collapsed and entry.sub_entries %}
+              {# Bottom row(s). Always show at least one row even when collapsed. #}
+              {% if entry.sub_entries %}
+                {% set show_all = (not entry.collapsed) %}
                 {% for sub in entry.sub_entries %}
-                  <tr class="row-bottom {{ sub.status }}">
-                    <td>{{ sub.trade_id or "" }}</td>
+                  {% if show_all or loop.first %}
+                    <!-- Bottom row (ensure 10 columns) -->
+                    <tr class="row-bottom {{ sub.status }}">
+                      <td>{{ sub.trade_id or "" }}</td>
 
-                    <!-- Inline COA account editor per leg (admin-only enabled) -->
-                    <td>
-                      <select class="coa-select"
-                              name="account"
-                              data-entry-id="{{ sub.id }}"
-                              {% if user_role is defined and user_role != 'admin' %}disabled{% endif %}>
-                        {% for code, name in coa_accounts %}
-                          <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
-                            {{ name }} ({{ code }})
-                          </option>
-                        {% endfor %}
-                      </select>
-                      <div class="inline-links">
-                        <!-- Simple, stable link to COA overview (if present) -->
-                        <a href="/coa" target="_blank">View COA</a>
-                        <!-- Context-aware deep link into mapping UI with entry_id -->
-                        <a href="/coa_mapping?from=ledger&entry_id={{ sub.id }}" target="_blank">View Mapping Rule</a>
-                        {% if sub.unmapped %}<span class="badge-unmapped">Unmapped</span>{% endif %}
-                      </div>
-                    </td>
+                      <!-- Inline COA account editor per leg (admin-only enabled) -->
+                      <td>
+                        <select class="coa-select"
+                                name="account"
+                                data-entry-id="{{ sub.id }}"
+                                {% if user_role is defined and user_role != 'admin' %}disabled{% endif %}>
+                          {% for code, name in coa_accounts %}
+                            <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
+                              {{ name }} ({{ code }})
+                            </option>
+                          {% endfor %}
+                        </select>
+                        <div class="inline-links">
+                          <!-- Simple, stable link to COA overview (if present) -->
+                          <a href="/coa" target="_blank">View COA</a>
+                          <!-- Context-aware deep link into mapping UI with entry_id -->
+                          <a href="/coa_mapping?from=ledger&entry_id={{ sub.id }}" target="_blank">View Mapping Rule</a>
+                          {% if sub.unmapped %}<span class="badge-unmapped">Unmapped</span>{% endif %}
+                        </div>
+                      </td>
 
-                    <td>{{ sub.strategy or "" }}</td>
-                    <td>{{ sub.tags or "" }}</td>
-                    <td>{{ sub.notes or "" }}</td>
-                    <td colspan="3"></td>
-                    <td></td>
-                  </tr>
+                      <td>{{ sub.strategy or "" }}</td>
+                      <td>{{ sub.tags or "" }}</td>
+                      <td>{{ sub.notes or "" }}</td>
+                      <td class="action-cell"></td>
+                      <td colspan="3"></td>
+                      <td></td>
+                    </tr>
+                  {% endif %}
                 {% endfor %}
               {% endif %}
             {% endif %}
@@ -231,6 +241,7 @@
               </td>
               <td><input type="text" name="tags" placeholder="Tags"></td>
               <td><input type="text" name="notes" placeholder="Notes"></td>
+              <td></td>
               <td colspan="2">
                 <button type="submit" class="add-btn">Add Entry</button>
               </td>

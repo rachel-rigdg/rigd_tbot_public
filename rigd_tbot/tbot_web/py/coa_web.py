@@ -15,6 +15,7 @@ from tbot_web.support.utils_coa_web import (
     get_coa_audit_log,
     compute_coa_diff,
     validate_coa_json,
+    resolve_mapping_rule_by_context,   # <-- for /coa_mapping/resolve
 )
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
@@ -40,8 +41,12 @@ def identity_guard():
 @coa_web.route("/coa", methods=["GET"])
 @rbac_required()
 def coa_management():
-    print("[DEBUG] session:", dict(session))  # <--- Add this line
-    user = session.get("user", "unknown")
+    # Debug helps verify session/role wiring during setup
+    try:
+        print("[DEBUG] session:", dict(session))
+    except Exception:
+        pass
+
     user_is_admin = session.get("role", "") == "admin"
     if identity_guard():
         return render_template(
@@ -74,6 +79,19 @@ def coa_management():
             error=f"COA error: {e}"
         )
 
+# ---- Alias: /coa_mapping → redirect to /coa (preserve query string) ----
+@coa_web.route("/coa_mapping", methods=["GET"])
+@rbac_required()
+def coa_mapping_alias():
+    if identity_guard():
+        return redirect(url_for("coa_web.coa_management"))
+    # Preserve any query params (e.g., from=ledger, rule_key, entry_id)
+    qs = request.query_string.decode("utf-8")
+    target = url_for("coa_web.coa_management")
+    if qs:
+        target = f"{target}?{qs}"
+    return redirect(target, code=302)
+
 # --- COA API: metadata, hierarchy, audit log (JSON) ---
 @coa_web.route("/coa/api", methods=["GET"])
 @rbac_required()
@@ -94,6 +112,12 @@ def coa_api():
         return jsonify({"error": "COA or metadata file not found. Please initialize via admin tools."}), 400
     except Exception as e:
         return jsonify({"error": f"COA error: {e}"}), 400
+
+# ---- Alias: /coa_mapping/api → same payload as /coa/api ----
+@coa_web.route("/coa_mapping/api", methods=["GET"])
+@rbac_required()
+def coa_mapping_api_alias():
+    return coa_api()
 
 # --- COA Edit (Admin Only) ---
 @coa_web.route("/coa/edit", methods=["POST"])
@@ -154,3 +178,36 @@ def coa_export_csv():
 def coa_rbac_status():
     user_is_admin = session.get("role", "") == "admin"
     return jsonify({"user_is_admin": user_is_admin})
+
+# ---- Alias: /coa_mapping/rbac → same as /coa/rbac ----
+@coa_web.route("/coa_mapping/rbac", methods=["GET"])
+def coa_mapping_rbac_alias():
+    return coa_rbac_status()
+
+# --- Mapping resolution helper (for deep-links from ledger) ---
+@coa_web.route("/coa_mapping/resolve", methods=["GET"])
+@rbac_required()
+def coa_mapping_resolve():
+    """
+    Accepts query params to build a rule key and return the matched rule (if any).
+    Example params: broker|broker_code, type|trn_type|txn_type, subtype, symbol, memo|description|note, strategy, rule_key
+    If rule_key is provided, it's used directly; otherwise it's derived from the context.
+    """
+    if identity_guard():
+        return jsonify({"error": "Bot identity not available, please complete configuration."}), 400
+
+    args = request.args or {}
+    # If a caller already computed rule_key, pass it through
+    context = {
+        "broker": args.get("broker") or args.get("broker_code"),
+        "type": args.get("type") or args.get("trn_type") or args.get("txn_type"),
+        "subtype": args.get("subtype"),
+        "symbol": args.get("symbol"),
+        "memo": args.get("memo") or args.get("description") or args.get("note"),
+        "strategy": args.get("strategy"),
+    }
+    result = resolve_mapping_rule_by_context(context)
+    # Allow explicit override of the rule_key if provided
+    if args.get("rule_key"):
+        result["rule_key"] = args.get("rule_key")
+    return jsonify(result)

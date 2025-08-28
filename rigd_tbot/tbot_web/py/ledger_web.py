@@ -6,7 +6,18 @@ import traceback
 import sqlite3
 from pathlib import Path
 from typing import Tuple, Dict, Any, List
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    session,
+    jsonify,
+    current_app,
+)
+from werkzeug.routing import BuildError
 
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import (
@@ -87,6 +98,20 @@ def _require_admin_post():
 
 
 # ---------------------------
+# COA helpers (ensures dropdown is always populated)
+# ---------------------------
+def _get_coa_lists():
+    """
+    Returns (accounts_flat, accounts_flat_dropdown, metadata)
+    """
+    data = load_coa_metadata_and_accounts()
+    flat = data.get("accounts_flat", []) or []
+    flat_dd = data.get("accounts_flat_dropdown", []) or flat  # fallback to flat if dropdown missing
+    meta = data.get("metadata", {}) or {}
+    return flat, flat_dd, meta
+
+
+# ---------------------------
 # Utilities
 # ---------------------------
 def _is_display_entry(entry: Dict[str, Any]) -> bool:
@@ -104,8 +129,8 @@ def _valid_account_code(code: str) -> bool:
     if not code:
         return False
     try:
-        coa = load_coa_metadata_and_accounts()
-        valid_codes = {c for c, _n in (coa.get("accounts_flat", []) or [])}
+        flat, _flat_dd, _meta = _get_coa_lists()
+        valid_codes = {c for c, _n in (flat or [])}
         return code in valid_codes
     except Exception:
         return False
@@ -199,6 +224,9 @@ def ledger_reconcile():
     entries: List[Dict[str, Any]] = []
     balances: Dict[str, Any] = {}
     coa_accounts: List[Tuple[str, str]] = []
+    coa_accounts_dropdown: List[Tuple[str, str]] = []
+    coa_meta: Dict[str, Any] = {}
+
     if provisioning_guard() or identity_guard():
         return render_template(
             "ledger.html",
@@ -206,6 +234,8 @@ def ledger_reconcile():
             error="Ledger access not available (provisioning or identity incomplete).",
             balances=balances,
             coa_accounts=coa_accounts,
+            coa_accounts_dropdown=coa_accounts_dropdown,
+            coa_meta=coa_meta,
             user_role="viewer",
             has_unmapped=False,
         )
@@ -218,8 +248,8 @@ def ledger_reconcile():
         except Exception:
             balances = {}
 
-        coa_data = load_coa_metadata_and_accounts()
-        coa_accounts = coa_data.get("accounts_flat", [])  # list of (code, name)
+        # COA lists (both shapes for UI)
+        coa_accounts, coa_accounts_dropdown, coa_meta = _get_coa_lists()
 
         # grouped + sorted (server-side if supported; else Python fallback)
         sort_col, sort_desc = _get_sort_params()
@@ -238,6 +268,8 @@ def ledger_reconcile():
             error=None,
             balances=balances,
             coa_accounts=coa_accounts,
+            coa_accounts_dropdown=coa_accounts_dropdown,
+            coa_meta=coa_meta,
             user_role=role,
             has_unmapped=_has_unmapped(entries),
         )
@@ -254,6 +286,8 @@ def ledger_reconcile():
         error=error,
         balances={},
         coa_accounts=[],
+        coa_accounts_dropdown=[],
+        coa_meta={},
         user_role=role,
         has_unmapped=False,
     )
@@ -391,6 +425,43 @@ def ledger_search():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+# ---------- COA: JSON list for client-side dropdowns ----------
+@ledger_web.route("/coa/accounts", methods=["GET"])
+@ledger_web.route("/ledger/coa/accounts", methods=["GET"])  # legacy alias
+def coa_accounts_api():
+    try:
+        flat, dropdown, meta = _get_coa_lists()
+        return jsonify({"accounts": flat, "accounts_dropdown": dropdown, "metadata": meta})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e), "accounts": [], "accounts_dropdown": [], "metadata": {}}), 500
+
+
+# ---------- COA Mapping: soft alias to whatever blueprint is registered ----------
+@ledger_web.route("/coa_mapping", methods=["GET"])
+def alias_coa_mapping():
+    """
+    Provide a stable /coa_mapping URL even if the real mapping UI lives in another blueprint.
+    Tries a set of likely endpoints; if none exist, returns a helpful 404 JSON.
+    """
+    candidates = [
+        "coa_web.coa_mapping",        # preferred
+        "coa_web.index",              # fallback index
+        "coa_mapping_web.coa_mapping",
+        "settings_web.coa_mapping",
+    ]
+    for endpoint in candidates:
+        try:
+            # Only redirect to endpoints that can be built
+            url = url_for(endpoint)
+            return redirect(url)
+        except BuildError:
+            continue
+        except Exception:
+            continue
+    return jsonify({"error": "coa_mapping_ui_unavailable", "hint": "COA mapping UI blueprint not registered."}), 404
 
 
 # ---------- Legacy resolve/add/edit/delete (admin-only POST) ----------

@@ -1,5 +1,8 @@
 # tbot_web/support/utils_coa_web.py
-# Loads, validates, and manages the bot’s Chart of Accounts (COA); interfaces with tbot_ledger_coa_template.json and provides COA to other modules
+# Loads, validates, and manages the bot’s Chart of Accounts (COA); interfaces with
+# tbot_ledger_coa_template.json and provides COA to other modules. Robust to
+# unprovisioned workdirs by falling back to the DB (coa_accounts) or a tiny
+# built-in COA so the UI dropdowns never come up empty.
 
 import json
 import os
@@ -12,14 +15,16 @@ from tbot_bot.support.path_resolver import (
     resolve_coa_json_path,
     resolve_coa_metadata_path,
     resolve_coa_audit_log_path,
+    resolve_ledger_db_path,   # DB fallback
 )
-# Fallback to DB when JSON is absent/unprovisioned
 from tbot_bot.support.decrypt_secrets import load_bot_identity
-from tbot_bot.support.path_resolver import resolve_ledger_db_path
 
 # Optional mapping helpers for rule resolution
 try:
-    from tbot_bot.accounting.coa_mapping_table import load_mapping_table, get_mapping_for_transaction
+    from tbot_bot.accounting.coa_mapping_table import (
+        load_mapping_table,
+        get_mapping_for_transaction,
+    )
 except Exception:  # pragma: no cover
     load_mapping_table = None  # type: ignore
     get_mapping_for_transaction = None  # type: ignore
@@ -67,7 +72,7 @@ def _try_load_from_json() -> Optional[Tuple[List[Dict[str, Any]], Dict[str, Any]
         with open(path, "r", encoding="utf-8") as cf:
             raw = json.load(cf)
         accounts, meta = _normalize_coa_shape(raw)
-        # Basic sanity: need at least code+name on first item to accept as valid
+        # Basic sanity: require code+name on the first item
         if isinstance(accounts, list) and accounts and "code" in accounts[0] and "name" in accounts[0]:
             return accounts, meta
     except Exception:
@@ -107,23 +112,24 @@ def _try_load_from_db() -> Optional[Tuple[List[Dict[str, Any]], Dict[str, Any]]]
 
             # Probe columns
             cols = [r[1] for r in conn.execute("PRAGMA table_info(coa_accounts)").fetchall()]
-            rows = []
+            rows: List[Dict[str, Any]] = []
+
             if "account_json" in cols:
                 # Legacy style: parse JSON blob for code/name/children/active
                 for r in conn.execute("SELECT account_json FROM coa_accounts"):
                     try:
                         obj = json.loads(r[0]) if r[0] else {}
-                        code = obj.get("code")
-                        name = obj.get("name")
-                        if code and name:
-                            rows.append({
-                                "code": str(code),
-                                "name": str(name),
-                                "children": obj.get("children") or [],
-                                "active": bool(obj.get("active", True)),
-                            })
                     except Exception:
-                        continue
+                        obj = {}
+                    code = obj.get("code")
+                    name = obj.get("name")
+                    if code and name:
+                        rows.append({
+                            "code": str(code),
+                            "name": str(name),
+                            "children": obj.get("children") or [],
+                            "active": bool(obj.get("active", True)),
+                        })
             else:
                 # Direct columns, if present
                 code_col = "code" if "code" in cols else None
@@ -139,6 +145,7 @@ def _try_load_from_db() -> Optional[Tuple[List[Dict[str, Any]], Dict[str, Any]]]
                                 "children": [],
                                 "active": True,
                             })
+
             if rows:
                 # Deduplicate by code (keep first)
                 seen = set()
@@ -157,7 +164,39 @@ def _try_load_from_db() -> Optional[Tuple[List[Dict[str, Any]], Dict[str, Any]]]
                 return uniq, meta
     except Exception:
         return None
+
     return None
+
+
+def _flatten_coa_accounts(accounts: List[Dict[str, Any]], parent_path: str = "", include_inactive: bool = False) -> List[Dict[str, Any]]:
+    """
+    Flattens hierarchical COA into a list of dicts:
+      {"code","name","path","depth","active":bool}
+    Path is colon-delimited by account names: e.g., "Assets:Brokerage:Cash"
+    """
+    out: List[Dict[str, Any]] = []
+
+    def walk(accs: List[Dict[str, Any]], parent: str, depth: int):
+        for acc in accs or []:
+            name = acc.get("name", "")
+            code = acc.get("code", "")
+            active = acc.get("active", True)
+            path = f"{parent}:{name}" if parent else name
+            row = {
+                "code": code,
+                "name": name,
+                "path": path,
+                "depth": depth,
+                "active": bool(active),
+            }
+            if include_inactive or row["active"]:
+                out.append(row)
+            children = acc.get("children") or []
+            if isinstance(children, list) and children:
+                walk(children, path, depth + 1)
+
+    walk(accounts or [], parent_path, 0)
+    return out
 
 
 def _build_flat_views(accounts: List[Dict[str, Any]]) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
@@ -167,8 +206,9 @@ def _build_flat_views(accounts: List[Dict[str, Any]]) -> Tuple[List[Tuple[str, s
       accounts_flat_dropdown: [(code, "Name — Path")] (active only)
     """
     flat_all = _flatten_coa_accounts(accounts, include_inactive=True)
-    accounts_flat: List[Tuple[str, str]] = [(str(a["code"]), str(a["name"])) for a in flat_all if a.get("code") and a.get("name")]
-
+    accounts_flat: List[Tuple[str, str]] = [
+        (str(a["code"]), str(a["name"])) for a in flat_all if a.get("code") and a.get("name")
+    ]
     flat_active = [a for a in flat_all if a.get("active", True)]
     accounts_flat_dropdown: List[Tuple[str, str]] = [
         (str(a["code"]), f'{a["name"]} — {a["path"]}') for a in flat_active
@@ -212,37 +252,6 @@ def load_coa_metadata_and_accounts() -> Dict[str, Any]:
     }
 
 
-def _flatten_coa_accounts(accounts: List[Dict[str, Any]], parent_path: str = "", include_inactive: bool = False) -> List[Dict[str, Any]]:
-    """
-    Flattens hierarchical COA into a list of dicts:
-      {"code","name","path","depth","active":bool}
-    Path is colon-delimited by account names: e.g., "Assets:Brokerage:Cash"
-    """
-    out: List[Dict[str, Any]] = []
-
-    def walk(accs: List[Dict[str, Any]], parent: str, depth: int):
-        for acc in accs or []:
-            name = acc.get("name", "")
-            code = acc.get("code", "")
-            active = acc.get("active", True)
-            path = f"{parent}:{name}" if parent else name
-            row = {
-                "code": code,
-                "name": name,
-                "path": path,
-                "depth": depth,
-                "active": bool(active),
-            }
-            if include_inactive or row["active"]:
-                out.append(row)
-            children = acc.get("children") or []
-            if isinstance(children, list) and children:
-                walk(children, path, depth + 1)
-
-    walk(accounts or [], parent_path, 0)
-    return out
-
-
 def list_active_coa_for_dropdown() -> List[Tuple[str, str]]:
     """
     Returns a list suitable for <select> options:
@@ -250,7 +259,7 @@ def list_active_coa_for_dropdown() -> List[Tuple[str, str]]:
     Active accounts only (acc.active != False).
     """
     data = load_coa_metadata_and_accounts()
-    return data.get("accounts_flat_dropdown", [])
+    return data.get("accounts_flat_dropdown") or data.get("accounts_flat") or []
 
 
 def derive_rule_key(context: Dict[str, Any]) -> str:
@@ -305,7 +314,6 @@ def resolve_mapping_rule_by_context(context: Dict[str, Any]) -> Dict[str, Any]:
             rule = None
 
     # Construct a context-aware deep-link back to the mapping UI
-    # Caller can append additional params (e.g., entry_id) as needed.
     link = "/coa_mapping?from=ledger"
     if rule_key:
         from urllib.parse import urlencode
@@ -362,6 +370,7 @@ def export_coa_markdown(coa_data: Dict[str, Any]) -> str:
     out.append(f"**COA Version:** {meta.get('coa_version','')}")
     out.append(f"**Created:** {meta.get('created_at_utc','')}")
     out.append(f"**Last Updated:** {meta.get('last_updated_utc','')}\n")
+
     def walk(accs, depth=0):
         for acc in accs or []:
             code = acc.get("code", "")
@@ -369,6 +378,7 @@ def export_coa_markdown(coa_data: Dict[str, Any]) -> str:
             out.append(f"{'  '*depth}- **{code}**: {name}")
             if acc.get("children"):
                 walk(acc["children"], depth+1)
+
     walk(accounts or [])
     return "\n".join(out)
 
@@ -376,6 +386,7 @@ def export_coa_markdown(coa_data: Dict[str, Any]) -> str:
 def export_coa_csv(coa_data: Dict[str, Any]) -> str:
     rows = ["code,name,depth"]
     accounts = coa_data.get("accounts") if isinstance(coa_data, dict) else (coa_data if isinstance(coa_data, list) else [])
+
     def walk(accs, depth=0):
         for acc in accs or []:
             code = acc.get("code", "")
@@ -383,6 +394,7 @@ def export_coa_csv(coa_data: Dict[str, Any]) -> str:
             rows.append(f"{code},{name},{depth}")
             if acc.get("children"):
                 walk(acc["children"], depth+1)
+
     walk(accounts)
     return "\n".join(rows)
 
