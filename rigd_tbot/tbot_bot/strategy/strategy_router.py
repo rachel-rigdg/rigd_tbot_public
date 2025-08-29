@@ -1,50 +1,49 @@
 # tbot_bot/strategy/strategy_router.py
-# Routes execution to correct strategy based on UTC/local time and TEST_MODE override
-# THIS MODULE IS NOT A WORKER OR SUPERVISOR. IT MUST NEVER BE LAUNCHED DIRECTLY BY main.py, CLI, or as a persistent process.
-# Only imported by tbot_supervisor.py, integration_test_runner.py, or strategy modules for routing logic.
+# Routes execution to correct strategy based on UTC time (supervisor-driven) and TEST_MODE override.
+# THIS MODULE IS NOT A WORKER OR SUPERVISOR. IT MUST NEVER BE LAUNCHED DIRECTLY by main.py, CLI, or as a persistent process.
+# Only called by tbot_supervisor, integration_test_runner, or tests.
 
-import time
-from tbot_bot.strategy.strategy_meta import StrategyResult
-from tbot_bot.strategy.strategy_open import run_open_strategy
-from tbot_bot.strategy.strategy_mid import run_mid_strategy
-from tbot_bot.strategy.strategy_close import run_close_strategy
-from tbot_bot.config.env_bot import get_bot_config
-from tbot_bot.support.utils_time import time_local, parse_time_local
-from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import datetime
+from tbot_bot.strategy.strategy_meta import StrategyResult
+from tbot_bot.config.env_bot import (
+    get_bot_config,
+    get_open_time_utc,
+    get_mid_time_utc,
+    get_close_time_utc,
+)
+from tbot_bot.support.utils_time import utc_now, parse_time_utc
+from tbot_bot.support.utils_log import log_event
 
 config = get_bot_config()
 
-# Retrieve strategy sequence and enable/disable config values
+# Router respects enable/disable flags and declared order but does not self-schedule.
 STRATEGY_SEQUENCE = [s.strip().lower() for s in config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")]
-STRAT_OPEN_ENABLED = config.get("STRAT_OPEN_ENABLED", True)
-STRAT_MID_ENABLED = config.get("STRAT_MID_ENABLED", True)
-STRAT_CLOSE_ENABLED = config.get("STRAT_CLOSE_ENABLED", True)
+STRAT_OPEN_ENABLED = bool(config.get("STRAT_OPEN_ENABLED", True))
+STRAT_MID_ENABLED = bool(config.get("STRAT_MID_ENABLED", True))
+STRAT_CLOSE_ENABLED = bool(config.get("STRAT_CLOSE_ENABLED", True))
 
-# Screener selection variables from .env_bot
-SCREENER_SOURCE = config.get("SCREENER_SOURCE", "FINNHUB").strip().upper()
-OPEN_SCREENER = config.get("OPEN_SCREENER", SCREENER_SOURCE).strip().upper()
-MID_SCREENER = config.get("MID_SCREENER", SCREENER_SOURCE).strip().upper()
-CLOSE_SCREENER = config.get("CLOSE_SCREENER", SCREENER_SOURCE).strip().upper()
+# Screener selection from .env_bot (upper-cased names resolve to concrete classes below)
+SCREENER_SOURCE = str(config.get("SCREENER_SOURCE", "FINNHUB")).strip().upper()
+OPEN_SCREENER = str(config.get("OPEN_SCREENER", SCREENER_SOURCE)).strip().upper()
+MID_SCREENER = str(config.get("MID_SCREENER", SCREENER_SOURCE)).strip().upper()
+CLOSE_SCREENER = str(config.get("CLOSE_SCREENER", SCREENER_SOURCE)).strip().upper()
 
-# Centralized start time parsing (local time zone aware)
-def ensure_time(val):
-    if isinstance(val, datetime.time):
-        return val
-    return parse_time_local(val)
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+TEST_FLAG_PATH = CONTROL_DIR / "test_mode.flag"
+BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
-START_TIME_OPEN = ensure_time(config.get("START_TIME_OPEN", "14:30"))
-START_TIME_MID = ensure_time(config.get("START_TIME_MID", "15:30"))
-START_TIME_CLOSE = ensure_time(config.get("START_TIME_CLOSE", "19:30"))
+def _bot_state() -> str:
+    try:
+        return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+    except Exception:
+        return "unknown"
 
-# Check for TEST_MODE flag presence
 def is_test_mode_active() -> bool:
-    test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
-    return test_flag_path.exists()
+    return TEST_FLAG_PATH.exists()
 
-# Symbol universe check before strategies
 def ensure_universe_valid():
+    # Lazy import to avoid import-time side effects
     from tbot_bot.screeners.screener_utils import is_cache_stale, UniverseCacheError
     from tbot_bot.screeners.universe_orchestrator import main as orchestrator_main
     try:
@@ -56,109 +55,113 @@ def ensure_universe_valid():
         log_event("router", f"Failed to rebuild universe: {ue}")
         raise
 
-# Helper to import screener dynamically
-def get_screener_class(source_name):
-    src = source_name.strip().upper()
+def get_screener_class(source_name: str):
+    # Lazy, selective imports to avoid dragging heavy deps at import-time
+    src = (source_name or "").strip().upper()
     if src == "ALPACA":
         from tbot_bot.screeners.screeners.alpaca_screener import AlpacaScreener
         return AlpacaScreener
-    elif src == "FINNHUB":
+    if src == "FINNHUB":
         from tbot_bot.screeners.screeners.finnhub_screener import FinnhubScreener
         return FinnhubScreener
-    elif src == "IBKR":
+    if src == "IBKR":
         from tbot_bot.screeners.screeners.ibkr_screener import IBKRScreener
         return IBKRScreener
-    elif src == "TRADIER":
+    if src == "TRADIER":
         from tbot_bot.screeners.screeners.tradier_screener import TradierScreener
         return TradierScreener
-    else:
-        raise ValueError(f"Unknown screener source: {src}")
+    raise ValueError(f"Unknown screener source: {src}")
 
-# Main strategy routing function
-def route_strategy(current_local_time=None, override: str = None) -> StrategyResult:
+def _parsed_utc_times():
+    """Read UTC execution times from env getters and return as datetime.time objects."""
+    open_tt = parse_time_utc(get_open_time_utc() or "13:30")
+    mid_tt = parse_time_utc(get_mid_time_utc() or "16:00")
+    close_tt = parse_time_utc(get_close_time_utc() or "19:45")
+    return open_tt, mid_tt, close_tt
+
+def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
-    Main router to select and execute strategy based on local time (per config TIMEZONE), manual override,
-    or TEST_MODE immediate execution bypassing schedule.
-    Only to be called by supervisor, integration test, or higher-level modules.
-    Never launched as a persistent worker/process.
+    Router selects a strategy when called.
+    - In TEST_MODE: runs all three sequentially (open→mid→close) once.
+    - With override: dispatches the named strategy immediately.
+    - Otherwise: uses UTC now vs START_TIME_* (UTC) to pick the first eligible in STRATEGY_SEQUENCE.
+    The router does NOT launch processes and does NOT stamp per-day guards; supervisor owns scheduling.
     """
-    # Ensure universe cache is valid/fresh before strategies
+    # Gate on bot_state for normal operation (allow TEST_MODE/override bypass)
+    state = _bot_state()
+    if not (override or is_test_mode_active()) and state != "running":
+        log_event("router", f"Bot state '{state}' not runnable — skipping route.")
+        return StrategyResult(skipped=True)
+
+    # Ensure universe cache is available/fresh
     ensure_universe_valid()
 
-    # If TEST_MODE active, run all strategies sequentially immediately and once
+    # TEST_MODE: run all sequentially once, then clear flag
     if is_test_mode_active():
-        log_event("router", "TEST_MODE active: executing all strategies sequentially")
+        log_event("router", "TEST_MODE active: executing open→mid→close sequentially")
         results = []
-        for strat, screener_name in zip(["open", "mid", "close"], [OPEN_SCREENER, MID_SCREENER, CLOSE_SCREENER]):
-            try:
-                log_event("router", f"TEST_MODE executing strategy: {strat} with screener: {screener_name}")
-                result = execute_strategy(strat, screener_override=screener_name)
-                results.append(result)
-            except Exception as e:
-                log_event("router", f"TEST_MODE error executing {strat}: {e}")
-                results.append(StrategyResult(skipped=True, errors=[str(e)]))
-        # After execution, delete test_mode.flag to reset
+        for strat, scr in (("open", OPEN_SCREENER), ("mid", MID_SCREENER), ("close", CLOSE_SCREENER)):
+            results.append(execute_strategy(strat, screener_override=scr))
         try:
-            test_flag_path = Path(__file__).resolve().parents[2] / "control" / "test_mode.flag"
-            test_flag_path.unlink()
-            log_event("router", "TEST_MODE flag cleared after test sequence completion")
-        except Exception as e:
-            log_event("router", f"Failed to clear TEST_MODE flag: {e}")
-        # Return last strategy result or combined as needed (return last here)
-        return results[-1]
+            TEST_FLAG_PATH.unlink()
+            log_event("router", "TEST_MODE flag cleared after run.")
+        except Exception:
+            pass
+        return results[-1] if results else StrategyResult(skipped=True)
 
-    now = current_local_time or time_local()
-    # --- Defensive cast: if 'now' is not a datetime.time, parse/cast it ---
-    if not isinstance(now, datetime.time):
-        now = parse_time_local(now)
-
-    # Defensive: ensure all start times are datetime.time objects before comparison
-    open_time = ensure_time(START_TIME_OPEN)
-    mid_time = ensure_time(START_TIME_MID)
-    close_time = ensure_time(START_TIME_CLOSE)
-
-    # Check for manual override (if provided)
+    # Override: dispatch immediately
     if override:
-        strat_name = override.strip().lower()
-        screener_override = {
-            "open": OPEN_SCREENER,
-            "mid": MID_SCREENER,
-            "close": CLOSE_SCREENER
-        }.get(strat_name, SCREENER_SOURCE)
-        log_event("router", f"Manual strategy override: {override} with screener: {screener_override}")
-        return execute_strategy(strat_name, screener_override=screener_override)
+        n = override.strip().lower()
+        scr = {"open": OPEN_SCREENER, "mid": MID_SCREENER, "close": CLOSE_SCREENER}.get(n, SCREENER_SOURCE)
+        log_event("router", f"Manual override: {n} using screener {scr}")
+        return execute_strategy(n, screener_override=scr)
 
-    # Iterate through the strategy sequence and select the strategy to execute
-    for s, screener_name in zip(STRATEGY_SEQUENCE, [OPEN_SCREENER, MID_SCREENER, CLOSE_SCREENER]):
-        if s == "open" and STRAT_OPEN_ENABLED and now >= open_time:
-            return execute_strategy("open", screener_override=OPEN_SCREENER)
-        elif s == "mid" and STRAT_MID_ENABLED and now >= mid_time:
-            return execute_strategy("mid", screener_override=MID_SCREENER)
-        elif s == "close" and STRAT_CLOSE_ENABLED and now >= close_time:
-            return execute_strategy("close", screener_override=CLOSE_SCREENER)
+    # UTC-based selection (defensive; supervisor should normally call concrete strategies directly)
+    now_tt = current_utc_time if isinstance(current_utc_time, datetime.time) else utc_now().time()
+    open_tt, mid_tt, close_tt = _parsed_utc_times()
+
+    seq_map = {
+        "open":  (STRAT_OPEN_ENABLED,  open_tt,  OPEN_SCREENER),
+        "mid":   (STRAT_MID_ENABLED,   mid_tt,   MID_SCREENER),
+        "close": (STRAT_CLOSE_ENABLED, close_tt, CLOSE_SCREENER),
+    }
+
+    for name in STRATEGY_SEQUENCE:
+        enabled, start_tt, scr = seq_map.get(name, (False, None, None))
+        if enabled and start_tt and now_tt >= start_tt:
+            return execute_strategy(name, screener_override=scr)
 
     return StrategyResult(skipped=True)
 
-# Executes the selected strategy and returns the result
 def execute_strategy(name: str, screener_override: str = None) -> StrategyResult:
     """
-    Dispatches control to the selected strategy module, injecting screener class from .env_bot.
+    Dispatch to concrete strategy module, injecting screener class.
+    Lazy-import strategies to avoid import-time crashes from unrelated modules.
     """
-    n = name.strip().lower()
+    n = (name or "").strip().lower()
     screener_class = get_screener_class(screener_override or SCREENER_SOURCE)
+
     try:
-        log_event("router", f"Executing strategy: {n} with screener: {screener_class.__name__}")
         if n == "open":
+            from tbot_bot.strategy.strategy_open import run_open_strategy
+            log_event("router", f"Executing OPEN with {screener_class.__name__}")
             return run_open_strategy(screener_class=screener_class)
-        elif n == "mid":
+
+        if n == "mid":
+            from tbot_bot.strategy.strategy_mid import run_mid_strategy
+            log_event("router", f"Executing MID with {screener_class.__name__}")
             return run_mid_strategy(screener_class=screener_class)
-        elif n == "close":
+
+        if n == "close":
+            from tbot_bot.strategy.strategy_close import run_close_strategy
+            log_event("router", f"Executing CLOSE with {screener_class.__name__}")
             return run_close_strategy(screener_class=screener_class)
-        else:
-            raise ValueError(f"Unknown strategy: {n}")
+
+        raise ValueError(f"Unknown strategy: {n}")
+
     except Exception as e:
         log_event("router", f"Error executing {n}: {e}")
         return StrategyResult(skipped=True, errors=[str(e)])
 
-# Entry point alias
+# Entry point alias for legacy callers
 run_strategy = route_strategy
