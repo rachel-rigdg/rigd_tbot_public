@@ -45,12 +45,20 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
         return False
 
 
+def _audit_table_info(conn: sqlite3.Connection):
+    """
+    Returns list of PRAGMA table_info rows for audit_trail:
+    (cid, name, type, notnull, dflt_value, pk)
+    """
+    try:
+        return conn.execute("PRAGMA table_info(audit_trail)").fetchall()
+    except Exception:
+        return []
+
+
 def _audit_existing_cols(conn: sqlite3.Connection) -> set:
-    if not _table_exists(conn, "audit_trail"):
-        return set()
-    rows = conn.execute("PRAGMA table_info(audit_trail)").fetchall()
-    # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
-    return {row[1] for row in rows}
+    rows = _audit_table_info(conn)
+    return {row[1] for row in rows} if rows else set()
 
 
 def _audit_ensure_schema(conn: sqlite3.Connection) -> None:
@@ -148,18 +156,31 @@ def append(event: str, **kwargs) -> int:
         "extra": extra_value,
     }
 
-    # Ensure every column in the schema has a value (None if not provided)
+    # Ensure every known column has a value (None if not provided)
     for k in AUDIT_TRAIL_FIELDS:
         record.setdefault(k, None)
-
-    cols = AUDIT_TRAIL_FIELDS[:]  # write EXACTLY these columns in this order
-    placeholders = ", ".join(["?"] * len(cols))
-    vals = [record[k] for k in cols]
 
     db_path = _resolve_db_path()
     with sqlite3.connect(db_path) as conn:
         # Ensure schema is at least as new as our writer
         _audit_ensure_schema(conn)
+
+        # Build INSERT column list from *actual* table columns to avoid NOT NULL failures
+        info = _audit_table_info(conn)
+        have_cols = [row[1] for row in info] if info else []
+        if not have_cols:
+            # Fallback to static list if PRAGMA unexpectedly fails
+            have_cols = AUDIT_TRAIL_FIELDS[:]
+
+        # Use the intersection of our canonical field order and actual columns
+        cols = [c for c in AUDIT_TRAIL_FIELDS if c in have_cols]
+
+        # If the table defines event_type, enforce non-empty again (belt & suspenders)
+        if "event_type" in have_cols and not record.get("event_type"):
+            raise ValueError("[ledger_audit.append] 'event_type' is required by the current schema.")
+
+        placeholders = ", ".join(["?"] * len(cols))
+        vals = [record.get(c) for c in cols]
 
         cur = conn.execute(
             f"INSERT INTO audit_trail ({', '.join(cols)}) VALUES ({placeholders})",

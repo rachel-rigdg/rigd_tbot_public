@@ -611,7 +611,7 @@ def ledger_edit(entry_id: int):
     user, _role = _current_user_and_role()
     actor = getattr(user, "username", None) or (user if user else "system")
 
-    # Atomic reassignment with audit (ensure non-null event_type)
+    # Atomic reassignment with audit (reassign_leg_account handles auditing)
     try:
         _ensure_audit_trail_columns()
         from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
@@ -619,8 +619,7 @@ def ledger_edit(entry_id: int):
             entry_id,
             account_code,
             actor,
-            reason=reason,
-            event_type="ledger_reassign_leg_account",  # <-- satisfy NOT NULL constraint
+            reason=reason,   # auditing occurs inside ledger_edit.py via audit_append(event="coa_reassign", ...)
         )
     except Exception as e:
         traceback.print_exc()
