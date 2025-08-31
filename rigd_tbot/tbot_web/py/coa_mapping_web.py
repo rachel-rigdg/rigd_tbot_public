@@ -55,6 +55,49 @@ def admin_required(f):
         return f(*args, **kwargs)
     return _wrap
 
+# ---------------------------
+# Normalization helpers
+# ---------------------------
+def _normalize_mapping_rows(mapping_obj):
+    """
+    Produce a flat list of mapping rows with stable keys so the template can render
+    regardless of how load_mapping_table() structures things.
+    """
+    rows = []
+    # 1) locate list of rules
+    if isinstance(mapping_obj, list):
+        rows = mapping_obj
+    elif isinstance(mapping_obj, dict):
+        for key in ("rules", "records", "rows", "table", "items", "data"):
+            val = mapping_obj.get(key)
+            if isinstance(val, list):
+                rows = val
+                break
+        else:
+            # possibly dict of id->rule
+            vals = list(mapping_obj.values())
+            if vals and all(isinstance(v, dict) for v in vals):
+                rows = vals
+
+    # 2) normalize field names (retain originals too)
+    norm = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        norm.append({
+            # canonical columns used by the table
+            "broker": r.get("broker") or r.get("broker_code"),
+            "type": r.get("type") or r.get("txn_type") or r.get("category"),
+            "subtype": r.get("subtype") or r.get("txn_subtype") or r.get("subcategory"),
+            "description": r.get("description") or r.get("memo") or r.get("pattern") or r.get("text"),
+            "debit_account": r.get("debit_account") or r.get("coa_debit") or r.get("coa_account_debit") or r.get("coa_account"),
+            "credit_account": r.get("credit_account") or r.get("coa_credit") or r.get("coa_account_credit"),
+            "updated_at": r.get("updated_at") or r.get("ts_utc") or r.get("timestamp"),
+            "updated_by": r.get("updated_by") or r.get("actor") or r.get("user"),
+            # keep originals for any JS relying on extra fields
+            **r,
+        })
+    return norm
 
 # ---------------------------
 # Pages / Views
@@ -75,7 +118,8 @@ def view_mapping():
     except ValueError:
         entry_id = None
 
-    mapping = load_mapping_table()
+    raw_mapping = load_mapping_table()
+    mapping_rows = _normalize_mapping_rows(raw_mapping)
     username, role = _current_user_and_role()
 
     # Existing /coa/api endpoints (the UI/JS already talks to these)
@@ -88,12 +132,18 @@ def view_mapping():
         "rollback": f"{coa_api_base}/rollback",
         "export": f"{coa_api_base}/export",
         "import": f"{coa_api_base}/import",
-        "table": f"{coa_api_base}/mapping_table",
+        "table": f"{coa_api_base}/mapping_table",  # if present
     }
 
     return render_template(
         "coa_mapping.html",
-        mapping=mapping,
+        # raw + normalized for maximum template compatibility
+        mapping=raw_mapping,
+        mapping_rows=mapping_rows,
+        rows=mapping_rows,
+        rules=mapping_rows,
+        table=mapping_rows,
+        row_count=len(mapping_rows),
         user=username,
         user_role=role,
         from_source=from_source,
@@ -102,6 +152,12 @@ def view_mapping():
         api_urls=api_urls,
     )
 
+# Read-only JSON rows (handy if template fetches instead of server-rendering)
+@coa_mapping_web.route("/coa_mapping/api/mapping_table", methods=["GET"])
+def mapping_table_json():
+    raw_mapping = load_mapping_table()
+    rows = _normalize_mapping_rows(raw_mapping)
+    return jsonify({"rows": rows, "count": len(rows)})
 
 # ---------------------------
 # CRUD / Assignment
@@ -125,7 +181,6 @@ def assign_mapping_route():
     flash("Mapping assigned/updated.", "success")
     return jsonify({"success": True})
 
-
 @coa_mapping_web.route("/coa_mapping/flag_unmapped", methods=["POST"])
 def flag_unmapped():
     """Flag an unmapped transaction for admin review (viewer allowed to report)."""
@@ -134,7 +189,6 @@ def flag_unmapped():
     flag_unmapped_transaction(txn, user=actor)
     log_event("coa_mapping_web", f"Transaction flagged unmapped by {actor}: {txn}", level="info")
     return jsonify({"success": True})
-
 
 # ---------------------------
 # Versioning / Import / Export (RBAC-gated)
@@ -145,7 +199,6 @@ def list_versions():
     mapping = load_mapping_table()
     history = mapping.get("history", [])
     return jsonify(history)
-
 
 @coa_mapping_web.route("/coa_mapping/rollback", methods=["POST"])
 @admin_required
@@ -161,7 +214,6 @@ def rollback_mapping():
         flash(f"Version {version} not found.", "danger")
         return jsonify({"success": False, "error": "Version not found"}), 404
 
-
 @coa_mapping_web.route("/coa_mapping/export", methods=["GET"])
 @admin_required
 def export_mapping():
@@ -176,7 +228,6 @@ def export_mapping():
         mimetype="application/json",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
-
 
 @coa_mapping_web.route("/coa_mapping/import", methods=["POST"])
 @admin_required
@@ -198,7 +249,6 @@ def import_mapping():
         flash(f"Import failed: {e}", "danger")
         return redirect(url_for("coa_mapping_web.view_mapping"))
 
-
 # ---------------------------
 # Query helper
 # ---------------------------
@@ -208,7 +258,6 @@ def get_mapping():
     txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     mapping = get_mapping_for_transaction(txn)
     return jsonify(mapping or {})
-
 
 # ---------------------------
 # INTERNAL helper for inline edit hook (admin-only + CSRF-exempt)
