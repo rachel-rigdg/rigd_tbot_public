@@ -22,7 +22,7 @@ BOT_ID = get_bot_identity()
 SUMMARY_PATH = get_output_path(category="summaries", filename=f"{BOT_ID}_BOT_daily_summary.json")
 SHUTDOWN_FLAG = get_output_path(category="logs", filename="shutdown_triggered.txt")
 CONTROL_DIR = Path(os.getenv("CONTROL_DIR", Path(__file__).resolve().parents[1] / "control"))
-KILL_FLAG = CONTROL_DIR / "control_kill.txt"
+KILL_FLAG = CONTROL_DIR / "control_kill.flag"
 KILL_LOG_PATH = get_output_path(category="logs", filename="kill_switch.log")
 
 def load_summary():

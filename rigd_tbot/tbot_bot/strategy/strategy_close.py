@@ -38,7 +38,7 @@ FRACTIONAL            = str(config.get("FRACTIONAL", "false")).lower() == "true"
 WEIGHTS               = [float(w) for w in config["WEIGHTS"].split(",")]
 
 # --- Control/stamps (use tbot_bot/control via resolver) ---
-CONTROL_DIR        = path_resolver.resolve_project_root() / "tbot_bot" / "control"
+CONTROL_DIR        = path_resolver.get_project_root() / "tbot_bot" / "control"
 BOT_STATE_PATH     = CONTROL_DIR / "bot_state.txt"
 CLOSE_STAMP_PATH   = CONTROL_DIR / "last_strategy_close_utc.txt"
 TEST_MODE_FLAG     = CONTROL_DIR / "test_mode.flag"

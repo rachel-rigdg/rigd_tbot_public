@@ -38,7 +38,7 @@ LAST_CLOSE_STAMP = CONTROL_DIR / "last_strategy_close_utc.txt"
 
 STATUS_BOT_PATH = path_resolver.resolve_runtime_script_path("status_bot.py")
 WATCHDOG_BOT_PATH = path_resolver.resolve_runtime_script_path("watchdog_bot.py")
-STRATEGY_ROUTER_PATH = path_resolver.resolve_runtime_script_path("strategy_router.py")
+# STRATEGY_ROUTER MUST NOT BE LAUNCHED AS A PROCESS — do not resolve/launch here.
 STRATEGY_OPEN_PATH = path_resolver.resolve_runtime_script_path("strategy_open.py")
 STRATEGY_MID_PATH = path_resolver.resolve_runtime_script_path("strategy_mid.py")
 STRATEGY_CLOSE_PATH = path_resolver.resolve_runtime_script_path("strategy_close.py")
@@ -252,7 +252,7 @@ def main():
     launch_targets = [
         ("status_bot", STATUS_BOT_PATH),
         ("watchdog_bot", WATCHDOG_BOT_PATH),
-        ("strategy_router", STRATEGY_ROUTER_PATH),
+        # DO NOT LAUNCH strategy_router here — it is not a worker.
         ("risk_module", RISK_MODULE_PATH),
         ("kill_switch", KILL_SWITCH_PATH),
         ("log_rotation", LOG_ROTATION_PATH),

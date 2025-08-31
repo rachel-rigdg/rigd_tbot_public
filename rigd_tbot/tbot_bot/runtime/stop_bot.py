@@ -66,7 +66,7 @@ def stop_bot_session():
     bot_status.set_state("idle")
 
     CONTROL_DIR = config.get("CONTROL_DIR", "control")
-    CONTROL_STOP_FILE = Path(CONTROL_DIR) / "control_stop.txt"
+    CONTROL_STOP_FILE = Path(CONTROL_DIR) / "control_stop.flag"
     CONTROL_STOP_FILE.parent.mkdir(parents=True, exist_ok=True)
     CONTROL_STOP_FILE.write_text(f"STOPPED at {utc_now().isoformat()}")
 

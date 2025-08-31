@@ -13,12 +13,21 @@ import json
 from datetime import datetime
 from tbot_bot.screeners.screener_utils import atomic_copy_file
 from tbot_bot.support.path_resolver import (
-    resolve_universe_partial_path, resolve_universe_cache_path
+    resolve_universe_partial_path,
+    resolve_universe_cache_path,
 )
+
+# --- Exported constants required by tests ---
+PARTIAL_PATH = resolve_universe_partial_path()
+FINAL_PATH = resolve_universe_cache_path()
+# Derive unfiltered alongside partial (do not modify imports)
+UNFILTERED_PATH = os.path.join(os.path.dirname(PARTIAL_PATH), "symbol_universe.unfiltered.json")
+
 
 def log(msg):
     now = datetime.utcnow().isoformat() + "Z"
     print(f"[{now}] {msg}")
+
 
 def run_module(module_path):
     log(f"Starting {module_path}...")
@@ -29,6 +38,7 @@ def run_module(module_path):
         print(proc.stderr)
         sys.exit(proc.returncode)
     log(f"{module_path} completed successfully.")
+
 
 def poll_blocklist_recovery():
     """
@@ -43,6 +53,7 @@ def poll_blocklist_recovery():
         return True
     return False
 
+
 def _stage_with_timestamp(partial_path: str, final_path: str) -> str:
     """
     Read partial JSON, inject build_timestamp_utc, write staged file next to FINAL,
@@ -50,6 +61,7 @@ def _stage_with_timestamp(partial_path: str, final_path: str) -> str:
     """
     with open(partial_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+
     ts = datetime.utcnow().isoformat() + "Z"
     data["build_timestamp_utc"] = ts
 
@@ -62,21 +74,23 @@ def _stage_with_timestamp(partial_path: str, final_path: str) -> str:
         os.fsync(f.fileno())
     return staged_path
 
+
 def main():
     # Step 1: Build raw symbols file from provider API (single API call)
     run_module("tbot_bot.screeners.symbol_universe_raw_builder")
+
     # Step 2: Enrich, filter, blocklist, and build universe files from API adapters
     run_module("tbot_bot.screeners.symbol_enrichment")
+
     # Step 3: Finalize — inject timestamp and atomically publish staged -> final
-    PARTIAL_PATH = resolve_universe_partial_path()
-    FINAL_PATH = resolve_universe_cache_path()
     if not os.path.exists(PARTIAL_PATH):
         log(f"ERROR: Missing partial universe: {PARTIAL_PATH}")
         sys.exit(1)
 
     try:
         staged = _stage_with_timestamp(PARTIAL_PATH, FINAL_PATH)
-        atomic_copy_file(staged, FINAL_PATH)  # performs .tmp + fsync + rename to FINAL
+        # Atomic publish to FINAL_PATH (.tmp + fsync + rename handled in helper)
+        atomic_copy_file(staged, FINAL_PATH)
         try:
             os.remove(staged)
         except OSError:
@@ -89,6 +103,7 @@ def main():
     # Step 4: Poll for blocklist/manual recovery flag
     if poll_blocklist_recovery():
         log("Blocklist/manual recovery event logged during universe orchestration.")
+
 
 if __name__ == "__main__":
     main()

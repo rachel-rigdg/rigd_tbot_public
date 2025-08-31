@@ -83,7 +83,9 @@ def main():
             },
             level="info",
         )
-        # Concise completion line (human-friendly)
+        # Concise completion line (human-friendly, stdout)
+        print(f"sync completed @ {end_ts}")
+        # Optional structured log line for the concise message as well
         log_event("sync_broker_ledger", f"sync completed @ {end_ts}")
 
         print(json.dumps({"ok": True, "sync_run_id": sync_run_id, **metrics}))

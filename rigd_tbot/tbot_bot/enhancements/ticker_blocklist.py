@@ -6,9 +6,10 @@ import os
 import json
 from datetime import datetime
 from tbot_bot.support.utils_log import log_debug, log_error
-from tbot_bot.support.path_resolver import get_enhancements_path
+from tbot_bot.support.path_resolver import get_output_path
 
-BLOCKLIST_FILE = os.path.join(get_enhancements_path(), ".ticker_blocklist.json")
+# Resolve blocklist file within output/enhancements
+BLOCKLIST_FILE = os.path.join(get_output_path("enhancements", "ticker_blocklist.json"))
 
 def load_blocklist():
     """

@@ -66,6 +66,44 @@ def get_screener_secrets() -> dict:
         LOG.error(f"[screener_utils] Failed to load screener secrets: {e}")
         return {}
 
+def get_universe_screener_secrets() -> Dict[str, Dict]:
+    """
+    Returns a dict of provider configs keyed by provider name (e.g., 'FINNHUB'),
+    including only providers with UNIVERSE_ENABLED=true. Provider-scoped fields
+    have their index suffix stripped, e.g., 'SCREENER_API_KEY_1' -> 'SCREENER_API_KEY'.
+    """
+    def _truthy(v) -> bool:
+        return str(v).strip().lower() in ("1", "true", "yes", "y", "on")
+
+    secrets = get_screener_secrets()
+    if not secrets:
+        return {}
+
+    # Identify provider indices from keys like 'PROVIDER_1' -> 'FINNHUB'
+    result: Dict[str, Dict] = {}
+    for k, v in secrets.items():
+        if not k.startswith("PROVIDER_"):
+            continue
+        idx = k.split("_")[-1]
+        provider_name = str(v).strip().upper() if v else ""
+        if not provider_name:
+            continue
+
+        enabled = secrets.get(f"UNIVERSE_ENABLED_{idx}", "false")
+        if not _truthy(enabled):
+            continue
+
+        # Collect all fields for this index, removing the "_{idx}" suffix
+        provider_cfg: Dict[str, str] = {"SCREENER_NAME": provider_name, "PROVIDER": provider_name}
+        suffix = f"_{idx}"
+        for kk, vv in secrets.items():
+            if kk.endswith(suffix):
+                base = kk[: -len(suffix)]
+                provider_cfg[base] = vv
+        result[provider_name] = provider_cfg
+
+    return result
+
 def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)
 

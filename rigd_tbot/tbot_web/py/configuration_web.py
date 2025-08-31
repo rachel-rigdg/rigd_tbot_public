@@ -19,11 +19,21 @@ try:
 except Exception:  # pragma: no cover
     ZoneInfo = None
 
+# NEW: use centralized time helpers (DST-aware, UTC-first)
+from tbot_bot.support.utils_time import (
+    validate_hhmm as _utils_validate_hhmm,
+    local_hhmm_to_utc_hhmm as _utils_local_to_utc_hhmm,
+    nearest_market_day_reference as _utils_nearest_market_day_reference,
+)
+
 HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 def _validate_hhmm(label: str, v: str) -> str:
+    """
+    Delegate validation to utils_time.validate_hhmm for consistency.
+    """
     v = (v or "").strip()
-    if not HHMM_RE.match(v):
+    if not _utils_validate_hhmm(v):
         raise ValueError(f"{label} must be HH:MM (24h). Got '{v}'.")
     return v
 
@@ -38,16 +48,12 @@ def _validate_timezone(v: str) -> str:
         raise ValueError(f"Invalid IANA timezone: '{v}'")
 
 def _local_hhmm_to_utc_hhmm(hhmm: str, tzname: str) -> str:
-    """Convert today's local HH:MM in tzname to UTC HH:MM (DST-aware)."""
-    if ZoneInfo is None:
-        # Fallback: treat provided value as already UTC
-        return hhmm
-    tz = ZoneInfo(tzname)
-    now_local = datetime.now(tz)
-    hh, mm = map(int, hhmm.split(":"))
-    local_dt = datetime(now_local.year, now_local.month, now_local.day, hh, mm, tzinfo=tz)
-    utc_dt = local_dt.astimezone(timezone.utc)
-    return utc_dt.strftime("%H:%M")
+    """
+    Convert local HH:MM -> UTC HH:MM using utils_time (DST-aware).
+    Anchors to nearest market-day reference date to avoid DST edge cases.
+    """
+    ref_date = _utils_nearest_market_day_reference(None, tzname)
+    return _utils_local_to_utc_hhmm(hhmm, tzname, reference_date=ref_date)
 
 def _update_env_lines(env_text: str, kv: dict) -> str:
     """Idempotently upsert keys in .env_bot while preserving comments/ordering."""

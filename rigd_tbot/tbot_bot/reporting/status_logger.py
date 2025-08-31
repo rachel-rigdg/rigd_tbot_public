@@ -90,22 +90,34 @@ def _check_schedule(strategy: str, sched_hhmm: str, stamp_path: Path):
     if stamp and stamp.date() == now.date():
         # Launched on time (within ±GRACE_SEC)
         if abs((stamp - sched).total_seconds()) <= GRACE_SEC:
-            _emit_once("launched_on_time", strategy,
-                       f"{strategy}: launched on time (scheduled {sched.strftime('%H:%M')}Z, actual {stamp.strftime('%H:%M')}Z)")
+            _emit_once(
+                "launched_on_time",
+                strategy,
+                f"{strategy}: launched on time (scheduled {sched.strftime('%H:%M')}Z, actual {stamp.strftime('%H:%M')}Z)"
+            )
         # Late launch
         elif (stamp - sched).total_seconds() > GRACE_SEC:
-            _emit_once("late_launch", strategy,
-                       f"{strategy}: late launch (scheduled {sched.strftime('%H:%M')}Z, actual {stamp.strftime('%H:%M')}Z)")
+            _emit_once(
+                "late_launch",
+                strategy,
+                f"{strategy}: late launch (scheduled {sched.strftime('%H:%M')}Z, actual {stamp.strftime('%H:%M')}Z)"
+            )
 
         # Guard prevented relaunch (we are at/after schedule today and a stamp already exists)
         if now >= sched and (now - sched) <= timedelta(minutes=10):
-            _emit_once("guard_prevented", strategy,
-                       f"{strategy}: per-day guard prevented relaunch (stamp already exists for today)")
+            _emit_once(
+                "guard_prevented",
+                strategy,
+                f"{strategy}: per-day guard prevented relaunch (stamp already exists for today)"
+            )
     else:
         # Missed schedule: grace window passed with no stamp
         if now > (sched + timedelta(seconds=GRACE_SEC)):
-            _emit_once("missed_schedule", strategy,
-                       f"{strategy}: missed scheduled launch (scheduled {sched.strftime('%H:%M')}Z, no launch stamp found)")
+            _emit_once(
+                "missed_schedule",
+                strategy,
+                f"{strategy}: missed scheduled launch (scheduled {sched.strftime('%H:%M')}Z, no launch stamp found)"
+            )
 
 
 def write_status():

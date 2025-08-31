@@ -29,7 +29,7 @@ OPEN_SCREENER = str(config.get("OPEN_SCREENER", SCREENER_SOURCE)).strip().upper(
 MID_SCREENER = str(config.get("MID_SCREENER", SCREENER_SOURCE)).strip().upper()
 CLOSE_SCREENER = str(config.get("CLOSE_SCREENER", SCREENER_SOURCE)).strip().upper()
 
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode.flag"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 

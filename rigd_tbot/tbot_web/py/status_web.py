@@ -118,10 +118,10 @@ def _enrich_status(base_status: dict) -> dict:
     base_status["bot_state"] = bot_state
 
     # Schedules (UTC-only for runtime), plus localized display for UI
-    open_hhmm = get_open_time_utc()
-    mid_hhmm = get_mid_time_utc()
-    close_hhmm = get_close_time_utc()
-    mclose_hhmm = get_market_close_utc()
+    open_hhmm = (get_open_time_utc() or "13:30").strip()
+    mid_hhmm = (get_mid_time_utc() or "16:00").strip()
+    close_hhmm = (get_close_time_utc() or "19:45").strip()
+    mclose_hhmm = (get_market_close_utc() or "21:00").strip()
 
     tz_name = get_cfg_timezone() or "UTC"
 

@@ -24,7 +24,7 @@ RUNTIME_CONFIG_KEY_PATH = ROOT / "tbot_bot" / "storage" / "keys" / "runtime_conf
 RUNTIME_CONFIG_PATH = ROOT / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
 PROVISION_FLAG_PATH = CONFIG_PATH / "PROVISION_FLAG"
 CONTROL_DIR = ROOT / "tbot_bot" / "control"
-CONTROL_START_PATH = CONTROL_DIR / "control_start.txt"
+CONTROL_START_PATH = CONTROL_DIR / "control_start.flag"
 STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "logs" / "provisioning_status.json"
 STATUS_BOOTSTRAP_PATH = BOOTSTRAP_LOGS_PATH / "provisioning_status.json"
 BOT_STATE_FILE = CONTROL_DIR / "bot_state.txt"
@@ -103,7 +103,7 @@ def main():
                 db_bootstrap_main()
                 time.sleep(0.5)
                 clear_provision_flag()
-                write_status(status_path, "running", "Creating control_start.txt to launch bot via systemd.")
+                write_status(status_path, "running", "Creating control_start.flag to launch bot via systemd.")
                 create_control_start_flag()
                 set_bot_state("bootstrapping")
                 write_status(status_path, "bootstrapping", "Provisioning and bootstrapping complete, initializing core databases before registration.")
