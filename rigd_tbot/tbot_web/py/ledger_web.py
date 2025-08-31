@@ -487,14 +487,13 @@ def alias_coa_mapping():
     Tries a set of likely endpoints; if none exist, returns a helpful 404 JSON.
     """
     candidates = [
-        "coa_web.coa_mapping",        # preferred
-        "coa_web.index",              # fallback index
-        "coa_mapping_web.coa_mapping",
+        "coa_mapping_web.view_mapping",  # primary (new mapping UI)
+        "coa_web.coa_mapping",           # legacy preferred
+        "coa_web.index",                 # legacy fallback
         "settings_web.coa_mapping",
     ]
     for endpoint in candidates:
         try:
-            # Only redirect to endpoints that can be built
             url = url_for(endpoint)
             return redirect(url)
         except BuildError:
@@ -612,11 +611,17 @@ def ledger_edit(entry_id: int):
     user, _role = _current_user_and_role()
     actor = getattr(user, "username", None) or (user if user else "system")
 
-    # Atomic reassignment with audit
+    # Atomic reassignment with audit (ensure non-null event_type)
     try:
-        _ensure_audit_trail_columns()  # <-- ensure audit_trail has required columns before write
+        _ensure_audit_trail_columns()
         from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
-        result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
+        result = reassign_leg_account(
+            entry_id,
+            account_code,
+            actor,
+            reason=reason,
+            event_type="ledger_reassign_leg_account",  # <-- satisfy NOT NULL constraint
+        )
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": f"reassign failed: {e}"}), 500

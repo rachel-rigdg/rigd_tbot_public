@@ -55,9 +55,51 @@ def admin_required(f):
 @coa_mapping_web.route("/coa_mapping", methods=["GET"])
 @login_required
 def view_mapping():
-    """Render the COA mapping management page."""
+    """
+    Render the COA mapping management page.
+
+    Accepts optional query params:
+      - from: source context (e.g., 'ledger')
+      - entry_id: numeric ledger entry id for inline mapping workflows
+
+    Template receives:
+      - mapping: current mapping table
+      - from_source: str | None
+      - entry_id: int | None
+      - coa_api_base: '/coa/api' (existing API base used by frontend JS)
+      - api_urls: dict of canonical API paths under /coa/api
+    """
+    from_source = (request.args.get("from") or "").strip() or None
+    entry_id_raw = (request.args.get("entry_id") or "").strip()
+    try:
+        entry_id = int(entry_id_raw) if entry_id_raw else None
+    except ValueError:
+        entry_id = None
+
     mapping = load_mapping_table()
-    return render_template("coa_mapping.html", mapping=mapping, user=current_user)
+
+    # Existing /coa/api endpoints are used by the UI JS; expose canonical paths.
+    coa_api_base = "/coa/api"
+    api_urls = {
+        "base": coa_api_base,
+        "get_mapping": f"{coa_api_base}/get_mapping",
+        "assign": f"{coa_api_base}/assign",
+        "versions": f"{coa_api_base}/versions",
+        "rollback": f"{coa_api_base}/rollback",
+        "export": f"{coa_api_base}/export",
+        "import": f"{coa_api_base}/import",
+        "table": f"{coa_api_base}/mapping_table",
+    }
+
+    return render_template(
+        "coa_mapping.html",
+        mapping=mapping,
+        user=current_user,
+        from_source=from_source,
+        entry_id=entry_id,
+        coa_api_base=coa_api_base,
+        api_urls=api_urls,
+    )
 
 
 # ---------------------------
@@ -118,7 +160,7 @@ def list_versions():
 @admin_required
 def rollback_mapping():
     """Rollback to a previous mapping table version (admin-only)."""
-    version = int((request.form.get("version") or request.json.get("version") if request.is_json else 0) or 0)
+    version = int((request.form.get("version") or (request.json.get("version") if request.is_json else 0) or 0))
     if rollback_mapping_version(version):
         log_event(
             "coa_mapping_web",

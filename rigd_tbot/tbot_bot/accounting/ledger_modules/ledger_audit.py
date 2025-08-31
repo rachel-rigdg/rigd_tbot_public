@@ -72,7 +72,7 @@ def append(event: str, **kwargs) -> int:
     Structured audit writer aligned to AUDIT_TRAIL_FIELDS.
 
     Required:
-      - event (str) → stored in 'action'
+      - event (str) or event_type in kwargs → persisted in 'event_type' column (NOT NULL)
 
     Optional kwargs:
       - actor, related_id (or entry_id), group_id, trade_id
@@ -86,6 +86,12 @@ def append(event: str, **kwargs) -> int:
     """
     if TEST_MODE_FLAG.exists():
         return 0
+
+    # ---- Validate required event_type ----
+    event_type = (kwargs.get("event_type") or event or "").strip()
+    if not event_type:
+        # Fail fast with a clear message rather than sending NULL to the DB
+        raise ValueError("[ledger_audit.append] 'event_type' is required and must be non-empty.")
 
     entity_code, jurisdiction_code, broker_code, bot_id = load_bot_identity().split("_")
 
@@ -118,7 +124,9 @@ def append(event: str, **kwargs) -> int:
     # Build a full record dict with canonical keys
     record = {
         "timestamp": _now_iso_utc(),
-        "action": event,
+        # Ensure both modern and legacy columns are populated when present in schema
+        "event_type": event_type,
+        "action": kwargs.get("action") or event_type,
         "related_id": kwargs.get("related_id") or kwargs.get("entry_id"),
         "actor": kwargs.get("actor") or kwargs.get("user") or "system",
         "old_value": old_val,
@@ -168,6 +176,7 @@ def log_audit_event(action: str, entry_id, user, before=None, after=None) -> int
     """
     return append(
         event=action,
+        event_type=action,  # ensure NOT NULL for modern schema
         related_id=entry_id,
         actor=user,
         old_value=before,
