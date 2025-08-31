@@ -81,7 +81,7 @@ def coa_management():
         )
 
 # ---- Alias: /coa_mapping → redirect to /coa (preserve query string) ----
-@coa_web.route("/coa_mapping", methods=["GET"])
+@coa_web.route("/coa_mapping", methods=["GET"], endpoint="coa_mapping")
 @coa_web.route("/ledger/coa_mapping", methods=["GET"])  # legacy alias if blueprint is registered without prefix
 @rbac_required()
 def coa_mapping():
