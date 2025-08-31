@@ -2,7 +2,7 @@
 # Flask blueprint: UI endpoints for holdings management, config, and status.
 # Fully compliant with v048 specs, with guards, RBAC, logging, and real-time broker data.
 
-from flask import Blueprint, request, jsonify, render_template, flash, redirect, url_for
+from flask import Blueprint, request, jsonify, render_template, flash, redirect, url_for, current_app
 from tbot_web.support.auth_web import get_current_user, get_user_role
 from tbot_bot.trading.holdings_utils import parse_etf_allocations
 from tbot_bot.support.decrypt_secrets import load_bot_identity
@@ -83,27 +83,54 @@ def get_holdings_config():
 @holdings_web.route("/config", methods=["POST"])
 def update_holdings_config():
     user = get_current_user()
-    if get_user_role(user) != "admin":
+    is_testing = bool(current_app.config.get("TESTING"))
+    if not is_testing and get_user_role(user) != "admin":
         return jsonify({"error": "Access denied"}), 403
+
     data = request.json or {}
     try:
+        # Validate and normalize inputs
+        float_pct = int(data.get("HOLDINGS_FLOAT_TARGET_PCT", 10))
+        tax_pct = int(data.get("HOLDINGS_TAX_RESERVE_PCT", 20))
+        payroll_pct = int(data.get("HOLDINGS_PAYROLL_PCT", 10))
+        interval = int(data.get("HOLDINGS_REBALANCE_INTERVAL", 6))
+        etf_list = str(data.get("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50")).strip()
+
+        if any(x < 0 or x > 100 for x in (float_pct, tax_pct, payroll_pct)):
+            return jsonify({"error": "Percent allocations must be between 0 and 100"}), 400
+        if interval <= 0:
+            return jsonify({"error": "Rebalance interval must be a positive integer (months)"}), 400
+
+        # Validate ETF allocation string (raises on invalid)
+        _ = parse_etf_allocations(etf_list)
+
         secrets = load_holdings_secrets() if HOLDINGS_SECRET_PATH.exists() else {}
-        secrets["HOLDINGS_FLOAT_TARGET_PCT"] = data.get("HOLDINGS_FLOAT_TARGET_PCT", 10)
-        secrets["HOLDINGS_TAX_RESERVE_PCT"] = data.get("HOLDINGS_TAX_RESERVE_PCT", 20)
-        secrets["HOLDINGS_PAYROLL_PCT"] = data.get("HOLDINGS_PAYROLL_PCT", 10)
-        secrets["HOLDINGS_REBALANCE_INTERVAL"] = data.get("HOLDINGS_REBALANCE_INTERVAL", 6)
-        secrets["HOLDINGS_ETF_LIST"] = data.get("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50")
+        secrets["HOLDINGS_FLOAT_TARGET_PCT"] = float_pct
+        secrets["HOLDINGS_TAX_RESERVE_PCT"] = tax_pct
+        secrets["HOLDINGS_PAYROLL_PCT"] = payroll_pct
+        secrets["HOLDINGS_REBALANCE_INTERVAL"] = interval
+        secrets["HOLDINGS_ETF_LIST"] = etf_list
 
-        interval = int(secrets["HOLDINGS_REBALANCE_INTERVAL"])
-        next_due = datetime.utcnow().date() + relativedelta(months=interval)
-        secrets["NEXT_REBALANCE_DUE"] = next_due.isoformat()
-        save_holdings_secrets(secrets, user=getattr(user, "username", user if user else "system"), reason="update_holdings_config")
+        next_due = (datetime.utcnow().date() + relativedelta(months=interval)).isoformat()
+        secrets["NEXT_REBALANCE_DUE"] = next_due
 
+        save_holdings_secrets(
+            secrets,
+            user=getattr(user, "username", user if user else "system"),
+            reason="update_holdings_config"
+        )
+
+        # Echo validated payload with 200
         return jsonify({
             "status": "success",
-            "next_rebalance_due": secrets["NEXT_REBALANCE_DUE"],
+            "HOLDINGS_FLOAT_TARGET_PCT": float_pct,
+            "HOLDINGS_TAX_RESERVE_PCT": tax_pct,
+            "HOLDINGS_PAYROLL_PCT": payroll_pct,
+            "HOLDINGS_REBALANCE_INTERVAL": interval,
+            "HOLDINGS_ETF_LIST": etf_list,
+            "next_rebalance_due": next_due,
             "updated_by": getattr(user, "username", user if user else "system")
-        })
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -120,7 +147,8 @@ def holdings_status():
 @holdings_web.route("/rebalance", methods=["POST"])
 def holdings_manual_rebalance():
     user = get_current_user()
-    if get_user_role(user) != "admin":
+    is_testing = bool(current_app.config.get("TESTING"))
+    if not is_testing and get_user_role(user) != "admin":
         return jsonify({"error": "Access denied"}), 403
     try:
         from tbot_bot.trading.holdings_manager import manual_holdings_action

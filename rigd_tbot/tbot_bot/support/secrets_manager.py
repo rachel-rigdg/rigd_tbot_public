@@ -1,21 +1,20 @@
 # tbot_bot/support/secrets_manager.py
 # Fully compliant with modular, indexed, secure screener credential management.
-# - Supports dynamic provider indexing (PROVIDER_1, PROVIDER_2, ...).
+# - Supports dynamic provider indexing (PROVIDER_01, PROVIDER_02, ...).
 # - Usage flags (UNIVERSE_ENABLED, TRADING_ENABLED, ENRICHMENT_ENABLED) always present per provider.
-# - Atomic encrypted file I/O.
-# - UTC audit log for all add/update/delete.
+# - Atomic encrypted file I/O with resolved paths.
+# - UTC audit log for all add/update/delete/rotate (append-only).
 # - Never stores or logs secrets in plaintext.
 
 import os
-from typing import Dict, Optional, List
-from tbot_bot.support.decrypt_secrets import decrypt_json
-from tbot_bot.support.encrypt_secrets import encrypt_json
-from tbot_bot.support.path_resolver import get_secret_path
 import re
 import json
+from typing import Dict, Optional, List, Tuple
 from datetime import datetime, timezone
 from pathlib import Path
 from cryptography.fernet import Fernet
+
+from tbot_bot.support.path_resolver import get_secret_path
 
 SCREENER_CREDENTIALS_FILENAME = "screener_api"
 SCREENER_CREDENTIALS_FILE_ENC = "screener_api.json.enc"
@@ -34,23 +33,39 @@ KEY_DIR = os.path.join(
 )
 
 USAGE_FLAGS = ["UNIVERSE_ENABLED", "TRADING_ENABLED", "ENRICHMENT_ENABLED"]
+SECRET_FIELDS = {"SCREENER_PASSWORD", "SCREENER_API_KEY", "SCREENER_TOKEN"}
 
 _PROVIDER_KEY_RE = re.compile(r"^PROVIDER_\d+$")
 
+
+# --------------------------
+# Key & Audit Helpers
+# --------------------------
 def _ensure_keyfile_exists(name: str):
     key_path = Path(KEY_DIR) / f"{name}.key"
     if not key_path.is_file():
         key_path.parent.mkdir(parents=True, exist_ok=True)
         key = Fernet.generate_key()
-        key_path.write_text(key.decode("utf-8"))
+        key_path.write_bytes(key)
+
+def _get_fernet(name: str) -> Fernet:
+    _ensure_keyfile_exists(name)
+    key_path = Path(KEY_DIR) / f"{name}.key"
+    key = key_path.read_bytes()
+    return Fernet(key)
 
 def _audit_log(action: str, provider: str):
     ts = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     meta = {"provider": provider, "admin_user": "admin"}
-    Path(AUDIT_LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
-    with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+    p = Path(AUDIT_LOG_PATH)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
         f.write(f"[{ts}] {action} | {json.dumps(meta)}\n")
 
+
+# --------------------------
+# Path & Schema Helpers
+# --------------------------
 def get_screener_credentials_path() -> str:
     return get_secret_path(SCREENER_CREDENTIALS_FILE_ENC)
 
@@ -62,41 +77,69 @@ def _load_schema() -> Dict:
             schema = json.load(f)
         return schema
     except Exception:
-        # Soft fail if schema not present, return empty schema
         return {}
 
 def _get_schema_keys() -> List[str]:
     schema = _load_schema()
     keys = [k for k in schema.get("properties", {}).keys() if k != "PROVIDER"]
+    # Ensure usage flags always present
     for flag in USAGE_FLAGS:
         if flag not in keys:
             keys.append(flag)
     return keys
 
+
+# --------------------------
+# Encrypted File I/O (Atomic)
+# --------------------------
+def _atomic_encrypt_write(path: str, data: Dict, key_name: str):
+    fernet = _get_fernet(key_name)
+    serialized = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    token = fernet.encrypt(serialized)
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target.with_suffix(target.suffix + ".tmp")
+
+    with open(tmp_path, "wb") as f:
+        f.write(token)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, target)
+
+def _decrypt_read(path: str, key_name: str) -> Dict:
+    target = Path(path)
+    if not target.exists():
+        return {}
+    fernet = _get_fernet(key_name)
+    with open(target, "rb") as f:
+        token = f.read()
+    decrypted = fernet.decrypt(token)
+    return json.loads(decrypted.decode("utf-8"))
+
+
+# --------------------------
+# Credentials CRUD
+# --------------------------
 def _create_empty_credentials_from_schema() -> Dict:
+    # Use flat generic model; no pre-seeding indices.
     return {}
 
 def load_screener_credentials() -> Dict:
-    path = get_screener_credentials_path()
-    _ensure_keyfile_exists("screener_api")
-    if not os.path.exists(path):
-        empty_creds = _create_empty_credentials_from_schema()
-        try:
-            save_screener_credentials(empty_creds)
-        except Exception as e:
-            raise RuntimeError(f"[secrets_manager] Failed to create empty screener credentials file: {e}")
-        return empty_creds
     try:
-        # NOTE: decrypt_json expects the base name (without extension)
-        return decrypt_json("screener_api")
+        path = get_screener_credentials_path()
+        if not os.path.exists(path):
+            empty = _create_empty_credentials_from_schema()
+            save_screener_credentials(empty)  # create encrypted file atomically
+            return empty
+        return _decrypt_read(path, SCREENER_CREDENTIALS_FILENAME)
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to load screener credentials: {e}")
 
 def save_screener_credentials(credentials: Dict) -> None:
     try:
-        _ensure_keyfile_exists("screener_api")
-        # NOTE: encrypt_json expects the base name (without extension)
-        encrypt_json("screener_api", credentials)
+        path = get_screener_credentials_path()
+        _atomic_encrypt_write(path, credentials, SCREENER_CREDENTIALS_FILENAME)
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to save screener credentials: {e}")
 
@@ -110,117 +153,123 @@ def _iter_provider_indices(creds: Dict) -> List[int]:
                 continue
     return sorted(indices)
 
-def get_provider_credentials(provider: str) -> Optional[Dict]:
-    creds = load_screener_credentials()
-    key_upper = provider.strip().upper()
-    # Find index for this provider
-    index = None
+def _find_index_for_provider(creds: Dict, provider_upper: str) -> Optional[str]:
     for k, v in creds.items():
-        if _PROVIDER_KEY_RE.match(k) and str(v).strip().upper() == key_upper:
-            index = k.split("_")[-1]
-            break
-    if index is None:
-        return None
+        if _PROVIDER_KEY_RE.match(k) and str(v).strip().upper() == provider_upper:
+            return k.split("_")[-1]
+    return None
 
-    result: Dict[str, str] = {}
+def _alloc_new_index(creds: Dict) -> str:
+    indices = _iter_provider_indices(creds)
+    next_idx_int = (indices[-1] + 1) if indices else 1
+    return f"{next_idx_int:02d}"  # zero-padded per spec (01, 02, ...)
+
+def _collect_index_view(creds: Dict, index: str) -> Dict[str, str]:
+    """Return a base-key→value mapping for a given index (without suffix)."""
+    view: Dict[str, str] = {}
     schema_keys = _get_schema_keys()
     for base_key in schema_keys:
-        k_full = f"{base_key}_{index}"
-        result[base_key] = creds.get(k_full, "")
+        view[base_key] = creds.get(f"{base_key}_{index}", "")
     for flag in USAGE_FLAGS:
-        k_flag = f"{flag}_{index}"
-        result[flag] = creds.get(k_flag, "false")
-    return result
+        view[flag] = creds.get(f"{flag}_{index}", "false")
+    return view
+
+def _normalize_flag(v) -> str:
+    return "true" if str(v).strip().lower() in ("1", "true", "yes", "y", "on") else "false"
+
+def get_provider_credentials(provider: str) -> Optional[Dict]:
+    creds = load_screener_credentials()
+    idx = _find_index_for_provider(creds, provider.strip().upper())
+    if idx is None:
+        return None
+    return _collect_index_view(creds, idx)
 
 def update_provider_credentials(provider: str, new_values: Dict) -> None:
     """
     Create or update credentials for a provider. Ensures:
-    - A mapping key PROVIDER_<idx> exists and maps to the provider name.
-    - All per-provider fields are written as KEY_<idx>.
-    - Usage flags are normalized to strings ("true"/"false").
+    - Stable index per provider (PROVIDER_XX).
+    - All per-provider fields written as KEY_XX.
+    - Usage flags normalized to 'true'/'false'.
+    - Append-only audit: ADDED / UPDATED / ROTATED.
     """
+    provider_upper = provider.strip().upper()
     try:
         creds = load_screener_credentials()
         schema_keys = _get_schema_keys()
-        key_upper = provider.strip().upper()
 
-        # Locate existing index (any digit length), or allocate next integer index
-        existing_index: Optional[str] = None
-        for k, v in creds.items():
-            if _PROVIDER_KEY_RE.match(k) and str(v).strip().upper() == key_upper:
-                existing_index = k.split("_")[-1]
-                break
-
-        if existing_index is None:
-            indices = _iter_provider_indices(creds)
-            next_idx_int = (indices[-1] + 1) if indices else 1
-            index = str(next_idx_int)  # no zero-padding for simplicity/compatibility
+        existing_idx = _find_index_for_provider(creds, provider_upper)
+        if existing_idx is None:
+            index = _alloc_new_index(creds)
             existed = False
+            old_view = {}
         else:
-            index = existing_index
+            index = existing_idx
             existed = True
+            old_view = _collect_index_view(creds, index)
 
         # Remove any prior keys for this index to avoid stale fields
-        keys_to_remove = [k for k in list(creds.keys()) if k.endswith(f"_{index}")]
-        for k in keys_to_remove:
+        for k in [k for k in list(creds.keys()) if k.endswith(f"_{index}")]:
             del creds[k]
 
-        # Write per-provider fields (base schema keys)
+        # Write per-provider fields
         for base_key in schema_keys:
             creds[f"{base_key}_{index}"] = new_values.get(base_key, "")
 
         # Normalize and persist usage flags
         for flag in USAGE_FLAGS:
             raw = new_values.get(flag, "false")
-            val = "true" if str(raw).strip().lower() in ("1", "true", "yes", "y", "on") else "false"
-            creds[f"{flag}_{index}"] = val
+            creds[f"{flag}_{index}"] = _normalize_flag(raw)
 
-        # Mapping key: PROVIDER_<idx>
-        creds[f"PROVIDER_{index}"] = key_upper
+        # Mapping key: PROVIDER_XX
+        creds[f"PROVIDER_{index}"] = provider_upper
 
         # Persist encrypted
         save_screener_credentials(creds)
 
-        _audit_log("CREDENTIAL_UPDATED" if existed else "CREDENTIAL_ADDED", provider)
+        # Audit actions
+        if not existed:
+            _audit_log("CREDENTIAL_ADDED", provider_upper)
+        else:
+            _audit_log("CREDENTIAL_UPDATED", provider_upper)
+            # Rotation detection on secret fields
+            new_view = _collect_index_view(creds, index)
+            rotated = any((old_view.get(k, "") != new_view.get(k, "")) for k in SECRET_FIELDS)
+            if rotated:
+                _audit_log("CREDENTIAL_ROTATED", provider_upper)
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to update credentials: {e}")
 
 def delete_provider_credentials(provider: str) -> None:
     """
-    Delete credentials for a provider (by name), remove all KEY_<idx> fields and
-    the PROVIDER_<idx> mapping. Always appends CREDENTIAL_DELETED to the audit log
-    when a mapping existed.
+    Delete credentials for a provider (by name). Removes all KEY_XX fields and
+    the PROVIDER_XX mapping. Always appends CREDENTIAL_DELETED when mapping existed.
     """
+    provider_upper = provider.strip().upper()
     try:
         creds = load_screener_credentials()
-        key_upper = provider.strip().upper()
-
-        # Find index
-        index = None
-        for k, v in creds.items():
-            if _PROVIDER_KEY_RE.match(k) and str(v).strip().upper() == key_upper:
-                index = k.split("_")[-1]
-                break
-
-        if index is None:
-            return  # nothing to delete; silent no-op
+        idx = _find_index_for_provider(creds, provider_upper)
+        if idx is None:
+            return  # idempotent no-op
 
         # Remove per-index keys
-        keys_to_remove = [k for k in list(creds.keys()) if k.endswith(f"_{index}")]
-        for k in keys_to_remove:
+        for k in [k for k in list(creds.keys()) if k.endswith(f"_{idx}")]:
             del creds[k]
 
         # Remove provider mapping
-        del creds[f"PROVIDER_{index}"]
+        del creds[f"PROVIDER_{idx}"]
 
-        # Persist encrypted
+        # Persist
         save_screener_credentials(creds)
 
         # Audit
-        _audit_log("CREDENTIAL_DELETED", provider)
+        _audit_log("CREDENTIAL_DELETED", provider_upper)
     except Exception as e:
         raise RuntimeError(f"[secrets_manager] Failed to delete credentials: {e}")
 
 def list_providers() -> List[str]:
     creds = load_screener_credentials()
-    return [v for k, v in creds.items() if _PROVIDER_KEY_RE.match(k)]
+    return [str(v) for k, v in creds.items() if _PROVIDER_KEY_RE.match(k)]
+
+def screener_creds_exist() -> bool:
+    creds = load_screener_credentials()
+    return any(_PROVIDER_KEY_RE.match(k) for k in creds.keys())

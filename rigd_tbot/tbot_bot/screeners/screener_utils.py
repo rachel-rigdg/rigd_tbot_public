@@ -13,8 +13,10 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_unfiltered_path,
     resolve_screener_blocklist_path
 )
-from tbot_bot.support.decrypt_secrets import decrypt_json
-from tbot_bot.support.secrets_manager import get_screener_credentials_path, load_screener_credentials
+from tbot_bot.support.secrets_manager import (
+    load_screener_credentials,
+    screener_creds_exist as _sm_screener_creds_exist,
+)
 from tbot_bot.screeners.screener_filter import (
     normalize_symbols, dedupe_symbols
 )
@@ -54,14 +56,20 @@ def atomic_copy_file(src_path: str, dest_path: str):
     os.replace(tmp_path, dest_path)
 
 def screener_creds_exist() -> bool:
-    creds_path = get_screener_credentials_path()
-    return os.path.exists(creds_path)
+    """
+    True only when at least one indexed provider (PROVIDER_XX) exists.
+    """
+    return _sm_screener_creds_exist()
 
 def get_screener_secrets() -> dict:
-    if not screener_creds_exist():
-        raise UniverseCacheError("Screener credentials not configured. Please configure screener credentials in the UI before running screener operations.")
+    """
+    Return the flat generic credentials dict (e.g., PROVIDER_01, SCREENER_API_KEY_01, ...).
+    Never raises; returns {} if no file/providers present. Universe gating happens in callers.
+    """
     try:
-        return decrypt_json("screener_api.json.enc")
+        if not _sm_screener_creds_exist():
+            return {}
+        return load_screener_credentials()
     except Exception as e:
         LOG.error(f"[screener_utils] Failed to load screener secrets: {e}")
         return {}
@@ -69,18 +77,19 @@ def get_screener_secrets() -> dict:
 def get_universe_screener_secrets() -> Dict[str, Dict]:
     """
     Returns a dict of provider configs keyed by provider name (e.g., 'FINNHUB'),
-    including only providers with UNIVERSE_ENABLED=true. Provider-scoped fields
-    have their index suffix stripped, e.g., 'SCREENER_API_KEY_1' -> 'SCREENER_API_KEY'.
+    including only providers with UNIVERSE_ENABLED='true'. Provider-scoped fields
+    have their index suffix stripped, e.g., 'SCREENER_API_KEY_01' -> 'SCREENER_API_KEY'.
+
+    Raises:
+        UniverseCacheError: if no enabled providers are found after parsing.
     """
     def _truthy(v) -> bool:
         return str(v).strip().lower() in ("1", "true", "yes", "y", "on")
 
     secrets = get_screener_secrets()
-    if not secrets:
-        return {}
-
-    # Identify provider indices from keys like 'PROVIDER_1' -> 'FINNHUB'
     result: Dict[str, Dict] = {}
+
+    # Identify provider indices from keys like 'PROVIDER_01' -> 'FINNHUB'
     for k, v in secrets.items():
         if not k.startswith("PROVIDER_"):
             continue
@@ -101,6 +110,9 @@ def get_universe_screener_secrets() -> Dict[str, Dict]:
                 base = kk[: -len(suffix)]
                 provider_cfg[base] = vv
         result[provider_name] = provider_cfg
+
+    if not result:
+        raise UniverseCacheError("No screener providers enabled for universe operations. Enable at least one provider (UNIVERSE_ENABLED=true).")
 
     return result
 

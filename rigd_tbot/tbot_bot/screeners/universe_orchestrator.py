@@ -22,6 +22,8 @@ PARTIAL_PATH = resolve_universe_partial_path()
 FINAL_PATH = resolve_universe_cache_path()
 # Derive unfiltered alongside partial (do not modify imports)
 UNFILTERED_PATH = os.path.join(os.path.dirname(PARTIAL_PATH), "symbol_universe.unfiltered.json")
+# Blocklist path constant (same base as UNFILTERED_PATH, default to output/screeners/screener_blocklist.txt)
+BLOCKLIST_PATH = os.path.join(os.path.dirname(UNFILTERED_PATH), "screener_blocklist.txt")
 
 
 def log(msg):

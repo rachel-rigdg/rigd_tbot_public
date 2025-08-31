@@ -23,7 +23,8 @@ CATEGORIES = {
     "ledgers": "ledgers",
     "summaries": "summaries",
     "trades": "trades",
-    "screeners": "screeners"
+    "screeners": "screeners",
+    "enhancements": "enhancements"
 }
 
 SYSTEM_LOG_FILES = [

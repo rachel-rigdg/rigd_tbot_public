@@ -53,7 +53,9 @@ def get_db_path():
 
 def validate_ledger_schema(db_path=None, schema_path=None):
     """
-    Validates the ledger DB against the reference schema. Returns True if valid, False if not.
+    Validates the ledger DB against the reference schema.
+    Returns True if valid.
+    Raises RuntimeError on any corruption/schema mismatch or validation error.
     """
     db_path = db_path or get_db_path()
     schema_path = schema_path or resolve_ledger_schema_path()
@@ -68,10 +70,12 @@ def validate_ledger_schema(db_path=None, schema_path=None):
                     continue
                 try:
                     cursor.execute(f"EXPLAIN {stmt}")
-                except sqlite3.DatabaseError:
-                    return False
-    except Exception:
-        return False
+                except sqlite3.DatabaseError as e:
+                    raise RuntimeError(f"[ledger_db] Ledger schema validation failed: {e}") from e
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"[ledger_db] Ledger schema validation error: {e}") from e
     return True
 
 
