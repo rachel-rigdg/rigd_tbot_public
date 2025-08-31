@@ -9,7 +9,7 @@ for financial amounts/dates (no mutation to amount/date fields).
 
 import sqlite3
 from datetime import datetime, timezone
-from typing import Dict, Any, Tuple, Set, List
+from typing import Dict, Any, Tuple, Set, List, Optional  # <- added Optional
 
 from tbot_bot.support.path_resolver import (
     resolve_ledger_db_path,
@@ -69,13 +69,20 @@ def _active_coa_codes() -> Set[str]:
     return codes
 
 
-def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reason: str = None) -> Dict[str, Any]:
+def reassign_leg_account(
+    entry_id: int,
+    new_account_code: str,
+    actor: str,
+    *,
+    reason: Optional[str] = None,
+    event_type: str = "ledger_reassign_leg_account",
+) -> Dict[str, Any]:
     """
     Reassign the COA account for a single ledger leg (row in trades table).
 
     - Validates new_account_code exists and is active in COA.
     - Updates ONLY 'account' field (no amount/date mutation).
-    - Emits immutable audit log event: event='coa_reassign'.
+    - Emits immutable audit log event using non-empty `event_type`.
     - DB write is committed before audit append; if audit fails we raise to surface the issue.
 
     Returns:
@@ -85,6 +92,7 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
             "old_account": str|None,
             "new_account": str,
             "ts_utc": iso8601,
+            "event_type": str
         }
     """
     new_account_code = (new_account_code or "").strip()
@@ -95,6 +103,10 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
     active_codes = _active_coa_codes()
     if new_account_code not in active_codes:
         raise ValueError(f"Account code '{new_account_code}' is not active in COA")
+
+    # Validate non-empty audit event label (aligns with NOT NULL in audit schema)
+    if not isinstance(event_type, str) or not event_type.strip():
+        raise ValueError("event_type is required for audit")
 
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
@@ -121,17 +133,14 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
         # Early no-op (but still audit)
         if old_account == new_account_code:
             audit_append(
-                event="coa_reassign",
+                event=event_type,
                 related_id=entry_id,
                 actor=actor or "system",
                 group_id=leg["group_id"],
                 trade_id=leg["trade_id"],
-                # old/new go into old_value/new_value
                 before=old_account,
                 after=new_account_code,
-                # reason goes into extra automatically
                 reason=reason or "no-op (same account)",
-                # pack extra context
                 extra={
                     "old_account_code": old_account,
                     "new_account_code": new_account_code,
@@ -149,6 +158,7 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
                 "old_account": old_account,
                 "new_account": new_account_code,
                 "ts_utc": ts_utc,
+                "event_type": event_type,
             }
             conn.commit()
             return result
@@ -175,7 +185,7 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
 
         # Structured immutable audit (identity fields injected by audit module)
         audit_append(
-            event="coa_reassign",
+            event=event_type,
             related_id=entry_id,
             actor=actor or "system",
             group_id=leg["group_id"],
@@ -201,6 +211,7 @@ def reassign_leg_account(entry_id: int, new_account_code: str, actor: str, reaso
             "old_account": old_account,
             "new_account": new_account_code,
             "ts_utc": ts_utc,
+            "event_type": event_type,
         }
         return result
 
