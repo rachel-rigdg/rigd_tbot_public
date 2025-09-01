@@ -13,7 +13,7 @@ from tbot_web.support.auth_web import get_current_user
 from tbot_bot.accounting.ledger_modules.ledger_account_map import load_broker_code, load_account_number
 from tbot_bot.accounting.ledger_modules.ledger_edit import edit_ledger_entry, delete_ledger_entry  # Use shared helpers
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
-from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
+from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_entry
 
 def get_identity_tuple():
     identity = load_bot_identity()
@@ -57,10 +57,10 @@ def add_ledger_entry(entry_data):
     Legacy single-entry ledger posting.
     Use post_ledger_entries_double_entry for all new entries.
     """
-    filtered = compliance_filter_ledger_entry(entry_data)
-    if filtered is None:
-        return  # Filtered out, do not add
-    entry_data = filtered
+    ok, _reason = compliance_filter_entry(entry_data)
+    if not ok:
+        return  # Rejected by compliance; do not add
+
     bot_identity = get_identity_tuple()
     db_path = resolve_ledger_db_path(*bot_identity)
     entry_data["broker_code"] = load_broker_code()
