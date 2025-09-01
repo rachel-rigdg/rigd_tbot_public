@@ -622,16 +622,70 @@ def ledger_edit(entry_id: int):
 
     # ALWAYS update mapping based on this reassignment (no feature toggle)
     try:
-        from tbot_bot.accounting.ledger_modules.mapping_auto_update import upsert_rule_from_leg
-        # fetch leg context for rule key
+        # 1) Try dedicated helper if present
+        try:
+            from tbot_bot.accounting.ledger_modules.mapping_auto_update import upsert_rule_from_leg
+            helper_available = True
+        except Exception:
+            helper_available = False
+
         bot_identity = load_bot_identity()
         e, j, b, bot_id = bot_identity.split("_")
         db_path = resolve_ledger_db_path(e, j, b, bot_id)
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             leg = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+
         if leg:
-            upsert_rule_from_leg(dict(leg), account_code, leg.get("strategy"), actor)
+            leg_d = dict(leg)
+
+            if helper_available:
+                upsert_rule_from_leg(leg_d, account_code, leg_d.get("strategy"), actor)
+            else:
+                # 2) Deterministic fallback: derive a stable rule_key and call coa_mapping_table.upsert_rule(...)
+                from tbot_bot.accounting.coa_mapping_table import upsert_rule as coa_upsert_rule
+
+                def _norm(v):
+                    return str(v or "").strip().lower().replace("  ", " ")
+
+                # Prefer broker/type/subtype/description if present
+                parts = []
+                for key in ("broker", "broker_code", "import_source", "import_type"):
+                    if leg_d.get(key):
+                        parts.append(f"{key}:{_norm(leg_d.get(key))}")
+                        break  # use first broker-like key
+
+                for key in ("type", "subtype"):
+                    if leg_d.get(key):
+                        parts.append(f"{key}:{_norm(leg_d.get(key))}")
+
+                # description/memo/notes discriminator
+                for key in ("description", "memo", "notes"):
+                    if leg_d.get(key):
+                        parts.append(f"{key}:{_norm(leg_d.get(key))}")
+                        break
+
+                # always include these for stability if above are sparse
+                for key in ("symbol", "action", "strategy"):
+                    if leg_d.get(key):
+                        parts.append(f"{key}:{_norm(leg_d.get(key))}")
+
+                rule_key = "|".join(parts) or f"symbol:{_norm(leg_d.get('symbol'))}|action:{_norm(leg_d.get('action'))}"
+
+                context_meta = {
+                    "symbol": leg_d.get("symbol"),
+                    "action": leg_d.get("action"),
+                    "strategy": leg_d.get("strategy"),
+                    "memo": leg_d.get("memo") or leg_d.get("notes"),
+                    "description": leg_d.get("description"),
+                    "broker_code": leg_d.get("broker_code"),
+                    "import_source": leg_d.get("import_source"),
+                    "import_type": leg_d.get("import_type"),
+                    "group_id": leg_d.get("group_id"),
+                    "trade_id": leg_d.get("trade_id"),
+                }
+
+                coa_upsert_rule(rule_key=rule_key, account_code=account_code, context_meta=context_meta, actor=actor)
     except Exception:
         traceback.print_exc()
 
