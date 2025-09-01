@@ -8,23 +8,6 @@
     <link rel="stylesheet" href="/static/css/shared/forms.css">
     <link rel="stylesheet" href="/static/css/components/buttons.css">
     <link rel="stylesheet" href="/static/css/pages/coa_mapping.css">
-    <style>
-      .coa-mapping-table td, .coa-mapping-table th { padding: 4px 6px; }
-      .coa-mapping-table input[readonly] { background: #f8f8fa; }
-      .coa-mapping-toolbar { margin-bottom: 1em; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
-      .coa-mapping-audit-info { margin-top: 2em; font-size: 0.92em; color: #666; }
-      .context-banner { margin:.75rem 0; padding:.5rem .75rem; background:#eef5ff; border:1px solid #aac5ff; border-radius:4px; }
-      .row-highlight { outline: 2px solid #4aa3ff; outline-offset: -2px; }
-      .layout-split { display:grid; grid-template-columns: 1fr 320px; gap:1rem; align-items:start; }
-      .versions-panel { border:1px solid #ddd; border-radius:6px; padding:.5rem .75rem; background:#fafafa; }
-      .versions-panel h2 { margin:.25rem 0 .5rem 0; font-size:1.05rem; }
-      .versions-list { max-height: 480px; overflow:auto; margin:0; padding:0; list-style:none; }
-      .versions-list li { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e6e6e6; padding:.35rem 0; }
-      .versions-list small { color:#666; }
-      .filter-bar { margin:.5rem 0 1rem 0; display:flex; gap:.5rem; flex-wrap:wrap; }
-      .filter-bar input { padding:.25rem .4rem; }
-      .click-help { font-size:.85em; color:#666; margin:.25rem 0 .5rem; }
-    </style>
 </head>
 <body>
 <div class="container coa-mapping-container">
@@ -34,14 +17,14 @@
   <div id="context-banner" class="context-banner" style="display:none;"></div>
 
   <div class="coa-mapping-toolbar">
-    <form method="get" action="{{ url_for('coa_mapping_web.export_mapping') }}">
+    <form method="get" action="{{ url_for('coa_mapping_web.api_export') }}">
       <button type="submit" class="btn btn-info btn-sm">Export Mapping (JSON)</button>
     </form>
-    <form method="post" action="{{ url_for('coa_mapping_web.import_mapping') }}" enctype="multipart/form-data">
+    <form method="post" action="{{ url_for('coa_mapping_web.api_import') }}" enctype="multipart/form-data">
       <input type="file" name="file" required>
       <button type="submit" class="btn btn-info btn-sm">Import Mapping</button>
     </form>
-    <a class="btn btn-secondary btn-sm" href="{{ url_for('coa_mapping_web.list_versions') }}" target="_blank">View Versions (JSON)</a>
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('coa_mapping_web.api_versions') }}" target="_blank">View Versions (JSON)</a>
   </div>
 
   <div class="layout-split">
@@ -205,7 +188,7 @@
 
   // Versions loader + rollback
   function loadVersions() {
-    fetch('{{ url_for("coa_mapping_web.list_versions") }}')
+    fetch('{{ url_for("coa_mapping_web.api_versions") }}')
       .then(r => r.ok ? r.json() : Promise.reject(r))
       .then(history => {
         const ul = document.getElementById('versions-list');
@@ -220,7 +203,7 @@
           btn.addEventListener('click', () => {
             const fd = new FormData();
             fd.append('version', v.version);
-            fetch('{{ url_for("coa_mapping_web.rollback_mapping") }}', { method:'POST', body: fd })
+            fetch('{{ url_for("coa_mapping_web.api_rollback") }}', { method:'POST', body: fd })
               .then(r => r.ok ? r.json() : Promise.reject(r))
               .then(() => location.reload())
               .catch(() => alert('Rollback failed'));
