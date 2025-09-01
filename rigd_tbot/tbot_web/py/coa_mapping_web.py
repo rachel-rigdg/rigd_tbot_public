@@ -162,9 +162,9 @@ def view_mapping():
             "updated_by": r.get("updated_by") or "",
         })
 
-    # Keep all original mapping keys and also expose a "table" key for implementations that use it
+    # Keep all original mapping keys; inject normalized list under "mappings"
     mapping = dict(raw_mapping) if isinstance(raw_mapping, dict) else {"raw": raw_mapping}
-    mapping["table"] = mapping_rows
+    mapping["mappings"] = mapping_rows  # <-- template expects mapping.mappings
 
     username, role = _current_user_and_role()
 
@@ -184,7 +184,7 @@ def view_mapping():
     return render_template(
         "coa_mapping.html",
         mapping=mapping,
-        mapping_rows=mapping_rows,  # <--- added: explicit list for template
+        mapping_rows=mapping_rows,  # still provided for any consumers that use it
         user=username,
         user_role=role,
         from_source=from_source,

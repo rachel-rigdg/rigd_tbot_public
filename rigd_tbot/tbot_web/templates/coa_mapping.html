@@ -71,21 +71,21 @@
             </tr>
           </thead>
           <tbody id="mapping-tbody">
-            {% for mapping in mapping.mappings %}
+            {% for row in mapping_rows %}
             <tr class="mapping-row"
                 id="rule-{{ loop.index }}"
-                data-broker="{{ mapping.broker }}"
-                data-type="{{ mapping.type }}"
-                data-subtype="{{ mapping.subtype or '' }}"
-                data-description="{{ mapping.description or '' }}">
-              <td><input type="text" value="{{ mapping.broker }}" readonly></td>
-              <td><input type="text" value="{{ mapping.type }}" readonly></td>
-              <td><input type="text" value="{{ mapping.subtype or '' }}" readonly></td>
-              <td><input type="text" value="{{ mapping.description or '' }}" readonly></td>
-              <td><input type="text" value="{{ mapping.debit_account or '' }}" readonly></td>
-              <td><input type="text" value="{{ mapping.credit_account or '' }}" readonly></td>
-              <td>{{ mapping.updated_at or '' }}</td>
-              <td>{{ mapping.updated_by or '' }}</td>
+                data-broker="{{ row.broker }}"
+                data-type="{{ row.type }}"
+                data-subtype="{{ row.subtype or '' }}"
+                data-description="{{ row.description or '' }}">
+              <td><input type="text" value="{{ row.broker }}" readonly></td>
+              <td><input type="text" value="{{ row.type }}" readonly></td>
+              <td><input type="text" value="{{ row.subtype or '' }}" readonly></td>
+              <td><input type="text" value="{{ row.description or '' }}" readonly></td>
+              <td><input type="text" value="{{ row.debit_account or '' }}" readonly></td>
+              <td><input type="text" value="{{ row.credit_account or '' }}" readonly></td>
+              <td>{{ row.updated_at or '' }}</td>
+              <td>{{ row.updated_by or '' }}</td>
             </tr>
             {% endfor %}
             <tr>
@@ -93,8 +93,9 @@
               <td><input type="text" name="type" id="f-type" placeholder="Type" required></td>
               <td><input type="text" name="subtype" id="f-subtype" placeholder="Subtype"></td>
               <td><input type="text" name="description" id="f-desc" placeholder="Description"></td>
-              <td><input type="text" name="debit_account" id="f-debit" placeholder="Debit Account" required></td>
-              <td><input type="text" name="credit_account" id="f-credit" placeholder="Credit Account" required></td>
+              <!-- Single source of truth for assignment: coa_account -->
+              <td><input type="text" name="coa_account" id="f-coa" placeholder="COA Account" required></td>
+              <td><input type="text" name="credit_account" id="f-credit" placeholder="(optional)"></td>
               <td colspan="2">
                 <input type="hidden" name="reason" value="manual assignment">
                 <button type="submit" class="btn btn-success btn-sm">Add / Update Mapping</button>
@@ -162,7 +163,7 @@
     type: document.getElementById('f-type'),
     subtype: document.getElementById('f-subtype'),
     desc: document.getElementById('f-desc'),
-    debit: document.getElementById('f-debit'),
+    coa: document.getElementById('f-coa'),
     credit: document.getElementById('f-credit')
   };
   document.getElementById('mapping-tbody')?.addEventListener('click', function(ev) {
@@ -173,9 +174,10 @@
     f.type.value = cells[1].value || '';
     f.subtype.value = cells[2].value || '';
     f.desc.value = cells[3].value || '';
-    f.debit.value = cells[4].value || '';
+    // Prefer displayed Debit as the single COA account; fallback to Credit if Debit empty
+    f.coa.value = cells[4].value || cells[5].value || '';
     f.credit.value = cells[5].value || '';
-    f.debit.focus();
+    f.coa.focus();
   });
 
   // Client-side filters
