@@ -6,7 +6,6 @@ Writes append-only rows into the `audit_trail` table defined by schema.sql.
 
 Public API:
 - append(event, **kwargs): structured writer aligned to AUDIT_TRAIL_FIELDS.
-- log_audit_event(action, entry_id, user, before=None, after=None): legacy shim.
 """
 
 import json
@@ -183,4 +182,3 @@ def append(event: str, **kwargs) -> int:
         )
         conn.commit()
         return int(cur.lastrowid)
-
