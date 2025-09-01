@@ -251,13 +251,11 @@ def _ensure_audit_trail_columns():
 # ---------------------------
 
 @ledger_web.route("/", methods=["GET"])
-@ledger_web.route("/ledger", methods=["GET"])  # legacy alias
 def ledger_root():
     return redirect(url_for("ledger_web.ledger_reconcile"))
 
 
 @ledger_web.route("/reconcile", methods=["GET"])
-@ledger_web.route("/ledger/reconcile", methods=["GET"])  # legacy alias
 def ledger_reconcile():
     # RBAC: viewers allowed (GET)
     error = None
@@ -334,7 +332,6 @@ def ledger_reconcile():
 
 
 @ledger_web.route("/groups", methods=["GET"])
-@ledger_web.route("/ledger/groups", methods=["GET"])  # legacy alias
 def ledger_groups():
     # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
@@ -354,7 +351,6 @@ def ledger_groups():
 
 
 @ledger_web.route("/balances", methods=["GET"])
-@ledger_web.route("/ledger/balances", methods=["GET"])  # legacy alias
 def ledger_balances():
     # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
@@ -373,7 +369,6 @@ def ledger_balances():
 
 
 @ledger_web.route("/group/<group_id>", methods=["GET"])
-@ledger_web.route("/ledger/group/<group_id>", methods=["GET"])  # legacy alias
 def ledger_group_detail(group_id):
     # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
@@ -386,7 +381,6 @@ def ledger_group_detail(group_id):
 
 
 @ledger_web.route("/collapse_expand/<group_id>", methods=["POST"])
-@ledger_web.route("/ledger/collapse_expand/<group_id>", methods=["POST"])  # legacy alias
 def ledger_collapse_expand(group_id):
     # RBAC: admin-only for POST
     not_ok = _require_admin_post()
@@ -408,7 +402,6 @@ def ledger_collapse_expand(group_id):
 
 
 @ledger_web.route("/collapse_all", methods=["POST"])
-@ledger_web.route("/ledger/collapse_all", methods=["POST"])  # legacy alias
 def ledger_collapse_all():
     # RBAC: admin-only for POST
     not_ok = _require_admin_post()
@@ -451,7 +444,6 @@ def ledger_collapse_all():
 
 
 @ledger_web.route("/search", methods=["GET"])
-@ledger_web.route("/ledger/search", methods=["GET"])  # legacy alias
 def ledger_search():
     # RBAC: viewers allowed (GET)
     if provisioning_guard() or identity_guard():
@@ -469,7 +461,6 @@ def ledger_search():
 
 # ---------- COA: JSON list for client-side dropdowns ----------
 @ledger_web.route("/coa/accounts", methods=["GET"])
-@ledger_web.route("/ledger/coa/accounts", methods=["GET"])  # legacy alias
 def coa_accounts_api():
     try:
         flat, dropdown, meta = _get_coa_lists()
@@ -505,7 +496,6 @@ def alias_coa_mapping():
 
 # ---------- Legacy resolve/add/edit/delete (admin-only POST) ----------
 @ledger_web.route("/resolve/<int:entry_id>", methods=["POST"])
-@ledger_web.route("/ledger/resolve/<int:entry_id>", methods=["POST"])  # legacy alias
 def resolve_ledger_entry(entry_id):
     not_ok = _require_admin_post()
     if not_ok:
@@ -519,7 +509,6 @@ def resolve_ledger_entry(entry_id):
 
 
 @ledger_web.route("/add", methods=["POST"])
-@ledger_web.route("/ledger/add", methods=["POST"])  # legacy alias
 def add_ledger_entry_route():
     not_ok = _require_admin_post()
     if not_ok:
@@ -587,7 +576,6 @@ def add_ledger_entry_route():
 
 
 @ledger_web.route("/edit/<int:entry_id>", methods=["POST"])
-@ledger_web.route("/ledger/edit/<int:entry_id>", methods=["POST"])  # legacy alias
 def ledger_edit(entry_id: int):
     """
     Minimal, audited COA reassignment endpoint used by inline dropdown.
@@ -711,7 +699,6 @@ def ledger_edit(entry_id: int):
 
 # Legacy full edit (retain for forms; admin-only)
 @ledger_web.route("/edit_legacy/<int:entry_id>", methods=["POST"])
-@ledger_web.route("/ledger/edit_legacy/<int:entry_id>", methods=["POST"])  # legacy alias
 def edit_ledger_entry_route(entry_id):
     not_ok = _require_admin_post()
     if not_ok:
@@ -775,7 +762,6 @@ def edit_ledger_entry_route(entry_id):
 
 
 @ledger_web.route("/delete/<int:entry_id>", methods=["POST"])
-@ledger_web.route("/ledger/delete/<int:entry_id>", methods=["POST"])  # legacy alias
 def delete_ledger_entry_route(entry_id):
     not_ok = _require_admin_post()
     if not_ok:
@@ -789,7 +775,6 @@ def delete_ledger_entry_route(entry_id):
 
 
 @ledger_web.route("/sync", methods=["POST"])
-@ledger_web.route("/ledger/sync", methods=["POST"])  # legacy alias
 def ledger_sync():
     # RBAC: admin-only
     not_ok = _require_admin_post()
@@ -831,7 +816,6 @@ def ledger_sync():
 # tbot_web/py/ledger_web.py  (only the ledger_edit() body changed in the "ALWAYS update mapping..." block and the final jsonify)
 
 @ledger_web.route("/edit/<int:entry_id>", methods=["POST"])
-@ledger_web.route("/ledger/edit/<int:entry_id>", methods=["POST"])  # legacy alias
 def ledger_edit(entry_id: int):
     ...
     # Atomic reassignment with audit (reassign_leg_account handles auditing)
