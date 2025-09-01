@@ -353,30 +353,68 @@ def internal_upsert_rule():
       - account_code: str (active COA code)
       - context_meta: dict (optional; symbol/memo/broker_code/strategy/etc)
       - actor: str (optional)
+
+    Returns JSON only:
+      - {"ok": true} on success
+      - {"ok": false, "error": "..."} with 4xx/5xx on failures
     """
     data = request.get_json(silent=True) or request.form.to_dict()
     rule_key = (data.get("rule_key") or "").strip()
     account_code = (data.get("account_code") or data.get("coa_account") or "").strip()
     actor = (data.get("actor") or _current_user_and_role()[0]).strip()
-    # context_meta may be JSON string via form
+
+    # Parse/merge context_meta (accept dict or JSON string). Build canonical dict if missing.
     cm_raw = data.get("context_meta")
-    if isinstance(cm_raw, str):
+    if isinstance(cm_raw, str) and cm_raw.strip():
         try:
-            context_meta = json.loads(cm_raw)
+            base_cm = json.loads(cm_raw)
+            if not isinstance(base_cm, dict):
+                base_cm = {"raw": cm_raw}
         except Exception:
-            context_meta = {"raw": cm_raw}
+            base_cm = {"raw": cm_raw}
+    elif isinstance(cm_raw, dict):
+        base_cm = dict(cm_raw)
     else:
-        context_meta = cm_raw or {}
+        base_cm = {}
+
+    # Derive canonical fields from top-level inputs; do not overwrite explicit context_meta keys.
+    def _first(*keys):
+        for k in keys:
+            v = data.get(k)
+            if v is not None and str(v).strip() != "":
+                return v
+        return None
+
+    derived = {
+        "broker_code": _first("broker_code", "broker"),
+        "type": _first("trn_type", "type", "txn_type", "action"),
+        "symbol": _first("symbol"),
+        "memo": _first("memo", "description", "desc", "notes"),
+        "strategy": _first("strategy"),
+        "trade_id": _first("trade_id"),
+        "group_id": _first("group_id"),
+        "source": _first("source") or "coa_mapping_web",
+    }
+    # Merge without clobbering existing explicit keys
+    for k, v in derived.items():
+        if k not in base_cm and v is not None:
+            base_cm[k] = v
 
     if not account_code:
         return jsonify({"ok": False, "error": "missing account_code"}), 400
 
     try:
-        version_id = upsert_rule(rule_key=rule_key, account_code=account_code, context_meta=context_meta, actor=actor)
+        # Call the canonical writer with supported parameters
+        upsert_rule(rule_key=rule_key, account_code=account_code, context_meta=base_cm, actor=actor)
         log_event("coa_mapping_web",
-                  f"internal upsert_rule by {actor}: rule_key={rule_key}, account_code={account_code}",
+                  f"internal upsert_rule by {actor}: rule_key={rule_key or '(derived)'}, account_code={account_code}",
                   level="info")
-        return jsonify({"ok": True, "version_id": version_id})
+        return jsonify({"ok": True})
+    except ValueError as ve:
+        # Input/validation problems → 400
+        log_event("coa_mapping_web", f"internal upsert_rule validation error: {ve}", level="warning")
+        return jsonify({"ok": False, "error": str(ve)}), 400
     except Exception as e:
+        # Unexpected issues → 500
         log_event("coa_mapping_web", f"internal upsert_rule failed: {e}", level="error")
         return jsonify({"ok": False, "error": str(e)}), 500

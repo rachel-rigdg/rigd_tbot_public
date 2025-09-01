@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="/static/css/base/layout.css">
     <link rel="stylesheet" href="/static/css/shared/forms.css">
     <link rel="stylesheet" href="/static/css/components/buttons.css">
-    <link rel="stylesheet" href="/static/css/pages/coa_mapping.css">
 </head>
 <body>
 <div class="container coa-mapping-container">
@@ -39,7 +38,7 @@
       </div>
       <div class="click-help">Tip: click a row to prefill the form for quick edits; submit to upsert the rule.</div>
 
-      <form method="post" action="{{ url_for('coa_mapping_web.assign_mapping_route') }}" id="coa-mapping-form">
+      <form method="post" action="{{ url_for('coa_mapping_web.api_assign') }}" id="coa-mapping-form">
         <table class="coa-mapping-table">
           <thead>
             <tr>
@@ -54,7 +53,8 @@
             </tr>
           </thead>
           <tbody id="mapping-tbody">
-            {% for row in mapping_rows %}
+            {% set _rows = (mapping.table or mapping_rows) %}
+            {% for row in _rows %}
             <tr class="mapping-row"
                 id="rule-{{ loop.index }}"
                 data-broker="{{ row.broker }}"
@@ -65,7 +65,7 @@
               <td><input type="text" value="{{ row.type }}" readonly></td>
               <td><input type="text" value="{{ row.subtype or '' }}" readonly></td>
               <td><input type="text" value="{{ row.description or '' }}" readonly></td>
-              <td><input type="text" value="{{ row.debit_account or '' }}" readonly></td>
+              <td><input type="text" value="{{ row.debit_account or row.coa_account or '' }}" readonly></td>
               <td><input type="text" value="{{ row.credit_account or '' }}" readonly></td>
               <td>{{ row.updated_at or '' }}</td>
               <td>{{ row.updated_by or '' }}</td>
@@ -121,6 +121,58 @@
     banner.style.display = 'block';
   }
 
+  const tbody = document.getElementById('mapping-tbody');
+
+  // Build one row element from a JSON rule
+  function buildRow(r, idx) {
+    const tr = document.createElement('tr');
+    tr.className = 'mapping-row';
+    tr.id = 'rule-' + (idx + 1);
+    const broker = (r.broker || '').trim();
+    const typ = (r.type || '').trim();
+    const sub = (r.subtype || '').trim();
+    const desc = (r.description || '').trim();
+    const debit = (r.debit_account || r.coa_account || '').trim();
+    const credit = (r.credit_account || '').trim();
+    tr.dataset.broker = broker;
+    tr.dataset.type = typ;
+    tr.dataset.subtype = sub;
+    tr.dataset.description = desc;
+    tr.innerHTML = `
+      <td><input type="text" value="${broker}" readonly></td>
+      <td><input type="text" value="${typ}" readonly></td>
+      <td><input type="text" value="${sub}" readonly></td>
+      <td><input type="text" value="${desc}" readonly></td>
+      <td><input type="text" value="${debit}" readonly></td>
+      <td><input type="text" value="${credit}" readonly></td>
+      <td>${r.updated_at || ''}</td>
+      <td>${r.updated_by || ''}</td>
+    `;
+    return tr;
+  }
+
+  // Fetch and render mapping rows
+  function loadMappingRows() {
+    fetch('{{ url_for("coa_mapping_web.api_mapping_table") }}')
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(payload => {
+        const rows = (payload && payload.rows) ? payload.rows : [];
+        // Preserve the final input row (the upsert form) while replacing existing SSR rows
+        const inputRow = tbody.lastElementChild; // the form row
+        // Remove all existing data rows except the last input row
+        while (tbody.children.length > 1) {
+          tbody.removeChild(tbody.firstElementChild);
+        }
+        // Insert fetched rows before the input row
+        rows.forEach((r, i) => tbody.insertBefore(buildRow(r, i), inputRow));
+        applyFilters();
+        highlightByContext();
+      })
+      .catch(() => {
+        // leave SSR content if fetch fails
+      });
+  }
+
   // Highlight matching rule if context keys provided
   function highlightByContext() {
     if (!(ctxBroker || ctxType || ctxSubtype || ctxDesc)) return;
@@ -149,17 +201,17 @@
     coa: document.getElementById('f-coa'),
     credit: document.getElementById('f-credit')
   };
-  document.getElementById('mapping-tbody')?.addEventListener('click', function(ev) {
+  tbody?.addEventListener('click', function(ev) {
     const tr = ev.target.closest('.mapping-row');
     if (!tr) return;
     const cells = tr.querySelectorAll('td input');
-    f.broker.value = cells[0].value || '';
-    f.type.value = cells[1].value || '';
-    f.subtype.value = cells[2].value || '';
-    f.desc.value = cells[3].value || '';
+    f.broker.value = (cells[0]?.value || '');
+    f.type.value = (cells[1]?.value || '');
+    f.subtype.value = (cells[2]?.value || '');
+    f.desc.value = (cells[3]?.value || '');
     // Prefer displayed Debit as the single COA account; fallback to Credit if Debit empty
-    f.coa.value = cells[4].value || cells[5].value || '';
-    f.credit.value = cells[5].value || '';
+    f.coa.value = (cells[4]?.value || cells[5]?.value || '');
+    f.credit.value = (cells[5]?.value || '');
     f.coa.focus();
   });
 
@@ -219,9 +271,10 @@
       });
   }
 
-  highlightByContext();
+  // Initializers
   applyFilters();
   loadVersions();
+  loadMappingRows();
 })();
 </script>
 </body>

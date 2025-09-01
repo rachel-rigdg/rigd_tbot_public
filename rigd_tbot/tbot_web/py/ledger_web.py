@@ -828,3 +828,56 @@ def ledger_sync():
         print("[WEB] /ledger/sync: ERROR:", repr(e))
         flash(f"Broker ledger sync failed: {e}", "error")
     return redirect(url_for("ledger_web.ledger_reconcile"))
+# tbot_web/py/ledger_web.py  (only the ledger_edit() body changed in the "ALWAYS update mapping..." block and the final jsonify)
+
+@ledger_web.route("/edit/<int:entry_id>", methods=["POST"])
+@ledger_web.route("/ledger/edit/<int:entry_id>", methods=["POST"])  # legacy alias
+def ledger_edit(entry_id: int):
+    ...
+    # Atomic reassignment with audit (reassign_leg_account handles auditing)
+    try:
+        _ensure_audit_trail_columns()
+        from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
+        result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": f"reassign failed: {e}"}), 500
+
+    # ALWAYS update mapping based on this reassignment (no shims, no toggles)
+    mapping_ok = False
+    try:
+        from tbot_bot.accounting.coa_mapping_table import upsert_rule_from_leg as coa_upsert_rule_from_leg
+
+        bot_identity = load_bot_identity()
+        e, j, b, bot_id = bot_identity.split("_")
+        db_path = resolve_ledger_db_path(e, j, b, bot_id)
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            leg = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+
+        if leg:
+            # Strict helper signature: (leg: dict, account_code: str, actor: str)
+            coa_upsert_rule_from_leg(dict(leg), account_code, actor)
+            mapping_ok = True
+    except Exception:
+        traceback.print_exc()
+        mapping_ok = False
+
+    # Return fresh deltas for live UI
+    try:
+        sort_col, sort_desc = _get_sort_params()
+        try:
+            groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+        except TypeError:
+            groups = fetch_grouped_trades()
+            groups = _python_sort_groups(groups, sort_col, sort_desc)
+        try:
+            bals = calculate_account_balances(include_opening=True)
+        except TypeError:
+            bals = calculate_account_balances()
+        except Exception:
+            bals = {}
+        return jsonify({"ok": True, "groups": groups, "balances": bals, "result": result, "mapping_ok": mapping_ok})
+    except Exception:
+        # minimal success if refresh fails
+        return jsonify({"ok": True, "mapping_ok": mapping_ok})

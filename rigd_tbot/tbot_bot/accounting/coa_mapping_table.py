@@ -231,6 +231,51 @@ def upsert_rule(rule_key: str, account_code: str, context_meta: Optional[Dict[st
     return version_id
 
 
+def upsert_rule_from_leg(leg: Dict[str, Any], account_code: str, actor: str) -> str:
+    """
+    Strict helper to derive a deterministic rule_key from a ledger leg and persist a programmatic rule.
+
+    rule_key derivation (lowercased, pipe-delimited, '|' sanitized out of fields):
+        broker_code | action | (symbol OR memo/description/notes) | strategy?  (strategy omitted when empty)
+
+    Stored record includes `context_meta` for audit/explainability.
+
+    Returns:
+        version_id (string) of the saved snapshot.
+    """
+    if not isinstance(leg, dict):
+        raise ValueError("leg must be a dict")
+    if not account_code or not isinstance(account_code, str):
+        raise ValueError("account_code is required")
+
+    # Extract memo/description from multiple possible fields, including JSON metadata strings
+    memo = leg.get("description") or leg.get("notes") or None
+    jm = leg.get("json_metadata")
+    if memo is None and isinstance(jm, (str, bytes)):
+        try:
+            jm_obj = json.loads(jm)
+            if isinstance(jm_obj, dict):
+                memo = jm_obj.get("memo") or jm_obj.get("description") or jm_obj.get("raw_memo")
+        except Exception:
+            pass
+    elif memo is None and isinstance(jm, dict):
+        memo = jm.get("memo") or jm.get("description") or jm.get("raw_memo")
+
+    context_meta: Dict[str, Any] = {
+        "broker_code": leg.get("broker_code") or leg.get("broker"),
+        "type": leg.get("action") or leg.get("type") or leg.get("txn_type"),
+        "symbol": leg.get("symbol"),
+        "memo": memo,
+        "strategy": leg.get("strategy"),
+        "source": "upsert_rule_from_leg",
+        "trade_id": leg.get("trade_id"),
+        "group_id": leg.get("group_id"),
+    }
+
+    # Delegate to the canonical writer (derives rule_key if empty)
+    return upsert_rule(rule_key="", account_code=account_code, context_meta=context_meta, actor=actor)
+
+
 # ----------------------------------------------------------------------
 # Legacy APIs (retained)
 # ----------------------------------------------------------------------

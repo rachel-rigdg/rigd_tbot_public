@@ -319,45 +319,65 @@ const refreshLedgerAndBalancesDebounced = debounce(() => {
 // -----------------------------
 // Inline COA mapping (event delegation)
 // -----------------------------
-document.addEventListener('change', function(ev) {
-  const el = ev.target;
-  if (!el.matches('.coa-select')) return;
-
-  const entryId = el.dataset.entryId || el.getAttribute('data-entry-id');
-  const accountCode = el.value;
-
-  if (!entryId || !accountCode) return;
-
-  // Optimistic UI: keep selection, show subtle status (optional)
-  el.classList.add('saving');
-
-  fetch(`edit/${encodeURIComponent(entryId)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ account_code: accountCode })
-  })
-  .then(r => {
-    if (r.status === 403) throw r;
-    return _checkOk(r);
-  })
-  .then(() => {
-    el.classList.remove('saving');
-    el.classList.add('saved');
-    setTimeout(() => el.classList.remove('saved'), 1200);
-    // Refresh balances & grouped rows (debounced)
-    refreshLedgerAndBalancesDebounced();
-  })
-  .catch(err => {
-    el.classList.remove('saving');
-    console.error('COA update failed', err);
-    if (err && err.status === 403) {
-      alert('Permission denied: only admins can reassign accounts.');
-    } else {
-      alert('Failed to update account mapping. Check logs.');
+document.addEventListener('change', async function(ev) {
+    const el = ev.target;
+    if (!el.matches('.coa-select')) return;
+  
+    const entryId = el.dataset.entryId || el.getAttribute('data-entry-id');
+    const accountCode = el.value;
+    if (!entryId || !accountCode) return;
+  
+    // Keep previous selection to allow revert on failure
+    const prev = el.getAttribute('data-prev') ?? '';
+    if (!prev) el.setAttribute('data-prev', el.value);
+  
+    el.classList.add('saving');
+    el.disabled = true;
+    try {
+      const res = await fetch(`edit/${encodeURIComponent(entryId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_code: accountCode, reason: 'inline reassignment' })
+      });
+  
+      // Parse JSON if available (even on non-2xx)
+      let data = {};
+      try { data = await res.json(); } catch {}
+  
+      if (res.status === 403) {
+        throw new Error('Permission denied: only admins can reassign accounts.');
+      }
+      if (!res.ok || data.ok === false) {
+        const msg = (data && data.error) ? data.error : `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+  
+      // Non-blocking heads-up if mapping didn’t persist (server still logged it)
+      if (data.mapping_ok === false) {
+        console.warn('COA mapping upsert failed or was skipped.');
+      }
+  
+      el.classList.remove('saving');
+      el.classList.add('saved');
+      setTimeout(() => el.classList.remove('saved'), 1200);
+  
+      // If server returned updated groups/balances, refresh via AJAX; else fall back to reload
+      if (data.groups || data.balances) {
+        refreshLedgerAndBalancesDebounced();
+      } else {
+        refreshLedgerAndBalancesDebounced();
+      }
+    } catch (err) {
+      el.classList.remove('saving');
+      console.error('COA update failed', err);
+      alert(`Account update failed: ${err && err.message ? err.message : err}`);
+      // Revert UI selection if we have a prior value
+      const prevVal = el.getAttribute('data-prev');
+      if (prevVal) el.value = prevVal;
+    } finally {
+      el.disabled = false;
     }
-    // revert selection? (optional) — for now, leave as-is for manual retry
   });
-});
 
 // -----------------------------
 // Misc helpers
