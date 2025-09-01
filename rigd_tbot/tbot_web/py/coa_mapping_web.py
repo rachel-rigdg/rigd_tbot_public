@@ -61,9 +61,11 @@ def admin_required(f):
 # ---------------------------
 # Shape/flatten utilities
 # ---------------------------
-_EXPECTED_KEYS = ("broker", "type", "subtype", "description",
-                  "debit_account", "credit_account", "coa_account",
-                  "updated_at", "updated_by", "rule_key")
+_EXPECTED_KEYS = (
+    "broker", "type", "subtype", "description",
+    "debit_account", "credit_account", "coa_account",
+    "updated_at", "updated_by", "rule_key"
+)
 
 def _normalize_row(d: dict) -> dict:
     """Ensure a consistent row shape for the UI."""
@@ -136,14 +138,33 @@ def view_mapping():
     except ValueError:
         entry_id = None
 
-    # Load the mapping JSON and build the rows the template expects
-    raw_mapping = load_mapping_table()
-    rows = make_view_rows(raw_mapping)  # flattens raw {"mappings": [...], "rules": {...}} into list of rows
+    # Load the mapping JSON and compute both mapping (raw) and mapping_rows (flattened) for the template
+    raw_mapping = load_mapping_table() or {}
+    normalized_rows = _flatten_mapping_table(raw_mapping)
 
-    # IMPORTANT: the template iterates over `mapping.table`, so ensure we provide that key.
-    # Keep all original mapping keys, but inject the computed "table" list.
-    mapping = dict(raw_mapping)
-    mapping["table"] = rows
+    # Build mapping_rows as the template expects (with explicit debit/credit fallbacks)
+    mapping_rows = []
+    for r in normalized_rows:
+        broker = (r.get("broker") or "").strip()
+        typ = (r.get("type") or "").strip()
+        sub = (r.get("subtype") or "").strip()
+        desc = (r.get("description") or "").strip()
+        debit = (r.get("debit_account") or r.get("coa_account") or "").strip()
+        credit = (r.get("credit_account") or "").strip()
+        mapping_rows.append({
+            "broker": broker,
+            "type": typ,
+            "subtype": sub,
+            "description": desc,
+            "debit_account": debit,
+            "credit_account": credit,
+            "updated_at": r.get("updated_at") or "",
+            "updated_by": r.get("updated_by") or "",
+        })
+
+    # Keep all original mapping keys and also expose a "table" key for implementations that use it
+    mapping = dict(raw_mapping) if isinstance(raw_mapping, dict) else {"raw": raw_mapping}
+    mapping["table"] = mapping_rows
 
     username, role = _current_user_and_role()
 
@@ -162,7 +183,8 @@ def view_mapping():
 
     return render_template(
         "coa_mapping.html",
-        mapping=mapping,          # <-- now has mapping["table"] for the Jinja loop
+        mapping=mapping,
+        mapping_rows=mapping_rows,  # <--- added: explicit list for template
         user=username,
         user_role=role,
         from_source=from_source,
@@ -172,20 +194,27 @@ def view_mapping():
     )
 
 
-
 # ---------------------------
 # JSON APIs under /coa/api/* (expected by the UI)
 # ---------------------------
 @coa_mapping_web.route("/coa/api/mapping_table", methods=["GET"])
-def api_mapping_table():
+def mapping_table_api():
+    """Return normalized mapping rows for client-side refresh."""
     mapping = load_mapping_table() or {}
-    rows = _flatten_mapping_table(mapping)
-    # include a lightweight header for client-side renderers
-    meta = {
-        "version": mapping.get("version"),
-        "count": len(rows),
-    } if isinstance(mapping, dict) else {"version": None, "count": len(rows)}
-    return jsonify({"rows": rows, "meta": meta})
+    rules = _flatten_mapping_table(mapping)
+    rows = []
+    for r in rules:
+        rows.append({
+            "broker": r.get("broker"),
+            "type": r.get("type"),
+            "subtype": r.get("subtype"),
+            "description": r.get("description"),
+            "debit_account": (r.get("debit_account") or r.get("coa_account") or ""),
+            "credit_account": (r.get("credit_account") or ""),
+            "updated_at": r.get("updated_at") or "",
+            "updated_by": r.get("updated_by") or "",
+        })
+    return jsonify({"rows": rows})
 
 
 @coa_mapping_web.route("/coa/api/get_mapping", methods=["POST"])

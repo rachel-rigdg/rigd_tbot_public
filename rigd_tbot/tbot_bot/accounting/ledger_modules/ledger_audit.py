@@ -6,6 +6,7 @@ Writes append-only rows into the `audit_trail` table defined by schema.sql.
 
 Public API:
 - append(event, **kwargs): structured writer aligned to AUDIT_TRAIL_FIELDS.
+- log_audit_event(action, entry_id, user, before=None, after=None): legacy shim.
 """
 
 import json
@@ -30,7 +31,19 @@ def _resolve_db_path() -> str:
     return resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
 
 
-# -------- Schema helpers (safe on SQLite) --------
+# -------- Schema compatibility helpers (safe on SQLite) --------
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    try:
+        return bool(
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                (table,),
+            ).fetchone()
+        )
+    except Exception:
+        return False
+
 
 def _audit_table_info(conn: sqlite3.Connection):
     """
@@ -82,10 +95,9 @@ def append(event: str, **kwargs) -> int:
     if TEST_MODE_FLAG.exists():
         return 0
 
-    # ---- Validate required event_type (derive from event if needed) ----
+    # ---- Validate required event_type (fail fast; never push NULL into DB) ----
     event_type = (kwargs.get("event_type") or event or "").strip()
     if not event_type:
-        # Fail fast with a clear message rather than sending NULL to the DB
         raise ValueError("[ledger_audit.append] 'event_type' is required and must be non-empty.")
 
     entity_code, jurisdiction_code, broker_code, bot_id = load_bot_identity().split("_")
@@ -119,7 +131,7 @@ def append(event: str, **kwargs) -> int:
     # Build a full record dict with canonical keys
     record = {
         "timestamp": _now_iso_utc(),
-        # Ensure both modern and legacy-named columns are populated consistently
+        # Ensure both modern and legacy columns are populated when present
         "event_type": event_type,
         "action": kwargs.get("action") or event_type,
         "related_id": kwargs.get("related_id") or kwargs.get("entry_id"),
@@ -143,7 +155,7 @@ def append(event: str, **kwargs) -> int:
         "extra": extra_value,
     }
 
-    # Ensure every known column has a value (None if not provided)
+    # Ensure every column in the schema has a value (None if not provided)
     for k in AUDIT_TRAIL_FIELDS:
         record.setdefault(k, None)
 
@@ -152,17 +164,14 @@ def append(event: str, **kwargs) -> int:
         # Ensure schema is at least as new as our writer
         _audit_ensure_schema(conn)
 
-        # Use ACTUAL table columns; ALWAYS include event_type if present
-        have_cols = list(_audit_existing_cols(conn))
+        # Build INSERT column list from actual table columns to avoid NOT NULL failures
+        info = _audit_table_info(conn)
+        have_cols = [row[1] for row in info] if info else []
         if not have_cols:
-            have_cols = AUDIT_TRAIL_FIELDS[:]  # last-resort fallback
+            have_cols = AUDIT_TRAIL_FIELDS[:]
 
-        # Desired order: event_type first, then the canonical list (without duplicates)
-        desired = ["event_type"] + [c for c in AUDIT_TRAIL_FIELDS if c != "event_type"]
-        cols = [c for c in desired if c in have_cols]
-
-        # Belt & suspenders: if the table has event_type, it must be provided and non-empty
-        if "event_type" in cols and not (record.get("event_type") or "").strip():
+        cols = [c for c in AUDIT_TRAIL_FIELDS if c in have_cols]
+        if "event_type" in have_cols and not record.get("event_type"):
             raise ValueError("[ledger_audit.append] 'event_type' is required by the current schema.")
 
         placeholders = ", ".join(["?"] * len(cols))
@@ -174,3 +183,4 @@ def append(event: str, **kwargs) -> int:
         )
         conn.commit()
         return int(cur.lastrowid)
+
