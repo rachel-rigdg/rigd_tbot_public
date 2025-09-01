@@ -594,7 +594,7 @@ def ledger_edit(entry_id: int):
     Body (JSON or form):
       - account_code: required, active COA code
       - reason: optional string
-      - auto_update_mapping: optional bool toggle (default true if configured)
+      - mapping write: mandatory
     """
     not_ok = _require_admin_post()
     if not_ok:
@@ -619,32 +619,47 @@ def ledger_edit(entry_id: int):
             entry_id,
             account_code,
             actor,
-            reason=reason,   # auditing occurs inside ledger_edit.py via audit_append(event="coa_reassign", ...)
+            reason=reason,  # auditing occurs inside ledger_edit.py via audit_append(event="coa_reassign", ...)
         )
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": f"reassign failed: {e}"}), 500
 
-    # Optional mapping auto-update
-    auto_toggle = str(data.get("auto_update_mapping", "true")).lower() not in ("0", "false", "no")
-    if auto_toggle:
-        try:
-            from tbot_bot.accounting.ledger_modules.mapping_auto_update import maybe_upsert_rule_from_leg
-            # fetch leg context for rule key
-            try:
-                bot_identity = load_bot_identity()
-                e, j, b, bot_id = bot_identity.split("_")
-                db_path = resolve_ledger_db_path(e, j, b, bot_id)
-                with sqlite3.connect(db_path) as conn:
-                    conn.row_factory = sqlite3.Row
-                    leg = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
-                if leg:
-                    maybe_upsert_rule_from_leg(dict(leg), account_code, leg.get("strategy"))
-            except Exception:
-                traceback.print_exc()
-        except Exception:
-            # feature may be toggled off; ignore
-            pass
+    # MANDATORY: persist a COA mapping rule immediately after reassignment
+    try:
+        # Fetch leg context for rule derivation
+        bot_identity = load_bot_identity()
+        e, j, b, bot_id = bot_identity.split("_")
+        db_path = resolve_ledger_db_path(e, j, b, bot_id)
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            leg_row = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+        if not leg_row:
+            return jsonify({"ok": False, "error": "mapping write failed: leg not found post-update"}), 500
+
+        leg = dict(leg_row)
+        context_meta = {
+            "broker": b,
+            "symbol": leg.get("symbol"),
+            "action": leg.get("action"),
+            "strategy": leg.get("strategy"),
+            "type": leg.get("type"),
+            "subtype": leg.get("subtype"),
+            "description": leg.get("notes") or leg.get("description"),
+            "trade_id": leg.get("trade_id"),
+            "entry_id": entry_id,
+            "group_id": leg.get("group_id"),
+        }
+        from tbot_bot.accounting.coa_mapping_table import upsert_rule as _coa_upsert_rule
+        _coa_upsert_rule(
+            rule_key="",
+            account_code=account_code,
+            context_meta=context_meta,
+            actor=actor,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": f"mapping write failed: {e}"}), 500
 
     # Return fresh deltas for live UI
     try:

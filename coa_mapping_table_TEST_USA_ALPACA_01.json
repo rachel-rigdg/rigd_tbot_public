@@ -1,0 +1,257 @@
+{
+  "mappings": [],
+  "rules": [],
+  "version": 13,
+  "history": [
+    {
+      "timestamp_utc": "2025-08-31T23:49:26.941341+00:00",
+      "version": 2,
+      "user": "system",
+      "reason": "init",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.627070+00:00",
+      "version": 3,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.631521+00:00",
+      "version": 4,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.636334+00:00",
+      "version": 5,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.640000+00:00",
+      "version": 6,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.643010+00:00",
+      "version": 7,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.646242+00:00",
+      "version": 8,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.649232+00:00",
+      "version": 9,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.651773+00:00",
+      "version": 10,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.654378+00:00",
+      "version": 11,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.656701+00:00",
+      "version": 12,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    },
+    {
+      "timestamp_utc": "2025-08-31T23:49:27.658754+00:00",
+      "version": 13,
+      "user": "sync",
+      "reason": "flag_unmapped",
+      "snapshot": {
+        "mappings": [],
+        "rules": [],
+        "coa_version": "v1.0.0"
+      }
+    }
+  ],
+  "coa_version": "v1.0.0",
+  "entity_code": "TEST",
+  "jurisdiction_code": "USA",
+  "broker_code": "ALPACA",
+  "last_updated_by": "sync",
+  "change_reason": "flag_unmapped",
+  "unmapped": [
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "short",
+        "symbol": "NVDA",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.625789+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "short",
+        "symbol": "AAPL",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.630779+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "short",
+        "symbol": "TSLA",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.635365+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "short",
+        "symbol": "SPY",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.639327+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "long",
+        "symbol": "NVDA",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.642570+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "long",
+        "symbol": "SPY",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.645695+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "long",
+        "symbol": "AAPL",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.648834+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "long",
+        "symbol": "AMD",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.651399+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "long",
+        "symbol": "TSLA",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.654012+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "short",
+        "symbol": "AZTR",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.656401+00:00",
+      "flagged_by": "sync"
+    },
+    {
+      "transaction": {
+        "broker": "ALPACA",
+        "type": "long",
+        "symbol": "AZTR",
+        "notes": null
+      },
+      "flagged_at": "2025-08-31T23:49:27.658458+00:00",
+      "flagged_by": "sync"
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import json
 from functools import wraps
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
 
-# RBAC (same helpers used elsewhere; no flask_login)
+# RBAC helpers (no flask_login)
 from tbot_web.support.auth_web import get_current_user, get_user_role
 
 # Core mapping table APIs
@@ -34,6 +34,7 @@ except Exception:  # pragma: no cover
 
 coa_mapping_web = Blueprint("coa_mapping_web", __name__, template_folder="../templates")
 
+
 # ---------------------------
 # RBAC helpers (viewer can GET, admin required for POST mutating ops)
 # ---------------------------
@@ -42,6 +43,7 @@ def _current_user_and_role():
     username = getattr(user, "username", None) or user or "system"
     role = get_user_role(username) if username else "viewer"
     return username, role
+
 
 def admin_required(f):
     @wraps(f)
@@ -55,49 +57,65 @@ def admin_required(f):
         return f(*args, **kwargs)
     return _wrap
 
+
 # ---------------------------
-# Normalization helpers
+# Shape/flatten utilities
 # ---------------------------
-def _normalize_mapping_rows(mapping_obj):
+_EXPECTED_KEYS = ("broker", "type", "subtype", "description",
+                  "debit_account", "credit_account", "coa_account",
+                  "updated_at", "updated_by", "rule_key")
+
+def _normalize_row(d: dict) -> dict:
+    """Ensure a consistent row shape for the UI."""
+    if not isinstance(d, dict):
+        return {"raw": d}
+    out = dict(d)
+    # If only a single account is present, map to coa_account
+    if "coa_account" not in out:
+        for k in ("account", "account_code"):
+            if k in out and out[k] and not out.get("debit_account") and not out.get("credit_account"):
+                out["coa_account"] = out.get(k)
+                break
+    # Guarantee presence of all keys (None if missing)
+    for k in _EXPECTED_KEYS:
+        out.setdefault(k, None)
+    return out
+
+
+def _flatten_mapping_table(doc) -> list:
     """
-    Produce a flat list of mapping rows with stable keys so the template can render
-    regardless of how load_mapping_table() structures things.
+    Accepts any of:
+      - {"table":[...]} or {"rows":[...]} or {"rules":[...]} or list[...]
+      - {"rules": { rule_key: {...}|<account> , ... }}
+    Returns a list of dict rows normalized for UI.
     """
     rows = []
-    # 1) locate list of rules
-    if isinstance(mapping_obj, list):
-        rows = mapping_obj
-    elif isinstance(mapping_obj, dict):
-        for key in ("rules", "records", "rows", "table", "items", "data"):
-            val = mapping_obj.get(key)
-            if isinstance(val, list):
-                rows = val
-                break
+    if isinstance(doc, list):
+        rows = doc
+    elif isinstance(doc, dict):
+        if isinstance(doc.get("table"), list):
+            rows = doc["table"]
+        elif isinstance(doc.get("rows"), list):
+            rows = doc["rows"]
+        elif isinstance(doc.get("rules"), list):
+            rows = doc["rules"]
+        elif isinstance(doc.get("rules"), dict):
+            for rk, val in doc["rules"].items():
+                if isinstance(val, dict):
+                    r = {"rule_key": rk, **val}
+                else:
+                    r = {"rule_key": rk, "coa_account": val}
+                rows.append(r)
+        elif isinstance(doc.get("mapping"), list):
+            rows = doc["mapping"]
         else:
-            # possibly dict of id->rule
-            vals = list(mapping_obj.values())
-            if vals and all(isinstance(v, dict) for v in vals):
-                rows = vals
+            # last resort: if it looks like a single row object
+            rows = [doc]
+    else:
+        rows = []
 
-    # 2) normalize field names (retain originals too)
-    norm = []
-    for r in rows or []:
-        if not isinstance(r, dict):
-            continue
-        norm.append({
-            # canonical columns used by the table
-            "broker": r.get("broker") or r.get("broker_code"),
-            "type": r.get("type") or r.get("txn_type") or r.get("category"),
-            "subtype": r.get("subtype") or r.get("txn_subtype") or r.get("subcategory"),
-            "description": r.get("description") or r.get("memo") or r.get("pattern") or r.get("text"),
-            "debit_account": r.get("debit_account") or r.get("coa_debit") or r.get("coa_account_debit") or r.get("coa_account"),
-            "credit_account": r.get("credit_account") or r.get("coa_credit") or r.get("coa_account_credit"),
-            "updated_at": r.get("updated_at") or r.get("ts_utc") or r.get("timestamp"),
-            "updated_by": r.get("updated_by") or r.get("actor") or r.get("user"),
-            # keep originals for any JS relying on extra fields
-            **r,
-        })
-    return norm
+    return [_normalize_row(r) for r in rows]
+
 
 # ---------------------------
 # Pages / Views
@@ -118,8 +136,15 @@ def view_mapping():
     except ValueError:
         entry_id = None
 
+    # Load the mapping JSON and build the rows the template expects
     raw_mapping = load_mapping_table()
-    mapping_rows = _normalize_mapping_rows(raw_mapping)
+    rows = make_view_rows(raw_mapping)  # flattens raw {"mappings": [...], "rules": {...}} into list of rows
+
+    # IMPORTANT: the template iterates over `mapping.table`, so ensure we provide that key.
+    # Keep all original mapping keys, but inject the computed "table" list.
+    mapping = dict(raw_mapping)
+    mapping["table"] = rows
+
     username, role = _current_user_and_role()
 
     # Existing /coa/api endpoints (the UI/JS already talks to these)
@@ -132,18 +157,12 @@ def view_mapping():
         "rollback": f"{coa_api_base}/rollback",
         "export": f"{coa_api_base}/export",
         "import": f"{coa_api_base}/import",
-        "table": f"{coa_api_base}/mapping_table",  # if present
+        "table": f"{coa_api_base}/mapping_table",
     }
 
     return render_template(
         "coa_mapping.html",
-        # raw + normalized for maximum template compatibility
-        mapping=raw_mapping,
-        mapping_rows=mapping_rows,
-        rows=mapping_rows,
-        rules=mapping_rows,
-        table=mapping_rows,
-        row_count=len(mapping_rows),
+        mapping=mapping,          # <-- now has mapping["table"] for the Jinja loop
         user=username,
         user_role=role,
         from_source=from_source,
@@ -152,20 +171,33 @@ def view_mapping():
         api_urls=api_urls,
     )
 
-# Read-only JSON rows (handy if template fetches instead of server-rendering)
-@coa_mapping_web.route("/coa_mapping/api/mapping_table", methods=["GET"])
-def mapping_table_json():
-    raw_mapping = load_mapping_table()
-    rows = _normalize_mapping_rows(raw_mapping)
-    return jsonify({"rows": rows, "count": len(rows)})
+
 
 # ---------------------------
-# CRUD / Assignment
+# JSON APIs under /coa/api/* (expected by the UI)
 # ---------------------------
-@coa_mapping_web.route("/coa_mapping/assign", methods=["POST"])
+@coa_mapping_web.route("/coa/api/mapping_table", methods=["GET"])
+def api_mapping_table():
+    mapping = load_mapping_table() or {}
+    rows = _flatten_mapping_table(mapping)
+    # include a lightweight header for client-side renderers
+    meta = {
+        "version": mapping.get("version"),
+        "count": len(rows),
+    } if isinstance(mapping, dict) else {"version": None, "count": len(rows)}
+    return jsonify({"rows": rows, "meta": meta})
+
+
+@coa_mapping_web.route("/coa/api/get_mapping", methods=["POST"])
+def api_get_mapping():
+    txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    mapping = get_mapping_for_transaction(txn)
+    return jsonify(mapping or {})
+
+
+@coa_mapping_web.route("/coa/api/assign", methods=["POST"])
 @admin_required
-def assign_mapping_route():
-    """Assign or update a COA mapping rule via form or API (admin-only)."""
+def api_assign():
     data = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     mapping_rule = {
         "broker": data.get("broker"),
@@ -178,46 +210,34 @@ def assign_mapping_route():
     actor, _ = _current_user_and_role()
     assign_mapping(mapping_rule, user=actor, reason=reason)
     log_event("coa_mapping_web", f"Mapping assigned/updated by {actor}: {mapping_rule} (reason: {reason})", level="info")
-    flash("Mapping assigned/updated.", "success")
-    return jsonify({"success": True})
+    return jsonify({"ok": True})
 
-@coa_mapping_web.route("/coa_mapping/flag_unmapped", methods=["POST"])
-def flag_unmapped():
-    """Flag an unmapped transaction for admin review (viewer allowed to report)."""
-    txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
-    actor, _ = _current_user_and_role()
-    flag_unmapped_transaction(txn, user=actor)
-    log_event("coa_mapping_web", f"Transaction flagged unmapped by {actor}: {txn}", level="info")
-    return jsonify({"success": True})
 
-# ---------------------------
-# Versioning / Import / Export (RBAC-gated)
-# ---------------------------
-@coa_mapping_web.route("/coa_mapping/versions", methods=["GET"])
-def list_versions():
-    """List all mapping table version snapshots (viewer allowed)."""
-    mapping = load_mapping_table()
-    history = mapping.get("history", [])
+@coa_mapping_web.route("/coa/api/versions", methods=["GET"])
+def api_versions():
+    mapping = load_mapping_table() or {}
+    history = mapping.get("history", []) if isinstance(mapping, dict) else []
     return jsonify(history)
 
-@coa_mapping_web.route("/coa_mapping/rollback", methods=["POST"])
+
+@coa_mapping_web.route("/coa/api/rollback", methods=["POST"])
 @admin_required
-def rollback_mapping():
-    """Rollback to a previous mapping table version (admin-only)."""
-    version = int((request.form.get("version") or (request.json.get("version") if request.is_json else 0) or 0))
+def api_rollback():
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    try:
+        version = int(payload.get("version") or 0)
+    except Exception:
+        return jsonify({"ok": False, "error": "invalid version"}), 400
     actor, _ = _current_user_and_role()
     if rollback_mapping_version(version):
         log_event("coa_mapping_web", f"Mapping table rolled back to version {version} by {actor}", level="info")
-        flash(f"Rolled back to mapping version {version}.", "info")
-        return jsonify({"success": True})
-    else:
-        flash(f"Version {version} not found.", "danger")
-        return jsonify({"success": False, "error": "Version not found"}), 404
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Version not found"}), 404
 
-@coa_mapping_web.route("/coa_mapping/export", methods=["GET"])
+
+@coa_mapping_web.route("/coa/api/export", methods=["GET"])
 @admin_required
-def export_mapping():
-    """Download/export the current mapping table as JSON (admin-only)."""
+def api_export():
     mapping_json = export_mapping_table()
     identity = get_bot_identity()
     filename = f"coa_mapping_table_{identity}.json"
@@ -229,35 +249,66 @@ def export_mapping():
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
-@coa_mapping_web.route("/coa_mapping/import", methods=["POST"])
+
+@coa_mapping_web.route("/coa/api/import", methods=["POST"])
 @admin_required
-def import_mapping():
-    """Import mapping table from uploaded JSON (admin-only)."""
+def api_import():
     if "file" not in request.files:
-        flash("No file uploaded", "danger")
-        return redirect(url_for("coa_mapping_web.view_mapping"))
+        return jsonify({"ok": False, "error": "no file"}), 400
     file = request.files["file"]
     try:
         data = file.read().decode("utf-8")
         actor, _ = _current_user_and_role()
         import_mapping_table(data, user=actor)
         log_event("coa_mapping_web", f"Mapping table imported by {actor}.", level="info")
-        flash("Mapping table imported successfully.", "success")
-        return redirect(url_for("coa_mapping_web.view_mapping"))
+        return jsonify({"ok": True})
     except Exception as e:
         log_event("coa_mapping_web", f"Import failed: {e}", level="error")
-        flash(f"Import failed: {e}", "danger")
-        return redirect(url_for("coa_mapping_web.view_mapping"))
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 # ---------------------------
-# Query helper
+# Back-compat routes under /coa_mapping/* (kept for callers that use them)
 # ---------------------------
-@coa_mapping_web.route("/coa_mapping/get_mapping", methods=["POST"])
-def get_mapping():
-    """API endpoint: fetch the mapping for a specific transaction (viewer allowed)."""
+@coa_mapping_web.route("/coa_mapping/assign", methods=["POST"])
+@admin_required
+def assign_mapping_route():
+    # delegate to API version
+    return api_assign()
+
+
+@coa_mapping_web.route("/coa_mapping/flag_unmapped", methods=["POST"])
+def flag_unmapped():
+    """Viewer can report; admin reviews later."""
     txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
-    mapping = get_mapping_for_transaction(txn)
-    return jsonify(mapping or {})
+    actor, _ = _current_user_and_role()
+    flag_unmapped_transaction(txn, user=actor)
+    log_event("coa_mapping_web", f"Transaction flagged unmapped by {actor}: {txn}", level="info")
+    return jsonify({"ok": True})
+
+
+@coa_mapping_web.route("/coa_mapping/versions", methods=["GET"])
+def list_versions():
+    return api_versions()
+
+
+@coa_mapping_web.route("/coa_mapping/rollback", methods=["POST"])
+@admin_required
+def rollback_mapping():
+    return api_rollback()
+
+
+@coa_mapping_web.route("/coa_mapping/export", methods=["GET"])
+@admin_required
+def export_mapping():
+    return api_export()
+
+
+@coa_mapping_web.route("/coa_mapping/import", methods=["POST"])
+@admin_required
+def import_mapping():
+    return api_import()
+
 
 # ---------------------------
 # INTERNAL helper for inline edit hook (admin-only + CSRF-exempt)
@@ -293,7 +344,9 @@ def internal_upsert_rule():
 
     try:
         version_id = upsert_rule(rule_key=rule_key, account_code=account_code, context_meta=context_meta, actor=actor)
-        log_event("coa_mapping_web", f"internal upsert_rule by {actor}: rule_key={rule_key}, account_code={account_code}", level="info")
+        log_event("coa_mapping_web",
+                  f"internal upsert_rule by {actor}: rule_key={rule_key}, account_code={account_code}",
+                  level="info")
         return jsonify({"ok": True, "version_id": version_id})
     except Exception as e:
         log_event("coa_mapping_web", f"internal upsert_rule failed: {e}", level="error")
