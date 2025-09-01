@@ -9,25 +9,41 @@ from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
 import sqlite3
 import json
 
+# ---- Compliance filter (deterministic resolution, no brittle try/except imports) ----
+from tbot_bot.accounting.ledger_modules import ledger_compliance_filter as _lcf  # type: ignore
 
-# ---- Compliance filter (backwards-compatible import) ----
-try:
-    # Preferred new-style boolean function
-    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (
-        is_compliant_ledger_entry as _is_compliant_ledger_entry,  # type: ignore
+
+def _resolve_is_compliant() -> callable:
+    """
+    Resolve a boolean compliance predicate from the compliance filter module.
+    Priority:
+      1) is_compliant_ledger_entry(entry) -> bool
+      2) compliance_filter_entry(entry) -> (bool, reason)  ==> bool
+      3) compliance_filter_ledger_entry(entry) -> entry|None  ==> bool
+    """
+    if hasattr(_lcf, "is_compliant_ledger_entry"):
+        return getattr(_lcf, "is_compliant_ledger_entry")  # returns bool
+
+    if hasattr(_lcf, "compliance_filter_entry"):
+        def _wrap(entry: dict) -> bool:
+            ok, _reason = _lcf.compliance_filter_entry(entry)  # type: ignore[attr-defined]
+            return bool(ok)
+        return _wrap
+
+    if hasattr(_lcf, "compliance_filter_ledger_entry"):
+        def _wrap(entry: dict) -> bool:
+            res = _lcf.compliance_filter_ledger_entry(entry)  # type: ignore[attr-defined]
+            return res is not None
+        return _wrap
+
+    # Hard fail with a clear message — compliance filter is mandatory
+    raise ImportError(
+        "ledger_compliance_filter is missing required predicates "
+        "(is_compliant_ledger_entry/compliance_filter_entry/compliance_filter_ledger_entry)."
     )
-except Exception:
-    # Legacy function returning entry/None or (bool, reason)
-    from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import (  # type: ignore
-        compliance_filter_ledger_entry as _legacy_filter,
-    )
 
-    def _is_compliant_ledger_entry(entry: dict) -> bool:
-        res = _legacy_filter(entry)
-        if isinstance(res, tuple):
-            return bool(res[0])
-        return res is not None
 
+_is_compliant_ledger_entry = _resolve_is_compliant()
 
 # ---------------------------
 # Constants / Helpers
@@ -160,10 +176,10 @@ def _fallback_unmapped_legs(entry_in: Dict[str, Any]) -> Tuple[Dict[str, Any], D
     val = _as_float(e.get("total_value"), 0.0)
     if val >= 0:
         debit = {**e, "side": "debit",  "account": SUSPENSE, "total_value": abs(val),  "amount":  abs(val)}
-        credit= {**e, "side": "credit", "account": PNL,      "total_value": -abs(val), "amount": -abs(val)}
+        credit = {**e, "side": "credit", "account": PNL,      "total_value": -abs(val), "amount": -abs(val)}
     else:
         debit = {**e, "side": "debit",  "account": PNL,      "total_value": abs(val),  "amount":  abs(val)}
-        credit= {**e, "side": "credit", "account": SUSPENSE, "total_value": -abs(val), "amount": -abs(val)}
+        credit = {**e, "side": "credit", "account": SUSPENSE, "total_value": -abs(val), "amount": -abs(val)}
     return debit, credit
 
 

@@ -39,9 +39,7 @@ from tbot_bot.accounting.ledger_modules.ledger_grouping import (
 )
 
 
-def _normalize_double_entry_result(
-    result: Any
-) -> Dict[str, Any]:
+def _normalize_double_entry_result(result: Any) -> Dict[str, Any]:
     """
     Normalize various legacy return shapes from the underlying implementation
     into a stable dict payload for UI/tests.
@@ -76,6 +74,13 @@ def _normalize_double_entry_result(
             "debits": float(result[2]),
             "credits": float(result[3]),
         }
+
+    # List of (debit_trade_id, credit_trade_id) tuples ⇒ count legs as 2 per pair
+    if isinstance(result, list) and all(
+        isinstance(p, (list, tuple)) and len(p) == 2 for p in result
+    ):
+        posted_legs = 2 * len(result)
+        return {"balanced": None, "posted": posted_legs, "debits": None, "credits": None}
 
     # List of leg dicts; compute totals
     if isinstance(result, list) and result and isinstance(result[0], dict):
