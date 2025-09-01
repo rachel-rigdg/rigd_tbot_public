@@ -113,3 +113,26 @@ def compliance_filter_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, A
         if ok:
             passed.append(e)
     return passed
+
+
+# --------- Exported wrappers for legacy/new callers ---------
+
+def is_compliant_ledger_entry(entry: Dict[str, Any]) -> bool:
+    """Boolean convenience used by some modules/tests."""
+    ok, _ = compliance_filter_entry(entry)
+    return ok
+
+
+def compliance_filter_ledger_entry(entry: Dict[str, Any]):
+    """
+    Legacy wrapper expected by older code: return entry if compliant, else None.
+    """
+    ok, _ = compliance_filter_entry(entry)
+    return entry if ok else None
+
+
+def filter_valid_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Legacy name some modules import; delegates to the batch filter.
+    """
+    return compliance_filter_entries(entries)
