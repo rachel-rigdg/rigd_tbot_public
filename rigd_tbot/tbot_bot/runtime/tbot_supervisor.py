@@ -10,10 +10,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import time
 import subprocess
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time as dt_time
 
 from tbot_bot.support import path_resolver
-from tbot_bot.support.utils_time import utc_now, parse_time_utc
+from tbot_bot.support.utils_time import utc_now
 
 # --- NEW: read schedule strictly via env_bot getters (UTC) ---
 from tbot_bot.config.env_bot import (
@@ -127,7 +127,7 @@ def is_time_for_universe_rebuild():
         build_time = datetime.utcfromtimestamp(UNIVERSE_TIMESTAMP_PATH.stat().st_mtime)
     now = utc_now()
     market_close_str = get_market_close_utc() or "21:00"  # getter (UTC HH:MM)
-    close_time = parse_time_utc(market_close_str)
+    close_time = _parse_time_hhmm(market_close_str)
     today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
     if now < today_close:
         last_close = today_close - timedelta(days=1)
@@ -154,7 +154,7 @@ def is_time_for_broker_sync():
     now = utc_now()
     market_close_str = get_market_close_utc() or "21:00"
     sync_delay_min = int(read_env_var("BROKER_SYNC_DELAY_MIN", "30"))
-    close_time = parse_time_utc(market_close_str)
+    close_time = _parse_time_hhmm(market_close_str)
     today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
     if now < today_close:
         sync_time = today_close - timedelta(days=1) + timedelta(minutes=sync_delay_min)
@@ -183,7 +183,7 @@ def is_time_for_ledger_snapshot():
     now = utc_now()
     market_close_str = get_market_close_utc() or "21:00"
     snapshot_delay_min = int(read_env_var("LEDGER_SNAPSHOT_DELAY_MIN", "30"))
-    close_time = parse_time_utc(market_close_str)
+    close_time = _parse_time_hhmm(market_close_str)
     today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
     if now < today_close:
         snap_time = today_close - timedelta(days=1) + timedelta(minutes=snapshot_delay_min)
@@ -193,8 +193,19 @@ def is_time_for_ledger_snapshot():
     already_snapshotted_today = last_snapshot and last_snapshot.date() == now.date() and last_snapshot > snap_time - timedelta(minutes=5)
     return now >= snap_time and not already_snapshotted_today
 
+def _parse_time_hhmm(hhmm_utc: str) -> dt_time:
+    """Parse 'HH:MM' to a time object (UTC semantics)."""
+    try:
+        hh, mm = map(int, hhmm_utc.strip().split(":"))
+        if 0 <= hh <= 23 and 0 <= mm <= 59:
+            return dt_time(hour=hh, minute=mm)
+    except Exception:
+        pass
+    # Fallback to 00:00 on invalid input
+    return dt_time(0, 0)
+
 def _scheduled_run_datetime(hhmm_utc: str, now: datetime) -> datetime:
-    t = parse_time_utc(hhmm_utc)
+    t = _parse_time_hhmm(hhmm_utc)
     run_dt = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
     return run_dt
 
