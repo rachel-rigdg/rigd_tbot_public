@@ -160,6 +160,12 @@ def show_configuration():
     config.setdefault("START_TIME_MID",   config.get("START_TIME_MID",   ""))   # UTC preview
     config.setdefault("START_TIME_CLOSE", config.get("START_TIME_CLOSE", ""))   # UTC preview
     config.setdefault("MARKET_CLOSE_UTC", config.get("MARKET_CLOSE_UTC", ""))   # UTC preview
+    # Default flags for Accounting Initialization section
+    config.setdefault("LOAD_DEFAULT_COA_SEED", False)
+    config.setdefault("accounting_bootstrap", {
+        "opening_balance_date_utc": "",
+        "opening_balance_lines": []
+    })
     # ----------------------------
 
     return render_template("configuration.html", config=config)
@@ -230,6 +236,46 @@ def save_configuration():
         return redirect(url_for("configuration_web.show_configuration"))
     # ----------------------------
 
+    # ----------------------------
+    # Accounting Initialization inputs (Opening Balance + default COA seed flag)
+    # NOTE: We DO NOT perform writes to ledger/mapping here. We only persist inclusive config
+    # for provisioning_runner/helper to consume during first bootstrap.
+    # ----------------------------
+    def _to_float(x):
+        try:
+            if x is None or str(x).strip() == "":
+                return None
+            return float(str(x).replace(",", "").strip())
+        except Exception:
+            return None
+
+    opening_balance_date = (form.get("opening_balance_date") or "").strip()
+    # Collect up to N rows (template currently supplies 3; support more if added)
+    lines = []
+    # Heuristic: scan form keys for opening_account_<n>
+    indices = set()
+    for k in form.keys():
+        if k.startswith("opening_account_"):
+            try:
+                indices.add(int(k.split("_")[-1]))
+            except Exception:
+                pass
+    if not indices:
+        indices = {1, 2, 3}
+    for i in sorted(indices):
+        acct = (form.get(f"opening_account_{i}") or "").strip()
+        amt  = _to_float(form.get(f"opening_amount_{i}"))
+        note = (form.get(f"opening_note_{i}") or "").strip()
+        if acct and amt is not None:
+            lines.append({
+                "account_code": acct,
+                "amount": amt,
+                "note": note or None
+            })
+
+    load_default_coa_seed = True if (form.get("load_default_coa_seed") in ("1", "true", "on", "yes")) else False
+    # ----------------------------
+
     config = {
         "bot_identity":    bot_identity_data,
         "broker":          broker_data,
@@ -252,6 +298,13 @@ def save_configuration():
         "START_TIME_CLOSE":         close_utc,
         "MARKET_CLOSE_UTC":         market_close_utc,
         # ----------------------------
+        # Accounting Initialization block (consumed by provisioning_runner/helper)
+        # ----------------------------
+        "LOAD_DEFAULT_COA_SEED":    bool(load_default_coa_seed),
+        "accounting_bootstrap": {
+            "opening_balance_date_utc": opening_balance_date,
+            "opening_balance_lines":    lines
+        },
     }
 
     try:
@@ -274,7 +327,7 @@ def save_configuration():
         return redirect(url_for("configuration_web.show_configuration"))
 
     # ----------------------------
-    # [SCHEDULE LOCAL→UTC] upsert schedule block into plain .env_bot (atomic-ish)
+    # [SCHEDULE LOCAL→UTC + Accounting Init flags] upsert into plain .env_bot (atomic-ish)
     # ----------------------------
     try:
         ENV_BOT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -289,6 +342,10 @@ def save_configuration():
             "START_TIME_MID":         mid_utc,
             "START_TIME_CLOSE":       close_utc,
             "MARKET_CLOSE_UTC":       market_close_utc,
+            # Signals for provisioning
+            "LOAD_DEFAULT_COA_SEED":  "1" if load_default_coa_seed else "0",
+            "OPENING_BALANCE_PRESENT":"1" if len(lines) > 0 and (opening_balance_date or "").strip() else "0",
+            "OPENING_BALANCE_DATE_UTC": (opening_balance_date or ""),
         }
         merged = _update_env_lines(existing, upserts)
         tmp = ENV_BOT_PATH.with_suffix(".tmp")
@@ -296,7 +353,7 @@ def save_configuration():
         tmp.replace(ENV_BOT_PATH)
     except Exception as e:
         logger.error(f"[configuration_web] ERROR writing .env_bot: {e}")
-        flash("Configuration saved, but failed to update .env_bot schedule keys. See logs.", "warning")
+        flash("Configuration saved, but failed to update .env_bot schedule/accounting flags. See logs.", "warning")
     # ----------------------------
 
     first_bootstrap = is_first_bootstrap()

@@ -9,7 +9,7 @@ for financial amounts/dates (no mutation to amount/date fields).
 
 import sqlite3
 from datetime import datetime, timezone
-from typing import Dict, Any, Tuple, Set, List, Optional  # <- added Optional
+from typing import Dict, Any, Tuple, Set, List, Optional
 
 from tbot_bot.support.path_resolver import (
     resolve_ledger_db_path,
@@ -75,14 +75,14 @@ def reassign_leg_account(
     actor: str,
     *,
     reason: Optional[str] = None,
-    event_type: str = "ledger_reassign_leg_account",
+    event_type: str = "reassign_account",
 ) -> Dict[str, Any]:
     """
     Reassign the COA account for a single ledger leg (row in trades table).
 
     - Validates new_account_code exists and is active in COA.
     - Updates ONLY 'account' field (no amount/date mutation).
-    - Emits immutable audit log event using non-empty `event_type`.
+    - Emits immutable audit log event with non-empty `event_type` and `actor`.
     - DB write is committed before audit append; if audit fails we raise to surface the issue.
 
     Returns:
@@ -107,6 +107,10 @@ def reassign_leg_account(
     # Validate non-empty audit event label (aligns with NOT NULL in audit schema)
     if not isinstance(event_type, str) or not event_type.strip():
         raise ValueError("event_type is required for audit")
+
+    # Validate non-empty actor (aligns with stricter audit requirements)
+    if not isinstance(actor, str) or not actor.strip():
+        raise ValueError("actor is required for audit")
 
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
@@ -135,7 +139,7 @@ def reassign_leg_account(
             audit_append(
                 event=event_type,
                 related_id=entry_id,
-                actor=actor or "system",
+                actor=actor,
                 group_id=leg["group_id"],
                 trade_id=leg["trade_id"],
                 before=old_account,
@@ -187,7 +191,7 @@ def reassign_leg_account(
         audit_append(
             event=event_type,
             related_id=entry_id,
-            actor=actor or "system",
+            actor=actor,
             group_id=leg["group_id"],
             trade_id=leg["trade_id"],
             before=old_account,

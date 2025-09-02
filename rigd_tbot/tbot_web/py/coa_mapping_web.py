@@ -200,53 +200,71 @@ def view_mapping():
 @coa_mapping_web.route("/coa/api/mapping_table", methods=["GET"])
 def mapping_table_api():
     """Return normalized mapping rows for client-side refresh."""
-    mapping = load_mapping_table() or {}
-    rules = _flatten_mapping_table(mapping)
-    rows = []
-    for r in rules:
-        rows.append({
-            "broker": r.get("broker"),
-            "type": r.get("type"),
-            "subtype": r.get("subtype"),
-            "description": r.get("description"),
-            "debit_account": (r.get("debit_account") or r.get("coa_account") or ""),
-            "credit_account": (r.get("credit_account") or ""),
-            "updated_at": r.get("updated_at") or "",
-            "updated_by": r.get("updated_by") or "",
-        })
-    return jsonify({"rows": rows})
+    try:
+        mapping = load_mapping_table() or {}
+        rules = _flatten_mapping_table(mapping)
+        rows = []
+        for r in rules:
+            rows.append({
+                "broker": r.get("broker"),
+                "type": r.get("type"),
+                "subtype": r.get("subtype"),
+                "description": r.get("description"),
+                "debit_account": (r.get("debit_account") or r.get("coa_account") or ""),
+                "credit_account": (r.get("credit_account") or ""),
+                "updated_at": r.get("updated_at") or "",
+                "updated_by": r.get("updated_by") or "",
+            })
+        return jsonify({"ok": True, "rows": rows})
+    except Exception as e:
+        log_event("coa_mapping_web", f"mapping_table_api failed: {e}", level="error")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @coa_mapping_web.route("/coa/api/get_mapping", methods=["POST"])
 def api_get_mapping():
-    txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
-    mapping = get_mapping_for_transaction(txn)
-    return jsonify(mapping or {})
+    try:
+        txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+        mapping = get_mapping_for_transaction(txn)
+        return jsonify({"ok": True, "mapping": (mapping or {})})
+    except Exception as e:
+        log_event("coa_mapping_web", f"get_mapping failed: {e}", level="error")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @coa_mapping_web.route("/coa/api/assign", methods=["POST"])
 @admin_required
 def api_assign():
     data = request.get_json(silent=True) if request.is_json else request.form.to_dict()
-    mapping_rule = {
-        "broker": data.get("broker"),
-        "type": data.get("type"),
-        "subtype": data.get("subtype"),
-        "description": data.get("description"),
-        "coa_account": data.get("coa_account"),
-    }
-    reason = data.get("reason", "manual assignment")
-    actor, _ = _current_user_and_role()
-    assign_mapping(mapping_rule, user=actor, reason=reason)
-    log_event("coa_mapping_web", f"Mapping assigned/updated by {actor}: {mapping_rule} (reason: {reason})", level="info")
-    return jsonify({"ok": True})
+    try:
+        mapping_rule = {
+            "broker": data.get("broker"),
+            "type": data.get("type"),
+            "subtype": data.get("subtype"),
+            "description": data.get("description"),
+            "coa_account": data.get("coa_account"),
+        }
+        reason = data.get("reason", "manual assignment")
+        actor, _ = _current_user_and_role()
+        assign_mapping(mapping_rule, user=actor, reason=reason)
+        log_event("coa_mapping_web", f"Mapping assigned/updated by {actor}: {mapping_rule} (reason: {reason})", level="info")
+        return jsonify({"ok": True})
+    except ValueError as ve:
+        return jsonify({"ok": False, "error": str(ve)}), 400
+    except Exception as e:
+        log_event("coa_mapping_web", f"assign failed: {e}", level="error")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @coa_mapping_web.route("/coa/api/versions", methods=["GET"])
 def api_versions():
-    mapping = load_mapping_table() or {}
-    history = mapping.get("history", []) if isinstance(mapping, dict) else []
-    return jsonify(history)
+    try:
+        mapping = load_mapping_table() or {}
+        history = mapping.get("history", []) if isinstance(mapping, dict) else []
+        return jsonify({"ok": True, "history": history})
+    except Exception as e:
+        log_event("coa_mapping_web", f"versions failed: {e}", level="error")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @coa_mapping_web.route("/coa/api/rollback", methods=["POST"])
@@ -261,7 +279,7 @@ def api_rollback():
     if rollback_mapping_version(version):
         log_event("coa_mapping_web", f"Mapping table rolled back to version {version} by {actor}", level="info")
         return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "Version not found"}), 404
+    return jsonify({"ok": False, "error": "version not found"}), 404
 
 
 @coa_mapping_web.route("/coa/api/export", methods=["GET"])
@@ -292,7 +310,7 @@ def api_import():
         log_event("coa_mapping_web", f"Mapping table imported by {actor}.", level="info")
         return jsonify({"ok": True})
     except Exception as e:
-        log_event("coa_mapping_web", f"Import failed: {e}", level="error")
+        log_event("coa_mapping_web", f"import failed: {e}", level="error")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -311,9 +329,13 @@ def flag_unmapped():
     """Viewer can report; admin reviews later."""
     txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     actor, _ = _current_user_and_role()
-    flag_unmapped_transaction(txn, user=actor)
-    log_event("coa_mapping_web", f"Transaction flagged unmapped by {actor}: {txn}", level="info")
-    return jsonify({"ok": True})
+    try:
+        flag_unmapped_transaction(txn, user=actor)
+        log_event("coa_mapping_web", f"Transaction flagged unmapped by {actor}: {txn}", level="info")
+        return jsonify({"ok": True})
+    except Exception as e:
+        log_event("coa_mapping_web", f"flag_unmapped failed: {e}", level="error")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @coa_mapping_web.route("/coa_mapping/versions", methods=["GET"])
@@ -387,7 +409,7 @@ def internal_upsert_rule():
 
     derived = {
         "broker_code": _first("broker_code", "broker"),
-        "type": _first("trn_type", "type", "txn_type", "action"),
+        "type": _first("trn_type", "type", "txn_type", "action", "subtype", "import_type"),
         "symbol": _first("symbol"),
         "memo": _first("memo", "description", "desc", "notes"),
         "strategy": _first("strategy"),

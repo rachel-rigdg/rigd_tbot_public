@@ -151,38 +151,75 @@ def _active_coa_codes() -> set:
 def _derive_rule_key_from_context(context_meta: Dict[str, Any]) -> str:
     """
     Stable, lowercase, pipe-delimited key:
-      broker_code | trn_type | symbol-or-memo | strategy (omitted if empty)
+
+        broker_like | type_like | symbol-or-memo | strategy?
+
+    Accepted context_meta synonyms:
+      - broker_like:   broker, broker_code, import_source
+      - type_like:     trn_type, type, txn_type, action, subtype, import_type
+      - symbol:        symbol
+      - memo:          memo, description, note, notes
+      - strategy:      strategy
+
+    Any '|' in source values are sanitized to '/'.
+    Empty components are omitted.
     """
     def norm(x):
         s = ("" if x is None else str(x)).strip().lower()
         return s.replace("|", "/")
-    broker = norm(context_meta.get("broker") or context_meta.get("broker_code"))
-    trn = norm(context_meta.get("trn_type") or context_meta.get("type") or context_meta.get("txn_type") or context_meta.get("action"))
-    symbol = norm(context_meta.get("symbol"))
-    memo = norm(context_meta.get("memo") or context_meta.get("description") or context_meta.get("note") or context_meta.get("notes"))
-    sym_or_memo = symbol or memo
-    strat = norm(context_meta.get("strategy"))
-    parts = [p for p in (broker, trn, sym_or_memo, strat) if p]
+
+    broker_like = (
+        context_meta.get("broker")
+        or context_meta.get("broker_code")
+        or context_meta.get("import_source")
+    )
+    type_like = (
+        context_meta.get("trn_type")
+        or context_meta.get("type")
+        or context_meta.get("txn_type")
+        or context_meta.get("action")
+        or context_meta.get("subtype")
+        or context_meta.get("import_type")
+    )
+    symbol = context_meta.get("symbol")
+    memo = (
+        context_meta.get("memo")
+        or context_meta.get("description")
+        or context_meta.get("note")
+        or context_meta.get("notes")
+    )
+    strat = context_meta.get("strategy")
+
+    broker = norm(broker_like)
+    trn = norm(type_like)
+    sym_or_memo = norm(symbol) or norm(memo)
+    strategy = norm(strat)
+
+    parts = [p for p in (broker, trn, sym_or_memo, strategy) if p]
     return "|".join(parts)
 
 
 # ----------------------------------------------------------------------
-# Programmatic API (NEW): upsert_rule
+# Programmatic API (canonical)
 # ----------------------------------------------------------------------
 def upsert_rule(rule_key: str, account_code: str, context_meta: Optional[Dict[str, Any]], actor: str) -> str:
     """
     Create or update a programmatic mapping rule.
 
-    Args:
-      rule_key: stable key (see mapping_auto_update); if empty, derived from context_meta.
-      account_code: COA account code to map to (must be active in COA).
-      context_meta: arbitrary metadata used for derivation/audit (e.g., broker_code, trn_type, symbol, memo, strategy).
-      actor: user id/name responsible for the change.
+    REQUIRED PARAMS:
+      - rule_key (str): Stable key. If empty/blank, it will be derived from context_meta
+                        using _derive_rule_key_from_context().
+      - account_code (str): Target COA account code; must exist and be active in COA.
+      - actor (str): User/agent performing the change (stored in version metadata).
+
+    OPTIONAL PARAMS:
+      - context_meta (dict): Free-form metadata used both for rule_key derivation and audit
+                             (accepted synonyms documented in _derive_rule_key_from_context docstring).
 
     Behavior:
       - Validates inputs (non-empty account_code; active COA code).
-      - Inserts/updates a rule in table['rules'] keyed by 'rule_key'.
-      - Persists to coa_mapping_table.json with a version bump and history snapshot.
+      - Upserts a single record in table['rules'] by 'rule_key', merging context_meta.
+      - Persists changes with version bump and history snapshot.
       - Returns version_id (string) of the saved snapshot.
     """
     rule_key = (rule_key or "").strip()
@@ -208,7 +245,7 @@ def upsert_rule(rule_key: str, account_code: str, context_meta: Optional[Dict[st
             cm = dict(r.get("context_meta") or {})
             cm.update({k: v for k, v in (context_meta or {}).items() if v not in (None, "")})
             r["context_meta"] = cm
-            r["updated_by"] = actor or "system"
+            r["updated_by"] = actor
             r["updated_at_utc"] = now_iso
             updated = True
             break
@@ -217,13 +254,13 @@ def upsert_rule(rule_key: str, account_code: str, context_meta: Optional[Dict[st
             "rule_key": rule_key,
             "account_code": account_code,
             "context_meta": context_meta or {},
-            "created_by": actor or "system",
+            "created_by": actor,
             "created_at_utc": now_iso,
-            "updated_by": actor or "system",
+            "updated_by": actor,
             "updated_at_utc": now_iso,
         })
     table["rules"] = rules
-    table["last_updated_by"] = actor or "system"
+    table["last_updated_by"] = actor
     table["change_reason"] = (context_meta.get("source") if isinstance(context_meta, dict) else None) or "upsert_rule"
 
     # Persist + version
@@ -235,13 +272,21 @@ def upsert_rule_from_leg(leg: Dict[str, Any], account_code: str, actor: str) -> 
     """
     Strict helper to derive a deterministic rule_key from a ledger leg and persist a programmatic rule.
 
-    rule_key derivation (lowercased, pipe-delimited, '|' sanitized out of fields):
-        broker_code | action | (symbol OR memo/description/notes) | strategy?  (strategy omitted when empty)
+    rule_key derivation (lowercased, pipe-delimited; see _derive_rule_key_from_context):
+        broker_like | type_like | (symbol OR memo/description/notes) | strategy?
 
     Stored record includes `context_meta` for audit/explainability.
 
+    Args:
+      leg (dict): A single trades row (or compatible dict). Commonly used keys:
+                  broker, broker_code, import_source, action, type, subtype, txn_type,
+                  symbol, memo/description/notes (or json_metadata {memo/...}), strategy,
+                  trade_id, group_id.
+      account_code (str): Target COA account code (must be active).
+      actor (str): User/agent performing the change.
+
     Returns:
-        version_id (string) of the saved snapshot.
+      version_id (string) of the saved snapshot.
     """
     if not isinstance(leg, dict):
         raise ValueError("leg must be a dict")
@@ -249,7 +294,7 @@ def upsert_rule_from_leg(leg: Dict[str, Any], account_code: str, actor: str) -> 
         raise ValueError("account_code is required")
 
     # Extract memo/description from multiple possible fields, including JSON metadata strings
-    memo = leg.get("description") or leg.get("notes") or None
+    memo = leg.get("description") or leg.get("notes") or leg.get("memo") or None
     jm = leg.get("json_metadata")
     if memo is None and isinstance(jm, (str, bytes)):
         try:
@@ -262,8 +307,11 @@ def upsert_rule_from_leg(leg: Dict[str, Any], account_code: str, actor: str) -> 
         memo = jm.get("memo") or jm.get("description") or jm.get("raw_memo")
 
     context_meta: Dict[str, Any] = {
-        "broker_code": leg.get("broker_code") or leg.get("broker"),
-        "type": leg.get("action") or leg.get("type") or leg.get("txn_type"),
+        "broker": leg.get("broker"),
+        "broker_code": leg.get("broker_code"),
+        "import_source": leg.get("import_source"),
+        "type": leg.get("action") or leg.get("type") or leg.get("txn_type") or leg.get("subtype"),
+        "import_type": leg.get("import_type"),
         "symbol": leg.get("symbol"),
         "memo": memo,
         "strategy": leg.get("strategy"),

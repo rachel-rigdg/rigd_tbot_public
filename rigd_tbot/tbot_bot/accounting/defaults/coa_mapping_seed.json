@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "coa_version": "v1.0.0",
+  "mappings": [
+    { "type": "FEE",          "coa_account": "Expenses:Brokerage Fees" },
+    { "type": "COMMISSION",   "coa_account": "Expenses:Brokerage Fees" },
+
+    { "type": "DIV",          "coa_account": "Income:Dividend Income" },
+    { "type": "DIVIDEND",     "coa_account": "Income:Dividend Income" },
+
+    { "type": "INT",          "coa_account": "Income:Interest Income" },
+    { "type": "INTEREST",     "coa_account": "Income:Interest Income" },
+
+    { "type": "DEPOSIT",      "coa_account": "Equity:Owner Contributions" },
+    { "type": "TRANSFER_IN",  "coa_account": "Equity:Owner Contributions" },
+
+    { "type": "WITHDRAWAL",   "coa_account": "Equity:Owner Distributions" },
+    { "type": "TRANSFER_OUT", "coa_account": "Equity:Owner Distributions" }
+  ],
+  "rules": []
+}

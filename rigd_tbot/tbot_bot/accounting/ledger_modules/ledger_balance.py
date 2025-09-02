@@ -87,10 +87,23 @@ def _open_db() -> sqlite3.Connection:
     return conn
 
 
-def _ob_clause(column_group_id: str = "group_id") -> str:
-    """SQL snippet to include Opening Balance groups regardless of date filter."""
-    # OB groups are posted as "OPENING_BALANCE_YYYYMMDD"
-    return f"{column_group_id} LIKE 'OPENING_BALANCE_%'"
+def _is_opening_balance_sql(prefix: str = "") -> str:
+    """
+    Predicate to identify opening-balance legs regardless of how they were seeded.
+    Matches any of:
+      - action = 'OPENING_BALANCE'
+      - tags LIKE '%opening_balance%'
+      - group_id LIKE 'OB-%' (journal-grouped opening seed)
+      - group_id LIKE 'OPENING_BALANCE%' (legacy)
+    Optional `prefix` allows qualifying column names with a table alias.
+    """
+    dot = f"{prefix}." if prefix else ""
+    return (
+        f"( {dot}action = 'OPENING_BALANCE' "
+        f"OR COALESCE({dot}tags,'') LIKE '%opening_balance%' "
+        f"OR COALESCE({dot}group_id,'') LIKE 'OB-%' "
+        f"OR COALESCE({dot}group_id,'') LIKE 'OPENING_BALANCE%' )"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +250,7 @@ def balances_panel(
       selected_accounts: optional list of account codes to include as explicit subtotals.
 
     Behavior:
-      - OB groups (group_id LIKE 'OPENING_BALANCE_%') are ALWAYS included regardless of date filters.
+      - OB legs are ALWAYS included regardless of date filters (identified via action/tags/group_id patterns).
       - Section totals computed for Assets, Liabilities, Equity (based on COA root).
       - Returns by-account subtotals for 'selected_accounts' if provided; otherwise returns all non-zero accounts.
 
@@ -261,23 +274,27 @@ def balances_panel(
     code_to_name, code_to_root = _build_coa_indexes()
 
     # Normalize date filters (treat YYYY-MM-DD as whole-day bounds)
-    df_clause = ""
+    df_clauses: List[str] = []
     params: List[object] = []
+
     if date_from_utc:
-        # inclusive lower bound
-        df_clause += " AND (datetime_utc >= ? OR " + _ob_clause() + ")"
+        # inclusive lower bound OR opening-balance
+        df_clauses.append(f"(datetime_utc >= ? OR {_is_opening_balance_sql()})")
         params.append(date_from_utc)
     if date_to_utc:
-        # inclusive upper bound (sqlite <= works for both date & datetime strings)
-        df_clause += " AND (datetime_utc <= ? OR " + _ob_clause() + ")"
+        # inclusive upper bound OR opening-balance
+        df_clauses.append(f"(datetime_utc <= ? OR {_is_opening_balance_sql()})")
         params.append(date_to_utc)
 
-    # Group balances by account, including OB regardless of date filters
+    where_clause = "WHERE 1=1 "
+    if df_clauses:
+        where_clause += " AND " + " AND ".join(df_clauses)
+
+    # Group balances by account, including OB regardless of the provided date filters
     sql = (
         "SELECT account AS account_code, COALESCE(SUM(total_value),0.0) AS balance "
         "FROM trades "
-        "WHERE 1=1 "
-        f"{df_clause} "
+        f"{where_clause} "
         "GROUP BY account "
         "HAVING account IS NOT NULL AND account <> ''"
     )

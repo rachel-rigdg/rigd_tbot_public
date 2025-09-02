@@ -153,10 +153,11 @@
 
   // Fetch and render mapping rows
   function loadMappingRows() {
-    fetch('{{ url_for("coa_mapping_web.api_mapping_table") }}')
+    fetch('{{ url_for("coa_mapping_web.mapping_table_api") }}')
       .then(r => r.ok ? r.json() : Promise.reject(r))
       .then(payload => {
-        const rows = (payload && payload.rows) ? payload.rows : [];
+        if (!payload || payload.ok !== true) throw new Error('bad response');
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
         // Preserve the final input row (the upsert form) while replacing existing SSR rows
         const inputRow = tbody.lastElementChild; // the form row
         // Remove all existing data rows except the last input row
@@ -242,10 +243,12 @@
   function loadVersions() {
     fetch('{{ url_for("coa_mapping_web.api_versions") }}')
       .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then(history => {
+      .then(payload => {
+        if (!payload || payload.ok !== true) throw new Error('bad response');
+        const history = Array.isArray(payload.history) ? payload.history : [];
         const ul = document.getElementById('versions-list');
         ul.innerHTML = '';
-        (history || []).forEach(v => {
+        history.forEach(v => {
           const li = document.createElement('li');
           const left = document.createElement('div');
           left.innerHTML = `<strong>v${v.version || ''}</strong><br><small>${v.timestamp_utc || ''}</small>`;
@@ -257,7 +260,10 @@
             fd.append('version', v.version);
             fetch('{{ url_for("coa_mapping_web.api_rollback") }}', { method:'POST', body: fd })
               .then(r => r.ok ? r.json() : Promise.reject(r))
-              .then(() => location.reload())
+              .then(resp => {
+                if (resp && resp.ok) location.reload();
+                else throw new Error('rollback failed');
+              })
               .catch(() => alert('Rollback failed'));
           });
           li.appendChild(left);
