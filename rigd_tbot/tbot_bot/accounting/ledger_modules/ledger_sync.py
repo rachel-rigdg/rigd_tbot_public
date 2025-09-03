@@ -28,6 +28,8 @@ from hashlib import sha256
 # Path to ledger DB
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 
+# --- typing for Python 3.8/3.9 compatibility ---
+from typing import Optional, List
 
 # --- Compliance compatibility (supports old/new filter signatures) ---
 try:
@@ -80,7 +82,7 @@ def _drop_in_columns(row: dict) -> dict:
     return {k: row.get(k) for k in allowed if k in row or k in {"group_id", "sync_run_id"}}
 
 
-def _insert_rows(conn: sqlite3.Connection, rows: list[dict]) -> None:
+def _insert_rows(conn: sqlite3.Connection, rows: List[dict]) -> None:
     """
     Insert rows directly into trades (append-only) for Opening Balance only.
     Assumes each row includes required minimal columns present in TRADES_FIELDS.
@@ -178,7 +180,7 @@ def _build_ob_rows(
     snapshot: dict,
     dtposted: datetime,
     sync_run_id: str,
-) -> list[dict]:
+) -> List[dict]:
     """
     Build balanced double-entry splits for OB:
       - Positions:  debit  Brokerage:Equity:{SYMBOL}  +amount
@@ -186,7 +188,7 @@ def _build_ob_rows(
       - Cash:       debit  Brokerage:Cash              +cash
                     credit Opening Balances:Cash       -cash
     """
-    rows: list[dict] = []
+    rows: List[dict] = []
     ob_day = _yyyymmdd(dtposted)
     group_id = f"OPENING_BALANCE_{ob_day}"
     dt_iso = dtposted.astimezone(timezone.utc).isoformat()
@@ -302,7 +304,7 @@ def _build_ob_rows(
     return rows
 
 
-def _post_opening_balances_if_needed(sync_run_id: str, earliest_trade_dt_utc: datetime | None) -> None:
+def _post_opening_balances_if_needed(sync_run_id: str, earliest_trade_dt_utc: Optional[datetime]) -> None:
     """
     Idempotent: insert OB group only if ledger empty AND no prior OB group present.
     DTPOSTED is set to just before earliest trade/cash activity (or now-1s if none).
@@ -379,7 +381,7 @@ def _ensure_group_id(entry: dict) -> dict:
     return entry
 
 
-def _parse_dt(val) -> datetime | None:
+def _parse_dt(val) -> Optional[datetime]:
     """Best-effort parser for broker timestamps (ISO-ish or epoch seconds)."""
     if not val:
         return None
@@ -410,7 +412,7 @@ def _parse_dt(val) -> datetime | None:
     return None
 
 
-def _extract_dt_utc(record: dict) -> datetime | None:
+def _extract_dt_utc(record: dict) -> Optional[datetime]:
     """
     Pull a plausible datetime from a raw broker record.
     """
