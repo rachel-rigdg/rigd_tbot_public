@@ -75,25 +75,20 @@ def reassign_leg_account(
     actor: str,
     *,
     reason: Optional[str] = None,
-    event_type: str = "reassign_account",
+    event_type: str = "COA_LEG_REASSIGNED",
+    apply_to_category: bool = False,
 ) -> Dict[str, Any]:
     """
     Reassign the COA account for a single ledger leg (row in trades table).
 
     - Validates new_account_code exists and is active in COA.
     - Updates ONLY 'account' field (no amount/date mutation).
+    - Sets WAL + busy_timeout to reduce SQLITE_BUSY on concurrent web/API usage.
     - Emits immutable audit log event with non-empty `event_type` and `actor`.
-    - DB write is committed before audit append; if audit fails we raise to surface the issue.
+    - Returns the UPDATED ROW (dict).
+    - If apply_to_category=True, also upserts a programmatic mapping rule derived from this leg.
 
-    Returns:
-        {
-            "entry_id": int,
-            "group_id": str|None,
-            "old_account": str|None,
-            "new_account": str,
-            "ts_utc": iso8601,
-            "event_type": str
-        }
+    Returns: dict row from trades (post-update).
     """
     new_account_code = (new_account_code or "").strip()
     if not new_account_code:
@@ -116,11 +111,13 @@ def reassign_leg_account(
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
 
     ts_utc = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
-    result: Dict[str, Any] = {}
 
-    conn = sqlite3.connect(db_path)
+    # Use WAL + busy timeout for concurrency
+    conn = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
     try:
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("BEGIN")
 
         # Fetch the leg + parent group
@@ -156,16 +153,10 @@ def reassign_leg_account(
                     "source": "web_inline",
                 },
             )
-            result = {
-                "entry_id": entry_id,
-                "group_id": leg["group_id"],
-                "old_account": old_account,
-                "new_account": new_account_code,
-                "ts_utc": ts_utc,
-                "event_type": event_type,
-            }
+            # Return current row (unchanged)
+            updated = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
             conn.commit()
-            return result
+            return dict(updated)
 
         # Update ONLY the account field; do not mutate amount/date fields
         conn.execute(
@@ -173,7 +164,7 @@ def reassign_leg_account(
             (new_account_code, entry_id),
         )
 
-        # (Optional) touch group row to invalidate caches if such table exists
+        # Optional: touch group row to invalidate caches if such table exists
         try:
             if leg["group_id"]:
                 conn.execute(
@@ -209,15 +200,24 @@ def reassign_leg_account(
             },
         )
 
-        result = {
-            "entry_id": entry_id,
+        # Fetch updated row to return
+        updated_row = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+        updated_dict = dict(updated_row) if updated_row else {
+            "id": entry_id,
+            "account": new_account_code,
             "group_id": leg["group_id"],
-            "old_account": old_account,
-            "new_account": new_account_code,
-            "ts_utc": ts_utc,
-            "event_type": event_type,
         }
-        return result
+
+        # Optionally upsert mapping rule derived from this leg
+        if apply_to_category:
+            try:
+                from tbot_bot.accounting.coa_mapping_table import upsert_rule_from_leg
+                upsert_rule_from_leg(dict(updated_row) if updated_row else dict(leg), new_account_code, actor)
+            except Exception:
+                # Mapping upsert failures must not break the reassignment path
+                pass
+
+        return updated_dict
 
     except Exception:
         try:
