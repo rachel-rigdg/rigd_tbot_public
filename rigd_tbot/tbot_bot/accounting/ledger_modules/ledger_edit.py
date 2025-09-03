@@ -90,6 +90,22 @@ def reassign_leg_account(
 
     Returns: dict row from trades (post-update).
     """
+    import time
+
+    def _exec_with_retry(_conn, sql, params=(), attempts=3, sleep_s=0.2):
+        last_err = None
+        for i in range(attempts):
+            try:
+                return _conn.execute(sql, params)
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower():
+                    last_err = e
+                    time.sleep(sleep_s)
+                    continue
+                raise
+        # If still failing after retries, raise last error
+        raise last_err or sqlite3.OperationalError("database is locked")
+
     new_account_code = (new_account_code or "").strip()
     if not new_account_code:
         raise ValueError("new_account_code required")
@@ -121,7 +137,8 @@ def reassign_leg_account(
         conn.execute("BEGIN")
 
         # Fetch the leg + parent group
-        leg = conn.execute(
+        leg = _exec_with_retry(
+            conn,
             "SELECT id, group_id, account AS old_account, total_value, datetime_utc, trade_id, symbol, action, strategy "
             "FROM trades WHERE id = ?",
             (entry_id,),
@@ -134,7 +151,7 @@ def reassign_leg_account(
         # Early no-op (but still audit)
         if old_account == new_account_code:
             audit_append(
-                event=event_type,
+                event_type=event_type,
                 related_id=entry_id,
                 actor=actor,
                 group_id=leg["group_id"],
@@ -154,12 +171,13 @@ def reassign_leg_account(
                 },
             )
             # Return current row (unchanged)
-            updated = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+            updated = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
             conn.commit()
             return dict(updated)
 
         # Update ONLY the account field; do not mutate amount/date fields
-        conn.execute(
+        _exec_with_retry(
+            conn,
             "UPDATE trades SET account = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (new_account_code, entry_id),
         )
@@ -167,7 +185,8 @@ def reassign_leg_account(
         # Optional: touch group row to invalidate caches if such table exists
         try:
             if leg["group_id"]:
-                conn.execute(
+                _exec_with_retry(
+                    conn,
                     "UPDATE trade_groups SET updated_at = CURRENT_TIMESTAMP WHERE group_id = ?",
                     (leg["group_id"],),
                 )
@@ -180,7 +199,7 @@ def reassign_leg_account(
 
         # Structured immutable audit (identity fields injected by audit module)
         audit_append(
-            event=event_type,
+            event_type=event_type,
             related_id=entry_id,
             actor=actor,
             group_id=leg["group_id"],
@@ -201,7 +220,7 @@ def reassign_leg_account(
         )
 
         # Fetch updated row to return
-        updated_row = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+        updated_row = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
         updated_dict = dict(updated_row) if updated_row else {
             "id": entry_id,
             "account": new_account_code,
