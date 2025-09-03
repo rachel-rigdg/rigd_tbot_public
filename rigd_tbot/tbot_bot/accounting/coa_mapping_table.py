@@ -370,7 +370,11 @@ def upsert_rule_from_leg(leg: Dict[str, Any], account_code: str, actor: str) -> 
 def save_mapping_table_legacy_snapshot_only(table, entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None):
     return save_mapping_table(table, entity_code, jurisdiction_code, broker_code, bot_id)
 
-def assign_mapping(mapping_rule, user, reason=None):
+def assign_mapping(mapping_rule, user, reason=None) -> str:
+    """
+    Legacy field-based mapping upsert.
+    Returns the version_id string from the persisted snapshot.
+    """
     table = load_mapping_table()
     # Remove prior mapping with same keys
     table["mappings"] = [
@@ -381,8 +385,8 @@ def assign_mapping(mapping_rule, user, reason=None):
     mapping_rule["updated_at"] = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     table["mappings"].append(mapping_rule)
     table["last_updated_by"] = user
-    table["change_reason"] = reason or "manual assignment"
-    save_mapping_table(table, reason=table["change_reason"], actor=user)
+    table["change_reason"] = (reason or "manual assignment")
+    return save_mapping_table(table, reason=table["change_reason"], actor=user)
 
 def get_mapping_for_transaction(txn, mapping_table=None):
     """
@@ -414,14 +418,14 @@ def get_mapping_for_transaction(txn, mapping_table=None):
             return {"broker": txn_broker, "type": txn_type, "coa_account": r.get("account_code"), "rule_key": key}
     return None
 
-def flag_unmapped_transaction(txn, user="system"):
+def flag_unmapped_transaction(txn, user="system") -> str:
     table = load_mapping_table()
     table.setdefault("unmapped", []).append({
         "transaction": txn,
         "flagged_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
         "flagged_by": user
     })
-    save_mapping_table(table, reason="flag_unmapped", actor=user)
+    return save_mapping_table(table, reason="flag_unmapped", actor=user)
 
 def rollback_mapping_version(version):
     versions_dir = _get_versions_dir()
@@ -441,7 +445,7 @@ def export_mapping_table():
     _ensure_core_metadata(table)
     return json.dumps(table, indent=2)
 
-def import_mapping_table(json_data, user="import"):
+def import_mapping_table(json_data, user="import") -> str:
     table = json.loads(json_data)
     _ensure_core_metadata(table)
     # If an import wipes all rules, re-seed defaults once to avoid a dead-start mapping table
@@ -452,7 +456,7 @@ def import_mapping_table(json_data, user="import"):
         seeded = True
     table["last_updated_by"] = user
     table["change_reason"] = table.get("change_reason") or ("imported" if not seeded else "imported+seed_default")
-    save_mapping_table(table, reason=table["change_reason"], actor=user)
+    return save_mapping_table(table, reason=table["change_reason"], actor=user)
 
 def apply_mapping_rule(entry, mapping_table=None):
     """
@@ -474,12 +478,12 @@ def apply_mapping_rule(entry, mapping_table=None):
         debit_entry = dict(entry)
         credit_entry = dict(entry)
         amt = abs(float(debit_entry.get("total_value", 0) or 0.0))
-        debit_entry["account"] = debit_acct or "Uncategorized:Debit"
-        credit_entry["account"] = credit_acct or "Uncategorized:Credit"
         debit_entry["total_value"] = +amt
         credit_entry["total_value"] = -amt
         debit_entry["side"] = "debit"
         credit_entry["side"] = "credit"
+        debit_entry["account"] = debit_acct or "Uncategorized:Debit"
+        credit_entry["account"] = credit_acct or "Uncategorized:Credit"
         return debit_entry, credit_entry
 
     # Programmatic single-account rules are not sufficient to produce both legs here;

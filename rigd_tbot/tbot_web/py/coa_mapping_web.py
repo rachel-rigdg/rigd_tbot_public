@@ -24,6 +24,7 @@ from tbot_bot.accounting.coa_mapping_table import (
 # Identity / logging
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.utils_log import log_event
+from tbot_bot.accounting.reconciliation_log import log_event_coa_mapping_updated  # AUDIT (event_type enforced)
 
 # Optional CSRF exemption (define no-op if flask_wtf isn’t installed yet)
 try:
@@ -254,14 +255,59 @@ def api_assign():
         }
         reason = data.get("reason", "manual assignment")
         actor, _ = _current_user_and_role()
+
+        # Persist mapping
         assign_mapping(mapping_rule, user=actor, reason=reason)
-        log_event("coa_mapping_web", f"Mapping assigned/updated by {actor}: {mapping_rule} (reason: {reason})", level="info")
-        return jsonify({"ok": True})
+
+        # Audit with enforced non-null event_type
+        try:
+            log_event_coa_mapping_updated(
+                trade_id=None,
+                status="resolved",
+                compare_fields=mapping_rule,
+                sync_run_id=None,
+                api_hash=None,
+                broker=mapping_rule.get("broker"),
+                raw_record={"reason": reason, "actor": actor, "source": "coa_mapping_web.api_assign"},
+                mapping_version=None,
+                notes="COA mapping add/update",
+                user_action="mapping_assign",
+            )
+        except Exception as _audit_err:
+            # Do not block UI on audit failures; still log app-level event
+            log_event("coa_mapping_web", f"audit write failed: {_audit_err}", level="error")
+
+        # Decide response shape: JSON for AJAX, redirect for plain form POST
+        is_ajax = (
+            request.is_json
+            or request.args.get("ajax") == "1"
+            or request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest"
+            or request.headers.get("Accept", "").startswith("application/json")
+        )
+        if is_ajax:
+            return jsonify({"ok": True})
+        flash("Mapping assigned/updated.", "success")
+        try:
+            return redirect(url_for("coa_mapping_web.view_mapping"))
+        except Exception:
+            return redirect("/coa_mapping")
     except ValueError as ve:
-        return jsonify({"ok": False, "error": str(ve)}), 400
+        if request.is_json:
+            return jsonify({"ok": False, "error": str(ve)}), 400
+        flash(str(ve), "danger")
+        try:
+            return redirect(url_for("coa_mapping_web.view_mapping"))
+        except Exception:
+            return redirect("/coa_mapping")
     except Exception as e:
         log_event("coa_mapping_web", f"assign failed: {e}", level="error")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        if request.is_json:
+            return jsonify({"ok": False, "error": str(e)}), 500
+        flash(f"Assign failed: {e}", "danger")
+        try:
+            return redirect(url_for("coa_mapping_web.view_mapping"))
+        except Exception:
+            return redirect("/coa_mapping")
 
 
 @coa_mapping_web.route("/coa/api/versions", methods=["GET"])

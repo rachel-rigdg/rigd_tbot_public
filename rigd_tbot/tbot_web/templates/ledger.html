@@ -143,22 +143,30 @@
 
                       <!-- Inline COA account editor per leg (admin-only enabled) -->
                       <td>
-                        <select class="coa-select"
-                                name="account"
-                                data-entry-id="{{ sub.id }}"
-                                {% if user_role is defined and user_role != 'admin' %}disabled{% endif %}>
-                          {% for code, name in coa_accounts %}
-                            <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
-                              {{ name }} ({{ code }})
-                            </option>
-                          {% endfor %}
-                        </select>
-                        <div class="inline-links">
-                          <!-- Simple, stable link to COA overview (if present) -->
-                          <a href="/coa" target="_blank">View COA</a>
-                          <!-- Context-aware deep link into mapping UI with entry_id -->
-                          <a href="/coa_mapping?from=ledger&entry_id={{ sub.id }}" target="_blank">View Mapping Rule</a>
-                          {% if sub.unmapped %}<span class="badge-unmapped">Unmapped</span>{% endif %}
+                        <div class="coa-inline-editor">
+                          <select class="coa-select"
+                                  name="account"
+                                  data-entry-id="{{ sub.id }}"
+                                  {% if user_role is defined and user_role != 'admin' %}disabled{% endif %}>
+                            {% for code, name in coa_accounts %}
+                              <option value="{{ code }}" {% if sub.account == code %}selected{% endif %}>
+                                {{ name }} ({{ code }})
+                              </option>
+                            {% endfor %}
+                          </select>
+                          <label class="apply-map-label" title="Also update the category mapping rule for similar entries">
+                            <input type="checkbox"
+                                   class="apply-mapping-toggle"
+                                   data-entry-id="{{ sub.id }}">
+                            apply to category
+                          </label>
+                          <div class="inline-links">
+                            <!-- Simple, stable link to COA overview (if present) -->
+                            <a href="/coa" target="_blank">View COA</a>
+                            <!-- Context-aware deep link into mapping UI with entry_id -->
+                            <a href="/coa_mapping?from=ledger&entry_id={{ sub.id }}" target="_blank">View Mapping Rule</a>
+                            {% if sub.unmapped %}<span class="badge-unmapped">Unmapped</span>{% endif %}
+                          </div>
                         </div>
                       </td>
 
@@ -237,7 +245,7 @@
             <thead>
               <tr><th>Account</th><th>Balance</th></tr>
             </thead>
-            <tbody>
+            <tbody id="balances-tbody">
               {% for account, balance in balances.items() %}
                 <tr>
                   <td>{{ account }}</td>
@@ -257,5 +265,103 @@
       </div>
     </div>
   </div>
+
+  <script>
+    (function() {
+      function updateBalances(balances) {
+        try {
+          const tbody = document.getElementById('balances-tbody');
+          if (!tbody || !balances) return;
+          tbody.innerHTML = '';
+          Object.keys(balances).forEach(acc => {
+            const tr = document.createElement('tr');
+            const tdA = document.createElement('td');
+            const tdB = document.createElement('td');
+            tdA.textContent = acc;
+            tdB.textContent = balances[acc];
+            tr.appendChild(tdA);
+            tr.appendChild(tdB);
+            tbody.appendChild(tr);
+          });
+        } catch (e) { /* noop */ }
+      }
+
+      function findTopRowHiddenAccountCell(fromRow) {
+        let row = fromRow;
+        while (row && !row.classList.contains('row-top')) {
+          row = row.previousElementSibling;
+        }
+        if (!row) return null;
+        return row.querySelector('.hidden-account');
+      }
+
+      function removeUnmappedBadge(bottomRow) {
+        try {
+          const badge = bottomRow.querySelector('.badge-unmapped');
+          if (badge) badge.remove();
+        } catch (e) { /* noop */ }
+      }
+
+      function handleCoaChange(evt) {
+        const select = evt.currentTarget;
+        const entryId = select.getAttribute('data-entry-id');
+        if (!entryId) return;
+
+        const accountCode = select.value;
+        const toggle = document.querySelector('.apply-mapping-toggle[data-entry-id="' + entryId + '"]');
+        const applyMapping = !!(toggle && toggle.checked);
+
+        // POST JSON (AJAX) to backend; expect JSON back
+        fetch('/ledger/edit/' + encodeURIComponent(entryId) + '?ajax=1', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            account_code: accountCode,
+            reason: 'user_inline_update',
+            apply_to_category: applyMapping
+          })
+        }).then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) {
+            const msg = (data && (data.error || data.message)) || ('HTTP ' + res.status);
+            alert('Account update failed: ' + msg);
+            return;
+          }
+          // Success: update UI
+          const bottomRow = select.closest('tr');
+          const hiddenCell = findTopRowHiddenAccountCell(bottomRow);
+          if (hiddenCell) hiddenCell.textContent = accountCode;
+          removeUnmappedBadge(bottomRow);
+          updateBalances(data.balances || null);
+        }).catch((err) => {
+          alert('Account update failed: ' + (err && err.message ? err.message : String(err)));
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        // Attach AJAX handlers to all COA dropdowns
+        document.querySelectorAll('.coa-select').forEach(function(sel) {
+          sel.addEventListener('change', handleCoaChange);
+        });
+
+        // Collapse-all toggle (optional; requires backend endpoint already wired)
+        const collapseAll = document.getElementById('collapse-all');
+        if (collapseAll) {
+          collapseAll.addEventListener('change', function(e) {
+            const collapse = e.target.checked;
+            fetch('/ledger/collapse_all', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+              body: JSON.stringify({ collapse: collapse })
+            }).catch(()=>{});
+          });
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

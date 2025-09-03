@@ -81,7 +81,7 @@
               <td><input type="text" name="credit_account" id="f-credit" placeholder="(optional)"></td>
               <td colspan="2">
                 <input type="hidden" name="reason" value="manual assignment">
-                <button type="submit" class="btn btn-success btn-sm">Add / Update Mapping</button>
+                <button type="submit" class="btn btn-success btn-sm" id="btn-submit-map">Add / Update Mapping</button>
               </td>
             </tr>
           </tbody>
@@ -237,6 +237,47 @@
   document.getElementById('btn-clear-filters').addEventListener('click', () => {
     ['flt-broker','flt-type','flt-subtype','flt-desc'].forEach(id => document.getElementById(id).value = '');
     applyFilters();
+  });
+
+  // AJAX submit for Add/Update mapping (avoid navigating to {"ok":true})
+  form.addEventListener('submit', function(ev) {
+    ev.preventDefault();
+    const btn = document.getElementById('btn-submit-map');
+    btn.disabled = true;
+
+    const payload = {
+      broker: (f.broker.value || '').trim(),
+      type: (f.type.value || '').trim(),
+      subtype: (f.subtype.value || '').trim(),
+      description: (f.desc.value || '').trim(),
+      coa_account: (f.coa.value || '').trim(),
+      credit_account: (f.credit.value || '').trim(),
+      reason: 'manual assignment'
+    };
+
+    fetch('{{ url_for("coa_mapping_web.api_assign") }}?ajax=1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.ok ? r.json() : Promise.reject(r))
+    .then(resp => {
+      if (!resp || resp.ok !== true) throw new Error((resp && resp.error) || 'save failed');
+      // Refresh table in place
+      loadMappingRows();
+      // Keep form values for iterative edits; optionally focus COA
+      f.coa.focus();
+    })
+    .catch(err => {
+      alert('Save failed: ' + (err && err.message ? err.message : 'unknown error'));
+    })
+    .finally(() => {
+      btn.disabled = false;
+    });
   });
 
   // Versions loader + rollback

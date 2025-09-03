@@ -10,6 +10,13 @@ from pathlib import Path
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
 from tbot_bot.support.utils_identity import get_bot_identity
 
+# ---- Event constants (enforced non-null) ----
+EVENT_UNKNOWN = "UNKNOWN"
+EVENT_COA_LEG_REASSIGNED = "COA_LEG_REASSIGNED"
+EVENT_COA_MAPPING_UPDATED = "COA_MAPPING_UPDATED"
+EVENT_LEDGER_SYNC = "LEDGER_SYNC"
+EVENT_LEDGER_SNAPSHOT = "LEDGER_SNAPSHOT"
+
 RECON_TABLE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS reconciliation_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,6 +33,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_log (
     broker_balance REAL,
     delta REAL,
     status TEXT CHECK(status IN ('pending', 'matched', 'mismatched', 'resolved')),
+    event_type TEXT NOT NULL,
     resolution TEXT,
     resolved_by TEXT,
     resolved_at TEXT,
@@ -49,10 +57,27 @@ def _get_db_path():
     entity_code, jurisdiction_code, broker_code, bot_id = get_bot_identity().split("_")
     return resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    try:
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        return column in cols
+    except Exception:
+        return False
+
+def _ensure_event_type_column(conn: sqlite3.Connection):
+    """
+    Migration: add event_type column if missing (cannot add NOT NULL without default in SQLite).
+    Enforce non-null at write-time in code; set existing NULLs to EVENT_UNKNOWN.
+    """
+    if not _column_exists(conn, "reconciliation_log", "event_type"):
+        conn.execute("ALTER TABLE reconciliation_log ADD COLUMN event_type TEXT")
+        conn.execute("UPDATE reconciliation_log SET event_type = ? WHERE event_type IS NULL OR event_type = ''", (EVENT_UNKNOWN,))
+
 def init_reconciliation_log_table():
     db_path = _get_db_path()
     with sqlite3.connect(db_path) as conn:
         conn.execute(RECON_TABLE_SCHEMA)
+        _ensure_event_type_column(conn)
         conn.commit()
 
 def log_reconciliation_entry(
@@ -83,17 +108,23 @@ def log_reconciliation_entry(
     json_metadata=None,
     imported_at=None,
     updated_at=None,
-    user_action=None
+    user_action=None,
+    *,
+    event_type: str = EVENT_UNKNOWN,
 ):
     """
     Append a reconciliation log entry. Autofill codes from bot_identity if not provided.
-    All fields are supported, but most can be None/blank.
+    Enforces non-null event_type (defaults to EVENT_UNKNOWN).
     """
     if not (entity_code and jurisdiction_code and broker_code):
         identity = get_bot_identity()
         entity_code, jurisdiction_code, broker_code, _ = identity.split("_")
     db_path = _get_db_path()
     timestamp_utc = datetime.utcnow().isoformat()
+
+    # Enforce non-null/blank event_type
+    safe_event = (event_type or "").strip() or EVENT_UNKNOWN
+
     def make_json_safe(obj):
         if isinstance(obj, tuple):
             return [make_json_safe(i) for i in obj]
@@ -103,19 +134,23 @@ def log_reconciliation_entry(
             return [make_json_safe(i) for i in obj]
         else:
             return obj
+
     compare_fields_json = json.dumps(make_json_safe(compare_fields or {}))
     raw_record_json = json.dumps(make_json_safe(raw_record or {}))
     json_metadata_json = json.dumps(json_metadata or {})
+
     with sqlite3.connect(db_path) as conn:
+        conn.execute(RECON_TABLE_SCHEMA)  # ensure table exists on first call
+        _ensure_event_type_column(conn)
         conn.execute(
             """
             INSERT INTO reconciliation_log (
                 trade_id, entity_code, jurisdiction_code, broker_code, broker, error_code,
                 account_id, statement_date, ledger_balance, ledger_entry_id, broker_balance, delta,
-                status, resolution, resolved_by, resolved_at, raw_record, notes, recon_type,
+                status, event_type, resolution, resolved_by, resolved_at, raw_record, notes, recon_type,
                 raw_record_json, compare_fields, json_metadata, timestamp_utc, sync_run_id, api_hash,
                 imported_at, updated_at, user_action, mapping_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 trade_id,
@@ -131,6 +166,7 @@ def log_reconciliation_entry(
                 broker_balance,
                 delta,
                 status,
+                safe_event,
                 resolution,
                 resolved_by,
                 resolved_at,
@@ -146,7 +182,7 @@ def log_reconciliation_entry(
                 imported_at,
                 updated_at,
                 user_action,
-                mapping_version
+                mapping_version,
             )
         )
         conn.commit()
@@ -180,4 +216,14 @@ def ensure_reconciliation_log_initialized():
     db_path = _get_db_path()
     with sqlite3.connect(db_path) as conn:
         conn.execute(RECON_TABLE_SCHEMA)
+        _ensure_event_type_column(conn)
         conn.commit()
+
+# ---- Helper wrappers for common events ----
+def log_event_coa_leg_reassigned(**kwargs):
+    kwargs.setdefault("event_type", EVENT_COA_LEG_REASSIGNED)
+    return log_reconciliation_entry(**kwargs)
+
+def log_event_coa_mapping_updated(**kwargs):
+    kwargs.setdefault("event_type", EVENT_COA_MAPPING_UPDATED)
+    return log_reconciliation_entry(**kwargs)

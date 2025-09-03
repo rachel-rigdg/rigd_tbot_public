@@ -582,23 +582,50 @@ def ledger_edit(entry_id: int):
     Body (JSON or form):
       - account_code: required, active COA code
       - reason: optional string
-      - mapping write: mandatory
+      - apply_to_category/update_mapping/mapping: optional truthy → also update mapping rule
 
     Surgical tweak: pass a best-effort `event_type` to backend reassigner to
     satisfy NOT NULL audit_trail.event_type. If the backend signature doesn't
     accept it, gracefully fall back to the legacy call.
+
+    Response:
+      - JSON for AJAX (JSON body or X-Requested-With=XMLHttpRequest or ?ajax=1)
+      - Redirect back to /ledger/reconcile for normal form posts
     """
     not_ok = _require_admin_post()
     if not_ok:
         return not_ok
     if provisioning_guard() or identity_guard():
-        return jsonify({"ok": False, "error": "Not permitted"}), 403
+        # Decide response type before returning
+        wants_json = request.is_json or request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest" or request.args.get("ajax") in ("1", "true")
+        if wants_json:
+            return jsonify({"ok": False, "error": "Not permitted"}), 403
+        flash("Not permitted.", "error")
+        return redirect(url_for("ledger_web.ledger_reconcile"))
 
     data = request.get_json(silent=True) or request.form or {}
+    # Detect response mode
+    wants_json = bool(
+        request.is_json
+        or request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest"
+        or str(data.get("ajax", "")).lower() in ("1", "true")
+        or "application/json" in (request.headers.get("Accept", "") or "").lower()
+    )
+
     account_code = (data.get("account_code") or data.get("account") or "").strip()
     reason = (data.get("reason") or "").strip() or None
+    apply_mapping = str(
+        data.get("apply_to_category")
+        or data.get("update_mapping")
+        or data.get("mapping")
+        or ""
+    ).lower() in ("1", "true", "yes", "on")
+
     if not _valid_account_code(account_code):
-        return jsonify({"ok": False, "error": "invalid account code"}), 400
+        if wants_json:
+            return jsonify({"ok": False, "error": "invalid account code"}), 400
+        flash("Invalid account code.", "error")
+        return redirect(url_for("ledger_web.ledger_reconcile"))
 
     user, _role = _current_user_and_role()
     actor = getattr(user, "username", None) or (user if user else "system")
@@ -608,13 +635,12 @@ def ledger_edit(entry_id: int):
         _ensure_audit_trail_columns()
         from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
 
-        EVENT_TYPE = "ledger.account.reassign"
+        EVENT_TYPE = "COA_LEG_REASSIGNED"
         try:
             # Preferred path: newer backend that supports event_type kwarg
             result = reassign_leg_account(entry_id, account_code, actor, reason=reason, event_type=EVENT_TYPE)
         except TypeError as te:
             # Fallback: older backend without event_type kwarg
-            # (Only fall back if the TypeError indicates an unexpected kwarg)
             msg = str(te)
             if "unexpected keyword argument 'event_type'" in msg or "positional arguments" in msg:
                 result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
@@ -622,46 +648,58 @@ def ledger_edit(entry_id: int):
                 raise
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"ok": False, "error": f"reassign failed: {e}"}), 500
+        if wants_json:
+            return jsonify({"ok": False, "error": f"reassign failed: {e}"}), 500
+        flash(f"Account update failed: reassign failed: {e}", "error")
+        return redirect(url_for("ledger_web.ledger_reconcile"))
 
-    # ALWAYS update mapping based on this reassignment (no shims, no toggles)
+    # Optionally update category mapping rule based on this reassignment
     mapping_ok = False
-    try:
-        from tbot_bot.accounting.coa_mapping_table import upsert_rule_from_leg as coa_upsert_rule_from_leg
-
-        bot_identity = load_bot_identity()
-        e, j, b, bot_id = bot_identity.split("_")
-        db_path = resolve_ledger_db_path(e, j, b, bot_id)
-        with sqlite3.connect(db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            leg = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
-
-        if leg:
-            # Strict helper signature: (leg: dict, account_code: str, actor: str)
-            coa_upsert_rule_from_leg(dict(leg), account_code, actor)
-            mapping_ok = True
-    except Exception:
-        traceback.print_exc()
-        mapping_ok = False
-
-    # Return fresh deltas for live UI
-    try:
-        sort_col, sort_desc = _get_sort_params()
+    if apply_mapping:
         try:
-            groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
-        except TypeError:
-            groups = fetch_grouped_trades()
-            groups = _python_sort_groups(groups, sort_col, sort_desc)
-        try:
-            bals = calculate_account_balances(include_opening=True)
-        except TypeError:
-            bals = calculate_account_balances()
+            from tbot_bot.accounting.coa_mapping_table import upsert_rule_from_leg as coa_upsert_rule_from_leg
+
+            bot_identity = load_bot_identity()
+            e, j, b, bot_id = bot_identity.split("_")
+            db_path = resolve_ledger_db_path(e, j, b, bot_id)
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                leg = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+
+            if leg:
+                # Strict helper signature: (leg: dict, account_code: str, actor: str)
+                coa_upsert_rule_from_leg(dict(leg), account_code, actor)
+                mapping_ok = True
         except Exception:
-            bals = {}
-        return jsonify({"ok": True, "groups": groups, "balances": bals, "result": result, "mapping_ok": mapping_ok})
-    except Exception:
-        # minimal success if refresh fails
-        return jsonify({"ok": True, "mapping_ok": mapping_ok})
+            traceback.print_exc()
+            mapping_ok = False
+
+    # JSON (AJAX) response: include fresh groups and balances for UI refresh
+    if wants_json:
+        try:
+            sort_col, sort_desc = _get_sort_params()
+            try:
+                groups = fetch_grouped_trades(sort_by=sort_col, sort_desc=sort_desc)
+            except TypeError:
+                groups = fetch_grouped_trades()
+                groups = _python_sort_groups(groups, sort_col, sort_desc)
+            try:
+                bals = calculate_account_balances(include_opening=True)
+            except TypeError:
+                bals = calculate_account_balances()
+            except Exception:
+                bals = {}
+            return jsonify({"ok": True, "groups": groups, "balances": bals, "result": result, "mapping_ok": mapping_ok})
+        except Exception:
+            # minimal success if refresh fails
+            return jsonify({"ok": True, "mapping_ok": mapping_ok})
+
+    # Non-AJAX form: redirect back to ledger with a flash
+    if apply_mapping:
+        flash(f"COA updated to '{account_code}' and category mapping updated.", "success")
+    else:
+        flash(f"COA updated to '{account_code}'.", "success")
+    return redirect(url_for("ledger_web.ledger_reconcile"))
 
 
 @ledger_web.route("/edit_legacy/<int:entry_id>", methods=["POST"])
