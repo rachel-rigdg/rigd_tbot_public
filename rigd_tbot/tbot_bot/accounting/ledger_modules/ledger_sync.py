@@ -77,7 +77,7 @@ def _drop_in_columns(row: dict) -> dict:
     Keep only columns that actually exist in TRADES_FIELDS to avoid SQL errors.
     """
     allowed = set(TRADES_FIELDS) | {"group_id", "sync_run_id"}
-    return {k: row.get(k) for k in allowed}
+    return {k: row.get(k) for k in allowed if k in row or k in {"group_id", "sync_run_id"}}
 
 
 def _insert_rows(conn: sqlite3.Connection, rows: list[dict]) -> None:
@@ -137,6 +137,7 @@ def _get_broker_snapshot() -> dict:
         symbol = _first_nonempty(p, "symbol", "asset_symbol", "ticker", default="")
         qty = _safe_float(_first_nonempty(p, "qty", "quantity", "position_qty", default=0))
         avg_cost = _safe_float(_first_nonempty(p, "avg_entry_price", "avg_cost", "cost_basis_per_share", default=0))
+        # Fall back to market value if no avg cost present
         mval = _safe_float(_first_nonempty(p, "market_value", "market_val", default=qty * avg_cost))
         positions_out.append({"symbol": symbol, "qty": qty, "avg_cost": avg_cost, "market_value": mval})
 
@@ -378,6 +379,64 @@ def _ensure_group_id(entry: dict) -> dict:
     return entry
 
 
+def _parse_dt(val) -> datetime | None:
+    """Best-effort parser for broker timestamps (ISO-ish or epoch seconds)."""
+    if not val:
+        return None
+    if isinstance(val, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(val), tz=timezone.utc)
+        except Exception:
+            return None
+    s = str(val).strip()
+    if not s:
+        return None
+    # common ISO variants
+    try:
+        # Handle trailing Z
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        return datetime.fromisoformat(s).astimezone(timezone.utc)
+    except Exception:
+        pass
+    # last resort: try removing microseconds or timezone
+    for cut in ("+", ".", " "):
+        try:
+            base = s.split(cut)[0]
+            if base:
+                return datetime.fromisoformat(base).replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+    return None
+
+
+def _extract_dt_utc(record: dict) -> datetime | None:
+    """
+    Pull a plausible datetime from a raw broker record.
+    """
+    if not isinstance(record, dict):
+        return None
+    for key in ("datetime_utc", "filled_at", "transaction_time", "timestamp", "time", "date"):
+        if key in record and record[key]:
+            dt = _parse_dt(record[key])
+            if dt:
+                return dt
+    # sometimes inside json_metadata/raw
+    jm = record.get("json_metadata") or record.get("raw_broker") or {}
+    if isinstance(jm, str):
+        try:
+            jm = json.loads(jm)
+        except Exception:
+            jm = {}
+    if isinstance(jm, dict):
+        for key in ("datetime_utc", "filled_at", "transaction_time", "timestamp"):
+            if key in jm and jm[key]:
+                dt = _parse_dt(jm[key])
+                if dt:
+                    return dt
+    return None
+
+
 # ----------------------------
 # Main entrypoint
 # ----------------------------
@@ -399,7 +458,156 @@ def sync_broker_ledger():
     cash_acts_raw = fetch_cash_activity(start_date="1970-01-01", end_date=None)
 
     # Determine earliest broker timestamp (UTC-ish strings handled later by normalizer)
-    def _extract_dt_utc(record):
-        # we rely on normalize_trade to convert; here try common fields quickly
-        for key in ("datetime_utc", "timestamp", "time", "date"):
-           
+    earliest_dt = None
+    for rec in (trades_raw or []):
+        dt = _extract_dt_utc(rec)
+        if not earliest_dt or (dt and dt < earliest_dt):
+            earliest_dt = dt
+    for rec in (cash_acts_raw or []):
+        dt = _extract_dt_utc(rec)
+        if not earliest_dt or (dt and dt < earliest_dt):
+            earliest_dt = dt
+
+    # Post opening balances (no-op if ledger not empty or already posted)
+    try:
+        _post_opening_balances_if_needed(sync_run_id=sync_run_id, earliest_trade_dt_utc=earliest_dt)
+    except Exception as e:
+        # Non-fatal; continue normal ingest
+        print("[SYNC] Opening balance helper error (continuing):", repr(e))
+
+    # Mapping table for posting
+    mapping_table = load_mapping_table(entity_code, jurisdiction_code, broker_code, bot_id)
+
+    # Normalize + compliance-filter trades
+    trades = []
+    for t in trades_raw or []:
+        if not isinstance(t, dict):
+            print("[SYNC] NON-DICT TRADE DETECTED:", type(t), t)
+            continue
+        normalized = normalize_trade(t)
+        if normalized.get("skip_insert", False):
+            print(
+                "[SYNC] SKIP INVALID TRADE ACTION:",
+                (normalized.get("json_metadata") or {}).get("unmapped_action", "unknown"),
+                "| RAW:",
+                t,
+            )
+            continue
+        _ensure_group_id(normalized)
+        if _is_blank_entry(normalized):
+            print("[SYNC] SKIP BLANK TRADE ENTRY:", normalized)
+            continue
+        if not _is_compliant(normalized):
+            print("[SYNC] SKIP NON-COMPLIANT TRADE ENTRY:", normalized)
+            continue
+        trades.append(normalized)
+
+    # Normalize + compliance-filter cash activities
+    cash_acts = []
+    for c in cash_acts_raw or []:
+        if not isinstance(c, dict):
+            print("[SYNC] NON-DICT CASH ACTIVITY DETECTED:", type(c), c)
+            continue
+        normalized = normalize_trade(c)
+        if normalized.get("skip_insert", False):
+            print(
+                "[SYNC] SKIP INVALID CASH ACTION:",
+                (normalized.get("json_metadata") or {}).get("unmapped_action", "unknown"),
+                "| RAW:",
+                c,
+            )
+            continue
+        _ensure_group_id(normalized)
+        if _is_blank_entry(normalized):
+            print("[SYNC] SKIP BLANK CASH ENTRY:", normalized)
+            continue
+        if not _is_compliant(normalized):
+            print("[SYNC] SKIP NON-COMPLIANT CASH ENTRY:", normalized)
+            continue
+        cash_acts.append(normalized)
+
+    # Combine and dedupe raw normalized entries before posting
+    # Use (trade_id, action, datetime_utc, total_value) as a stable key to avoid double-posting
+    combined = (trades or []) + (cash_acts or [])
+    seen = set()
+    deduped_entries = []
+    for e in combined:
+        key = (
+            e.get("trade_id"),
+            e.get("action"),
+            e.get("datetime_utc"),
+            float(e.get("total_value") or 0.0),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped_entries.append(e)
+
+    # Tag all with sync_run_id and pad missing schema fields (defensive)
+    def _fill_defaults(entry):
+        for k in TRADES_FIELDS:
+            if k not in entry:
+                entry[k] = None
+        entry["sync_run_id"] = sync_run_id
+        return entry
+
+    all_entries = [_fill_defaults(e) for e in deduped_entries]
+
+    # Flag unmapped for the UI, but DO NOT drop them (posting layer will fallback to Suspense/PNL)
+    unmapped_count = 0
+    for e in all_entries:
+        try:
+            m = get_mapping_for_transaction(e, mapping_table)
+        except Exception:
+            m = None
+        if not m:
+            unmapped_count += 1
+            try:
+                flag_unmapped_transaction(
+                    {"broker": broker_code, "type": e.get("action"), "symbol": e.get("symbol"), "notes": e.get("notes")},
+                    user="sync",
+                )
+            except Exception:
+                pass
+
+    if unmapped_count:
+        print(f"[SYNC] Unmapped entries detected: {unmapped_count} (flagged for UI). Importing via Suspense/PNL fallback.")
+
+    # Sanitize complex types -> JSON strings (safe for sqlite bindings downstream if needed)
+    sanitized_entries = [_sanitize_entry(e) for e in all_entries]
+
+    # Post using double-entry helper (handles account mapping or Suspense/PNL fallback, and DB de-dup on (trade_id, side))
+    post_double_entry(sanitized_entries, mapping_table)
+
+    # Validate double-entry integrity
+    validate_double_entry()
+
+    # Write reconciliation records
+    mapping_version = str((mapping_table or {}).get("version", ""))
+    for entry in all_entries:
+        trade_id = entry.get("trade_id")
+        api_hash = ""
+        jm = entry.get("json_metadata")
+        if isinstance(jm, dict):
+            api_hash = jm.get("api_hash", "") or jm.get("credential_hash", "")
+        elif isinstance(jm, str):
+            try:
+                jm_obj = json.loads(jm)
+                api_hash = jm_obj.get("api_hash", "") or jm_obj.get("credential_hash", "")
+            except Exception:
+                pass
+
+        log_reconciliation_entry(
+            trade_id=trade_id,
+            status="matched",
+            compare_fields={},
+            sync_run_id=sync_run_id,
+            api_hash=api_hash,
+            broker=broker_code,
+            raw_record=entry,
+            mapping_version=mapping_version,
+            notes="Imported by sync",
+            entity_code=entity_code,
+            jurisdiction_code=jurisdiction_code,
+            broker_code=broker_code,
+        )
