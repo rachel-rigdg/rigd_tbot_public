@@ -64,20 +64,23 @@ def admin_required(f):
 _EXPECTED_KEYS = (
     "broker", "type", "subtype", "description",
     "debit_account", "credit_account", "coa_account",
-    "updated_at", "updated_by", "rule_key"
+    "updated_at", "updated_by", "rule_key", "source"
 )
 
-def _normalize_row(d: dict) -> dict:
-    """Ensure a consistent row shape for the UI."""
+def _normalize_row(d: dict, *, source: str = "") -> dict:
+    """Ensure a consistent row shape for the UI (legacy mapping OR programmatic rule)."""
     if not isinstance(d, dict):
-        return {"raw": d}
+        return {"raw": d, "source": source}
     out = dict(d)
-    # If only a single account is present, map to coa_account
+    out["source"] = source or out.get("source") or ("rule" if "rule_key" in out else "mapping")
+
+    # If only a single account is present, map to coa_account and present as 'debit' for UI table
     if "coa_account" not in out:
         for k in ("account", "account_code"):
             if k in out and out[k] and not out.get("debit_account") and not out.get("credit_account"):
                 out["coa_account"] = out.get(k)
                 break
+
     # Guarantee presence of all keys (None if missing)
     for k in _EXPECTED_KEYS:
         out.setdefault(k, None)
@@ -87,36 +90,33 @@ def _normalize_row(d: dict) -> dict:
 def _flatten_mapping_table(doc) -> list:
     """
     Accepts any of:
-      - {"table":[...]} or {"rows":[...]} or {"rules":[...]} or list[...]
-      - {"rules": { rule_key: {...}|<account> , ... }}
+      - {"mappings":[...]} legacy field-based rules
+      - {"rules":[...]} programmatic seeded rules OR dict of {rule_key: {...}|<account>}
+      - list[...] fallbacks
     Returns a list of dict rows normalized for UI.
     """
     rows = []
-    if isinstance(doc, list):
-        rows = doc
-    elif isinstance(doc, dict):
-        if isinstance(doc.get("table"), list):
-            rows = doc["table"]
-        elif isinstance(doc.get("rows"), list):
-            rows = doc["rows"]
-        elif isinstance(doc.get("rules"), list):
-            rows = doc["rules"]
+    if isinstance(doc, dict):
+        # Programmatic rules first so seeded defaults are visible up top
+        if isinstance(doc.get("rules"), list):
+            rows.extend(_normalize_row(r, source="rule") for r in doc["rules"])
         elif isinstance(doc.get("rules"), dict):
             for rk, val in doc["rules"].items():
                 if isinstance(val, dict):
                     r = {"rule_key": rk, **val}
                 else:
                     r = {"rule_key": rk, "coa_account": val}
-                rows.append(r)
-        elif isinstance(doc.get("mapping"), list):
-            rows = doc["mapping"]
-        else:
-            # last resort: if it looks like a single row object
-            rows = [doc]
+                rows.append(_normalize_row(r, source="rule"))
+
+        # Legacy field-based mappings (if any)
+        if isinstance(doc.get("mappings"), list):
+            rows.extend(_normalize_row(r, source="mapping") for r in doc["mappings"])
+    elif isinstance(doc, list):
+        rows = [_normalize_row(r) for r in doc]
     else:
         rows = []
 
-    return [_normalize_row(r) for r in rows]
+    return rows
 
 
 # ---------------------------
@@ -138,17 +138,21 @@ def view_mapping():
     except ValueError:
         entry_id = None
 
-    # Load the mapping JSON and compute both mapping (raw) and mapping_rows (flattened) for the template
+    # Load mapping JSON; auto-seeded defaults (if your coa_mapping_table implements seeding).
     raw_mapping = load_mapping_table() or {}
     normalized_rows = _flatten_mapping_table(raw_mapping)
 
-    # Build mapping_rows as the template expects (with explicit debit/credit fallbacks)
+    # Flag for template banners / hints (optional use)
+    has_seeded_rules = any(r for r in normalized_rows if r.get("source") == "rule")
+
+    # Build mapping_rows in the shape current template expects
     mapping_rows = []
     for r in normalized_rows:
         broker = (r.get("broker") or "").strip()
         typ = (r.get("type") or "").strip()
         sub = (r.get("subtype") or "").strip()
         desc = (r.get("description") or "").strip()
+        # For programmatic rules, show single-account rule under 'debit_account' for the existing UI table
         debit = (r.get("debit_account") or r.get("coa_account") or "").strip()
         credit = (r.get("credit_account") or "").strip()
         mapping_rows.append({
@@ -160,15 +164,15 @@ def view_mapping():
             "credit_account": credit,
             "updated_at": r.get("updated_at") or "",
             "updated_by": r.get("updated_by") or "",
+            "source": r.get("source") or "",
+            "rule_key": r.get("rule_key") or "",
         })
 
-    # Keep all original mapping keys; inject normalized list under "mappings"
+    # Preserve the original doc; inject normalized list under "mappings" for the template
     mapping = dict(raw_mapping) if isinstance(raw_mapping, dict) else {"raw": raw_mapping}
     mapping["mappings"] = mapping_rows  # <-- template expects mapping.mappings
 
     username, role = _current_user_and_role()
-
-    # Existing /coa/api endpoints (the UI/JS already talks to these)
     coa_api_base = "/coa/api"
     api_urls = {
         "base": coa_api_base,
@@ -184,13 +188,14 @@ def view_mapping():
     return render_template(
         "coa_mapping.html",
         mapping=mapping,
-        mapping_rows=mapping_rows,  # still provided for any consumers that use it
+        mapping_rows=mapping_rows,
         user=username,
         user_role=role,
         from_source=from_source,
         entry_id=entry_id,
         coa_api_base=coa_api_base,
         api_urls=api_urls,
+        has_seeded_rules=has_seeded_rules,  # optional banner in template
     )
 
 
@@ -210,10 +215,13 @@ def mapping_table_api():
                 "type": r.get("type"),
                 "subtype": r.get("subtype"),
                 "description": r.get("description"),
+                # Show programmatic rule (single account) in the debit column for current UI
                 "debit_account": (r.get("debit_account") or r.get("coa_account") or ""),
                 "credit_account": (r.get("credit_account") or ""),
                 "updated_at": r.get("updated_at") or "",
                 "updated_by": r.get("updated_by") or "",
+                "source": r.get("source") or "",
+                "rule_key": r.get("rule_key") or "",
             })
         return jsonify({"ok": True, "rows": rows})
     except Exception as e:

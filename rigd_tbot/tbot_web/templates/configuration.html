@@ -131,55 +131,6 @@
 
             <br><br>
 
-            <!-- Accounting Initialization -->
-            <div class="fieldblock-config">
-                <fieldset>
-                    <legend>Accounting Initialization</legend>
-
-                    <p class="help-text">Optional: seed opening balances (UTC date and one or more account lines). Amounts must sum to 0.00 for double-entry compliance.</p>
-
-                    <label for="opening_balance_date">Opening Balance Date (UTC)</label>
-                    <input type="date" id="opening_balance_date" name="opening_balance_date" value="{{ config.get('opening_balance_date','') }}">
-                    <br><br>
-
-                    <table class="coa-opening-table">
-                        <thead>
-                            <tr>
-                                <th>COA Account Code</th>
-                                <th>Amount</th>
-                                <th>Notes (optional)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><input type="text" name="opening_account_1" placeholder="Assets:Cash:Brokerage" value="{{ config.get('opening_account_1','') }}"></td>
-                                <td><input type="number" step="0.01" name="opening_amount_1" placeholder="10000.00" value="{{ config.get('opening_amount_1','') }}"></td>
-                                <td><input type="text" name="opening_note_1" placeholder="Initial cash deposit" value="{{ config.get('opening_note_1','') }}"></td>
-                            </tr>
-                            <tr>
-                                <td><input type="text" name="opening_account_2" placeholder="Equity:OpeningBalance" value="{{ config.get('opening_account_2','') }}"></td>
-                                <td><input type="number" step="0.01" name="opening_amount_2" placeholder="-10000.00" value="{{ config.get('opening_amount_2','') }}"></td>
-                                <td><input type="text" name="opening_note_2" placeholder="Offset to equity" value="{{ config.get('opening_note_2','') }}"></td>
-                            </tr>
-                            <tr>
-                                <td><input type="text" name="opening_account_3" placeholder="Liabilities:MarginLoan" value="{{ config.get('opening_account_3','') }}"></td>
-                                <td><input type="number" step="0.01" name="opening_amount_3" placeholder="0.00" value="{{ config.get('opening_amount_3','') }}"></td>
-                                <td><input type="text" name="opening_note_3" placeholder="Optional" value="{{ config.get('opening_note_3','') }}"></td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <br>
-
-                    <label class="checkbox">
-                        <input type="checkbox" id="load_default_coa_seed" name="load_default_coa_seed" value="1" {% if config.get('LOAD_DEFAULT_COA_SEED') %}checked{% endif %}>
-                        Load default COA mapping seed
-                    </label>
-                </fieldset>
-            </div>
-
-            <br><br>
-
             <div class="fieldblock-config">
                 <fieldset>
                     <legend>Alert & Email Settings</legend>

@@ -583,6 +583,10 @@ def ledger_edit(entry_id: int):
       - account_code: required, active COA code
       - reason: optional string
       - mapping write: mandatory
+
+    Surgical tweak: pass a best-effort `event_type` to backend reassigner to
+    satisfy NOT NULL audit_trail.event_type. If the backend signature doesn't
+    accept it, gracefully fall back to the legacy call.
     """
     not_ok = _require_admin_post()
     if not_ok:
@@ -603,7 +607,19 @@ def ledger_edit(entry_id: int):
     try:
         _ensure_audit_trail_columns()
         from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
-        result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
+
+        EVENT_TYPE = "ledger.account.reassign"
+        try:
+            # Preferred path: newer backend that supports event_type kwarg
+            result = reassign_leg_account(entry_id, account_code, actor, reason=reason, event_type=EVENT_TYPE)
+        except TypeError as te:
+            # Fallback: older backend without event_type kwarg
+            # (Only fall back if the TypeError indicates an unexpected kwarg)
+            msg = str(te)
+            if "unexpected keyword argument 'event_type'" in msg or "positional arguments" in msg:
+                result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
+            else:
+                raise
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": f"reassign failed: {e}"}), 500

@@ -9,62 +9,8 @@ from cryptography.fernet import Fernet
 from pathlib import Path
 from typing import Any, Dict
 
-# NEW: DST-aware HH:MM conversion helpers (local→UTC), no utils_time import to avoid cycles
-import re
-from datetime import datetime, timedelta
-import pytz
-from pytz import AmbiguousTimeError, NonExistentTimeError
-
 ENCRYPTED_CONFIG_PATH = Path(__file__).resolve().parent.parent / "support" / ".env_bot.enc"
 KEY_PATH = Path(__file__).resolve().parent.parent / "storage" / "keys" / "env_bot.key"
-
-# Strict HH:MM validator
-_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-
-def _validate_hhmm(timestr: str) -> bool:
-    return isinstance(timestr, str) and bool(_HHMM_RE.match(timestr.strip()))
-
-def _nearest_market_day_reference(tzstr: str) -> datetime.date:
-    """Pick a stable local date for converting LOCAL 'HH:MM' → UTC, avoiding DST/after-hours pitfalls."""
-    tz = pytz.timezone(tzstr)
-    now_utc = datetime.utcnow().replace(tzinfo=pytz.UTC)
-    now_local = now_utc.astimezone(tz)
-    d = now_local.date()
-    wd = now_local.weekday()  # 0=Mon .. 6=Sun
-
-    def next_weekday(date_obj):
-        while date_obj.weekday() >= 5:
-            date_obj += timedelta(days=1)
-        return date_obj
-
-    def prev_weekday(date_obj):
-        while date_obj.weekday() >= 5:
-            date_obj -= timedelta(days=1)
-        return date_obj
-
-    if wd >= 5:
-        return next_weekday(d + timedelta(days=1))
-    if now_local.hour >= 18:
-        return next_weekday(d + timedelta(days=1))
-    if now_local.hour < 6:
-        return prev_weekday(d - timedelta(days=1))
-    return d
-
-def _local_hhmm_to_utc_hhmm(timestr: str, tzstr: str) -> str:
-    """Convert LOCAL 'HH:MM' in tzstr → UTC 'HH:MM' for reference date (DST-aware)."""
-    if not _validate_hhmm(timestr):
-        raise ValueError(f"Invalid HH:MM value: '{timestr}'")
-    tz = pytz.timezone(tzstr)
-    ref_date = _nearest_market_day_reference(tzstr)
-    hh, mm = map(int, timestr.split(":"))
-    naive_local_dt = datetime(ref_date.year, ref_date.month, ref_date.day, hh, mm)
-    try:
-        local_dt = tz.localize(naive_local_dt, is_dst=None)
-    except AmbiguousTimeError:
-        local_dt = tz.localize(naive_local_dt, is_dst=False)
-    except NonExistentTimeError:
-        local_dt = tz.localize(naive_local_dt + timedelta(hours=1), is_dst=True)
-    return local_dt.astimezone(pytz.UTC).strftime("%H:%M")
 
 REQUIRED_KEYS = [
     # General & Debugging
@@ -77,7 +23,7 @@ REQUIRED_KEYS = [
     "SCREENER_UNIVERSE_MAX_PRICE", "SCREENER_UNIVERSE_MIN_MARKET_CAP", "SCREENER_UNIVERSE_MAX_MARKET_CAP",
     "SCREENER_UNIVERSE_MAX_SIZE", "SCREENER_UNIVERSE_BLOCKLIST_PATH", "SCREENER_TEST_MODE_UNIVERSE",
     # Price & Volume Filters
-    "MIN_PRICE", "MAX_PRICE", "MIN_VOLUME_THRESHOLD", "ENABLE_FINNHUB_FUNDAMENTALS_FILTER",
+    "MIN_PRICE", "MAX_PRICE", "MIN_VOLUME_THRESHOLD", "ENABLE_FUNNHUB_FUNDAMENTALS_FILTER",
     "MAX_PE_RATIO", "MAX_DEBT_EQUITY",
     # Strategy Routing & Broker Mode
     "STRATEGY_SEQUENCE", "STRATEGY_OVERRIDE",
@@ -86,7 +32,7 @@ REQUIRED_KEYS = [
     # Failover Broker Routing
     "FAILOVER_ENABLED", "FAILOVER_LOG_TAG",
     # Global Time & Polling
-    "MARKET_OPEN_UTC", "MARKET_CLOSE_UTC", "TRADING_DAYS",
+    "MARKET_OPEN_UTC", "MARKET_CLOSE_UTC", "TRADING_DAYS", 
     # NEW: Sleep times for universe and strategy API polling
     "UNIVERSE_SLEEP_TIME", "STRATEGY_SLEEP_TIME",
     # OPEN Strategy Configuration
@@ -196,10 +142,30 @@ def update_env_var(key: str, value: Any) -> None:
 load_env_bot_config = get_bot_config
 
 # ----------------------------------------------------------------------
-# NEW: Explicit getters for schedule values (automatic DST handling)
-# RUNTIME SHOULD USE ONLY THE *_UTC GETTERS BELOW.
-# If *_LOCAL keys exist, convert using TIMEZONE; else fall back to legacy *_UTC strings.
+# NEW: Explicit getters for schedule values
+# NOTE: RUNTIME MUST USE ONLY THE *_UTC GETTERS BELOW.
+# *_LOCAL getters are provided for UI/display; do not use them in scheduling logic.
 # ----------------------------------------------------------------------
+
+def get_open_time_utc() -> str:
+    """Return START_TIME_OPEN as 'HH:MM' (UTC)."""
+    v = load_env_var("START_TIME_OPEN", "")
+    return str(v or "").strip()
+
+def get_mid_time_utc() -> str:
+    """Return START_TIME_MID as 'HH:MM' (UTC)."""
+    v = load_env_var("START_TIME_MID", "")
+    return str(v or "").strip()
+
+def get_close_time_utc() -> str:
+    """Return START_TIME_CLOSE as 'HH:MM' (UTC)."""
+    v = load_env_var("START_TIME_CLOSE", "")
+    return str(v or "").strip()
+
+def get_market_close_utc() -> str:
+    """Return MARKET_CLOSE_UTC as 'HH:MM' (UTC)."""
+    v = load_env_var("MARKET_CLOSE_UTC", "")
+    return str(v or "").strip()
 
 def get_timezone() -> str:
     """
@@ -208,34 +174,6 @@ def get_timezone() -> str:
     """
     v = load_env_var("TIMEZONE", "UTC")
     return str(v or "UTC").strip()
-
-def _compute_utc_from_local_or_fallback(local_key: str, utc_key: str) -> str:
-    tz = get_timezone()
-    local_val = load_env_var(local_key, "")
-    if isinstance(local_val, str) and _validate_hhmm(local_val.strip()):
-        try:
-            return _local_hhmm_to_utc_hhmm(local_val.strip(), tz)
-        except Exception as e:
-            logger.error(f"Failed converting {local_key}='{local_val}' in tz '{tz}' to UTC: {e}")
-    # Fallback to legacy stored UTC
-    v = load_env_var(utc_key, "")
-    return str(v or "").strip()
-
-def get_open_time_utc() -> str:
-    """Return START_TIME_OPEN as 'HH:MM' (UTC), auto-DST if START_TIME_OPEN_LOCAL present."""
-    return _compute_utc_from_local_or_fallback("START_TIME_OPEN_LOCAL", "START_TIME_OPEN")
-
-def get_mid_time_utc() -> str:
-    """Return START_TIME_MID as 'HH:MM' (UTC), auto-DST if START_TIME_MID_LOCAL present."""
-    return _compute_utc_from_local_or_fallback("START_TIME_MID_LOCAL", "START_TIME_MID")
-
-def get_close_time_utc() -> str:
-    """Return START_TIME_CLOSE as 'HH:MM' (UTC), auto-DST if START_TIME_CLOSE_LOCAL present."""
-    return _compute_utc_from_local_or_fallback("START_TIME_CLOSE_LOCAL", "START_TIME_CLOSE")
-
-def get_market_close_utc() -> str:
-    """Return MARKET_CLOSE_UTC as 'HH:MM' (UTC), auto-DST if MARKET_CLOSE_LOCAL present."""
-    return _compute_utc_from_local_or_fallback("MARKET_CLOSE_LOCAL", "MARKET_CLOSE_UTC")
 
 # --- UI-only LOCAL getters (for display/forms). DO NOT use in runtime scheduling. ---
 

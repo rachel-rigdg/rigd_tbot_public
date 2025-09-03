@@ -7,7 +7,6 @@ import os
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-import shutil
 from typing import Dict, Any, List, Optional, Tuple
 
 from tbot_bot.support.path_resolver import (
@@ -29,6 +28,63 @@ def _get_versions_dir(entity_code=None, jurisdiction_code=None, broker_code=None
     mapping_path = _get_mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     return mapping_path.parent / "coa_mapping_versions"
 
+def _seed_path() -> Path:
+    # Default seed JSON (created earlier in defaults/)
+    return Path(__file__).resolve().parents[0] / "defaults" / "coa_mapping_seed.json"
+
+# ----------------------------------------------------------------------
+# Seed defaults (Buy/Sell/Dividend/Deposit/Withdrawal/Fee)
+# ----------------------------------------------------------------------
+def _load_default_seed() -> List[Dict[str, Any]]:
+    """
+    Load a small, stable starter set of mapping rules.
+    Falls back to in-code defaults if the JSON file is missing.
+    """
+    fallback = [
+        # BUY -> Dr Equity:{SYMBOL}, Cr Cash
+        {"broker": None, "type": "BUY", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Equity:{SYMBOL}", "credit_account": "Assets:Brokerage:Cash"},
+        # SELL -> Dr Cash, Cr Equity:{SYMBOL}
+        {"broker": None, "type": "SELL", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Assets:Brokerage:Equity:{SYMBOL}"},
+        # DIVIDEND -> Dr Cash, Cr Income:Dividends
+        {"broker": None, "type": "DIVIDEND", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Income:Dividends Earned"},
+        # DEPOSIT -> Dr Cash, Cr Equity:Capital Contributions
+        {"broker": None, "type": "DEPOSIT", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Equity:Capital Contributions"},
+        # WITHDRAWAL -> Dr Equity:Owner Withdrawals, Cr Cash
+        {"broker": None, "type": "WITHDRAWAL", "subtype": None, "description": None,
+         "debit_account": "Equity:Owner Withdrawals", "credit_account": "Assets:Brokerage:Cash"},
+        # FEE/COMMISSION -> Dr Expenses:Brokerage Fees, Cr Cash
+        {"broker": None, "type": "FEE", "subtype": None, "description": None,
+         "debit_account": "Expenses:Brokerage Fees", "credit_account": "Assets:Brokerage:Cash"},
+    ]
+    p = _seed_path()
+    try:
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            rows = data.get("mappings") or data.get("rows") or data.get("rules") or []
+            # Normalize keys to expected legacy "mappings" shape (debit/credit accounts)
+            out = []
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                out.append({
+                    "broker": r.get("broker"),
+                    "type": r.get("type"),
+                    "subtype": r.get("subtype"),
+                    "description": r.get("description"),
+                    "debit_account": r.get("debit_account") or r.get("coa_account") or r.get("debit"),
+                    "credit_account": r.get("credit_account") or r.get("credit"),
+                    "updated_by": "seed",
+                    "updated_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+                })
+            # If file present but empty, fall back to hardcoded defaults
+            return out or fallback
+    except Exception:
+        pass
+    return fallback
 
 # ----------------------------------------------------------------------
 # Table load/save with version snapshots
@@ -41,27 +97,44 @@ def _ensure_core_metadata(table: Dict[str, Any]) -> None:
         table["entity_code"] = table.get("entity_code", ec)
         table["jurisdiction_code"] = table.get("jurisdiction_code", jc)
         table["broker_code"] = table.get("broker_code", bc)
-    # Ensure new "rules" bucket exists (programmatic rule_key -> account_code)
-    table.setdefault("rules", [])
-    # Legacy bucket (field-based mappings) stays as-is
     table.setdefault("mappings", [])
+    table.setdefault("rules", [])      # programmatic single-account rules (optional)
     table.setdefault("history", [])
-    # For convenience
     table.setdefault("version", 1)
+
+def _maybe_seed_defaults(table: Dict[str, Any]) -> bool:
+    """
+    If both 'mappings' and 'rules' are empty, seed with default starter rules.
+    Returns True if seeding occurred.
+    """
+    if (not table.get("mappings")) and (not table.get("rules")):
+        table["mappings"] = _load_default_seed()
+        table["change_reason"] = "seed_default"
+        table["last_updated_by"] = "system"
+        return True
+    return False
 
 def load_mapping_table(entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None) -> Dict[str, Any]:
     """
-    Loads the current mapping table (JSON). If missing, creates new empty table.
+    Loads the current mapping table (JSON). If missing or empty, seeds with defaults.
     """
     path = _get_mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     if not path.exists():
         table = {"mappings": [], "rules": [], "version": 1, "history": [], "coa_version": "v1.0.0"}
         _ensure_core_metadata(table)
+        seeded = _maybe_seed_defaults(table)
+        # Persist initial file (seeded or not)
         save_mapping_table(table, entity_code, jurisdiction_code, broker_code, bot_id, reason="init")
         return table
+
     with open(path, "r", encoding="utf-8") as f:
         table = json.load(f)
     _ensure_core_metadata(table)
+
+    # If an existing file is empty of rules, seed and persist once
+    if _maybe_seed_defaults(table):
+        save_mapping_table(table, entity_code, jurisdiction_code, broker_code, bot_id, reason="seed_default")
+
     return table
 
 def save_mapping_table(
@@ -89,7 +162,7 @@ def save_mapping_table(
     table["last_updated_by"] = actor
     table["change_reason"] = reason
 
-    # Append structured history snapshot (both legacy mappings and new rules)
+    # Append structured history snapshot
     history_entry = {
         "timestamp_utc": now_iso,
         "version": table["version"],
@@ -144,7 +217,6 @@ def _active_coa_codes() -> set:
                     walk(kids)
         walk(nodes or [])
     except Exception:
-        # If COA unavailable, allow empty set and let callers decide.
         pass
     return codes
 
@@ -153,16 +225,6 @@ def _derive_rule_key_from_context(context_meta: Dict[str, Any]) -> str:
     Stable, lowercase, pipe-delimited key:
 
         broker_like | type_like | symbol-or-memo | strategy?
-
-    Accepted context_meta synonyms:
-      - broker_like:   broker, broker_code, import_source
-      - type_like:     trn_type, type, txn_type, action, subtype, import_type
-      - symbol:        symbol
-      - memo:          memo, description, note, notes
-      - strategy:      strategy
-
-    Any '|' in source values are sanitized to '/'.
-    Empty components are omitted.
     """
     def norm(x):
         s = ("" if x is None else str(x)).strip().lower()
@@ -190,37 +252,42 @@ def _derive_rule_key_from_context(context_meta: Dict[str, Any]) -> str:
     )
     strat = context_meta.get("strategy")
 
-    broker = norm(broker_like)
-    trn = norm(type_like)
-    sym_or_memo = norm(symbol) or norm(memo)
-    strategy = norm(strat)
-
-    parts = [p for p in (broker, trn, sym_or_memo, strategy) if p]
+    parts = [norm(x) for x in (broker_like, type_like, (symbol or memo), strat) if x]
     return "|".join(parts)
 
+# ----------------------------------------------------------------------
+# Type normalization for matching legacy/normalized actions
+# ----------------------------------------------------------------------
+def _normalize_type(v: Optional[str]) -> str:
+    if not v:
+        return ""
+    a = str(v).strip().lower()
+    if a in ("buy", "long", "filled_buy"):
+        return "BUY"
+    if a in ("sell", "short", "filled_sell"):
+        return "SELL"
+    if a in ("dividend", "div", "cash_dividend", "div_cash"):
+        return "DIVIDEND"
+    if a in ("deposit", "transfer_in", "journal_in", "external_cash_in", "cash_in"):
+        return "DEPOSIT"
+    if a in ("withdrawal", "transfer_out", "journal_out", "external_cash_out", "cash_out"):
+        return "WITHDRAWAL"
+    if a in ("fee", "commission", "reg_fee", "broker_fee"):
+        return "FEE"
+    return a.upper()
+
+def _subst_symbol_placeholder(acct: Optional[str], symbol: Optional[str]) -> str:
+    s = (acct or "").strip()
+    if "{SYMBOL}" in s:
+        s = s.replace("{SYMBOL}", (symbol or "UNKNOWN").upper())
+    return s
 
 # ----------------------------------------------------------------------
 # Programmatic API (canonical)
 # ----------------------------------------------------------------------
 def upsert_rule(rule_key: str, account_code: str, context_meta: Optional[Dict[str, Any]], actor: str) -> str:
     """
-    Create or update a programmatic mapping rule.
-
-    REQUIRED PARAMS:
-      - rule_key (str): Stable key. If empty/blank, it will be derived from context_meta
-                        using _derive_rule_key_from_context().
-      - account_code (str): Target COA account code; must exist and be active in COA.
-      - actor (str): User/agent performing the change (stored in version metadata).
-
-    OPTIONAL PARAMS:
-      - context_meta (dict): Free-form metadata used both for rule_key derivation and audit
-                             (accepted synonyms documented in _derive_rule_key_from_context docstring).
-
-    Behavior:
-      - Validates inputs (non-empty account_code; active COA code).
-      - Upserts a single record in table['rules'] by 'rule_key', merging context_meta.
-      - Persists changes with version bump and history snapshot.
-      - Returns version_id (string) of the saved snapshot.
+    Create or update a programmatic mapping rule (single target account_code).
     """
     rule_key = (rule_key or "").strip()
     context_meta = context_meta or {}
@@ -241,7 +308,6 @@ def upsert_rule(rule_key: str, account_code: str, context_meta: Optional[Dict[st
     for r in rules:
         if r.get("rule_key") == rule_key:
             r["account_code"] = account_code
-            # Merge/refresh context metadata (non-destructive)
             cm = dict(r.get("context_meta") or {})
             cm.update({k: v for k, v in (context_meta or {}).items() if v not in (None, "")})
             r["context_meta"] = cm
@@ -263,37 +329,14 @@ def upsert_rule(rule_key: str, account_code: str, context_meta: Optional[Dict[st
     table["last_updated_by"] = actor
     table["change_reason"] = (context_meta.get("source") if isinstance(context_meta, dict) else None) or "upsert_rule"
 
-    # Persist + version
-    version_id = save_mapping_table(table, reason=table["change_reason"], actor=table["last_updated_by"])
-    return version_id
-
+    return save_mapping_table(table, reason=table["change_reason"], actor=table["last_updated_by"])
 
 def upsert_rule_from_leg(leg: Dict[str, Any], account_code: str, actor: str) -> str:
-    """
-    Strict helper to derive a deterministic rule_key from a ledger leg and persist a programmatic rule.
-
-    rule_key derivation (lowercased, pipe-delimited; see _derive_rule_key_from_context):
-        broker_like | type_like | (symbol OR memo/description/notes) | strategy?
-
-    Stored record includes `context_meta` for audit/explainability.
-
-    Args:
-      leg (dict): A single trades row (or compatible dict). Commonly used keys:
-                  broker, broker_code, import_source, action, type, subtype, txn_type,
-                  symbol, memo/description/notes (or json_metadata {memo/...}), strategy,
-                  trade_id, group_id.
-      account_code (str): Target COA account code (must be active).
-      actor (str): User/agent performing the change.
-
-    Returns:
-      version_id (string) of the saved snapshot.
-    """
     if not isinstance(leg, dict):
         raise ValueError("leg must be a dict")
     if not account_code or not isinstance(account_code, str):
         raise ValueError("account_code is required")
 
-    # Extract memo/description from multiple possible fields, including JSON metadata strings
     memo = leg.get("description") or leg.get("notes") or leg.get("memo") or None
     jm = leg.get("json_metadata")
     if memo is None and isinstance(jm, (str, bytes)):
@@ -319,25 +362,15 @@ def upsert_rule_from_leg(leg: Dict[str, Any], account_code: str, actor: str) -> 
         "trade_id": leg.get("trade_id"),
         "group_id": leg.get("group_id"),
     }
-
-    # Delegate to the canonical writer (derives rule_key if empty)
     return upsert_rule(rule_key="", account_code=account_code, context_meta=context_meta, actor=actor)
-
 
 # ----------------------------------------------------------------------
 # Legacy APIs (retained)
 # ----------------------------------------------------------------------
 def save_mapping_table_legacy_snapshot_only(table, entity_code=None, jurisdiction_code=None, broker_code=None, bot_id=None):
-    """
-    DEPRECATED: kept for backward compatibility if external callers depended on old signature.
-    Routes to save_mapping_table with default reason.
-    """
     return save_mapping_table(table, entity_code, jurisdiction_code, broker_code, bot_id)
 
 def assign_mapping(mapping_rule, user, reason=None):
-    """
-    Assign or update a field-based mapping rule; rule is a dict containing broker fields and COA account.
-    """
     table = load_mapping_table()
     # Remove prior mapping with same keys
     table["mappings"] = [
@@ -353,30 +386,35 @@ def assign_mapping(mapping_rule, user, reason=None):
 
 def get_mapping_for_transaction(txn, mapping_table=None):
     """
-    Look up the COA mapping for a transaction dict (broker/type/subtype/description).
-    Returns mapping rule dict or None.
+    Look up the COA mapping for a transaction dict.
+    Supports both legacy field-based mappings and programmatic rules.
     """
     if mapping_table is None:
         mapping_table = load_mapping_table()
+
+    # Normalize the txn "type"/action for matching
+    txn_type_raw = txn.get("type") or txn.get("txn_type") or txn.get("action")
+    txn_type = _normalize_type(txn_type_raw)
+    txn_broker = (txn.get("broker") or txn.get("broker_code") or "").strip() or None
+
+    # 1) Legacy field-based mappings (with normalized type compare)
     for rule in mapping_table.get("mappings", []):
-        if all(
-            rule.get(k) == txn.get(k)
-            for k in ("broker", "type", "subtype", "description")
-            if rule.get(k) is not None
-        ):
+        rule_type = _normalize_type(rule.get("type"))
+        # Broker match: if rule specifies broker, it must match; else wildcard
+        broker_ok = (rule.get("broker") is None) or (rule.get("broker") == txn_broker)
+        subtype_ok = (rule.get("subtype") is None) or (rule.get("subtype") == txn.get("subtype"))
+        desc_ok = (rule.get("description") is None) or (rule.get("description") == txn.get("description"))
+        if broker_ok and subtype_ok and desc_ok and rule_type == txn_type:
             return rule
-    # Optionally support programmatic rules via derived key
-    # (returns a simplified view if matched)
+
+    # 2) Programmatic single-account rules (optional): derive key and return a simplified view
     key = _derive_rule_key_from_context(txn or {})
     for r in mapping_table.get("rules", []):
         if r.get("rule_key") == key:
-            return {"broker": txn.get("broker"), "type": txn.get("type"), "coa_account": r.get("account_code"), "rule_key": key}
+            return {"broker": txn_broker, "type": txn_type, "coa_account": r.get("account_code"), "rule_key": key}
     return None
 
 def flag_unmapped_transaction(txn, user="system"):
-    """
-    Adds a flagged, unmapped transaction for review (used by sync/reconcile).
-    """
     table = load_mapping_table()
     table.setdefault("unmapped", []).append({
         "transaction": txn,
@@ -386,14 +424,11 @@ def flag_unmapped_transaction(txn, user="system"):
     save_mapping_table(table, reason="flag_unmapped", actor=user)
 
 def rollback_mapping_version(version):
-    """
-    Rollback to a previous mapping version (by version number).
-    """
     versions_dir = _get_versions_dir()
     if not versions_dir.exists():
         return False
     for fname in sorted(os.listdir(versions_dir), reverse=True):
-        if fname.startswith(f"coa_mapping_table_v{version}_") or fname.startswith(f"coa_mapping_table_v{version}_".replace("v", "v")):
+        if fname.startswith(f"coa_mapping_table_v{version}_"):
             path = versions_dir / fname
             with open(path, "r", encoding="utf-8") as fsrc:
                 snapshot = json.load(fsrc)
@@ -402,37 +437,51 @@ def rollback_mapping_version(version):
     return False
 
 def export_mapping_table():
-    """
-    Export current mapping table as JSON with required metadata.
-    """
     table = load_mapping_table()
     _ensure_core_metadata(table)
     return json.dumps(table, indent=2)
 
 def import_mapping_table(json_data, user="import"):
-    """
-    Import a mapping table from JSON data (full replacement).
-    """
     table = json.loads(json_data)
     _ensure_core_metadata(table)
+    # If an import wipes all rules, re-seed defaults once to avoid a dead-start mapping table
+    seeded = False
+    if not table.get("mappings") and not table.get("rules"):
+        table["mappings"] = _load_default_seed()
+        table["change_reason"] = "imported+seed_default"
+        seeded = True
     table["last_updated_by"] = user
-    table["change_reason"] = "imported"
-    save_mapping_table(table, reason="imported", actor=user)
+    table["change_reason"] = table.get("change_reason") or ("imported" if not seeded else "imported+seed_default")
+    save_mapping_table(table, reason=table["change_reason"], actor=user)
 
 def apply_mapping_rule(entry, mapping_table=None):
     """
-    Returns two OFX/ledger-normalized dicts representing debit and credit double-entry for the provided entry.
-    Mapping table is used to select COA account codes and assign side='debit' or 'credit'.
+    Build (debit, credit) legs using the mapping table.
+    - Supports legacy 'mappings' rules (with {SYMBOL} placeholder).
+    - If no rule found, caller may fallback to Suspense/PNL.
     """
     if mapping_table is None:
         mapping_table = load_mapping_table()
+
     mapping = get_mapping_for_transaction(entry, mapping_table)
-    debit_entry = entry.copy()
-    credit_entry = entry.copy()
-    debit_entry["account"] = mapping["debit_account"] if mapping and "debit_account" in mapping else "Uncategorized:Debit"
-    credit_entry["account"] = mapping["credit_account"] if mapping and "credit_account" in mapping else "Uncategorized:Credit"
-    debit_entry["total_value"] = abs(float(debit_entry.get("total_value", 0)))
-    credit_entry["total_value"] = -abs(float(credit_entry.get("total_value", 0)))
-    debit_entry["side"] = "debit"
-    credit_entry["side"] = "credit"
-    return debit_entry, credit_entry
+
+    # Legacy two-sided mapping
+    if mapping and ("debit_account" in mapping or "credit_account" in mapping):
+        symbol = entry.get("symbol")
+        debit_acct = _subst_symbol_placeholder(mapping.get("debit_account"), symbol)
+        credit_acct = _subst_symbol_placeholder(mapping.get("credit_account"), symbol)
+
+        debit_entry = dict(entry)
+        credit_entry = dict(entry)
+        amt = abs(float(debit_entry.get("total_value", 0) or 0.0))
+        debit_entry["account"] = debit_acct or "Uncategorized:Debit"
+        credit_entry["account"] = credit_acct or "Uncategorized:Credit"
+        debit_entry["total_value"] = +amt
+        credit_entry["total_value"] = -amt
+        debit_entry["side"] = "debit"
+        credit_entry["side"] = "credit"
+        return debit_entry, credit_entry
+
+    # Programmatic single-account rules are not sufficient to produce both legs here;
+    # let caller fall back to Suspense/PNL if no legacy mapping matched.
+    return None, None

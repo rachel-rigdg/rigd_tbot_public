@@ -2,29 +2,40 @@
 
 import requests
 import hashlib
+from datetime import datetime, timezone
 from tbot_bot.broker.utils.broker_request import safe_request
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
+
 
 class AlpacaBroker:
     def __init__(self, env):
         self.api_key = env.get("BROKER_API_KEY")
         self.secret_key = env.get("BROKER_SECRET_KEY")
         self.broker_token = env.get("BROKER_TOKEN", "")
-        self.base_url = env.get("BROKER_URL").rstrip("/")
+        self.base_url = (env.get("BROKER_URL") or "").rstrip("/")
+        self.broker_code = (env.get("BROKER_CODE") or "ALPACA").upper()
+
         self.credential_hash = hashlib.sha256(
             (self.api_key or "").encode("utf-8") + (self.secret_key or "").encode("utf-8")
         ).hexdigest()
+
         self.headers = {
             "APCA-API-KEY-ID": self.api_key,
-            "APCA-API-SECRET-KEY": self.secret_key
+            "APCA-API-SECRET-KEY": self.secret_key,
         }
         if self.broker_token:
             self.headers["Authorization"] = f"Bearer {self.broker_token}"
 
+    # ------------------------
+    # Internal HTTP wrapper
+    # ------------------------
     def _request(self, method, endpoint, data=None, params=None):
         url = f"{self.base_url}{endpoint}"
         return safe_request(method, url, headers=self.headers, json_data=data, params=params)
 
+    # ------------------------
+    # Core account/position endpoints (existing)
+    # ------------------------
     def get_account_info(self):
         return self._request("GET", "/v2/account")
 
@@ -34,7 +45,12 @@ class AlpacaBroker:
 
     def get_cash_balance(self):
         info = self.get_account_info()
-        return float(info.get("cash", 0.0))
+        # Alpaca returns string numbers; normalize
+        cash = info.get("cash") or info.get("cash_balance") or 0.0
+        try:
+            return float(cash)
+        except Exception:
+            return 0.0
 
     def get_positions(self):
         return self._request("GET", "/v2/positions")
@@ -52,7 +68,7 @@ class AlpacaBroker:
             "side": order["side"],
             "type": order.get("order_type", "market"),
             "time_in_force": order.get("time_in_force", "day"),
-            "extended_hours": False
+            "extended_hours": False,
         }
         return self._request("POST", "/v2/orders", data=payload)
 
@@ -66,10 +82,13 @@ class AlpacaBroker:
                 "side": side,
                 "type": "market",
                 "time_in_force": "day",
-                "extended_hours": False
+                "extended_hours": False,
             }
             return self._request("POST", "/v2/orders", data=payload)
 
+    # ------------------------
+    # Activities / trades (existing)
+    # ------------------------
     def fetch_cash_activity(self, start_date, end_date=None):
         types = ["FILL", "TRANS", "DIV", "INT"]
         params = [("activity_types", t) for t in types]
@@ -78,7 +97,7 @@ class AlpacaBroker:
             params.append(("until", end_date))
         try:
             acts = self._fetch_cash_activity_internal(params)
-            # --- FIX: Ensure group_id is set for all normalized trades ---
+            # Ensure group_id for all normalized items
             normed = []
             for a in acts:
                 trade = normalize_trade(a, self.credential_hash)
@@ -145,7 +164,7 @@ class AlpacaBroker:
         params = {
             "status": "filled",
             "limit": 100,
-            "after": start_date
+            "after": start_date,
         }
         if end_date:
             params["until"] = end_date
@@ -179,8 +198,8 @@ class AlpacaBroker:
                         "json_metadata": {
                             "raw_broker": t,
                             "api_hash": t_hash,
-                            "credential_hash": self.credential_hash
-                        }
+                            "credential_hash": self.credential_hash,
+                        },
                     }
                 else:
                     prev = order_fills[order_id]
@@ -192,7 +211,7 @@ class AlpacaBroker:
                 next_page_token = resp["next_page_token"]
             else:
                 break
-        # ENSURE FULL NORMALIZATION
+        # Normalize
         normed_trades = []
         for tf in order_fills.values():
             trade = normalize_trade(tf, self.credential_hash)
@@ -228,15 +247,15 @@ class AlpacaBroker:
                     "json_metadata": {
                         "raw_broker": a,
                         "api_hash": a_hash,
-                        "credential_hash": self.credential_hash
-                    }
+                        "credential_hash": self.credential_hash,
+                    },
                 }
                 activities.append(activity)
             if isinstance(resp, dict) and "next_page_token" in resp and resp["next_page_token"]:
                 next_page_token = resp["next_page_token"]
             else:
                 break
-        # ENSURE FULL NORMALIZATION
+        # Normalize
         normed_acts = []
         for act in activities:
             trade = normalize_trade(act, self.credential_hash)
@@ -244,3 +263,131 @@ class AlpacaBroker:
                 trade["group_id"] = trade.get("trade_id")
             normed_acts.append(trade)
         return normed_acts
+
+    # ======================================================================
+    # NEW: First-sync Opening Balance helpers (non-breaking additions)
+    # ======================================================================
+    def fetch_account(self):
+        """
+        Lightweight, normalized account snapshot for OB posting.
+
+        Returns
+        -------
+        dict: {
+          "account_id": str,
+          "account_number": str|None,
+          "cash": float,
+          "equity": float,
+          "currency": "USD" | str,
+          "as_of_utc": ISO8601,
+          "broker": "ALPACA",
+          "credential_hash": "...",
+          "raw": <original json>
+        }
+        """
+        raw = self.get_account_info() or {}
+        account_id = raw.get("id") or raw.get("account_id") or ""
+        account_number = raw.get("account_number") or raw.get("number") or None
+        currency = raw.get("currency") or "USD"
+
+        def _f(x, default=0.0):
+            try:
+                return float(x)
+            except Exception:
+                return default
+
+        snapshot = {
+            "account_id": str(account_id or ""),
+            "account_number": str(account_number) if account_number else None,
+            "cash": _f(raw.get("cash") or raw.get("cash_balance"), 0.0),
+            "equity": _f(raw.get("equity"), 0.0),
+            "currency": str(currency),
+            "as_of_utc": datetime.now(timezone.utc).isoformat(),
+            "broker": self.broker_code,
+            "credential_hash": self.credential_hash,
+            "raw": raw,
+        }
+        return snapshot
+
+    def fetch_positions(self):
+        """
+        Normalized open positions for OB posting.
+
+        Returns
+        -------
+        list[dict]: each like {
+          "symbol": "AAPL",
+          "qty": 10.0,
+          "avg_entry_price": 178.42 or None,
+          "market_value": 1784.20 or 0.0,
+          "cost_basis": 1784.20,
+          "basis_type": "avg_entry_price" | "market_value_estimate",
+          "memo": "... (only if estimated)",
+          "account_id": "...",
+          "broker": "ALPACA",
+          "credential_hash": "...",
+          "as_of_utc": ISO8601,
+          "fitid_seed": "ALP_OB_<account_id>_<symbol>",
+          "raw": <original json>
+        }
+        """
+        # Fetch once so we can attach account_id to each row
+        acct = self.fetch_account()
+        account_id = acct.get("account_id") or ""
+
+        raw_positions = self.get_positions() or []
+        out = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        for p in raw_positions:
+            sym = p.get("symbol")
+            # Alpaca uses strings for numerics; normalize carefully
+            def _f(v):
+                try:
+                    return float(v)
+                except Exception:
+                    return 0.0
+
+            qty = _f(p.get("qty") or p.get("quantity"))
+            avg_entry_price = p.get("avg_entry_price")
+            avg_entry_price = _f(avg_entry_price) if avg_entry_price not in (None, "") else None
+
+            # Prefer true basis when available; otherwise fall back to MV and mark estimated
+            market_value = _f(p.get("market_value"))
+            if avg_entry_price is not None and avg_entry_price > 0 and qty != 0:
+                cost_basis = avg_entry_price * qty
+                basis_type = "avg_entry_price"
+                memo = None
+            else:
+                cost_basis = market_value
+                basis_type = "market_value_estimate"
+                memo = "OB basis estimated from market_value; avg_entry_price unavailable"
+
+            item = {
+                "symbol": str(sym or "").upper(),
+                "qty": qty,
+                "avg_entry_price": avg_entry_price,
+                "market_value": market_value,
+                "cost_basis": cost_basis,
+                "basis_type": basis_type,
+                "memo": memo,
+                "account_id": str(account_id),
+                "broker": self.broker_code,
+                "credential_hash": self.credential_hash,
+                "as_of_utc": now_iso,
+                "fitid_seed": f"{self.broker_code}_OB_{account_id}_{str(sym or '').upper()}",
+                "raw": p,
+            }
+            out.append(item)
+
+        return out
+
+    # Convenience: combined OB snapshot (optional – doesn’t affect existing call sites)
+    def fetch_opening_snapshot(self):
+        """
+        Returns a dict combining fetch_account() and fetch_positions().
+        Useful if the sync step wants a single call for OB.
+        """
+        acct = self.fetch_account()
+        pos = self.fetch_positions()
+        return {"account": acct, "positions": pos, "as_of_utc": datetime.now(timezone.utc).isoformat()}
