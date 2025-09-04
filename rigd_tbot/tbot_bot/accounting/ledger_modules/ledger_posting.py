@@ -16,7 +16,12 @@ from datetime import datetime, timezone
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_coa_json_path
 from tbot_bot.accounting.ledger_modules.ledger_audit import append as audit_append
-from tbot_bot.accounting.lots_engine import ensure_schema as lots_ensure_schema, record_open, allocate_for_close, record_close
+from tbot_bot.accounting.lots_engine import (
+    ensure_schema as lots_ensure_schema,
+    record_open,
+    allocate_for_close,
+    record_close,
+)
 
 # Optional: reference the trade field list dynamically
 try:
@@ -33,10 +38,12 @@ ROUND_DECIMALS = 2
 # Default account labels (must match your COA; we also try to auto-resolve from the COA file)
 DEFAULT_ACCOUNTS = {
     "cash": "Assets:Brokerage:Cash",
-    "equity_prefix": "Assets:Brokerage:Equity:",         # + SYMBOL
-    "short_prefix": "Liabilities:Short Positions:",       # + SYMBOL
+    "equity_prefix": "Assets:Brokerage:Equity:",           # + SYMBOL
+    "short_prefix": "Liabilities:Short Positions:",         # + SYMBOL
     "fees": "Expenses:Brokerage Fees",
-    "realized_pnl": "Income:Realized Gains – Equities",   # 4010-equivalent
+    "realized_pnl": "Income:Realized Gains – Equities",     # 4010-equivalent
+    "dividend_income": "Income:Dividends Earned",           # for DIV/DIVIDEND
+    "interest_income": "Income:Interest Income",            # for INT/INTEREST
 }
 
 def _utc_iso() -> str:
@@ -66,31 +73,45 @@ def _coalesce_accounts() -> Dict[str, str]:
     try:
         import json
         p = resolve_coa_json_path()
-        data = json.loads(open(p, "r", encoding="utf-8").read())
+        with open(p, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
         nodes = data.get("accounts") if isinstance(data, dict) else data
 
-        found = {}
+        found: Dict[str, str] = {}
+
+        def mark(key: str, full: str, is_prefix: bool = False):
+            if key in found:
+                return
+            found[key] = full + (":" if is_prefix and not full.endswith(":") else "")
 
         def walk(a, path=""):
             for n in a or []:
                 name = n.get("name") or n.get("title") or n.get("label") or n.get("code") or ""
-                code = n.get("code") or ""
                 full = (path + name).strip(":")
-                # crude matchers
-                key = None
                 lower = full.lower()
-                if "brokerage" in lower and "cash" in lower:
-                    key = "cash"
-                elif "brokerage" in lower and ("equity" in lower or "stock" in lower):
-                    key = "equity_prefix"
-                elif "short" in lower and ("liab" in lower or "position" in lower):
-                    key = "short_prefix"
-                elif "brokerage fee" in lower or "commission" in lower:
-                    key = "fees"
-                elif ("realized" in lower and "gain" in lower) or "4010" in lower:
-                    key = "realized_pnl"
-                if key and key not in found:
-                    found[key] = full if key != "equity_prefix" and key != "short_prefix" else (full + ":")
+
+                # Cash under brokerage
+                if "broker" in lower and "cash" in lower:
+                    mark("cash", full, is_prefix=False)
+                # Equity/stock inventory
+                if ("broker" in lower and ("equities" in lower or "equity" in lower or "stock" in lower)) or ":equities" in lower:
+                    mark("equity_prefix", full, is_prefix=True)
+                # Short positions liability
+                if "short" in lower and ("liab" in lower or "position" in lower):
+                    mark("short_prefix", full, is_prefix=True)
+                # Fees / commissions
+                if ("fee" in lower or "commission" in lower) and "expense" in lower:
+                    mark("fees", full)
+                # Realized P&L income
+                if "realized" in lower and ("gain" in lower or "p&l" in lower or "pnl" in lower):
+                    mark("realized_pnl", full)
+                # Dividends income
+                if "dividend" in lower and "income" in lower:
+                    mark("dividend_income", full)
+                # Interest income
+                if "interest" in lower and "income" in lower:
+                    mark("interest_income", full)
+
                 kids = n.get("children") or []
                 if kids:
                     walk(kids, full + ":")
@@ -138,12 +159,14 @@ def _insert_legs(conn: sqlite3.Connection, legs: List[Dict[str, Any]]) -> None:
             cur.execute(sql, [row.get(c) for c in ordered_cols])
         conn.commit()
     except Exception:
-        try: conn.rollback()
-        except Exception: pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise
 
 # ----------------------------
-# Public posting APIs
+# Public posting APIs — Trades (buy/sell/short)
 # ----------------------------
 def post_buy(
     *,
@@ -433,6 +456,93 @@ def post_short_cover(
                  before=None, after={"qty": qty, "price": price, "fee": fee, "pnl": realized}, reason="post_short_cover")
     conn.close()
     return {"ok": True, "legs": len(legs), "basis": basis, "cover_cost": cover_cost, "realized": realized}
+
+# ----------------------------
+# Public posting APIs — Non-trade cash/income events
+# ----------------------------
+def post_dividend(
+    *,
+    amount: float,
+    symbol: Optional[str],
+    trade_id: str,
+    ts_utc: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Cash dividend receipt:
+      Dr Cash                        +amount
+      Cr Income:Dividends            -amount
+    """
+    if amount is None:
+        raise ValueError("amount is required for dividend")
+    meta = meta or {}
+    actor = meta.get("actor") or "system"
+    group_id = meta.get("group_id") or trade_id
+    strategy = meta.get("strategy")
+    tags = meta.get("tags")
+    ts = ts_utc or _utc_iso()
+
+    acc = _coalesce_accounts()
+    amt = round(float(amount), ROUND_DECIMALS)
+
+    conn = _connect()
+    lots_ensure_schema(conn)
+
+    legs = [
+        dict(datetime_utc=ts, symbol=symbol, action="DIV_CASH",     account=acc["cash"],
+             total_value=+amt, group_id=group_id, trade_id=trade_id, strategy=strategy, tags=tags,
+             notes="Dividend received (debit cash)"),
+        dict(datetime_utc=ts, symbol=symbol, action="DIV_INCOME",   account=acc["dividend_income"],
+             total_value=-amt, group_id=group_id, trade_id=trade_id, strategy=strategy, tags=tags,
+             notes="Dividend income (credit)"),
+    ]
+    _insert_legs(conn, legs)
+    audit_append(event="DIVIDEND_POSTED", related_id=trade_id, actor=actor, group_id=group_id,
+                 before=None, after={"amount": amt, "symbol": symbol}, reason="post_dividend")
+    conn.close()
+    return {"ok": True, "legs": len(legs)}
+
+def post_interest(
+    *,
+    amount: float,
+    symbol: Optional[str],
+    trade_id: str,
+    ts_utc: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Interest income receipt:
+      Dr Cash                        +amount
+      Cr Income:Interest             -amount
+    """
+    if amount is None:
+        raise ValueError("amount is required for interest")
+    meta = meta or {}
+    actor = meta.get("actor") or "system"
+    group_id = meta.get("group_id") or trade_id
+    strategy = meta.get("strategy")
+    tags = meta.get("tags")
+    ts = ts_utc or _utc_iso()
+
+    acc = _coalesce_accounts()
+    amt = round(float(amount), ROUND_DECIMALS)
+
+    conn = _connect()
+    lots_ensure_schema(conn)
+
+    legs = [
+        dict(datetime_utc=ts, symbol=symbol, action="INT_CASH",       account=acc["cash"],
+             total_value=+amt, group_id=group_id, trade_id=trade_id, strategy=strategy, tags=tags,
+             notes="Interest received (debit cash)"),
+        dict(datetime_utc=ts, symbol=symbol, action="INT_INCOME",     account=acc["interest_income"],
+             total_value=-amt, group_id=group_id, trade_id=trade_id, strategy=strategy, tags=tags,
+             notes="Interest income (credit)"),
+    ]
+    _insert_legs(conn, legs)
+    audit_append(event="INTEREST_POSTED", related_id=trade_id, actor=actor, group_id=group_id,
+                 before=None, after={"amount": amt, "symbol": symbol}, reason="post_interest")
+    conn.close()
+    return {"ok": True, "legs": len(legs)}
 
 # ----------------------------
 # Generic router (optional convenience)
