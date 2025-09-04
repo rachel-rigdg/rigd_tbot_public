@@ -2,6 +2,7 @@
 # COA mapping table for broker ledger sync: persistent, versioned, and auto-extending.
 # Stores mapping rules for broker transaction types to bot COA accounts.
 # All edits are append-only; each mapping change creates a new snapshot/version for audit/rollback.
+# Seed policy: do NOT include BUY/SELL/SHORT_OPEN/SHORT_COVER mappings; the posting router computes realized P&L.
 
 import os
 import json
@@ -33,58 +34,116 @@ def _seed_path() -> Path:
     return Path(__file__).resolve().parents[0] / "defaults" / "coa_mapping_seed.json"
 
 # ----------------------------------------------------------------------
-# Seed defaults (Buy/Sell/Dividend/Deposit/Withdrawal/Fee)
+# Seed defaults (Dividend/Interest/Deposit/Withdrawal/Fee/Commission; NO trade legs)
 # ----------------------------------------------------------------------
+_ALLOWED_SEED_TYPES = {
+    "DIV", "DIVIDEND",
+    "INT", "INTEREST",
+    "DEPOSIT", "TRANSFER_IN",
+    "WITHDRAWAL", "TRANSFER_OUT",
+    "FEE", "COMMISSION",
+}
+
+def _default_seed_rows() -> List[Dict[str, Any]]:
+    """
+    In-code fallback if the external seed file is missing or empty.
+    Only non-trade cash/income/equity admin events are seeded.
+    """
+    now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    return [
+        # DIVIDEND/INTEREST -> Dr Cash, Cr Income
+        {"broker": None, "type": "DIVIDEND", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Income:Dividends Earned",
+         "updated_by": "seed", "updated_at": now_iso},
+        {"broker": None, "type": "DIV", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Income:Dividends Earned",
+         "updated_by": "seed", "updated_at": now_iso},
+        {"broker": None, "type": "INTEREST", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Income:Interest Income",
+         "updated_by": "seed", "updated_at": now_iso},
+        {"broker": None, "type": "INT", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Income:Interest Income",
+         "updated_by": "seed", "updated_at": now_iso},
+        # DEPOSIT / TRANSFER_IN -> Dr Cash, Cr Equity:Owner Contributions
+        {"broker": None, "type": "DEPOSIT", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Equity:Capital Contributions",
+         "updated_by": "seed", "updated_at": now_iso},
+        {"broker": None, "type": "TRANSFER_IN", "subtype": None, "description": None,
+         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Equity:Capital Contributions",
+         "updated_by": "seed", "updated_at": now_iso},
+        # WITHDRAWAL / TRANSFER_OUT -> Dr Equity:Owner Withdrawals, Cr Cash
+        {"broker": None, "type": "WITHDRAWAL", "subtype": None, "description": None,
+         "debit_account": "Equity:Owner Withdrawals", "credit_account": "Assets:Brokerage:Cash",
+         "updated_by": "seed", "updated_at": now_iso},
+        {"broker": None, "type": "TRANSFER_OUT", "subtype": None, "description": None,
+         "debit_account": "Equity:Owner Withdrawals", "credit_account": "Assets:Brokerage:Cash",
+         "updated_by": "seed", "updated_at": now_iso},
+        # FEE / COMMISSION -> Dr Expenses:Brokerage Fees, Cr Cash
+        {"broker": None, "type": "FEE", "subtype": None, "description": None,
+         "debit_account": "Expenses:Brokerage Fees", "credit_account": "Assets:Brokerage:Cash",
+         "updated_by": "seed", "updated_at": now_iso},
+        {"broker": None, "type": "COMMISSION", "subtype": None, "description": None,
+         "debit_account": "Expenses:Brokerage Fees", "credit_account": "Assets:Brokerage:Cash",
+         "updated_by": "seed", "updated_at": now_iso},
+    ]
+
 def _load_default_seed() -> List[Dict[str, Any]]:
     """
-    Load a small, stable starter set of mapping rules.
+    Load a small, stable starter set of mapping rules from defaults/coa_mapping_seed.json.
     Falls back to in-code defaults if the JSON file is missing.
+    Filters out trade-close/open actions (BUY/SELL/SHORT_OPEN/SHORT_COVER).
+    Coerces single-sided 'coa_account' seeds into two-sided debit/credit by type.
     """
-    fallback = [
-        # BUY -> Dr Equity:{SYMBOL}, Cr Cash
-        {"broker": None, "type": "BUY", "subtype": None, "description": None,
-         "debit_account": "Assets:Brokerage:Equity:{SYMBOL}", "credit_account": "Assets:Brokerage:Cash"},
-        # SELL -> Dr Cash, Cr Equity:{SYMBOL}
-        {"broker": None, "type": "SELL", "subtype": None, "description": None,
-         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Assets:Brokerage:Equity:{SYMBOL}"},
-        # DIVIDEND -> Dr Cash, Cr Income:Dividends
-        {"broker": None, "type": "DIVIDEND", "subtype": None, "description": None,
-         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Income:Dividends Earned"},
-        # DEPOSIT -> Dr Cash, Cr Equity:Capital Contributions
-        {"broker": None, "type": "DEPOSIT", "subtype": None, "description": None,
-         "debit_account": "Assets:Brokerage:Cash", "credit_account": "Equity:Capital Contributions"},
-        # WITHDRAWAL -> Dr Equity:Owner Withdrawals, Cr Cash
-        {"broker": None, "type": "WITHDRAWAL", "subtype": None, "description": None,
-         "debit_account": "Equity:Owner Withdrawals", "credit_account": "Assets:Brokerage:Cash"},
-        # FEE/COMMISSION -> Dr Expenses:Brokerage Fees, Cr Cash
-        {"broker": None, "type": "FEE", "subtype": None, "description": None,
-         "debit_account": "Expenses:Brokerage Fees", "credit_account": "Assets:Brokerage:Cash"},
-    ]
     p = _seed_path()
     try:
         if p.exists():
             data = json.loads(p.read_text(encoding="utf-8"))
-            rows = data.get("mappings") or data.get("rows") or data.get("rules") or []
-            # Normalize keys to expected legacy "mappings" shape (debit/credit accounts)
-            out = []
-            for r in rows:
+            rows_in = data.get("mappings") or data.get("rows") or data.get("rules") or []
+            out: List[Dict[str, Any]] = []
+            now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+
+            for r in rows_in:
                 if not isinstance(r, dict):
                     continue
+                t_raw = r.get("type")
+                t_norm = _normalize_type(t_raw)
+                if t_norm not in _ALLOWED_SEED_TYPES:
+                    # skip BUY/SELL/SHORT_* and anything else not whitelisted
+                    continue
+
+                # Prefer explicit debit/credit if provided
+                debit = r.get("debit_account") or r.get("debit")
+                credit = r.get("credit_account") or r.get("credit")
+                single = r.get("coa_account")
+
+                # If only single target is provided, coerce to two-sided by type semantics
+                if (not debit or not credit) and single:
+                    if t_norm in {"FEE", "COMMISSION", "WITHDRAWAL", "TRANSFER_OUT"}:
+                        debit = debit or single
+                        credit = credit or "Assets:Brokerage:Cash"
+                    elif t_norm in {"DIV", "DIVIDEND", "INT", "INTEREST"}:
+                        debit = debit or "Assets:Brokerage:Cash"
+                        credit = credit or single
+                    elif t_norm in {"DEPOSIT", "TRANSFER_IN"}:
+                        debit = debit or "Assets:Brokerage:Cash"
+                        credit = credit or single
+
                 out.append({
                     "broker": r.get("broker"),
-                    "type": r.get("type"),
+                    "type": t_norm,
                     "subtype": r.get("subtype"),
                     "description": r.get("description"),
-                    "debit_account": r.get("debit_account") or r.get("coa_account") or r.get("debit"),
-                    "credit_account": r.get("credit_account") or r.get("credit"),
+                    "debit_account": debit,
+                    "credit_account": credit,
                     "updated_by": "seed",
-                    "updated_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+                    "updated_at": now_iso,
                 })
-            # If file present but empty, fall back to hardcoded defaults
-            return out or fallback
+
+            # If file present but yielded nothing after filtering, fall back
+            return [row for row in out if row.get("debit_account") or row.get("credit_account")] or _default_seed_rows()
     except Exception:
         pass
-    return fallback
+    return _default_seed_rows()
 
 # ----------------------------------------------------------------------
 # Table load/save with version snapshots
@@ -122,7 +181,7 @@ def load_mapping_table(entity_code=None, jurisdiction_code=None, broker_code=Non
     if not path.exists():
         table = {"mappings": [], "rules": [], "version": 1, "history": [], "coa_version": "v1.0.0"}
         _ensure_core_metadata(table)
-        seeded = _maybe_seed_defaults(table)
+        _maybe_seed_defaults(table)
         # Persist initial file (seeded or not)
         save_mapping_table(table, entity_code, jurisdiction_code, broker_code, bot_id, reason="init")
         return table
@@ -152,6 +211,10 @@ def save_mapping_table(
     Returns:
       version_id (e.g., "v12_2025-08-27T07-20-00Z")
     """
+    # Coerce reason/actor to non-empty (prevent None propagation to history)
+    reason = (reason or "update")
+    actor = (actor or "system")
+
     _ensure_core_metadata(table)
     path = _get_mapping_path(entity_code, jurisdiction_code, broker_code, bot_id)
     os.makedirs(path.parent, exist_ok=True)
@@ -262,18 +325,32 @@ def _normalize_type(v: Optional[str]) -> str:
     if not v:
         return ""
     a = str(v).strip().lower()
-    if a in ("buy", "long", "filled_buy"):
+
+    # Long/open/close (cash equities)
+    if a in ("buy", "long", "filled_buy", "buy_to_open", "bto"):
         return "BUY"
-    if a in ("sell", "short", "filled_sell"):
+    if a in ("sell", "filled_sell", "sell_to_close", "stc"):
         return "SELL"
+
+    # Short mechanics (explicit)
+    if a in ("sell_short", "short_open", "sell_to_open", "sto"):
+        return "SHORT_OPEN"
+    if a in ("buy_to_cover", "cover", "btc"):
+        return "SHORT_COVER"
+
+    # Income & admin cash movements
     if a in ("dividend", "div", "cash_dividend", "div_cash"):
         return "DIVIDEND"
+    if a in ("interest", "int", "cash_interest"):
+        return "INTEREST"
     if a in ("deposit", "transfer_in", "journal_in", "external_cash_in", "cash_in"):
         return "DEPOSIT"
     if a in ("withdrawal", "transfer_out", "journal_out", "external_cash_out", "cash_out"):
         return "WITHDRAWAL"
     if a in ("fee", "commission", "reg_fee", "broker_fee"):
         return "FEE"
+
+    # Fallback uppercased
     return a.upper()
 
 def _subst_symbol_placeholder(acct: Optional[str], symbol: Optional[str]) -> str:

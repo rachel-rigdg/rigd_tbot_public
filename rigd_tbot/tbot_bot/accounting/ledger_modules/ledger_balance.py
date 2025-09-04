@@ -3,10 +3,15 @@
 """
 Balance and running balance computation helpers for the ledger.
 
-Requirements addressed (v048):
+Requirements addressed (v048+):
 - Include opening balance (OB) legs in rollups.
 - Date/range filters default to include OB on fresh ledgers.
 - Provide section totals (Assets/Liabilities/Equity) and selected account subtotals for /ledger/balances.
+- Explicit breakdowns:
+    * Assets:Brokerage:Cash
+    * Assets:Brokerage:Equity:{SYMBOL}  (longs per symbol)
+    * Liabilities:Short Positions:{SYMBOL}  (shorts per symbol; liability increases with credits)
+- Treat account 4010 as P&L (exclude from cash/positions breakdown).
 - Preserve legacy calculate_account_balances() return shape for backward compatibility.
 """
 
@@ -76,14 +81,64 @@ def _build_coa_indexes() -> Tuple[Dict[str, str], Dict[str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Account classifiers / parsing
+# ---------------------------------------------------------------------------
+
+def _acct_is_broker_cash(code: str) -> bool:
+    c = (code or "").strip()
+    return c == "Assets:Brokerage:Cash" or c.startswith("Assets:Brokerage:Cash:")
+
+def _acct_equity_symbol(code: str) -> Optional[str]:
+    """
+    Returns SYMBOL for 'Assets:Brokerage:Equity:{SYMBOL}' else None.
+    """
+    c = (code or "").strip()
+    prefix = "Assets:Brokerage:Equity:"
+    if c.startswith(prefix) and len(c) > len(prefix):
+        return c[len(prefix):]
+    return None
+
+def _acct_short_symbol(code: str) -> Optional[str]:
+    """
+    Returns SYMBOL for 'Liabilities:Short Positions:{SYMBOL}' else None.
+    """
+    c = (code or "").strip()
+    prefix = "Liabilities:Short Positions:"
+    if c.startswith(prefix) and len(c) > len(prefix):
+        return c[len(prefix):]
+    return None
+
+def _is_4010_pnl(code: str, name: str) -> bool:
+    """
+    Treat account '4010' as P&L and exclude it from cash/positions breakdown.
+    We consider common variants conservatively.
+    """
+    c = (code or "").strip()
+    n = (name or "").strip().lower()
+    if c == "4010" or c.endswith(":4010"):
+        return True
+    # If COA uses names only, treat obvious realized gain buckets as P&L
+    if "realized" in n and ("gain" in n or "loss" in n):
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # DB helpers
 # ---------------------------------------------------------------------------
 
 def _open_db() -> sqlite3.Connection:
     entity_code, jurisdiction_code, broker_code, bot_id = load_bot_identity().split("_")
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    conn = sqlite3.connect(db_path)
+    # Concurrency-friendly connection
+    conn = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
+    except Exception:
+        pass
     return conn
 
 
@@ -124,15 +179,21 @@ def calculate_account_balances(include_opening: bool = False) -> Dict[str, objec
           "as_of_utc": "...Z",
           "totals": { "assets": "0.00", "liabilities": "0.00", "equity": "0.00" },
           "by_account": [
-            { "account_code": "1030", "name": "Cash — Broker", "balance": "123.45" },
+            { "account_code": "...", "name": "...", "balance": "..." },
             ...
           ],
-          "running_balance": "123.45"
+          "running_balance": "123.45",
+          "breakdown": {
+              "cash_brokerage": "123.45",
+              "long_equity_by_symbol": {"AAPL": "100.00", ...},
+              "short_positions_by_symbol": {"TSLA": "50.00", ...}  # positive = liability magnitude
+          }
         }
 
       Notes:
         - OB (opening balance) legs are included.
-        - Totals are derived from COA roots.
+        - P&L (e.g., 4010 Realized Gains) is EXCLUDED from the cash/positions breakdown.
+        - Section totals derive from COA roots.
     """
     # --- Test mode short-circuit ---
     if TEST_MODE_FLAG.exists():
@@ -143,6 +204,11 @@ def calculate_account_balances(include_opening: bool = False) -> Dict[str, objec
             "totals": {"assets": "0.00", "liabilities": "0.00", "equity": "0.00"},
             "by_account": [],
             "running_balance": "0.00",
+            "breakdown": {
+                "cash_brokerage": "0.00",
+                "long_equity_by_symbol": {},
+                "short_positions_by_symbol": {},
+            },
         }
 
     if not include_opening:
@@ -166,16 +232,47 @@ def calculate_account_balances(include_opening: bool = False) -> Dict[str, objec
             "WHERE account IS NOT NULL AND account <> '' "
             "GROUP BY account"
         )
-        for row in cur.fetchall():
-            code = str(row["account_code"])
-            bal = float(row["balance"] or 0.0)
+        raw_by_acct = [(str(r["account_code"]), float(r["balance"] or 0.0)) for r in cur.fetchall()]
+
+        # Build rows and also compute specialized breakdowns
+        cash_total = 0.0
+        long_equity: Dict[str, float] = {}
+        short_positions: Dict[str, float] = {}
+
+        for code, bal in raw_by_acct:
+            name = code_to_name.get(code, "")
+
+            # Populate the table payload
             by_acct_rows.append(
                 {
                     "account_code": code,
-                    "name": code_to_name.get(code, ""),
+                    "name": name,
                     "balance": f"{bal:.2f}",
                 }
             )
+
+            # Skip P&L 4010 from breakdowns
+            if _is_4010_pnl(code, name):
+                continue
+
+            # Cash (brokerage)
+            if _acct_is_broker_cash(code):
+                cash_total += bal
+                continue
+
+            # Long equity by symbol (asset balances are positive when debited)
+            sym_long = _acct_equity_symbol(code)
+            if sym_long:
+                long_equity[sym_long] = round(long_equity.get(sym_long, 0.0) + bal, 2)
+                continue
+
+            # Short positions by symbol
+            sym_short = _acct_short_symbol(code)
+            if sym_short:
+                # Liability increases with credits (negative ledger sum). Report positive magnitude.
+                magnitude = -bal  # so credits (negative) => positive number
+                short_positions[sym_short] = round(short_positions.get(sym_short, 0.0) + magnitude, 2)
+                continue
 
         # running balance = sum of all total_value (including OB)
         running_row = conn.execute(
@@ -183,7 +280,7 @@ def calculate_account_balances(include_opening: bool = False) -> Dict[str, objec
         ).fetchone()
         running_total = float(running_row[0] or 0.0)
 
-    # section totals via COA root
+    # section totals via COA root (Assets/Liabilities/Equity)
     assets = liabilities = equity = 0.0
     for r in by_acct_rows:
         root = code_to_root.get(r["account_code"], "")
@@ -204,6 +301,11 @@ def calculate_account_balances(include_opening: bool = False) -> Dict[str, objec
         },
         "by_account": by_acct_rows,
         "running_balance": f"{running_total:.2f}",
+        "breakdown": {
+            "cash_brokerage": f"{cash_total:.2f}",
+            "long_equity_by_symbol": {k: f"{v:.2f}" for k, v in sorted(long_equity.items()) if abs(v) > 0.00001},
+            "short_positions_by_symbol": {k: f"{v:.2f}" for k, v in sorted(short_positions.items()) if abs(v) > 0.00001},
+        },
     }
 
 
@@ -253,13 +355,14 @@ def balances_panel(
       - OB legs are ALWAYS included regardless of date filters (identified via action/tags/group_id patterns).
       - Section totals computed for Assets, Liabilities, Equity (based on COA root).
       - Returns by-account subtotals for 'selected_accounts' if provided; otherwise returns all non-zero accounts.
+      - Cash / positions and shorts can be derived client-side by applying the same classifiers as above.
 
     Returns:
       {
         "as_of_utc": "...Z",
         "totals": { "assets": "0.00", "liabilities": "0.00", "equity": "0.00" },
         "by_account": [
-          { "account_code": "1030", "name": "Cash — Broker", "balance": "123.45" },
+          { "account_code": "...", "name": "...", "balance": "..." },
           ...
         ]
       }
@@ -305,16 +408,15 @@ def balances_panel(
         for row in cur.fetchall():
             code = str(row["account_code"])
             bal = float(row["balance"] or 0.0)
-            if selected_accounts is not None and len(selected_accounts) > 0:
-                if code not in set(selected_accounts):
-                    # skip non-selected accounts
-                    continue
+            name = code_to_name.get(code, "")
             # include all non-zero or explicitly selected
+            if selected_accounts is not None and len(selected_accounts) > 0 and code not in set(selected_accounts):
+                continue
             if bal != 0.0 or (selected_accounts and code in selected_accounts):
                 by_acct_rows.append(
                     {
                         "account_code": code,
-                        "name": code_to_name.get(code, ""),
+                        "name": name,
                         "balance": f"{bal:.2f}",
                     }
                 )

@@ -9,7 +9,7 @@ except Exception:  # pragma: no cover
     fetch_account = None
 
 from tbot_bot.accounting.ledger_modules.ledger_snapshot import snapshot_ledger_before_sync
-from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_double_entry, post_double_entry
+from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_double_entry
 from tbot_bot.accounting.coa_mapping_table import (
     load_mapping_table,
     get_mapping_for_transaction,
@@ -19,6 +19,20 @@ from tbot_bot.accounting.reconciliation_log import log_reconciliation_entry
 from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
+
+# NEW: route to posting router
+from tbot_bot.accounting.ledger_modules.ledger_posting import (
+    post_buy,
+    post_sell,
+    post_short_open,
+    post_short_cover,
+    post_dividend,
+    post_interest,
+    post_deposit,
+    post_withdrawal,
+    post_fee,
+    post_generic,  # fallback
+)
 
 import sqlite3
 import json
@@ -30,6 +44,7 @@ from tbot_bot.support.path_resolver import resolve_ledger_db_path
 
 # --- typing for Python 3.8/3.9 compatibility ---
 from typing import Optional, List
+
 
 # --- Compliance compatibility (supports old/new filter signatures) ---
 try:
@@ -55,10 +70,20 @@ PRIMARY_FIELDS = ("symbol", "datetime_utc", "action", "price", "quantity", "tota
 # Local DB helpers (read-only + inserts for OB)
 # ----------------------------
 def _open_db():
+    """
+    Open SQLite with concurrency-friendly pragmas (WAL + busy_timeout),
+    and autocommit behavior (isolation_level=None).
+    """
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
     db_path = resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
+    except Exception:
+        pass  # best-effort
     return conn
 
 
@@ -78,8 +103,8 @@ def _drop_in_columns(row: dict) -> dict:
     """
     Keep only columns that actually exist in TRADES_FIELDS to avoid SQL errors.
     """
-    allowed = set(TRADES_FIELDS) | {"group_id", "sync_run_id"}
-    return {k: row.get(k) for k in allowed if k in row or k in {"group_id", "sync_run_id"}}
+    allowed = set(TRADES_FIELDS) | {"group_id", "sync_run_id", "fitid", "side"}
+    return {k: row.get(k) for k in allowed if k in row or k in {"group_id", "sync_run_id", "fitid", "side"}}
 
 
 def _insert_rows(conn: sqlite3.Connection, rows: List[dict]) -> None:
@@ -440,11 +465,38 @@ def _extract_dt_utc(record: dict) -> Optional[datetime]:
 
 
 # ----------------------------
+# Router for normalized action -> posting function
+# ----------------------------
+def _normalized_action(action: Optional[str]) -> str:
+    a = (action or "").strip().upper()
+    # Equivalences/synonyms from typical broker payloads
+    if a in ("LONG", "BUY", "BOUGHT", "FILLED_BUY"):
+        return "BUY"
+    if a in ("SELL", "SOLD", "FILLED_SELL"):
+        return "SELL"  # closing long (posting router decides by position)
+    if a in ("SHORT", "SELL_TO_OPEN", "SELL_SHORT", "STO"):
+        return "SHORT_OPEN"
+    if a in ("BUY_TO_COVER", "COVER", "COVER_SHORT", "BTC"):
+        return "SHORT_COVER"
+    if a in ("DIV", "DIVIDEND", "CASH_DIVIDEND"):
+        return "DIVIDEND"
+    if a in ("INT", "INTEREST"):
+        return "INTEREST"
+    if a in ("DEPOSIT", "TRANSFER_IN", "JOURNAL_IN", "CASH_IN"):
+        return "DEPOSIT"
+    if a in ("WITHDRAWAL", "TRANSFER_OUT", "JOURNAL_OUT", "CASH_OUT"):
+        return "WITHDRAWAL"
+    if a in ("FEE", "COMMISSION", "REG_FEE", "BROKER_FEE"):
+        return "FEE"
+    return a  # pass-through for others; posting router fallback will handle
+
+
+# ----------------------------
 # Main entrypoint
 # ----------------------------
 def sync_broker_ledger():
     """
-    Fetch broker data, normalize, filter, dedupe, OB-on-first-sync, and write via double-entry posting.
+    Fetch broker data, normalize, filter, dedupe, OB-on-first-sync, and write via posting router.
     - OB posting is idempotent and executes ONLY when ledger is empty and no OB group exists.
     - OB uses broker positions + cash, grouped as OPENING_BALANCE_YYYYMMDD, DTPOSTED before earliest trade.
     - Then proceeds with normal ingest (mapping, posting, validation, reconciliation).
@@ -528,7 +580,7 @@ def sync_broker_ledger():
             continue
         cash_acts.append(normalized)
 
-    # Combine and dedupe raw normalized entries before posting
+    # Combine and dedupe raw normalized entries before routing
     # Use (trade_id, action, datetime_utc, total_value) as a stable key to avoid double-posting
     combined = (trades or []) + (cash_acts or [])
     seen = set()
@@ -578,10 +630,41 @@ def sync_broker_ledger():
     # Sanitize complex types -> JSON strings (safe for sqlite bindings downstream if needed)
     sanitized_entries = [_sanitize_entry(e) for e in all_entries]
 
-    # Post using double-entry helper (handles account mapping or Suspense/PNL fallback, and DB de-dup on (trade_id, side))
-    post_double_entry(sanitized_entries, mapping_table)
+    # ------------------- ROUTE TO POSTING ROUTER (surgical change) -------------------
+    for entry in sanitized_entries:
+        act = _normalized_action(entry.get("action"))
+        try:
+            if act == "BUY":
+                post_buy(entry, mapping_table=mapping_table)
+            elif act == "SELL":
+                # Router determines if this closes long lots (and computes realized P/L)
+                post_sell(entry, mapping_table=mapping_table)
+            elif act == "SHORT_OPEN":
+                post_short_open(entry, mapping_table=mapping_table)
+            elif act == "SHORT_COVER":
+                post_short_cover(entry, mapping_table=mapping_table)
+            elif act == "DIVIDEND":
+                post_dividend(entry, mapping_table=mapping_table)
+            elif act == "INTEREST":
+                post_interest(entry, mapping_table=mapping_table)
+            elif act == "DEPOSIT":
+                post_deposit(entry, mapping_table=mapping_table)
+            elif act == "WITHDRAWAL":
+                post_withdrawal(entry, mapping_table=mapping_table)
+            elif act == "FEE":
+                post_fee(entry, mapping_table=mapping_table)
+            else:
+                # Catch-all for anything uncommon; keeps ingest robust
+                post_generic(entry, mapping_table=mapping_table)
+        except sqlite3.OperationalError as oe:
+            # Surface and continue; WAL + busy_timeout mitigate most locking
+            print(f"[SYNC] SQLITE OPERATIONAL ERROR during post({act}): {oe} | entry={entry}")
+            raise
+        except Exception as e:
+            # Do not crash the whole sync on one bad record; log and continue
+            print(f"[SYNC] ERROR posting {act}: {e} | entry={entry}")
 
-    # Validate double-entry integrity
+    # Validate double-entry integrity (aggregated)
     validate_double_entry()
 
     # Write reconciliation records

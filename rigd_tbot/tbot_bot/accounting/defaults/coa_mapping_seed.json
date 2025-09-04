@@ -2,20 +2,26 @@
   "version": 1,
   "coa_version": "v1.0.0",
   "mappings": [
-    { "type": "BUY",        "debit_account": "1111", "credit_account": "1031" },
-    { "type": "SELL",       "debit_account": "1031", "credit_account": "1111" },
+    { "type": "BUY",           "debit_account": "1111", "credit_account": "1030" },
+    { "type": "SELL",          "debit_account": "1030", "credit_account": "1111" },
 
-    { "type": "FEE",        "debit_account": "5010", "credit_account": "1031" },
-    { "type": "COMMISSION", "debit_account": "5010", "credit_account": "1031" },
+    { "type": "SHORT_OPEN",    "debit_account": "1030", "credit_account": "2110" },
+    { "type": "SHORT_COVER",   "debit_account": "2110", "credit_account": "1030" },
 
-    { "type": "DIV",        "debit_account": "1031", "credit_account": "4050" },
-    { "type": "DIVIDEND",   "debit_account": "1031", "credit_account": "4050" },
+    { "type": "FEE",           "debit_account": "5010", "credit_account": "1030" },
+    { "type": "COMMISSION",    "debit_account": "5010", "credit_account": "1030" },
 
-    { "type": "DEPOSIT",      "debit_account": "1031", "credit_account": "3000" },
-    { "type": "TRANSFER_IN",  "debit_account": "1031", "credit_account": "3000" },
+    { "type": "DIV",           "debit_account": "1030", "credit_account": "4050" },
+    { "type": "DIVIDEND",      "debit_account": "1030", "credit_account": "4050" },
 
-    { "type": "WITHDRAWAL",   "debit_account": "3010", "credit_account": "1031" },
-    { "type": "TRANSFER_OUT", "debit_account": "3010", "credit_account": "1031" }
+    { "type": "INT",           "debit_account": "1030", "credit_account": "4060" },
+    { "type": "INTEREST",      "debit_account": "1030", "credit_account": "4060" },
+
+    { "type": "DEPOSIT",       "debit_account": "1030", "credit_account": "3010" },
+    { "type": "TRANSFER_IN",   "debit_account": "1030", "credit_account": "3010" },
+
+    { "type": "WITHDRAWAL",    "debit_account": "3010", "credit_account": "1030" },
+    { "type": "TRANSFER_OUT",  "debit_account": "3010", "credit_account": "1030" }
   ],
   "rules": []
 }

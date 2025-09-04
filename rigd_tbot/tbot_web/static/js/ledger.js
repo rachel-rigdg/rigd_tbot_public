@@ -38,6 +38,55 @@ function loadSortState() {
 }
 
 // -----------------------------
+// Toast helpers (no external CSS)
+// -----------------------------
+function showToast(message, type = 'info', timeoutMs = 5000) {
+  const wrap = document.getElementById('toast-container');
+  if (!wrap) {
+    // graceful fallback if container not present
+    if (type === 'error') {
+      console.error(message);
+    } else {
+      console.log(message);
+    }
+    alert(message);
+    return;
+  }
+
+  const bg = (type === 'error') ? '#b30000'
+           : (type === 'success') ? '#197b30'
+           : (type === 'warn') ? '#9c6f00'
+           : '#2b3a67';
+
+  const el = document.createElement('div');
+  el.setAttribute('role', 'status');
+  el.style.cssText = `
+    color:#fff; background:${bg}; padding:.6rem .8rem; border-radius:6px;
+    box-shadow:0 6px 18px rgba(0,0,0,.2); font-size:.95rem; line-height:1.25;
+  `;
+  el.textContent = message;
+
+  wrap.appendChild(el);
+  if (timeoutMs > 0) {
+    setTimeout(() => {
+      try { wrap.removeChild(el); } catch {}
+    }, timeoutMs);
+  }
+}
+
+async function parseJsonSafe(res) {
+  // Try JSON even for non-2xx; fall back to text
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { return { _text: text }; }
+}
+
+function isDbLockedMessage(msg) {
+  if (!msg) return false;
+  const s = String(msg).toLowerCase();
+  return s.includes('database is locked') || s.includes('busy') || s.includes('locked');
+}
+
+// -----------------------------
 // Column index mapping for client-side sort (top row)
 // Keep in sync with ledger.html columns
 // Note: 'account' is a hidden column in the top header for sort alignment.
@@ -156,7 +205,7 @@ function toggleCollapse(groupId, wantExpanded = null) {
           .then(() => location.reload())
           .catch(err => {
             console.error('toggleCollapse failed', err);
-            alert('Failed to toggle group view. Check logs.');
+            showToast('Failed to toggle group view. Check logs.', 'error', 6000);
           });
 }
 
@@ -170,7 +219,7 @@ document.addEventListener('change', function(ev) {
     .then(() => location.reload())
     .catch(err => {
       console.error('collapse/expand failed', err);
-      alert('Failed to toggle group view. Check logs.');
+      showToast('Failed to toggle group view. Check logs.', 'error', 6000);
     });
 });
 
@@ -288,7 +337,7 @@ function fetchGroupsAndRender() {
     .then(json => renderLedgerRows(json))
     .catch(err => {
       if (err && err.status === 403) {
-        alert('Permission denied (viewer role).');
+        showToast('Permission denied (viewer role).', 'error', 6000);
       } else {
         console.warn('Groups fetch failed, falling back to reload.', err);
         location.reload();
@@ -305,7 +354,7 @@ function fetchBalancesAndRender() {
     .then(json => renderBalances(json))
     .catch(err => {
       if (err && err.status === 403) {
-        alert('Permission denied (viewer role).');
+        showToast('Permission denied (viewer role).', 'error', 6000);
       } else {
         console.warn('Balances fetch failed, falling back to reload.', err);
         location.reload();
@@ -319,65 +368,92 @@ const refreshLedgerAndBalancesDebounced = debounce(() => {
 // -----------------------------
 // Inline COA mapping (event delegation)
 // -----------------------------
+// Capture previous selection before the user changes it (so we can revert on failure)
+document.addEventListener('focusin', function(ev) {
+  const el = ev.target;
+  if (el && el.matches('.coa-select')) {
+    el.setAttribute('data-prev', el.value || '');
+  }
+});
+
 document.addEventListener('change', async function(ev) {
-    const el = ev.target;
-    if (!el.matches('.coa-select')) return;
-  
-    const entryId = el.dataset.entryId || el.getAttribute('data-entry-id');
-    const accountCode = el.value;
-    if (!entryId || !accountCode) return;
-  
-    // Keep previous selection to allow revert on failure
-    const prev = el.getAttribute('data-prev') ?? '';
-    if (!prev) el.setAttribute('data-prev', el.value);
-  
-    el.classList.add('saving');
-    el.disabled = true;
-    try {
-      const res = await fetch(`edit/${encodeURIComponent(entryId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_code: accountCode, reason: 'inline reassignment' })
-      });
-  
-      // Parse JSON if available (even on non-2xx)
-      let data = {};
-      try { data = await res.json(); } catch {}
-  
-      if (res.status === 403) {
-        throw new Error('Permission denied: only admins can reassign accounts.');
-      }
-      if (!res.ok || data.ok === false) {
-        const msg = (data && data.error) ? data.error : `HTTP ${res.status}`;
-        throw new Error(msg);
-      }
-  
-      // Non-blocking heads-up if mapping didn’t persist (server still logged it)
-      if (data.mapping_ok === false) {
-        console.warn('COA mapping upsert failed or was skipped.');
-      }
-  
-      el.classList.remove('saving');
-      el.classList.add('saved');
-      setTimeout(() => el.classList.remove('saved'), 1200);
-  
-      // If server returned updated groups/balances, refresh via AJAX; else fall back to reload
-      if (data.groups || data.balances) {
-        refreshLedgerAndBalancesDebounced();
-      } else {
-        refreshLedgerAndBalancesDebounced();
-      }
-    } catch (err) {
-      el.classList.remove('saving');
-      console.error('COA update failed', err);
-      alert(`Account update failed: ${err && err.message ? err.message : err}`);
-      // Revert UI selection if we have a prior value
-      const prevVal = el.getAttribute('data-prev');
-      if (prevVal) el.value = prevVal;
-    } finally {
-      el.disabled = false;
+  const el = ev.target;
+  if (!el.matches('.coa-select')) return;
+
+  const entryId = el.dataset.entryId || el.getAttribute('data-entry-id');
+  const accountCode = el.value;
+  if (!entryId || !accountCode) return;
+
+  el.classList.add('saving');
+  el.disabled = true;
+  try {
+    // Look for an "apply to category" checkbox near the select
+    const td = el.closest('td');
+    const chk = td ? td.querySelector('.apply-to-category') :
+               el.closest('tr')?.querySelector('.apply-to-category');
+    const applyToCategory = !!(chk && chk.checked);
+
+    const res = await fetch(`edit/${encodeURIComponent(entryId)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        account_code: accountCode,
+        reason: 'inline reassignment',
+        apply_to_category: applyToCategory,
+        ajax: 1
+      })
+    });
+
+    const data = await parseJsonSafe(res);
+
+    if (res.status === 403) {
+      throw new Error('Permission denied: only admins can reassign accounts.');
     }
-  });
+    if (!res.ok || data.ok === false) {
+      const msg = (data && (data.error || data._text)) ? (data.error || data._text) : `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+
+    if (data.mapping_ok === false) {
+      showToast('Account updated, but category mapping was not saved.', 'warn', 6000);
+    } else {
+      showToast('Account updated.', 'success', 2500);
+    }
+
+    el.classList.remove('saving');
+    el.classList.add('saved');
+    setTimeout(() => el.classList.remove('saved'), 1200);
+
+    // Refresh ledger/groups & balances
+    refreshLedgerAndBalancesDebounced();
+
+  } catch (err) {
+    el.classList.remove('saving');
+    console.error('COA update failed', err);
+
+    const msg = (err && err.message) ? err.message : String(err || 'Unknown error');
+
+    // Special casing for audit NOT NULL
+    const auditNull = msg.toLowerCase().includes('not null constraint failed') &&
+                      msg.toLowerCase().includes('audit_trail.event_type');
+    if (auditNull) {
+      showToast('Update failed: audit event type missing. The server will auto-migrate this field. Please retry.', 'error', 8000);
+    } else if (isDbLockedMessage(msg)) {
+      showToast(`Account update failed (database is locked). Please try again in a moment.`, 'error', 8000);
+    } else {
+      showToast(`Account update failed: ${msg}`, 'error', 8000);
+    }
+
+    // Revert UI selection to prior value
+    const prevVal = el.getAttribute('data-prev');
+    if (prevVal !== null && prevVal !== undefined) el.value = prevVal;
+  } finally {
+    el.disabled = false;
+  }
+});
 
 // -----------------------------
 // Misc helpers
@@ -425,7 +501,7 @@ document.addEventListener("DOMContentLoaded", function() {
               .then(() => location.reload())
               .catch(e => {
                 console.error('Fallback per-group toggle failed', e);
-                alert('Failed to apply collapse/expand to all rows.');
+                showToast('Failed to apply collapse/expand to all rows.', 'error', 6000);
               });
       });
     });

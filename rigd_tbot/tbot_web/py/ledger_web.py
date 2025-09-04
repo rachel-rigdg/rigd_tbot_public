@@ -584,10 +584,6 @@ def ledger_edit(entry_id: int):
       - reason: optional string
       - apply_to_category/update_mapping/mapping: optional truthy → also update mapping rule
 
-    Surgical tweak: pass a best-effort `event_type` to backend reassigner to
-    satisfy NOT NULL audit_trail.event_type. If the backend signature doesn't
-    accept it, gracefully fall back to the legacy call.
-
     Response:
       - JSON for AJAX (JSON body or X-Requested-With=XMLHttpRequest or ?ajax=1)
       - Redirect back to /ledger/reconcile for normal form posts
@@ -596,7 +592,6 @@ def ledger_edit(entry_id: int):
     if not_ok:
         return not_ok
     if provisioning_guard() or identity_guard():
-        # Decide response type before returning
         wants_json = request.is_json or request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest" or request.args.get("ajax") in ("1", "true")
         if wants_json:
             return jsonify({"ok": False, "error": "Not permitted"}), 403
@@ -604,7 +599,6 @@ def ledger_edit(entry_id: int):
         return redirect(url_for("ledger_web.ledger_reconcile"))
 
     data = request.get_json(silent=True) or request.form or {}
-    # Detect response mode
     wants_json = bool(
         request.is_json
         or request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest"
@@ -631,19 +625,40 @@ def ledger_edit(entry_id: int):
     actor = getattr(user, "username", None) or (user if user else "system")
 
     # Atomic reassignment with audit (reassign_leg_account handles auditing)
+    mapping_ok = False
     try:
         _ensure_audit_trail_columns()
         from tbot_bot.accounting.ledger_modules.ledger_edit import reassign_leg_account
 
         EVENT_TYPE = "COA_LEG_REASSIGNED"
+
         try:
-            # Preferred path: newer backend that supports event_type kwarg
-            result = reassign_leg_account(entry_id, account_code, actor, reason=reason, event_type=EVENT_TYPE)
+            # Preferred: backend supports both event_type and apply_to_category
+            result = reassign_leg_account(
+                entry_id,
+                account_code,
+                actor,
+                reason=reason,
+                event_type=EVENT_TYPE,
+                apply_to_category=apply_mapping,
+            )
+            mapping_ok = bool(apply_mapping)
         except TypeError as te:
-            # Fallback: older backend without event_type kwarg
             msg = str(te)
-            if "unexpected keyword argument 'event_type'" in msg or "positional arguments" in msg:
+            if "unexpected keyword argument 'apply_to_category'" in msg and "event_type" in msg:
+                # Older backend: supports event_type but not apply_to_category
+                result = reassign_leg_account(
+                    entry_id,
+                    account_code,
+                    actor,
+                    reason=reason,
+                    event_type=EVENT_TYPE,
+                )
+                # We'll do a manual mapping upsert below if apply_mapping is True.
+            elif "unexpected keyword argument 'event_type'" in msg:
+                # Very old backend: no event_type nor apply_to_category kw
                 result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
+                # Manual mapping upsert below if requested.
             else:
                 raise
     except Exception as e:
@@ -653,9 +668,8 @@ def ledger_edit(entry_id: int):
         flash(f"Account update failed: reassign failed: {e}", "error")
         return redirect(url_for("ledger_web.ledger_reconcile"))
 
-    # Optionally update category mapping rule based on this reassignment
-    mapping_ok = False
-    if apply_mapping:
+    # If the backend didn't handle mapping updates, optionally upsert a rule now (fallback only)
+    if apply_mapping and not mapping_ok:
         try:
             from tbot_bot.accounting.coa_mapping_table import upsert_rule_from_leg as coa_upsert_rule_from_leg
 
@@ -667,14 +681,13 @@ def ledger_edit(entry_id: int):
                 leg = conn.execute("SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
 
             if leg:
-                # Strict helper signature: (leg: dict, account_code: str, actor: str)
                 coa_upsert_rule_from_leg(dict(leg), account_code, actor)
                 mapping_ok = True
         except Exception:
             traceback.print_exc()
             mapping_ok = False
 
-    # JSON (AJAX) response: include fresh groups and balances for UI refresh
+    # JSON (AJAX): return fresh groups/balances so the UI can refresh without a full reload
     if wants_json:
         try:
             sort_col, sort_desc = _get_sort_params()
@@ -691,11 +704,10 @@ def ledger_edit(entry_id: int):
                 bals = {}
             return jsonify({"ok": True, "groups": groups, "balances": bals, "result": result, "mapping_ok": mapping_ok})
         except Exception:
-            # minimal success if refresh fails
             return jsonify({"ok": True, "mapping_ok": mapping_ok})
 
-    # Non-AJAX form: redirect back to ledger with a flash
-    if apply_mapping:
+    # Non-AJAX: redirect with a flash
+    if apply_mapping and mapping_ok:
         flash(f"COA updated to '{account_code}' and category mapping updated.", "success")
     else:
         flash(f"COA updated to '{account_code}'.", "success")

@@ -6,12 +6,18 @@ Writes append-only rows into the `audit_trail` table defined by schema.sql.
 
 Public API:
 - append(event, **kwargs): structured writer aligned to AUDIT_TRAIL_FIELDS.
+
+This version enforces a non-null event_type at code level (defaulting to
+'UNSPECIFIED_EVENT'), sets SQLite connection pragmas (WAL, busy timeout),
+and safely migrates older audit tables that are missing event_type or
+contain NULL/blank values.
 """
 
 import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable, Set, List
 
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
@@ -19,6 +25,8 @@ from tbot_bot.accounting.ledger_modules.ledger_fields import AUDIT_TRAIL_FIELDS
 
 CONTROL_DIR = Path(__file__).resolve().parents[3] / "control"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
+
+DEFAULT_EVENT_TYPE = "UNSPECIFIED_EVENT"
 
 
 def _now_iso_utc() -> str:
@@ -30,7 +38,22 @@ def _resolve_db_path() -> str:
     return resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
 
 
-# -------- Schema compatibility helpers (safe on SQLite) --------
+# ---------------- SQLite helpers / schema compatibility ----------------
+
+def _open_conn(db_path: str) -> sqlite3.Connection:
+    """
+    Open a SQLite connection with safe defaults for concurrent web/API usage.
+    """
+    conn = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
+    except Exception:
+        # Pragmas are best-effort; do not fail open.
+        pass
+    return conn
+
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     try:
@@ -55,31 +78,89 @@ def _audit_table_info(conn: sqlite3.Connection):
         return []
 
 
-def _audit_existing_cols(conn: sqlite3.Connection) -> set:
+def _audit_existing_cols(conn: sqlite3.Connection) -> Set[str]:
     rows = _audit_table_info(conn)
     return {row[1] for row in rows} if rows else set()
 
 
-def _audit_ensure_schema(conn: sqlite3.Connection) -> None:
+def _audit_add_missing_columns(conn: sqlite3.Connection, have: Set[str]) -> None:
     """
-    One-time upgrade: add any missing columns we intend to write.
-    Uses AUDIT_TRAIL_FIELDS; columns are added as TEXT with NULL default
-    (fine for SQLite and non-destructive).
+    Add any missing columns we intend to write. For event_type we add with a
+    DEFAULT to satisfy NOT NULL use-cases downstream.
     """
-    have = _audit_existing_cols(conn)
-    if not have:
+    # Ensure we only add columns that are known to our writer
+    wanted: List[str] = list(AUDIT_TRAIL_FIELDS)
+    if not wanted:
         return
-    for col in AUDIT_TRAIL_FIELDS:
-        if col not in have:
+
+    for col in wanted:
+        if col in have:
+            continue
+        if col == "event_type":
+            # Default so future inserts never violate NOT NULL expectations
+            conn.execute(
+                "ALTER TABLE audit_trail ADD COLUMN event_type TEXT DEFAULT ?",
+                (DEFAULT_EVENT_TYPE,),
+            )
+        else:
             conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col} TEXT")
 
+
+def _audit_backfill_null_event_type(conn: sqlite3.Connection) -> None:
+    """
+    If the column exists already, normalize NULL/blank → DEFAULT_EVENT_TYPE.
+    """
+    try:
+        conn.execute(
+            f"UPDATE audit_trail "
+            f"SET event_type = ? "
+            f"WHERE event_type IS NULL OR TRIM(event_type) = ''",
+            (DEFAULT_EVENT_TYPE,),
+        )
+    except Exception:
+        # Non-fatal; continue
+        pass
+
+
+def _audit_migrate_event_type(conn: sqlite3.Connection) -> None:
+    """
+    Safe, idempotent migration for event_type:
+      * if column missing → add with DEFAULT 'UNSPECIFIED_EVENT'
+      * backfill any NULL/blank values to DEFAULT
+    """
+    if not _table_exists(conn, "audit_trail"):
+        return
+    have = _audit_existing_cols(conn)
+    if "event_type" not in have:
+        # ALTER TABLE doesn't support parameter binding for DEFAULT literals cleanly.
+        conn.execute(f"ALTER TABLE audit_trail ADD COLUMN event_type TEXT DEFAULT '{DEFAULT_EVENT_TYPE}'")
+        conn.commit()
+        have.add("event_type")
+    _audit_backfill_null_event_type(conn)
+    conn.commit()
+
+
+def _audit_ensure_schema(conn: sqlite3.Connection) -> None:
+    """
+    One-time compatibility upgrade: migrate event_type first, then add any
+    other missing columns our writer may emit.
+    """
+    if not _table_exists(conn, "audit_trail"):
+        return
+    _audit_migrate_event_type(conn)
+    have = _audit_existing_cols(conn)
+    _audit_add_missing_columns(conn, have)
+    conn.commit()
+
+
+# ------------------------------ Public API ------------------------------
 
 def append(event: str, **kwargs) -> int:
     """
     Structured audit writer aligned to AUDIT_TRAIL_FIELDS.
 
-    Required:
-      - event (str) or event_type in kwargs → persisted in 'event_type' column (NOT NULL)
+    Required (enforced here):
+      - event_type (from kwargs or 'event' or fallback to DEFAULT_EVENT_TYPE)
 
     Optional kwargs:
       - actor, related_id (or entry_id), group_id, trade_id
@@ -94,10 +175,13 @@ def append(event: str, **kwargs) -> int:
     if TEST_MODE_FLAG.exists():
         return 0
 
-    # ---- Validate required event_type (fail fast; never push NULL into DB) ----
-    event_type = (kwargs.get("event_type") or event or "").strip()
-    if not event_type:
-        raise ValueError("[ledger_audit.append] 'event_type' is required and must be non-empty.")
+    # ---- Normalize required event_type (never allow NULL/blank) ----
+    raw_event = kwargs.get("event_type") or event
+    event_type = (raw_event or DEFAULT_EVENT_TYPE)
+    if isinstance(event_type, str):
+        event_type = event_type.strip() or DEFAULT_EVENT_TYPE
+    else:
+        event_type = DEFAULT_EVENT_TYPE
 
     entity_code, jurisdiction_code, broker_code, bot_id = load_bot_identity().split("_")
 
@@ -114,8 +198,7 @@ def append(event: str, **kwargs) -> int:
     if isinstance(extra_blob, (dict, list)):
         extra_base = extra_blob
     elif isinstance(extra_blob, str) and extra_blob.strip():
-        # leave as-is string
-        extra_base = extra_blob
+        extra_base = extra_blob  # pass through string
     else:
         extra_base = {}
 
@@ -125,12 +208,11 @@ def append(event: str, **kwargs) -> int:
                 extra_base[k] = kwargs[k]
         extra_value = json.dumps(extra_base, ensure_ascii=False)
     else:
-        extra_value = extra_base  # string passthrough
+        extra_value = extra_base  # already a string
 
     # Build a full record dict with canonical keys
     record = {
-        "timestamp": _now_iso_utc(),
-        # Ensure both modern and legacy columns are populated when present
+        "timestamp": _now_iso_utc(),  # keep using existing column naming in your DB
         "event_type": event_type,
         "action": kwargs.get("action") or event_type,
         "related_id": kwargs.get("related_id") or kwargs.get("entry_id"),
@@ -154,25 +236,24 @@ def append(event: str, **kwargs) -> int:
         "extra": extra_value,
     }
 
-    # Ensure every column in the schema has a value (None if not provided)
+    # Ensure every known column has a key (None if not provided)
     for k in AUDIT_TRAIL_FIELDS:
         record.setdefault(k, None)
 
     db_path = _resolve_db_path()
-    with sqlite3.connect(db_path) as conn:
-        # Ensure schema is at least as new as our writer
+    conn = _open_conn(db_path)
+    try:
         _audit_ensure_schema(conn)
 
-        # Build INSERT column list from actual table columns to avoid NOT NULL failures
+        # Discover actual table columns to build a compatible INSERT list
         info = _audit_table_info(conn)
-        have_cols = [row[1] for row in info] if info else []
-        if not have_cols:
-            have_cols = AUDIT_TRAIL_FIELDS[:]
+        have_cols = [row[1] for row in info] if info else list(AUDIT_TRAIL_FIELDS)
 
-        cols = [c for c in AUDIT_TRAIL_FIELDS if c in have_cols]
-        if "event_type" in have_cols and not record.get("event_type"):
-            raise ValueError("[ledger_audit.append] 'event_type' is required by the current schema.")
+        # Last defense: don't allow blank event_type if the column exists
+        if "event_type" in have_cols and (record.get("event_type") is None or str(record.get("event_type")).strip() == ""):
+            record["event_type"] = DEFAULT_EVENT_TYPE
 
+        cols: List[str] = [c for c in AUDIT_TRAIL_FIELDS if c in have_cols]
         placeholders = ", ".join(["?"] * len(cols))
         vals = [record.get(c) for c in cols]
 
@@ -182,3 +263,8 @@ def append(event: str, **kwargs) -> int:
         )
         conn.commit()
         return int(cur.lastrowid)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
