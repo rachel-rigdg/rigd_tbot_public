@@ -6,6 +6,7 @@ using the lots engine for cost-basis and realized P&L.
 Conventions:
 - Positive total_value = Debit; Negative total_value = Credit
 - Fees are expensed to Brokerage Fees (by default NOT deducted from realized P&L)
+- All timestamps are UTC ISO-8601
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from tbot_bot.accounting.lots_engine import (
 # Optional: reference the trade field list dynamically
 try:
     from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS as _TRADES_FIELDS
-except Exception:
+except Exception:  # pragma: no cover
     _TRADES_FIELDS = []  # dynamic insert will inspect DB columns instead
 
 # ----------------------------
@@ -35,15 +36,17 @@ except Exception:
 FEES_AFFECT_REALIZED_PNL = False  # set True if you want fees included in realized P&L math
 ROUND_DECIMALS = 2
 
-# Default account labels (must match your COA; we also try to auto-resolve from the COA file)
-DEFAULT_ACCOUNTS = {
+# Default account labels (must match your COA; will be overridden when possible by COA discovery)
+DEFAULT_ACCOUNTS: Dict[str, str] = {
     "cash": "Assets:Brokerage:Cash",
-    "equity_prefix": "Assets:Brokerage:Equity:",           # + SYMBOL
-    "short_prefix": "Liabilities:Short Positions:",         # + SYMBOL
+    "equity_prefix": "Assets:Brokerage:Equity:",          # + SYMBOL
+    "short_prefix": "Liabilities:Short Positions:",        # + SYMBOL
     "fees": "Expenses:Brokerage Fees",
-    "realized_pnl": "Income:Realized Gains – Equities",     # 4010-equivalent
-    "dividend_income": "Income:Dividends Earned",           # for DIV/DIVIDEND
-    "interest_income": "Income:Interest Income",            # for INT/INTEREST
+    "realized_pnl": "Income:Realized Gains – Equities",    # 4010-equivalent
+    "dividends": "Income:Dividends Earned",
+    "interest": "Income:Interest Income",
+    "equity_contrib": "Equity:Capital Contributions",
+    "owner_withdrawals": "Equity:Owner Withdrawals",
 }
 
 def _utc_iso() -> str:
@@ -67,7 +70,7 @@ def _db_columns(conn: sqlite3.Connection, table: str) -> List[str]:
 def _coalesce_accounts() -> Dict[str, str]:
     """
     Try to read the COA JSON and find best-fit names; fall back to DEFAULT_ACCOUNTS.
-    We match by endswith on leaf names to be tolerant to prefixes or numbering.
+    We match by keywords in account names to be tolerant to prefixes or numbering.
     """
     acc = dict(DEFAULT_ACCOUNTS)
     try:
@@ -79,38 +82,42 @@ def _coalesce_accounts() -> Dict[str, str]:
 
         found: Dict[str, str] = {}
 
-        def mark(key: str, full: str, is_prefix: bool = False):
+        def pick(key: str, full: str, is_prefix: bool = False):
             if key in found:
                 return
             found[key] = full + (":" if is_prefix and not full.endswith(":") else "")
 
         def walk(a, path=""):
             for n in a or []:
-                name = n.get("name") or n.get("title") or n.get("label") or n.get("code") or ""
+                name = (n.get("name") or n.get("title") or n.get("label") or n.get("code") or "").strip()
                 full = (path + name).strip(":")
                 lower = full.lower()
 
-                # Cash under brokerage
+                # Cash
                 if "broker" in lower and "cash" in lower:
-                    mark("cash", full, is_prefix=False)
-                # Equity/stock inventory
-                if ("broker" in lower and ("equities" in lower or "equity" in lower or "stock" in lower)) or ":equities" in lower:
-                    mark("equity_prefix", full, is_prefix=True)
-                # Short positions liability
-                if "short" in lower and ("liab" in lower or "position" in lower):
-                    mark("short_prefix", full, is_prefix=True)
-                # Fees / commissions
-                if ("fee" in lower or "commission" in lower) and "expense" in lower:
-                    mark("fees", full)
-                # Realized P&L income
-                if "realized" in lower and ("gain" in lower or "p&l" in lower or "pnl" in lower):
-                    mark("realized_pnl", full)
-                # Dividends income
-                if "dividend" in lower and "income" in lower:
-                    mark("dividend_income", full)
-                # Interest income
-                if "interest" in lower and "income" in lower:
-                    mark("interest_income", full)
+                    pick("cash", full)
+
+                # Equities / short
+                if ("broker" in lower or "brokerage" in lower) and ("equities" in lower or "equity" in lower or "stock" in lower):
+                    pick("equity_prefix", full, is_prefix=True)
+                if "short" in lower and ("liab" in lower or "position" in lower or "positions" in lower):
+                    pick("short_prefix", full, is_prefix=True)
+
+                # Income + fees
+                if "realized" in lower and "gain" in lower:
+                    pick("realized_pnl", full)
+                if "dividend" in lower:
+                    pick("dividends", full)
+                if "interest" in lower:
+                    pick("interest", full)
+                if "broker fee" in lower or "brokerage fee" in lower or "commission" in lower:
+                    pick("fees", full)
+
+                # Equity movements
+                if "capital" in lower and "contribution" in lower:
+                    pick("equity_contrib", full)
+                if "owner" in lower and "withdraw" in lower:
+                    pick("owner_withdrawals", full)
 
                 kids = n.get("children") or []
                 if kids:
@@ -166,7 +173,7 @@ def _insert_legs(conn: sqlite3.Connection, legs: List[Dict[str, Any]]) -> None:
         raise
 
 # ----------------------------
-# Public posting APIs — Trades (buy/sell/short)
+# Public posting APIs (trades)
 # ----------------------------
 def post_buy(
     *,
@@ -423,7 +430,7 @@ def post_short_cover(
     )
 
     basis = round(summary["basis_total"], ROUND_DECIMALS)
-    realized = round(summary["realized_pnl_total"], ROUND_DECIMALS)  # >0 gain; <0 loss in our math
+    realized = round(summary["realized_pnl_total"], ROUND_DECIMALS)  # >0 gain; <0 loss
 
     legs = [
         dict(datetime_utc=ts, symbol=symbol, action="SHORT_COVER_LIAB", account=_short_acct(acc, symbol),
@@ -458,43 +465,98 @@ def post_short_cover(
     return {"ok": True, "legs": len(legs), "basis": basis, "cover_cost": cover_cost, "realized": realized}
 
 # ----------------------------
-# Public posting APIs — Non-trade cash/income events
+# Non-trade postings (cash/admin events)
 # ----------------------------
-def post_dividend(
+def post_deposit(
     *,
     amount: float,
-    symbol: Optional[str],
     trade_id: str,
     ts_utc: Optional[str] = None,
     meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Cash dividend receipt:
-      Dr Cash                        +amount
-      Cr Income:Dividends            -amount
+    Cash DEPOSIT (owner contribution):
+      Dr Cash                               +amount
+      Cr Equity:Capital Contributions       -amount
     """
-    if amount is None:
-        raise ValueError("amount is required for dividend")
     meta = meta or {}
     actor = meta.get("actor") or "system"
     group_id = meta.get("group_id") or trade_id
-    strategy = meta.get("strategy")
-    tags = meta.get("tags")
     ts = ts_utc or _utc_iso()
-
-    acc = _coalesce_accounts()
     amt = round(float(amount), ROUND_DECIMALS)
+    acc = _coalesce_accounts()
 
     conn = _connect()
-    lots_ensure_schema(conn)
-
     legs = [
-        dict(datetime_utc=ts, symbol=symbol, action="DIV_CASH",     account=acc["cash"],
-             total_value=+amt, group_id=group_id, trade_id=trade_id, strategy=strategy, tags=tags,
-             notes="Dividend received (debit cash)"),
-        dict(datetime_utc=ts, symbol=symbol, action="DIV_INCOME",   account=acc["dividend_income"],
-             total_value=-amt, group_id=group_id, trade_id=trade_id, strategy=strategy, tags=tags,
-             notes="Dividend income (credit)"),
+        dict(datetime_utc=ts, action="DEPOSIT_CASH", account=acc["cash"],
+             total_value=+amt, group_id=group_id, trade_id=trade_id, notes="Deposit received"),
+        dict(datetime_utc=ts, action="DEPOSIT_EQUITY", account=acc["equity_contrib"],
+             total_value=-amt, group_id=group_id, trade_id=trade_id, notes="Owner contribution"),
+    ]
+    _insert_legs(conn, legs)
+    audit_append(event="CASH_DEPOSIT", related_id=trade_id, actor=actor, group_id=group_id,
+                 before=None, after={"amount": amt}, reason="post_deposit")
+    conn.close()
+    return {"ok": True, "legs": len(legs)}
+
+def post_withdrawal(
+    *,
+    amount: float,
+    trade_id: str,
+    ts_utc: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Cash WITHDRAWAL (owner draw):
+      Dr Equity:Owner Withdrawals           +amount
+      Cr Cash                               -amount
+    """
+    meta = meta or {}
+    actor = meta.get("actor") or "system"
+    group_id = meta.get("group_id") or trade_id
+    ts = ts_utc or _utc_iso()
+    amt = round(float(amount), ROUND_DECIMALS)
+    acc = _coalesce_accounts()
+
+    conn = _connect()
+    legs = [
+        dict(datetime_utc=ts, action="WITHDRAWAL_EQUITY", account=acc["owner_withdrawals"],
+             total_value=+amt, group_id=group_id, trade_id=trade_id, notes="Owner withdrawal"),
+        dict(datetime_utc=ts, action="WITHDRAWAL_CASH", account=acc["cash"],
+             total_value=-amt, group_id=group_id, trade_id=trade_id, notes="Withdrawal cash"),
+    ]
+    _insert_legs(conn, legs)
+    audit_append(event="CASH_WITHDRAWAL", related_id=trade_id, actor=actor, group_id=group_id,
+                 before=None, after={"amount": amt}, reason="post_withdrawal")
+    conn.close()
+    return {"ok": True, "legs": len(legs)}
+
+def post_dividend(
+    *,
+    amount: float,
+    trade_id: str,
+    symbol: Optional[str] = None,
+    ts_utc: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    DIVIDEND:
+      Dr Cash                               +amount
+      Cr Income:Dividends                   -amount
+    """
+    meta = meta or {}
+    actor = meta.get("actor") or "system"
+    group_id = meta.get("group_id") or trade_id
+    ts = ts_utc or _utc_iso()
+    amt = round(float(amount), ROUND_DECIMALS)
+    acc = _coalesce_accounts()
+
+    conn = _connect()
+    legs = [
+        dict(datetime_utc=ts, symbol=symbol, action="DIVIDEND_CASH", account=acc["cash"],
+             total_value=+amt, group_id=group_id, trade_id=trade_id, notes="Dividend received"),
+        dict(datetime_utc=ts, symbol=symbol, action="DIVIDEND_INCOME", account=acc["dividends"],
+             total_value=-amt, group_id=group_id, trade_id=trade_id, notes="Dividend income"),
     ]
     _insert_legs(conn, legs)
     audit_append(event="DIVIDEND_POSTED", related_id=trade_id, actor=actor, group_id=group_id,
@@ -505,44 +567,70 @@ def post_dividend(
 def post_interest(
     *,
     amount: float,
-    symbol: Optional[str],
     trade_id: str,
     ts_utc: Optional[str] = None,
     meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Interest income receipt:
-      Dr Cash                        +amount
-      Cr Income:Interest             -amount
+    INTEREST:
+      Dr Cash                               +amount
+      Cr Income:Interest                    -amount
     """
-    if amount is None:
-        raise ValueError("amount is required for interest")
     meta = meta or {}
     actor = meta.get("actor") or "system"
     group_id = meta.get("group_id") or trade_id
-    strategy = meta.get("strategy")
-    tags = meta.get("tags")
     ts = ts_utc or _utc_iso()
-
-    acc = _coalesce_accounts()
     amt = round(float(amount), ROUND_DECIMALS)
+    acc = _coalesce_accounts()
 
     conn = _connect()
-    lots_ensure_schema(conn)
-
     legs = [
-        dict(datetime_utc=ts, symbol=symbol, action="INT_CASH",       account=acc["cash"],
-             total_value=+amt, group_id=group_id, trade_id=trade_id, strategy=strategy, tags=tags,
-             notes="Interest received (debit cash)"),
-        dict(datetime_utc=ts, symbol=symbol, action="INT_INCOME",     account=acc["interest_income"],
-             total_value=-amt, group_id=group_id, trade_id=trade_id, strategy=strategy, tags=tags,
-             notes="Interest income (credit)"),
+        dict(datetime_utc=ts, action="INTEREST_CASH", account=acc["cash"],
+             total_value=+amt, group_id=group_id, trade_id=trade_id, notes="Interest received"),
+        dict(datetime_utc=ts, action="INTEREST_INCOME", account=acc["interest"],
+             total_value=-amt, group_id=group_id, trade_id=trade_id, notes="Interest income"),
     ]
     _insert_legs(conn, legs)
     audit_append(event="INTEREST_POSTED", related_id=trade_id, actor=actor, group_id=group_id,
-                 before=None, after={"amount": amt, "symbol": symbol}, reason="post_interest")
+                 before=None, after={"amount": amt}, reason="post_interest")
     conn.close()
     return {"ok": True, "legs": len(legs)}
+
+def post_fee(
+    *,
+    amount: float,
+    trade_id: str,
+    ts_utc: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    FEE / COMMISSION:
+      Dr Expenses:Brokerage Fees            +amount
+      Cr Cash                               -amount
+    """
+    meta = meta or {}
+    actor = meta.get("actor") or "system"
+    group_id = meta.get("group_id") or trade_id
+    ts = ts_utc or _utc_iso()
+    amt = round(float(amount), ROUND_DECIMALS)
+    acc = _coalesce_accounts()
+
+    conn = _connect()
+    legs = [
+        dict(datetime_utc=ts, action="FEE_EXPENSE", account=acc["fees"],
+             total_value=+amt, group_id=group_id, trade_id=trade_id, notes="Broker fee (debit)"),
+        dict(datetime_utc=ts, action="FEE_CASH", account=acc["cash"],
+             total_value=-amt, group_id=group_id, trade_id=trade_id, notes="Broker fee cash (credit)"),
+    ]
+    _insert_legs(conn, legs)
+    audit_append(event="FEE_POSTED", related_id=trade_id, actor=actor, group_id=group_id,
+                 before=None, after={"amount": amt}, reason="post_fee")
+    conn.close()
+    return {"ok": True, "legs": len(legs)}
+
+# Back-compat alias
+def post_commission(**kwargs) -> Dict[str, Any]:
+    return post_fee(**kwargs)
 
 # ----------------------------
 # Generic router (optional convenience)
@@ -550,9 +638,9 @@ def post_interest(
 def post_trade(
     *,
     action: str,
-    symbol: str,
-    qty: float,
-    price: float,
+    symbol: Optional[str] = None,
+    qty: float = 0.0,
+    price: float = 0.0,
     fee: float = 0.0,
     trade_id: str,
     ts_utc: Optional[str] = None,
@@ -561,15 +649,35 @@ def post_trade(
     """
     Convenience router if your sync emits normalized actions.
     Supported actions (case-insensitive):
-      BUY, SELL, SHORT_OPEN (SELL_SHORT, SELL_TO_OPEN), SHORT_COVER (BUY_TO_COVER)
+      BUY, SELL, SHORT_OPEN (SELL_SHORT, SELL_TO_OPEN), SHORT_COVER (BUY_TO_COVER),
+      DIVIDEND (DIV), INTEREST (INT), DEPOSIT (TRANSFER_IN), WITHDRAWAL (TRANSFER_OUT), FEE (COMMISSION)
     """
     a = (action or "").strip().upper()
+
+    # Trades
     if a in ("BUY", "LONG", "BUY_TO_OPEN"):
+        assert symbol is not None
         return post_buy(symbol=symbol, qty=qty, price=price, fee=fee, trade_id=trade_id, ts_utc=ts_utc, meta=meta)
     if a in ("SELL", "SELL_TO_CLOSE"):
+        assert symbol is not None
         return post_sell(symbol=symbol, qty=qty, price=price, fee=fee, trade_id=trade_id, ts_utc=ts_utc, meta=meta)
     if a in ("SHORT_OPEN", "SELL_SHORT", "SELL_TO_OPEN"):
+        assert symbol is not None
         return post_short_open(symbol=symbol, qty=qty, price=price, fee=fee, trade_id=trade_id, ts_utc=ts_utc, meta=meta)
     if a in ("SHORT_COVER", "BUY_TO_COVER"):
+        assert symbol is not None
         return post_short_cover(symbol=symbol, qty=qty, price=price, fee=fee, trade_id=trade_id, ts_utc=ts_utc, meta=meta)
+
+    # Cash/admin
+    if a in ("DIVIDEND", "DIV"):
+        return post_dividend(amount=qty or price or fee, trade_id=trade_id, symbol=symbol, ts_utc=ts_utc, meta=meta)
+    if a in ("INTEREST", "INT"):
+        return post_interest(amount=qty or price or fee, trade_id=trade_id, ts_utc=ts_utc, meta=meta)
+    if a in ("DEPOSIT", "TRANSFER_IN"):
+        return post_deposit(amount=qty or price or fee, trade_id=trade_id, ts_utc=ts_utc, meta=meta)
+    if a in ("WITHDRAWAL", "TRANSFER_OUT"):
+        return post_withdrawal(amount=qty or price or fee, trade_id=trade_id, ts_utc=ts_utc, meta=meta)
+    if a in ("FEE", "COMMISSION"):
+        return post_fee(amount=qty or price or fee, trade_id=trade_id, ts_utc=ts_utc, meta=meta)
+
     raise ValueError(f"Unsupported action '{action}'")
