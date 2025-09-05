@@ -77,6 +77,8 @@ def reassign_leg_account(
     reason: Optional[str] = None,
     event_type: str = "COA_LEG_REASSIGNED",
     apply_to_category: bool = False,
+    # --- Back-compat: some callers pass `event=` instead of `event_type=` ---
+    event: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Reassign the COA account for a single ledger leg (row in trades table).
@@ -84,7 +86,7 @@ def reassign_leg_account(
     - Validates new_account_code exists and is active in COA.
     - Updates ONLY 'account' field (no amount/date mutation).
     - Sets WAL + busy_timeout to reduce SQLITE_BUSY on concurrent web/API usage.
-    - Emits immutable audit log event with non-empty `event_type` and `actor`.
+    - Emits immutable audit log event with non-empty event label and actor.
     - Returns the UPDATED ROW (dict).
     - If apply_to_category=True, also upserts a programmatic mapping rule derived from this leg.
 
@@ -115,9 +117,10 @@ def reassign_leg_account(
     if new_account_code not in active_codes:
         raise ValueError(f"Account code '{new_account_code}' is not active in COA")
 
-    # Validate non-empty audit event label (aligns with NOT NULL in audit schema)
-    if not isinstance(event_type, str) or not event_type.strip():
-        raise ValueError("event_type is required for audit")
+    # Choose an audit event label, accepting both `event_type` and legacy `event`
+    event_label = (event_type or "").strip() or (event or "").strip()
+    if not event_label:
+        raise ValueError("event_type (or event) is required for audit")
 
     # Validate non-empty actor (aligns with stricter audit requirements)
     if not isinstance(actor, str) or not actor.strip():
@@ -151,7 +154,7 @@ def reassign_leg_account(
         # Early no-op (but still audit)
         if old_account == new_account_code:
             audit_append(
-                event_type=event_type,
+                event_label,  # positional 'event'
                 related_id=entry_id,
                 actor=actor,
                 group_id=leg["group_id"],
@@ -199,7 +202,7 @@ def reassign_leg_account(
 
         # Structured immutable audit (identity fields injected by audit module)
         audit_append(
-            event_type=event_type,
+            event_label,  # positional 'event'
             related_id=entry_id,
             actor=actor,
             group_id=leg["group_id"],
