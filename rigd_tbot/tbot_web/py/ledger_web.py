@@ -223,7 +223,7 @@ def _ensure_audit_trail_columns():
     """
     Backwards-compatible migration: add columns audit logger expects if they're missing.
     Safe on SQLite: ADD COLUMN with NULL default is instant and non-destructive.
-    Never blocks the UI; logs tracebacks only.
+    Never blocks the UI; ignores duplicate-column races quietly.
     """
     try:
         bot_identity = load_bot_identity() or ""
@@ -239,11 +239,22 @@ def _ensure_audit_trail_columns():
             have = {row[1] for row in conn.execute("PRAGMA table_info(audit_trail)").fetchall()}
             needed = ["entity_code", "jurisdiction_code", "broker_code", "bot_id", "actor", "reason"]
             for col in needed:
-                if col not in have:
+                if col in have:
+                    continue
+                try:
                     conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col} TEXT")
+                    have.add(col)
+                except sqlite3.OperationalError as e:
+                    msg = str(e).lower()
+                    # Another request may have added the column after our PRAGMA read.
+                    if "duplicate column name" in msg or "already exists" in msg:
+                        have.add(col)
+                        continue
+                    # Never break the UI because of a migration hiccup.
+                    continue
     except Exception:
-        # never block UI because of migration; the write will still fail if something else is wrong
-        traceback.print_exc()
+        # Swallow any unexpected issues; reassignment path should remain usable.
+        pass
 
 
 # ---------------------------

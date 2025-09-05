@@ -7,17 +7,25 @@ Writes append-only rows into the `audit_trail` table defined by schema.sql.
 Public API:
 - append(event, **kwargs): structured writer aligned to AUDIT_TRAIL_FIELDS.
 
-This version enforces a non-null event_type at code level (defaulting to
-'UNSPECIFIED_EVENT'), sets SQLite connection pragmas (WAL, busy timeout),
-and safely migrates older audit tables that are missing event_type or
-contain NULL/blank values.
+This version:
+- Guarantees a non-null, non-blank event_type (defaults to 'UNSPECIFIED_EVENT').
+- Fills an 'action' field (falls back to event_type) to satisfy NOT NULL schemas.
+- Opens SQLite with WAL + busy timeout pragmas for concurrent web/API usage.
+- Performs idempotent, race-safe, backward-compatible schema migrations:
+  * Adds missing columns only if absent; ignores duplicate-column races.
+  * Ensures event_type exists and backfills NULL/blank values.
+  * Writes extra/payload JSON into whichever JSON-ish column the table provides.
+  * Supports both 'timestamp' and 'created_at' time columns.
+
+Notes:
+- We intentionally do not auto-create the audit_trail table; schema.sql should do that.
 """
 
 import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Set, List
+from typing import Iterable, Set, List, Dict, Any, Optional
 
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import resolve_ledger_db_path
@@ -29,6 +37,8 @@ TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 DEFAULT_EVENT_TYPE = "UNSPECIFIED_EVENT"
 
 
+# -------------------------- time/db helpers --------------------------
+
 def _now_iso_utc() -> str:
     return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
 
@@ -37,8 +47,6 @@ def _resolve_db_path() -> str:
     entity_code, jurisdiction_code, broker_code, bot_id = load_bot_identity().split("_")
     return resolve_ledger_db_path(entity_code, jurisdiction_code, broker_code, bot_id)
 
-
-# ---------------- SQLite helpers / schema compatibility ----------------
 
 def _open_conn(db_path: str) -> sqlite3.Connection:
     """
@@ -54,6 +62,8 @@ def _open_conn(db_path: str) -> sqlite3.Connection:
         pass
     return conn
 
+
+# ---------------------- schema inspection/migration ----------------------
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     try:
@@ -83,27 +93,45 @@ def _audit_existing_cols(conn: sqlite3.Connection) -> Set[str]:
     return {row[1] for row in rows} if rows else set()
 
 
+def _is_duplicate_column_error(err: Exception) -> bool:
+    s = str(err).lower()
+    return "duplicate column name" in s or "already exists" in s
+
+
+def _sql_quote_literal(val: str) -> str:
+    """Minimal SQL literal escaper for single quotes."""
+    return val.replace("'", "''")
+
+
 def _audit_add_missing_columns(conn: sqlite3.Connection, have: Set[str]) -> None:
     """
     Add any missing columns we intend to write. For event_type we add with a
     DEFAULT to satisfy NOT NULL use-cases downstream.
+
+    This is race-safe: duplicate-column ALTER errors are swallowed.
     """
     # Ensure we only add columns that are known to our writer
-    wanted: List[str] = list(AUDIT_TRAIL_FIELDS)
+    wanted: List[str] = list(AUDIT_TRAIL_FIELDS or [])
     if not wanted:
         return
 
     for col in wanted:
         if col in have:
             continue
-        if col == "event_type":
-            # Default so future inserts never violate NOT NULL expectations
-            conn.execute(
-                "ALTER TABLE audit_trail ADD COLUMN event_type TEXT DEFAULT ?",
-                (DEFAULT_EVENT_TYPE,),
-            )
-        else:
-            conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col} TEXT")
+        try:
+            if col == "event_type":
+                # SQLite doesn't parameter-bind DEFAULT literals on ALTER TABLE.
+                lit = _sql_quote_literal(DEFAULT_EVENT_TYPE)
+                conn.execute(f"ALTER TABLE audit_trail ADD COLUMN event_type TEXT DEFAULT '{lit}'")
+            else:
+                conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col} TEXT")
+            have.add(col)  # update our local snapshot
+        except sqlite3.OperationalError as e:
+            if _is_duplicate_column_error(e):
+                have.add(col)
+                continue
+            # Swallow other ALTER hiccups to avoid breaking UI paths
+            continue
 
 
 def _audit_backfill_null_event_type(conn: sqlite3.Connection) -> None:
@@ -112,9 +140,7 @@ def _audit_backfill_null_event_type(conn: sqlite3.Connection) -> None:
     """
     try:
         conn.execute(
-            f"UPDATE audit_trail "
-            f"SET event_type = ? "
-            f"WHERE event_type IS NULL OR TRIM(event_type) = ''",
+            "UPDATE audit_trail SET event_type = ? WHERE event_type IS NULL OR TRIM(event_type) = ''",
             (DEFAULT_EVENT_TYPE,),
         )
     except Exception:
@@ -132,12 +158,17 @@ def _audit_migrate_event_type(conn: sqlite3.Connection) -> None:
         return
     have = _audit_existing_cols(conn)
     if "event_type" not in have:
-        # ALTER TABLE doesn't support parameter binding for DEFAULT literals cleanly.
-        conn.execute(f"ALTER TABLE audit_trail ADD COLUMN event_type TEXT DEFAULT '{DEFAULT_EVENT_TYPE}'")
-        conn.commit()
-        have.add("event_type")
+        try:
+            lit = _sql_quote_literal(DEFAULT_EVENT_TYPE)
+            conn.execute(f"ALTER TABLE audit_trail ADD COLUMN event_type TEXT DEFAULT '{lit}'")
+            have.add("event_type")
+        except sqlite3.OperationalError as e:
+            if not _is_duplicate_column_error(e):
+                # Ignore; migration is best-effort
+                pass
+            else:
+                have.add("event_type")
     _audit_backfill_null_event_type(conn)
-    conn.commit()
 
 
 def _audit_ensure_schema(conn: sqlite3.Connection) -> None:
@@ -150,7 +181,10 @@ def _audit_ensure_schema(conn: sqlite3.Connection) -> None:
     _audit_migrate_event_type(conn)
     have = _audit_existing_cols(conn)
     _audit_add_missing_columns(conn, have)
-    conn.commit()
+    try:
+        conn.commit()
+    except Exception:
+        pass
 
 
 # ------------------------------ Public API ------------------------------
@@ -160,12 +194,12 @@ def append(event: str, **kwargs) -> int:
     Structured audit writer aligned to AUDIT_TRAIL_FIELDS.
 
     Required (enforced here):
-      - event_type (from kwargs or 'event' or fallback to DEFAULT_EVENT_TYPE)
+      - event_type (from kwargs or positional 'event' or fallback to DEFAULT_EVENT_TYPE)
 
     Optional kwargs:
       - actor, related_id (or entry_id), group_id, trade_id
       - old_value, new_value (or before/after)
-      - sync_run_id, source, notes, request_id, ip, user_agent
+      - sync_run_id, source, notes, request_id, ip, user_agent, action
       - extra (dict | list | str | None)
       - old_account_code, new_account_code, reason  (packed into extra)
 
@@ -196,7 +230,7 @@ def append(event: str, **kwargs) -> int:
     # Merge optional granular info into extra blob
     extra_blob = kwargs.get("extra")
     if isinstance(extra_blob, (dict, list)):
-        extra_base = extra_blob
+        extra_base: Any = extra_blob
     elif isinstance(extra_blob, str) and extra_blob.strip():
         extra_base = extra_blob  # pass through string
     else:
@@ -206,25 +240,36 @@ def append(event: str, **kwargs) -> int:
         for k in ("old_account_code", "new_account_code", "reason"):
             if k in kwargs and kwargs[k] is not None:
                 extra_base[k] = kwargs[k]
-        extra_value = json.dumps(extra_base, ensure_ascii=False)
+        extra_json = json.dumps(extra_base, ensure_ascii=False)
     else:
-        extra_value = extra_base  # already a string
+        extra_json = extra_base  # already a string
 
-    # Build a full record dict with canonical keys
-    record = {
-        "timestamp": _now_iso_utc(),  # keep using existing column naming in your DB
+    # Build a full record dict with canonical keys; some schemas use different names.
+    now_iso = _now_iso_utc()
+    record: Dict[str, Any] = {
+        # Time (support both names; we'll write whatever exists)
+        "timestamp": now_iso,
+        "created_at": now_iso,
+
+        # Required event identity
         "event_type": event_type,
-        "action": kwargs.get("action") or event_type,
+        "action": (kwargs.get("action") or event_type),  # satisfy NOT NULL action schemas
+
+        # Linkage & actor
         "related_id": kwargs.get("related_id") or kwargs.get("entry_id"),
         "actor": kwargs.get("actor") or kwargs.get("user") or "system",
+
+        # Values
         "old_value": old_val,
         "new_value": new_val,
-        # identity context
+
+        # Identity context
         "entity_code": entity_code,
         "jurisdiction_code": jurisdiction_code,
         "broker_code": broker_code,
         "bot_id": bot_id,
-        # optional context
+
+        # Optional context
         "group_id": kwargs.get("group_id"),
         "trade_id": kwargs.get("trade_id"),
         "sync_run_id": kwargs.get("sync_run_id"),
@@ -233,11 +278,18 @@ def append(event: str, **kwargs) -> int:
         "request_id": kwargs.get("request_id"),
         "ip": kwargs.get("ip"),
         "user_agent": kwargs.get("user_agent"),
-        "extra": extra_value,
+
+        # JSON-ish payload candidates (we'll select the available column)
+        "extra": extra_json,
+        "extra_json": extra_json,
+        "payload": extra_json,
+        "payload_json": extra_json,
+        "metadata": extra_json,
+        "meta_json": extra_json,
     }
 
-    # Ensure every known column has a key (None if not provided)
-    for k in AUDIT_TRAIL_FIELDS:
+    # Ensure every known column from AUDIT_TRAIL_FIELDS has a key (None if not provided)
+    for k in (AUDIT_TRAIL_FIELDS or []):
         record.setdefault(k, None)
 
     db_path = _resolve_db_path()
@@ -247,13 +299,42 @@ def append(event: str, **kwargs) -> int:
 
         # Discover actual table columns to build a compatible INSERT list
         info = _audit_table_info(conn)
-        have_cols = [row[1] for row in info] if info else list(AUDIT_TRAIL_FIELDS)
+        have_cols = [row[1] for row in info] if info else list(AUDIT_TRAIL_FIELDS or [])
 
-        # Last defense: don't allow blank event_type if the column exists
+        # Last defense: don't allow blank event_type or action if columns exist
         if "event_type" in have_cols and (record.get("event_type") is None or str(record.get("event_type")).strip() == ""):
             record["event_type"] = DEFAULT_EVENT_TYPE
+        if "action" in have_cols and (record.get("action") is None or str(record.get("action")).strip() == ""):
+            record["action"] = record.get("event_type", DEFAULT_EVENT_TYPE)
 
-        cols: List[str] = [c for c in AUDIT_TRAIL_FIELDS if c in have_cols]
+        # Prefer whichever time column the table actually has
+        if "timestamp" in have_cols:
+            pass  # record['timestamp'] already set
+        elif "created_at" in have_cols:
+            pass  # record['created_at'] already set
+
+        # Prefer the JSON-ish column the table actually has
+        json_col_priority = ["extra", "extra_json", "payload", "payload_json", "metadata", "meta_json"]
+        chosen_json_col: Optional[str] = None
+        for jc in json_col_priority:
+            if jc in have_cols:
+                chosen_json_col = jc
+                break
+        if chosen_json_col:
+            # Make sure only the chosen json column is kept (others may be absent in schema)
+            for jc in json_col_priority:
+                if jc != chosen_json_col:
+                    record.pop(jc, None)
+
+        # Build INSERT using intersection of known fields and existing columns
+        cols: List[str] = [c for c in (AUDIT_TRAIL_FIELDS or []) if c in have_cols and c in record]
+        # Ensure we also include chosen time/json columns if they are not in AUDIT_TRAIL_FIELDS
+        for extra_col in ("timestamp", "created_at"):
+            if extra_col in have_cols and extra_col not in cols and extra_col in record:
+                cols.append(extra_col)
+        if chosen_json_col and chosen_json_col not in cols:
+            cols.append(chosen_json_col)
+
         placeholders = ", ".join(["?"] * len(cols))
         vals = [record.get(c) for c in cols]
 
@@ -261,7 +342,10 @@ def append(event: str, **kwargs) -> int:
             f"INSERT INTO audit_trail ({', '.join(cols)}) VALUES ({placeholders})",
             vals,
         )
-        conn.commit()
+        try:
+            conn.commit()
+        except Exception:
+            pass
         return int(cur.lastrowid)
     finally:
         try:
