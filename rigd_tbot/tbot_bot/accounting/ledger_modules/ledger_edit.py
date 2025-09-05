@@ -176,7 +176,7 @@ def reassign_leg_account(
     """
     import time
 
-    def _exec_with_retry(_conn, sql, params=(), attempts=3, sleep_s=0.2):
+    def _exec_with_retry(_conn, sql, params=(), attempts=8, sleep_s=0.15):
         last_err = None
         for i in range(attempts):
             try:
@@ -184,7 +184,7 @@ def reassign_leg_account(
             except sqlite3.OperationalError as e:
                 if "locked" in str(e).lower():
                     last_err = e
-                    time.sleep(sleep_s)
+                    time.sleep(sleep_s * (i + 1))  # gentle linear backoff
                     continue
                 raise
         # If still failing after retries, raise last error
@@ -218,7 +218,7 @@ def reassign_leg_account(
     try:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA busy_timeout=8000")
         conn.execute("BEGIN")
 
         # Fetch the leg + parent group
@@ -235,6 +235,9 @@ def reassign_leg_account(
 
         # Early no-op (but still audit)
         if old_account == new_account_code:
+            # Read current state BEFORE audit (avoids read vs. audit writer contention)
+            updated = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+            conn.commit()
             try:
                 audit_append(
                     event_label,              # positional 'event'
@@ -278,11 +281,7 @@ def reassign_leg_account(
                     )
                 else:
                     raise
-
-            # Return current row (unchanged)
-            updated = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
-            conn.commit()
-            return dict(updated)
+            return dict(updated) if updated else {"id": entry_id, "account": old_account, "group_id": leg["group_id"]}
 
         # Update ONLY the account field; do not mutate amount/date fields
         _exec_with_retry(
@@ -305,6 +304,21 @@ def reassign_leg_account(
 
         # Commit DB mutation first
         conn.commit()
+
+        # Fetch updated row to return (do this BEFORE audit to avoid writer lock contention)
+        updated_row = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+        updated_dict = dict(updated_row) if updated_row else {
+            "id": entry_id,
+            "account": new_account_code,
+            "group_id": leg["group_id"],
+        }
+
+        # Release the connection early to minimize lock windows
+        try:
+            conn.close()
+        except Exception:
+            pass
+        conn = None
 
         # Structured immutable audit (identity fields injected by audit module)
         try:
@@ -351,15 +365,7 @@ def reassign_leg_account(
             else:
                 raise
 
-        # Fetch updated row to return
-        updated_row = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
-        updated_dict = dict(updated_row) if updated_row else {
-            "id": entry_id,
-            "account": new_account_code,
-            "group_id": leg["group_id"],
-        }
-
-        # Optionally upsert mapping rule derived from this leg
+        # Optionally upsert mapping rule derived from this leg (separate from the main write connection)
         if apply_to_category:
             try:
                 from tbot_bot.accounting.coa_mapping_table import upsert_rule_from_leg
@@ -372,13 +378,15 @@ def reassign_leg_account(
 
     except Exception:
         try:
-            conn.rollback()
+            if conn:
+                conn.rollback()
         except Exception:
             pass
         raise
     finally:
         try:
-            conn.close()
+            if conn:
+                conn.close()
         except Exception:
             pass
 
