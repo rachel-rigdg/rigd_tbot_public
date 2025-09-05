@@ -176,15 +176,16 @@ def reassign_leg_account(
     """
     import time
 
-    def _exec_with_retry(_conn, sql, params=(), attempts=8, sleep_s=0.15):
+    def _exec_with_retry(_conn, sql, params=(), attempts=12, base_sleep=0.10):
         last_err = None
         for i in range(attempts):
             try:
                 return _conn.execute(sql, params)
             except sqlite3.OperationalError as e:
-                if "locked" in str(e).lower():
+                if "locked" in str(e).lower() or "busy" in str(e).lower():
                     last_err = e
-                    time.sleep(sleep_s * (i + 1))  # gentle linear backoff
+                    # gentle exponential backoff capped at ~1s
+                    time.sleep(min(1.0, base_sleep * (2 ** i)))
                     continue
                 raise
         # If still failing after retries, raise last error
@@ -218,8 +219,8 @@ def reassign_leg_account(
     try:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=8000")
-        conn.execute("BEGIN")
+        conn.execute("PRAGMA busy_timeout=15000")
+        # NOTE: do NOT open a write transaction yet; read first to minimize lock window
 
         # Fetch the leg + parent group
         leg = _exec_with_retry(
@@ -237,6 +238,7 @@ def reassign_leg_account(
         if old_account == new_account_code:
             # Read current state BEFORE audit (avoids read vs. audit writer contention)
             updated = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
+            # no explicit BEGIN was issued; commit is a no-op here
             conn.commit()
             try:
                 audit_append(
@@ -282,6 +284,9 @@ def reassign_leg_account(
                 else:
                     raise
             return dict(updated) if updated else {"id": entry_id, "account": old_account, "group_id": leg["group_id"]}
+
+        # ----- Begin short write transaction right before the UPDATE -----
+        _exec_with_retry(conn, "BEGIN IMMEDIATE")
 
         # Update ONLY the account field; do not mutate amount/date fields
         _exec_with_retry(
@@ -369,7 +374,18 @@ def reassign_leg_account(
         if apply_to_category:
             try:
                 from tbot_bot.accounting.coa_mapping_table import upsert_rule_from_leg
-                upsert_rule_from_leg(dict(updated_row) if updated_row else dict(leg), new_account_code, actor)
+                # Retry the upsert in case audit just held the writer lock
+                delay = 0.12
+                for _i in range(8):
+                    try:
+                        upsert_rule_from_leg(dict(updated_row) if updated_row else dict(leg), new_account_code, actor)
+                        break
+                    except sqlite3.OperationalError as e:
+                        if "locked" in str(e).lower() or "busy" in str(e).lower():
+                            time.sleep(min(1.0, delay))
+                            delay *= 1.8
+                            continue
+                        raise
             except Exception:
                 # Mapping upsert failures must not break the reassignment path
                 pass
