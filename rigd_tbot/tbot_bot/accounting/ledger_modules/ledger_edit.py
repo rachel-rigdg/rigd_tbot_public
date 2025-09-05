@@ -69,6 +69,88 @@ def _active_coa_codes() -> Set[str]:
     return codes
 
 
+def _compat_audit_insert(
+    *,
+    db_path: str,
+    event_label: str,
+    actor: str,
+    leg: sqlite3.Row,
+    reason: Optional[str],
+    before: Optional[str],
+    after: Optional[str],
+    extra: Dict[str, Any],
+) -> None:
+    """
+    Fallback writer used ONLY if audit_append() fails with NOT NULL on event_type.
+    It discovers the audit_trail schema at runtime and inserts only supported columns,
+    ensuring required NOT NULL fields like event_type and action are populated.
+    """
+    import json
+
+    conn = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
+    try:
+        conn.row_factory = sqlite3.Row
+        cols = []
+        for r in conn.execute("PRAGMA table_info(audit_trail)").fetchall():
+            # PRAGMA table_info returns (cid, name, type, notnull, dflt_value, pk)
+            cols.append(r[1])
+
+        # Build minimal row with safe defaults
+        entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()
+        payload = {
+            "old_account_code": before,
+            "new_account_code": after,
+            **(extra or {}),
+        }
+
+        # Prefer the leg's action; if missing, fall back to a sensible constant.
+        leg_action = (leg["action"] if not isinstance(leg, dict) else leg.get("action")) or "COA_LEG_REASSIGNED"
+
+        row: Dict[str, Any] = {
+            "event_type": event_label,
+            # Some schemas kept both; include when present
+            "event": event_label,
+            "created_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+            "related_id": leg["id"] if "id" in leg.keys() else None,
+            "actor": actor,
+            "reason": reason,
+            "group_id": leg.get("group_id") if isinstance(leg, dict) else leg["group_id"],
+            "trade_id": leg.get("trade_id") if isinstance(leg, dict) else leg["trade_id"],
+            "before": before,
+            "after": after,
+            # Many installs have NOT NULL on this:
+            "action": leg_action,
+            # Identity fields if present
+            "entity_code": entity_code,
+            "jurisdiction_code": jurisdiction_code,
+            "broker_code": broker_code,
+            "bot_id": bot_id,
+        }
+
+        # Name used for JSON payload varies across versions
+        json_col = None
+        for candidate in ("extra", "extra_json", "payload", "payload_json", "metadata", "meta_json"):
+            if candidate in cols:
+                json_col = candidate
+                break
+        if json_col:
+            row[json_col] = json.dumps(payload, ensure_ascii=False)
+
+        # Filter by existing columns
+        use_cols = [c for c in row.keys() if c in cols and row[c] is not None]
+        placeholders = ",".join(["?"] * len(use_cols))
+        sql = f"INSERT INTO audit_trail ({', '.join(use_cols)}) VALUES ({placeholders})"
+        vals = [row[c] for c in use_cols]
+        conn.execute("BEGIN")
+        conn.execute(sql, vals)
+        conn.commit()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def reassign_leg_account(
     entry_id: int,
     new_account_code: str,
@@ -153,27 +235,50 @@ def reassign_leg_account(
 
         # Early no-op (but still audit)
         if old_account == new_account_code:
-            audit_append(
-                event_label,  # positional 'event'
-                event_type=event_label,  # make sure NOT NULL audit_trail.event_type is satisfied everywhere
-                related_id=entry_id,
-                actor=actor,
-                group_id=leg["group_id"],
-                trade_id=leg["trade_id"],
-                before=old_account,
-                after=new_account_code,
-                reason=reason or "no-op (same account)",
-                extra={
-                    "old_account_code": old_account,
-                    "new_account_code": new_account_code,
-                    "symbol": leg["symbol"],
-                    "action": leg["action"],
-                    "strategy": leg["strategy"],
-                    "datetime_utc": leg["datetime_utc"],
-                    "amount": leg["total_value"],
-                    "source": "web_inline",
-                },
-            )
+            try:
+                audit_append(
+                    event_label,              # positional 'event'
+                    event_type=event_label,   # ensure NOT NULL column is populated when supported
+                    related_id=entry_id,
+                    actor=actor,
+                    group_id=leg["group_id"],
+                    trade_id=leg["trade_id"],
+                    before=old_account,
+                    after=new_account_code,
+                    reason=reason or "no-op (same account)",
+                    extra={
+                        "old_account_code": old_account,
+                        "new_account_code": new_account_code,
+                        "symbol": leg["symbol"],
+                        "action": leg["action"],
+                        "strategy": leg["strategy"],
+                        "datetime_utc": leg["datetime_utc"],
+                        "amount": leg["total_value"],
+                        "source": "web_inline",
+                    },
+                )
+            except sqlite3.IntegrityError as ie:
+                if "event_type" in str(ie) or "action" in str(ie):
+                    _compat_audit_insert(
+                        db_path=db_path,
+                        event_label=event_label,
+                        actor=actor,
+                        leg=leg,
+                        reason=reason or "no-op (same account)",
+                        before=old_account,
+                        after=new_account_code,
+                        extra={
+                            "source": "web_inline",
+                            "datetime_utc": leg["datetime_utc"],
+                            "amount": leg["total_value"],
+                            "symbol": leg["symbol"],
+                            "action": leg["action"],
+                            "strategy": leg["strategy"],
+                        },
+                    )
+                else:
+                    raise
+
             # Return current row (unchanged)
             updated = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
             conn.commit()
@@ -202,27 +307,49 @@ def reassign_leg_account(
         conn.commit()
 
         # Structured immutable audit (identity fields injected by audit module)
-        audit_append(
-            event_label,  # positional 'event'
-            event_type=event_label,  # ensure event_type column is always populated
-            related_id=entry_id,
-            actor=actor,
-            group_id=leg["group_id"],
-            trade_id=leg["trade_id"],
-            before=old_account,
-            after=new_account_code,
-            reason=reason,
-            extra={
-                "old_account_code": old_account,
-                "new_account_code": new_account_code,
-                "symbol": leg["symbol"],
-                "action": leg["action"],
-                "strategy": leg["strategy"],
-                "datetime_utc": leg["datetime_utc"],
-                "amount": leg["total_value"],
-                "source": "web_inline",
-            },
-        )
+        try:
+            audit_append(
+                event_label,            # positional 'event'
+                event_type=event_label, # ensure column filled when supported
+                related_id=entry_id,
+                actor=actor,
+                group_id=leg["group_id"],
+                trade_id=leg["trade_id"],
+                before=old_account,
+                after=new_account_code,
+                reason=reason,
+                extra={
+                    "old_account_code": old_account,
+                    "new_account_code": new_account_code,
+                    "symbol": leg["symbol"],
+                    "action": leg["action"],
+                    "strategy": leg["strategy"],
+                    "datetime_utc": leg["datetime_utc"],
+                    "amount": leg["total_value"],
+                    "source": "web_inline",
+                },
+            )
+        except sqlite3.IntegrityError as ie:
+            if "event_type" in str(ie) or "action" in str(ie):
+                _compat_audit_insert(
+                    db_path=db_path,
+                    event_label=event_label,
+                    actor=actor,
+                    leg=leg,
+                    reason=reason,
+                    before=old_account,
+                    after=new_account_code,
+                    extra={
+                        "source": "web_inline",
+                        "datetime_utc": leg["datetime_utc"],
+                        "amount": leg["total_value"],
+                        "symbol": leg["symbol"],
+                        "action": leg["action"],
+                        "strategy": leg["strategy"],
+                    },
+                )
+            else:
+                raise
 
         # Fetch updated row to return
         updated_row = _exec_with_retry(conn, "SELECT * FROM trades WHERE id = ?", (entry_id,)).fetchone()
