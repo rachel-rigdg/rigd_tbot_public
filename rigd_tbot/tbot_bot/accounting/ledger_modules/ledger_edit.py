@@ -155,6 +155,7 @@ def reassign_leg_account(
         if old_account == new_account_code:
             audit_append(
                 event_label,  # positional 'event'
+                event_type=event_label,  # make sure NOT NULL audit_trail.event_type is satisfied everywhere
                 related_id=entry_id,
                 actor=actor,
                 group_id=leg["group_id"],
@@ -203,6 +204,7 @@ def reassign_leg_account(
         # Structured immutable audit (identity fields injected by audit module)
         audit_append(
             event_label,  # positional 'event'
+            event_type=event_label,  # ensure event_type column is always populated
             related_id=entry_id,
             actor=actor,
             group_id=leg["group_id"],
