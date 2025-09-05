@@ -656,10 +656,36 @@ def ledger_edit(entry_id: int):
                 )
                 # We'll do a manual mapping upsert below if apply_mapping is True.
             elif "unexpected keyword argument 'event_type'" in msg:
-                # Very old backend: no event_type nor apply_to_category kw
-                result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
-                # Manual mapping upsert below if requested.
+                # Backend wants 'event' instead of 'event_type'
+                try:
+                    # First try with apply_to_category + event
+                    result = reassign_leg_account(
+                        entry_id,
+                        account_code,
+                        actor,
+                        reason=reason,
+                        event=EVENT_TYPE,
+                        apply_to_category=apply_mapping,
+                    )
+                    mapping_ok = bool(apply_mapping)
+                except TypeError as te2:
+                    m2 = str(te2)
+                    if "unexpected keyword argument 'apply_to_category'" in m2:
+                        # Supports event but not apply_to_category
+                        result = reassign_leg_account(
+                            entry_id,
+                            account_code,
+                            actor,
+                            reason=reason,
+                            event=EVENT_TYPE,
+                        )
+                        # manual mapping upsert below if requested
+                    else:
+                        # Final legacy fallback (no event/event_type kwargs)
+                        result = reassign_leg_account(entry_id, account_code, actor, reason=reason)
+                # else path ends after inner try/except
             else:
+                # Some other TypeError surfaced — re-raise
                 raise
     except Exception as e:
         traceback.print_exc()
