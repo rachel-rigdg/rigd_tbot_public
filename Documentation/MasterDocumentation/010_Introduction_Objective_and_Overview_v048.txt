@@ -2,7 +2,7 @@
 Document: 010
 010_Introduction_Objective_and_Overview
 Version: v048
-Date: UTC:2025-08-23 00:00:00
+Date: UTC:2025-09-06 00:00:00
 ================================================================================
 
 
@@ -61,7 +61,7 @@ The system operates intraday strategies in real time with fully automated, risk-
 - **All COA creation, updates, and human-readable exports are performed via a dedicated COA Management page in the tbot_web UI.**
 - The default COA is generated on initial bootstrap and can be viewed or modified only through the Web UI. CLI or accounting system pushes are not permitted.
 - COA metadata is stored in the `coa_metadata` table with all required versioning and extensibility fields.
-- **All Web UI/admin logic for COA must utilize `utils_coa_web.py`, and all ledger/schema integration must utilize `coa_utils_ledger.py`, per the current directory specification.**
+- **All Web UI/admin logic for COA must utilize `tbot_web/support/utils_coa_web.py`, and all ledger/schema integration must utilize `tbot_bot/accounting/coa_utils.py`, per the current directory specification.**
 
 **Accounting System Role (Post-Session Only):**
 - The accounting system may read/export ledgers and trade data after session completion for audit, reporting, or reconciliation.
@@ -70,7 +70,7 @@ The system operates intraday strategies in real time with fully automated, risk-
 
 **Ledger and trade routing rules:**
 - All execution toggles are set via `.env_bot` (`ALPACA_ENABLED`, `IBKR_ENABLED`, etc.), with per-strategy toggles (`STRAT_OPEN_ENABLED`, `STRAT_MID_ENABLED`, `STRAT_CLOSE_ENABLED`).
-- **All trades and PnL activity must write to `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`**, with all ledger paths and metadata defined by internal config loaded at session start.
+- **All trades and PnL activity must write to `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`** in the identity-scoped `tbot_bot/output/{IDENTITY}/ledgers/` path, with all ledger paths and metadata resolved by internal config at session start.
 - **The bot does not read, manage, or calculate float or ledger updates from any external system during runtime; all provisioning occurs during Web UI bootstrap or by manual config update only.**
 
 PnL, float tracking, and revenue movements are ingested, reconciled, and logged by the accounting system only after session completion. 
@@ -81,19 +81,19 @@ TEST_MODE is an active, runtime-only feature triggered by the presence of `tbot_
 System Instructions 
 ==============================
 
-1. All environment-specific values MUST be sourced ONLY from `.env`, `.env_enc`, `.env_bot`, `.env_bot.enc`. No hardcoded API keys, thresholds, credentials, toggles, file paths, or mode flags. `DISABLED ≠ OMITTED`: All logic must explicitly evaluate suppressed (disabled) states.
+1. All environment-specific values MUST be sourced ONLY from `.env`, `.env.enc`, `.env_bot`, `.env_bot.enc`. No hardcoded API keys, thresholds, credentials, toggles, file paths, or mode flags. `DISABLED ≠ OMITTED`: All logic must explicitly evaluate suppressed (disabled) states.
 
 2. Inline comments REQUIRED in all generated code: logic branches, `.env_bot` references, and all condition paths must be clearly explained.
 
 3. All file paths must be relative and platform-agnostic. Code must run unmodified on macOS, Linux, and all prod servers.
 
-4. Ledger routing: All trade activity writes to the OFX-compliant, entity-scoped SQLite ledger. Ledger filename: `{ENTITY_CODE}_{JURISDICTION_CODE}_{account_name}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db` (account_name = lowercase ledger tag). **Ledger path, float, and all metadata are resolved at session start from internal config files; the bot NEVER receives runtime injection or push from any external system.** All ledger writes must be preceded by a backup. Test modules under `tbot_bot/test/` may simulate trade placement but **must NEVER alter or bypass production ledger logic**.
+4. Ledger routing: All trade activity writes to the OFX-compliant, entity-scoped SQLite ledger. Ledger filename: `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`. **Ledger path, float, and all metadata are resolved at session start from internal config files; the bot NEVER receives runtime injection or push from any external system.** All ledger write sessions must begin with a pre-sync snapshot; test modules under `tbot_bot/test/` may simulate trade placement but **must NEVER alter or bypass production ledger logic**.
 
 5. NO re-ingestion of `.csv` or `.json` logs permitted: external audit artifacts only.
 
 6. Every strategy module must implement `.self_check()`. `main.py` must halt if any `.self_check()` fails. Failures must log strategy, reason, error context, with UTC timestamp.
 
-7. `env_bot.py` must validate all required keys from `.env_bot.enc`, decrypted using `storage/keys/env.key`. Missing/malformed keys must raise a fatal, human-readable startup error.
+7. `env_bot.py` must validate all required keys from `.env_bot.enc`, decrypted using `tbot_bot/storage/keys/env_bot.key`. Missing/malformed keys must raise a fatal, human-readable startup error.
 
 8. Logs and ledger outputs must include: `timestamp`, `strategy_name`, `ticker`, `side`, `size`, `entry_price`, `exit_price`, `PnL`, `broker`, `error_code` (if applicable). Logs must use global `LOG_FORMAT` (CSV/JSON) from `.env_bot`.
 
@@ -103,7 +103,7 @@ System Instructions
 
 11. Strategy routing and broker enablement must be toggled ONLY via `.env_bot`: `ALPACA_ENABLED`, `IBKR_ENABLED`, `STRAT_OPEN_ENABLED`, `STRAT_MID_ENABLED`, `STRAT_CLOSE_ENABLED`.
 
-12. **The Chart of Accounts (COA) for the bot is fully self-contained and managed solely through a dedicated COA Management page in the tbot_web UI. All creation, modification, and export of the COA must occur via the Web UI. No CLI utilities, accounting system pushes, or external edits are permitted. The COA must be versioned, validated at runtime, and stored as both a JSON structure and a SQLite metadata table. All Web UI COA operations must use `utils_coa_web.py` and all ledger/schema operations must use `coa_utils_ledger.py`.**
+12. **The Chart of Accounts (COA) for the bot is fully self-contained and managed solely through a dedicated COA Management page in the tbot_web UI. All creation, modification, and export of the COA must occur via the Web UI. No CLI utilities, accounting system pushes, or external edits are permitted. The COA must be versioned, validated at runtime, and stored as both a JSON structure and a SQLite metadata table. All Web UI COA operations must use `tbot_web/support/utils_coa_web.py` and all ledger/schema operations must use `tbot_bot/accounting/coa_utils.py`.**
 
 13. **All Fernet keys and corresponding encrypted secrets (including those for ledger, COA, user credentials, and all config) must be rotated atomically and re-encrypted whenever any config, credential, or sensitive secret is modified, or a user is created/modified. This process is fully automated, with all affected files backed up before any overwrite. Old keys/secrets are never reused, and rotation requires no manual action.**  
 
@@ -118,7 +118,7 @@ Deployment Notes
 - `tbot_bot/` must run independently of `tbot_web/`; core trading must continue if web UI is disabled.
 - Logs, ledger exports, and backup behavior remain active regardless of web interface state.
 - Only one broker should be enabled (`BROKER_NAME=ALPACA`, `ALPACA_ENABLED=true`, etc.).
-- Broker API keys from `.env` must validate at startup—failure causes immediate shutdown.
+- Broker API keys from `.env`/`.env.enc` must validate at startup—failure causes immediate shutdown.
 - Strategy toggles: `STRAT_OPEN_ENABLED`, `STRAT_MID_ENABLED`, `STRAT_CLOSE_ENABLED`.
 - Pre-trade validation includes:
   - Market spread ≤ 1.5% of entry price
@@ -126,17 +126,24 @@ Deployment Notes
   - No violations of `MAX_RISK_PER_TRADE` or `DAILY_LOSS_LIMIT`
 - Auto-shutdown triggers:
   - Broker API failure (`watchdog_bot.py`)
-  - Critical runtime error (`error_handler.py`)
+  - Critical runtime error (`error_handler_bot.py`)
   - Loss breach (`kill_switch.py`)
-- Ledger write format: `entities/{ENTITY}_{JURIS}_{account}_{BROKER}_{BOT_ID}_BOT_ledger.db`
-- Each ledger write is preceded by a timestamped backup (`backup_ledgers.py`): `entities/{ENTITY}_{JURIS}/backups/`
-- OFX exports are generated only by `/export/generate_ofx.py`
-- Log files: `/output/logs/open.log`, `/mid.log`, `/close.log`, `/unresolved_orders.log`
+- Ledger location and naming:
+  - Path: `tbot_bot/output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/`
+  - File: `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+- Ledger protection:
+  - Pre-sync snapshot before writes (`tbot_bot/runtime/ledger_snapshot.py`)
+  - EOD archival/rotation (`tbot_bot/reporting/auto_backup.py`)
+- OFX-aligned exports and reports are generated by `tbot_bot/reporting/ledger_report.py`; external accounting export is via `tbot_bot/accounting/accounting_api.py`.
+- Log files (global): `tbot_bot/output/logs/*.log` (`main_bot.log`, `heartbeat.log`, `router.log`, `screener.log`, `kill_switch.log`, `provisioning.log`, `system_users.log`, `user_activity_monitoring.log`, `status.json`, `start_log`, `stop_log`, `test_mode.log`, password reset logs).
+- Session-scoped logs: `tbot_bot/output/{IDENTITY}/logs/{open,mid,close,unresolved_orders,error_tracebacks}.log`
 - Post-session logs may be zipped/archived (`auto_backup.py`)
-- Optional cloud sync: `scripts/upload_backups_to_cloud.sh`
+- Optional cloud sync: `support/scripts/upload_backups_to_cloud.sh`
 - Backups must not block live ledger writes; all archives are timestamped
 - Session timing: `.env_bot` defines `START_TIME_*`, `[STRAT]_ANALYSIS_TIME`, `[STRAT]_MONITORING_TIME`
 - Respect `TRADING_DAYS`—block execution on weekends/holidays
+- Start/Stop/Kill controls: Web UI writes `tbot_bot/control/control_start.flag`, `control_stop.flag`, optional `control_kill.flag`; `runtime/main.py` orchestrates via `tbot_supervisor.py`
+
 
 --------------------------------------------------------------------------------
 COA/Schema Enforcement 
@@ -146,10 +153,10 @@ COA/Schema Enforcement
 - The COA must be present in each bot ledger as a dedicated table (`coa_metadata`) containing: `currency_code`, `entity_code`, `jurisdiction_code`, `coa_version`, `created_at_utc`, `last_updated_utc`.
 - Any schema or COA mismatch at runtime (detected by `build_check.py` or ledger init scripts) must block execution and log a fatal error.
 - The bot’s COA is self-contained and managed exclusively via the tbot_web UI (`coa_web.py`, `coa.html`). All edits and exports are performed here; no external push/pull from accounting.
-- Human-readable COA exports are generated by the web UI and stored in `/output/ledgers/` for reference/audit.
+- Human-readable COA exports are generated by the web UI and stored in `tbot_bot/output/{IDENTITY}/ledgers/` for reference/audit.
 - On new ledger creation, the COA table is initialized from the internal COA (default or UI-edited version) and locked for double-entry enforcement.
 - All account transactions are validated against the COA at time of entry.
-- **COA operations in the UI must use `utils_coa_web.py`; ledger and schema checks must use `coa_utils_ledger.py`.**
+- **COA operations in the UI must use `tbot_web/support/utils_coa_web.py`; ledger and schema checks must use `tbot_bot/accounting/coa_utils.py`.**
 
 
 ================================================================================
@@ -167,13 +174,13 @@ Production:
 - Runs on Ubuntu 22.04 LTS (DigitalOcean)
 - Deployed via SCP/SFTP or `git pull` to prod branch
 - Run mode:
-  - `tbot_bot/runtime/main.py` is the **single systemd entrypoint** for all bot operations (launched by `tbot_bot.service`)
+  - `tbot_bot/runtime/main.py` is the **single systemd entrypoint** for all bot operations (launched by `systemd_units/tbot_bot.service`)
   - No other script or CLI tool launches bot workers, watchers, or strategies
   - Manual or cron launches of `start_bot.py` or `service_bot.py` are **deprecated and unsupported**; control is via Web UI flags and systemd only
 - Logs:
-  - `output/{BOT_IDENTITY}/logs/*.log` – strategy logs, unresolved orders, errors
-  - `output/{BOT_IDENTITY}/summaries/` – session summaries
-  - `output/{BOT_IDENTITY}/trades/` – CSV/JSON trade histories
+  - `tbot_bot/output/{IDENTITY}/logs/*.log` – strategy logs, unresolved orders, errors
+  - `tbot_bot/output/{IDENTITY}/summaries/` – session summaries
+  - `tbot_bot/output/{IDENTITY}/trades/` – CSV/JSON trade histories
 
 Brokers:
 - One active broker per bot
@@ -191,36 +198,36 @@ Market Data:
 
 Accounting:
 - All trades and ledgers are available for post-session ingestion/export by the accounting system for audit, reporting, and reconciliation.
-- Ledger format: `{ENTITY}_{JURIS}_{BROKER}_{BOT_ID}_BOT_ledger.db`
-- Structure in `ledger_schema.py`, OFX-compliant
+- Ledger format: `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
+- Structure defined in `tbot_bot/accounting/tbot_ledger_schema.sql`, OFX-aligned
 - **COA required:** Each ledger is initialized and validated against `tbot_ledger_schema.sql` and `tbot_ledger_coa_template.json`, with a `coa_metadata` table and account hierarchy included at creation.
-- OFX exports only via `generate_ofx.py`
+- Exports/reports via `tbot_bot/reporting/ledger_report.py`; external postings via `tbot_bot/accounting/accounting_api.py`
 - TradeBot does not emit CSV for ledgers; all CSV/JSON outputs are for human audit only
 
 Web Interface:
 - `tbot_web/` Flask dashboard (modular, phase-driven)
 - Features:
-  - Encrypted login (bcrypt + Fernet keys, no plaintext; `.env`/env vars only for Flask secret key)
+  - Encrypted login (bcrypt + Fernet keys; `.env`/`.env.enc` only for Flask secret key)
   - Multi-phase config/registration/startup: UI phases for bootstrap, registration, and main dashboard, orchestrated by bot state and systemd units
   - Secure config UI: All configuration and credentials entered via Web UI, never CLI
   - Logs/status: Live dashboard, logs, and bot status read from `status.json` and log files per bot
-  - Start/Stop: UI triggers write `control_start.txt`, `control_stop.txt` for systemd/bot lifecycle
+  - Start/Stop/Kill: UI triggers write `control_start.flag`, `control_stop.flag`, optional `control_kill.flag` for systemd/bot lifecycle
   - **COA management:** COA can be viewed and edited exclusively through a dedicated tbot_web UI page, with RBAC enforcement. Human-readable COA export in Markdown/CSV. All edits versioned and audit-logged.
 
 Alerts:
-- Optional SMTP email via `.env`:
+- Optional SMTP email via `.env`/`.env.enc`:
   - `NOTIFY_ON_FILL=true`, `NOTIFY_ON_EXIT=true`
-- SMTP creds from DreamHost/etc. in `.env`
+- SMTP creds stored encrypted in `tbot_bot/storage/secrets/smtp_credentials.json.enc`
 
 Security:
-- `.env_bot` encrypted → `.env_bot.enc` via `tools/encrypt_env_bot.py`
-- AES key in `.env` as `ENV_BOT_KEY`
-- All encrypted files ignored via `.scpignore_*`
+- All provisioning, encryption, and secret management performed via the Web UI (`configuration_web.py`, `config/config_encryption.py`)
+- `.env_bot` → `.env_bot.enc` and `.env` → `.env.enc` (where used) via Fernet
+- Fernet keys stored under `tbot_bot/storage/keys/` (`env_bot.key`, `env.key`, and category-specific keys)
 - **All core configuration, COA management, and secrets (including those for accounting and credentials) are subject to atomic Fernet key and secret rotation. Whenever any sensitive config or credential is changed, or any user is created/modified, all relevant keys and encrypted secrets are automatically regenerated and re-encrypted, with robust backup and no manual action required.**
 
 Backup:
-- Logs + ledgers archived via `auto_backup.py`
-- Stored under `backups/`, upload via `upload_backups_to_cloud.sh`
+- Logs + ledgers archived via `tbot_bot/reporting/auto_backup.py`
+- Stored under `tbot_bot/storage/backups/` (timestamped); optional upload via `support/scripts/upload_backups_to_cloud.sh`
 - Secondary replication recommended (FTP/S3/ProtonVault)
 
 Deployment Verification:
@@ -244,7 +251,7 @@ Time Zone Standards
 - All persistent time variables, logs, ledger entries, alerts, and OFX timestamps use **UTC (Coordinated Universal Time)**—this is enforced system-wide.
 - **Strategy start times** in `.env_bot` (e.g., `START_TIME_OPEN`, `START_TIME_MID`, `START_TIME_CLOSE`) are now specified in **local time** according to the configured `TIMEZONE` (e.g., `"US/Eastern"`, `"Europe/London"`).  
   The system automatically converts local times to UTC for all scheduling and execution.
-- Ledger writes (e.g., `entities/{ENTITY}_{JURIS}_{BROKER}_{BOT_ID}_BOT_ledger.db`) **must set `DTPOSTED` and all OFX timestamps in UTC**.
+- Ledger writes (e.g., `tbot_bot/output/{IDENTITY}/ledgers/{..._BOT_ledger.db}`) **must set `DTPOSTED` and all OFX timestamps in UTC**.
 - All COA/ledger metadata tables (`coa_metadata`) include `created_at_utc` and `last_updated_utc` fields, set in UTC at creation/update.
 - Internal logic and comparisons in `strategy_router.py`, `status_bot.py`, and all time utilities **must always standardize to UTC** before storing or logging.  
   Local times may be displayed in the UI, but never stored as authoritative timestamps.
@@ -265,7 +272,6 @@ def utc_now():
 
 def now_local():
     # Returns local time according to config['TIMEZONE']
-    import pytz
     from tbot_bot.config.env_bot import get_bot_config
     config = get_bot_config()
     tz = pytz.timezone(config.get("TIMEZONE", "UTC"))

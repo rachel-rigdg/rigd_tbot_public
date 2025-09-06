@@ -13,3 +13,41 @@
 #settings-form, .dashboard-main form {
     margin-bottom: 2em;
 }
+
+/* Stacked block-style field layout */
+
+.fieldblock { 
+    
+    width: 100%;
+    max-width: 700px;
+    padding: 1.5em 1em;
+    margin: 1em auto;
+    display: block;
+}
+
+.fieldblock fieldset {
+    width: 100%;
+    min-width: 320px;
+    padding: 1em;
+    box-sizing: border-box;
+}
+
+.fieldblock label {
+    display: inline-block;
+    width: 220px;
+    text-align: right;
+    padding-right: 1em;
+    box-sizing: border-box;
+}
+
+.fieldblock input,
+.fieldblock select {
+    width: 320px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+button[type="submit"] {
+    margin-top: 2em;
+    min-width: 5em;
+}

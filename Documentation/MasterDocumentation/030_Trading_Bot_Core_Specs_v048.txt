@@ -2,7 +2,7 @@
 Document: 030
 Trading_Bot_Core_Specs
 Version: v048
-Date: UTC:2025-08-23 00:00:00
+Date: UTC:2025-09-06 00:00:00
 ================================================================================
 
 This module details the core infrastructure, risk controls, trading strategy logic, and instrument integrations for the RIGD Trading Bot system.
@@ -11,7 +11,7 @@ Contents:
 - RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATED)
 - Unified Capital Risk Controls and Dynamic Broker Float Allocation
 - Automated Holdings, Float, and Reserve Management
-- Broker Sync & Ledger Pipeline (Alpaca → Normalizers → Compliance → Mapping → Dedupe → Double-Entry → Query/UI)
+- Broker Sync & Ledger Pipeline (Broker → Normalizers → Compliance → Mapping → Dedupe → Double-Entry → Query/UI)
 - Ledger Identifiers & Grouping Policy (FITID, DTPOSTED=UTC, group_id policy)
 - Opening Balances Snapshot (positions + cash) — idempotent
 - TradeBot Strategy Logic Spec v1.1 (Self-Contained)
@@ -36,7 +36,7 @@ RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATE
   - UFW configured
   - Auto-updates enabled
   - System timezone set to UTC
-  - Python 3.10+ (3.11+ preferred)
+  - Python 3.11+ (required)
   - pip, venv, sqlite3, rsync, curl, git installed
   - All working directories and virtual environments set up
 - **PHASE 3:** Systemd Integration (single entrypoint; supervisor **mandatory**):
@@ -47,8 +47,9 @@ RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATE
   - All services run as `tbot` user
   - **`tbot_supervisor.py` is mandatory and always launched by `tbot_bot.runtime.main` to orchestrate strategy windows and workers.**
   - **No other systemd units or timers launch strategies directly.** (Open/Mid/Close windows are managed inside supervisor/main.)
-  - Logs routed to journald and to `/tbot_bot/output/` as per bot policy
-  - Optional `/etc/tbot.env` (or user env) for non-secrets overrides
+  - Some Logs routed to journald and to `/tbot_bot/output/` and some logs routed to `output/{BOT_IDENTITY}/logs/` (resolved via `tbot_bot/support/path_resolver.py`).”
+  - **initial user/credential/system bootstrap is Web UI only**  via `configuration.html` → `configuration_web.py`; CLI bootstrap is forbidden.
+
 - **PHASE 4:** Logging/Backups:
   - Scripted archival via `tbot_bot/reporting/auto_backup.py` compresses logs, SQLite ledgers, configs; offsite push optional
   - Backups are non-blocking; UTC-timestamped; retention/pruning enforced
@@ -70,7 +71,7 @@ TradeBot enforces dynamic float allocation and strict per-session risk controls 
 **All thresholds and limits are sourced from `.env_bot` via the Web UI—no hardcoded limits or overrides.**
 
 **Risk per Strategy Session (TOTAL_ALLOCATION):**  
-- Max session risk: `broker_current_float * TOTAL_ALLOCATION` (configurable)
+- Max session risk: `broker_current_float * TOTAL_ALLOCATION` (evaluated **at session start**)
 - Per-trade allocation split by `WEIGHTS` (must match `MAX_TRADES`)
 
 **Allocations Example:**  
@@ -92,25 +93,26 @@ TradeBot enforces dynamic float allocation and strict per-session risk controls 
 - Halting enforced in `kill_switch.py`
 
 **Ledger/Accounting:**  
-- Bot reads float/config at session start only; never moves float at runtime.
-- Float adjustments/reconciliations are operator tasks, never bot runtime.
-- Ledgers and trade logs are generated locally.
+- Strategies read float/config at **session start only** and **do not move float intra-session**.  
+- **Post-session** float top-ups/downsizing, tax/payroll splits, and COA postings are executed by the **Holdings module** (see Doc 010/060).  
+- External cash movements (LLC/bank) are never performed by the bot; they follow the proposal/ack **handshake protocol**.  
+- Ledgers and trade logs are generated locally (double-entry, UTC), with all paths via `tbot_bot/support/path_resolver.py`.
 
 **Rebalancing:**  
-- Bot monitors float for deviation triggers (`REBALANCE_TRIGGER_PCT`).
-- If deviation breached, logs operator notification—bot never manages float or rebalancing.
+- Deviation triggers (`REBALANCE_TRIGGER_PCT`) detected during a session are logged; corrective sell/buy actions to restore float are executed by the **Holdings module** during its daily post-open workflow.  
+- Portfolio rebalancing occurs **only** via the Holdings module on its configured interval (3/6/12 months) or manual UI trigger; strategies never rebalance.
 
 **Scaling:**  
-- All risk caps and allocations scale with broker float.
-- Only adjustable via `.env_bot` (Web UI).
+- All risk caps and allocations scale with broker float (as read at session start).  
+- Risk parameters are adjustable only via `.env_bot` (Web UI). Holdings/tax/payroll parameters are configured in the Holdings UI and stored in the encrypted holdings secrets.
 
 **Enforcement Modules:**  
-- `risk_module.py`: enforces all risk/session/trade limits from config
-- `kill_switch.py`: enforces DAILY_LOSS_LIMIT
+- `risk_module.py`: enforces all risk/session/trade limits from config  
+- `kill_switch.py`: enforces DAILY_LOSS_LIMIT  
 - `watchdog_bot.py`: halts trading if API/system is unstable
 
 **Test/Live:**  
-- *All controls are identical in test/live.*
+- *All controls are identical in test/live.*  
 - **No manual overrides** except via `.env_bot` (Web UI).
 
 
@@ -121,26 +123,29 @@ Automated Holdings, Float, and Reserve Management
 The RIGD Trading Bot now implements a fully automated, audit-compliant holdings management system responsible for all float, tax, payroll, and long-term portfolio allocations.
 
 - **Scope:**  
-  All cash float targets, tax reserve funding, payroll allocations, and periodic portfolio rebalancing are managed by the holdings management module. This system replaces all operator/manual float management, automating nightly (post-open) and scheduled (rebalance) adjustments.
+  All cash float targets, tax reserve funding, payroll allocations, and periodic portfolio rebalancing are managed by the holdings management module. This system replaces all operator/manual float management, automating **daily post-open** (10 minutes after the OPEN strategy completes, ~14:45 UTC) and scheduled (rebalance) adjustments.
   - **All reserve, float, and allocation actions are strictly audit-logged with full double-entry COA and immutable audit trail, including user, timestamp (UTC), action, and before/after values.**
   - **Once tax or payroll reserves are allocated, they can never be reduced or repurposed for trading or float, except by explicit manual override, which requires a mandatory audit rationale and user tracking.**
+  - **All postings resolve through the active `coa_mapping_table.json` (lazy-created, versioned); any unmapped transaction is `skip_insert` and flagged for UI mapping.**
 
 - **Configuration and Persistence:**  
   - Allocation settings, securities list, and target percentages are configured exclusively via the Web UI and persisted in an encrypted holdings secrets file (`storage/secrets/holdings_config.json.enc`), not `.env_bot.enc`.
   - `.env_bot.enc` contains only the pointer and enablement flag for holdings management; it does not store allocation or securities data.
-  - **All changes to holdings config trigger a secrets file backup and persistent audit entry. Environment variables are never the primary source of truth.**
+  - **All changes to holdings config trigger an atomic encrypted backup of the previous secrets and a persistent audit entry. Environment variables are never the primary source of truth.**  
+  - **Key/secret rotation is automatic:** any sensitive change (including user CRUD) regenerates and re-encrypts keys/secrets atomically with backups (see Security/Rotation policy).
 
 - **Float, Tax, and Payroll Reserves:**  
   - Float Target %, Tax Reserve %, and Payroll % are enforced and maintained automatically.
-  - After each trading day’s open session, realized gains are split per configured percentages and posted to the correct COA/ledger accounts and audit trail.
-  - Float top-ups (security sales to restore float) result in tax reserve allocations on any realized gain, but never payroll allocations. Losses result in no reserve.
+  - **Daily workflow (post-open):** realized gains are split per configured percentages and posted to the correct COA/ledger accounts and audit trail (UTC).
+  - Float top-ups (security sales to restore float) result in **tax reserve** allocations on any realized gain, but **never** payroll allocations. Losses result in no reserve.
   - Payroll allocations are applied only to *post-tax* realized gains from trading bot activities (not float-top-up sales).
   - **Allocated tax and payroll reserves are never reduced or clawed back in drawdowns.**
+  - **External cash movement is out-of-scope for this module and must follow the proposal/acknowledgment handshake protocol (see Accounting Integration/Handshake).**
 
 - **Rebalancing:**  
   - Long-term holdings are rebalanced according to user-defined intervals (3, 6, 12 months) or on manual trigger from the UI.
   - Rebalance logic supports explicit and blank allocation fields—any blank allocation symbols receive equal split of the remainder.
-  - All buy/sell transactions are double-entry compliant and posted to the ledger with audit metadata.
+  - All buy/sell transactions are double-entry compliant and posted to the ledger with audit metadata (UTC, OFX-aligned, via `path_resolver.py`-derived paths).
   - **System must block any config, split, or rebalance if it would violate compliance (float, reserve, or allocation). All actions are previewed and simulated before commit, and noncompliant actions are not performed.**
 
 - **Compliance, Audit, and UI:**  
@@ -150,8 +155,9 @@ The RIGD Trading Bot now implements a fully automated, audit-compliant holdings 
   - **Automated tests and simulations must cover normal, edge, and error states for float, reserve, allocation, and compliance logic, as well as audit logging.**
 
 - **Integration:**  
-  - The holdings management module works alongside and independently of the trading strategy modules. It interfaces with broker APIs for order execution and posts all ledger entries using the updated chart of accounts.
-  - All risk controls, float splits, and reserve logic are now automated and cannot be overridden manually via CLI or external config.
+  - The holdings management module works alongside and independently of the trading strategy modules. It interfaces with broker APIs for order execution and posts all ledger entries using the updated chart of accounts.  
+  - **All ledger postings use the versioned `coa_mapping_table.json`; unmapped ⇒ `skip_insert` + UI flag.** All file paths are resolved via `tbot_bot/support/path_resolver.py`.  
+  - All risk controls, float splits, and reserve logic are automated and cannot be overridden manually via CLI or external config.
 
 **See:**  
 - `Long-Term Holdings Management Module Specification` for complete logic, workflow, and configuration requirements.
@@ -163,11 +169,12 @@ The RIGD Trading Bot now implements a fully automated, audit-compliant holdings 
 
 
 =============================================================================================================================================
-TradeBot Strategy Logic Spec v1.1 (Updated for Accounting System Integration)
+TradeBot Strategy Logic Spec (Updated for Accounting System Integration)
 =============================================================================================================================================
 
 **Overview:**  
-TBot executes intraday breakout and mean-reversion strategies using a unified logic pipeline. All trade entries are directional and follow structured risk, time, and allocation parameters as defined in `.env_bot`. All parameters, filters, and toggles must be dynamically sourced—no hardcoded logic.
+TBot executes intraday breakout and mean-reversion strategies using a unified logic pipeline. All trade entries are directional and follow structured risk, time, and allocation parameters as defined in `.env_bot`. All parameters, filters, and toggles must be dynamically sourced—no hardcoded logic.  
+**Separation of concerns:** Strategy modules never manage float/reserve or COA state; holdings/reserve automation runs in the dedicated holdings module.
 
 **Supported Instruments:**  
 - Long equity (common stocks or ETFs)
@@ -194,31 +201,28 @@ TBot executes intraday breakout and mean-reversion strategies using a unified lo
 - **Ledger DB (per-bot, scoped by identity):**
     - `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
     - Append-only, **double-entry** invariant (every economic event posts two balanced splits, sum = 0), **UTC-only** timestamps, **OFX-aligned** fields, all paths via `path_resolver.py`.
-- **Required OFX-aligned fields (per entry):**
-    - Identifiers: `FITID` (stable, unique per economic event), `group_id` (pairs debit/credit legs), `sync_run_id`, `response_hash`, `broker`, `{BOT_IDENTITY}`
-    - Timing: `DTPOSTED` (UTC, ISO-8601)
-    - Economics: `TRNTYPE`, `AMOUNT` (Decimal), `CURRENCY`, `QTY`, `PRICE` (when applicable)
-    - Context: `SYMBOL` (ticker), `STRATEGY`, `NAME`, `MEMO`, `REFNUM`/`CHECKNUM` (when applicable)
-- **Ingestion pipeline (idempotent):** Alpaca → **normalizers** → **compliance** → **mapping (COA)** → **dedupe** → **double-entry post** → **audit/reconcile** → **query/UI**.
-    - Mapping rules live in `coa_mapping_table.json` (lazy-created, versioned); **unmapped** transactions are **skipped** and flagged for UI mapping.
-- `.csv`/`.json` trade histories are **external audit artifacts only** (never parsed for ledger ingestion).
+- **Canonical stored fields & OFX export requirements:**  
+    - **Stored (canonical):** `datetime_utc` (UTC ISO-8601), `bot_id` (={BOT_IDENTITY}), `broker_code`, `entity_code`, `jurisdiction_code`, `currency_code`, and COA-resolved `account`/`account_code`.  
+    - **OFX export:** `DTPOSTED` is **derived from `datetime_utc`**, and `TRNTYPE` and `FITID` are required and **UNIQUE** per economic event. Stored and exported identifiers must remain idempotent across re-syncs.
+- **Ingestion pipeline (idempotent):** Alpaca → **normalizers** → **compliance** → **mapping (COA)** → **dedupe** → **double-entry post** → **audit/reconcile** → **query/UI**.  
+    - Mapping rules live in `coa_mapping_table.json` (lazy-created, versioned); **unmapped** transactions are **skipped** and flagged for UI mapping (bound to a `coa_mapping_version`).  
+- `.csv`/`.json` trade histories are **external audit artifacts only** (never parsed for ledger ingestion).  
 - **All reporting/UI** (ledger list, groups, balances) **must** read via `tbot_bot/accounting/ledger_modules/*` APIs; **no direct DB or file access** outside these modules.
-
 
 ### Broker Sync & Ledger Pipeline
 1) **Fetch (Alpaca)** → `broker_api.get_trades()/get_activities()/get_positions()` (UTC-only, stable IDs, no DB writes).  
-2) **Normalize** → `broker/utils/ledger_normalizer.py` (OFX-aligned dicts: `TRNTYPE`, `DTPOSTED`=UTC ISO, `FITID` seed, amounts/qty/price/symbol/strategy).  
+2) **Normalize** → `broker/utils/ledger_normalizer.py` (OFX-aligned dicts: `datetime_utc` (UTC ISO), `FITID` seed, amounts/qty/price/symbol/strategy).  
 3) **Compliance** → `ledger_modules/ledger_compliance_filter.py` (required fields, no future dates, numeric bounds; rejects flagged).  
-4) **Mapping (COA)** → `coa_mapping_table.json` via `ledger_account_map.py` (resolve debit/credit accounts; **unmapped ⇒ skip_insert + flag**; mapping file lazy-created and versioned).  
-5) **Dedup** → `ledger_deduplication.py` (UNIQUE by `FITID` + content hash idempotency).  
-6) **Post (Double-Entry)** → `ledger_double_entry.py` (two balanced splits per event, **sum=0**; Decimal math; group_id assigned; atomic batch).  
-7) **Audit & Reconcile** → `ledger_audit.py` + `reconciliation_log.py` (append-only, UTC, includes `sync_run_id`, `broker`, mapping version).  
+4) **Mapping (COA)** → `coa_mapping_table.json` via `ledger_account_map.py` (resolve debit/credit accounts; **unmapped ⇒ skip_insert + flag**; file is lazy-created and versioned; record `coa_mapping_version`).  
+5) **Dedup** → `ledger_deduplication.py` (UNIQUE by `FITID` + content-hash idempotency).  
+6) **Post (Double-Entry)** → `ledger_double_entry.py` (two balanced splits per event, **sum=0**; Decimal math; `group_id` assigned; atomic batch).  
+7) **Audit & Reconcile** → `ledger_audit.py` + `reconciliation_log.py` (append-only, UTC, includes `sync_run_id`, `broker`, `coa_mapping_version`).  
 8) **Query/UI** → `ledger_query.py` + `ledger_grouping.py` + `ledger_balance.py` (grouped rows, collapse state, balances); **UI reads only via these APIs**.  
 _All paths resolved via `path_resolver.py`; no hardcoded paths; no direct SQL outside `ledger_modules`._
 
 ### Ledger Identifiers & Grouping Policy
-- **FITID (unique, stable):** SHA-256 over tuple ⇒ `(broker, account_id, external_id, TRNTYPE, SYMBOL, DTPOSTED_UTC, AMOUNT, QTY, PRICE, CURRENCY)`. Stored and indexed; **UNIQUE(FITID)** enforced.  
-- **DTPOSTED:** Required; UTC, ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`). No local time.  
+- **FITID (unique, stable):** SHA-256 over tuple ⇒ `(broker, account_id, external_id, TRNTYPE, SYMBOL, DATETIME_UTC, AMOUNT, QTY, PRICE, CURRENCY)`. Stored and indexed; **UNIQUE(FITID)** enforced.  
+- **datetime_utc:** Required; UTC, ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`). No local time. `DTPOSTED` is produced for OFX exports from `datetime_utc`.  
 - **sync_run_id:** UUIDv4 per sync run; attached to all inserted rows and audit entries.  
 - **response_hash:** SHA-256 of raw broker payload (per record) for traceability.  
 - **group_id (deterministic):**  
@@ -235,10 +239,9 @@ _All paths resolved via `path_resolver.py`; no hardcoded paths; no direct SQL ou
 - **Identifiers:**  
   - `group_id = "OPENING_BALANCE_{YYYYMMDD}"` (UTC date).  
   - `FITID = SHA-256(broker|account_id|UTC_date|OB|symbol|amount)` (per leg).  
-- **Ordering:** `DTPOSTED` strictly < first trade `DTPOSTED`.  
+- **Ordering:** `datetime_utc` strictly < first trade `datetime_utc` in the ledger (exporters will derive `DTPOSTED` from this).  
 - **Re-entrancy:** If any OB group exists or the status flag is set, **do not re-post**; later true basis corrections use AJEs (no mutation of OB rows).  
-- **Audit:** Full audit entries with `sync_run_id` and position source (positions API vs. manual import).
-
+- **Audit:** Full audit entries with `sync_run_id`, `coa_mapping_version`, and position source (positions API vs. manual import).
 
 
 ---
@@ -249,7 +252,7 @@ _All paths resolved via `path_resolver.py`; no hardcoded paths; no direct SQL ou
 Strategy: strategy_open.py – Opening Range Breakout
 ---------------------------------------------------------
 - **Time Window:**
-  - Start: `START_TIME_OPEN` (14:30 UTC = 9:30 AM EST)
+  - Start (local): `START_TIME_OPEN` (interpreted in `.env_bot` `TIMEZONE`, converted to UTC at runtime)
   - Analysis: `OPEN_ANALYSIS_TIME` (minutes)
   - Breakout: `OPEN_BREAKOUT_TIME` (minutes)
   - Monitoring: `OPEN_MONITORING_TIME` (minutes)
@@ -258,18 +261,25 @@ Strategy: strategy_open.py – Opening Range Breakout
   - Track high/low during analysis window
   - Enter if price > high * (1 + `STRAT_OPEN_BUFFER`) or < low * (1 - `STRAT_OPEN_BUFFER`)
   - Entry must occur within breakout window
+- **Eligibility & Fallback (ranked pool):**
+  - Consume ranked pool from screener (size = `MAX_TRADES × CANDIDATE_MULTIPLIER`); do **not** pre-filter by broker.
+  - For each candidate in rank order, check broker tradability, `FRACTIONAL` support, and `get_min_order_size()` against session capital/weight.
+  - On rejection, automatically select the next-ranked eligible symbol; log rejected symbol, reason, and fallback level.
+- **Fractional/Min-Order Enforcement:**
+  - If `FRACTIONAL=true`, require `supports_fractional(symbol)`; otherwise enforce broker `get_min_order_size(symbol)`.
 - **Exit Logic:** 2% trailing stop or monitoring timeout
 - **Shorting:** Controlled by `SHORT_TYPE_OPEN`: InverseETF, LongPut, ShortSell, or disabled
-- **Logging:**
-  - Logs: `open.log`
-  - Ledger: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
-  - Trade History: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
+- **Logging & Ledger:**
+  - Logs: `output/{BOT_IDENTITY}/logs/open.log` (resolved via `tbot_bot/support/path_resolver.py`)
+  - Ledger: resolved path via `path_resolver.py` → bot-scoped SQLite ledger
+  - Trade History: `output/{BOT_IDENTITY}/trades/*.csv/json` (audit artifacts only; never re-ingested)
+  - **All ledger posting/query via `tbot_bot/accounting/ledger_modules/*`; no direct SQL.**
 
 ---------------------------------------------------------
 Strategy: strategy_mid.py – VWAP Mean Reversion
 ---------------------------------------------------------
 - **Time Window:**
-  - Start: `START_TIME_MID` (15:30 UTC = 10:30 AM EST)
+  - Start (local): `START_TIME_MID` (interpreted in `.env_bot` `TIMEZONE`, converted to UTC at runtime)
   - Analysis: `MID_ANALYSIS_TIME` (minutes)
   - Breakout: `MID_BREAKOUT_TIME` (minutes)
   - Monitoring: `MID_MONITORING_TIME` (minutes)
@@ -278,19 +288,24 @@ Strategy: strategy_mid.py – VWAP Mean Reversion
   - Enter on price deviation from VWAP ±`STRAT_MID_VWAP_THRESHOLD`
   - Confirm with ADX and Bollinger filters
   - Entry must be within breakout window
+- **Eligibility & Fallback (ranked pool):**
+  - Same ranked-pool flow as OPEN (see above); log all rejections and fallback selections.
+- **Fractional/Min-Order Enforcement:**
+  - Enforce `FRACTIONAL` and broker minimums as in OPEN.
 - **Exit Logic:** VWAP touch, 1.5% stop loss, or timeout
 - **Shorting:** Controlled by `SHORT_TYPE_MID`: InverseETF, LongPut, ShortSell, or disabled
 - **Enhancements:** `adx_filter.py`, `bollinger_confluence.py`
-- **Logging:**
-  - Logs: `mid.log`
-  - Ledger: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
-  - Trade History: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
+- **Logging & Ledger:**
+  - Logs: `output/{BOT_IDENTITY}/logs/mid.log` (via `path_resolver.py`)
+  - Ledger: resolved via `path_resolver.py` (bot-scoped)
+  - Trade History: `output/{BOT_IDENTITY}/trades/*.csv/json` (audit-only)
+  - **All ledger I/O via `ledger_modules`; no direct SQL.**
 
 ---------------------------------------------------------
 Strategy: strategy_close.py – End-of-Day Momentum / Fade
 ---------------------------------------------------------
 - **Time Window:**
-  - Start: `START_TIME_CLOSE` (19:30 UTC = 2:30 PM EST)
+  - Start (local): `START_TIME_CLOSE` (interpreted in `.env_bot` `TIMEZONE`, converted to UTC at runtime)
   - Analysis: `CLOSE_ANALYSIS_TIME` (minutes)
   - Breakout: `CLOSE_BREAKOUT_TIME` (minutes)
   - Monitoring: `CLOSE_MONITORING_TIME` (minutes)
@@ -299,34 +314,61 @@ Strategy: strategy_close.py – End-of-Day Momentum / Fade
   - Enter on momentum continuation or spike reversal
   - Requires VIX > `STRAT_CLOSE_VIX_THRESHOLD`
   - Entry must be within breakout window
+- **Eligibility & Fallback (ranked pool):**
+  - Same ranked-pool flow as OPEN; log rejections and fallback level for each order attempt.
+- **Fractional/Min-Order Enforcement:**
+  - Enforce `FRACTIONAL` and broker minimums as in OPEN.
 - **Exit Logic:** 2% stop loss or hard exit at session end
 - **Shorting:** Controlled by `SHORT_TYPE_CLOSE`: InverseETF, LongPut, ShortSell, or disabled
 - **Enhancements:** `vix_gatekeeper.py`, `imbalance_scanner_ibkr.py`, `ticker_blocklist.py`
-- **Logging:**
-  - Logs: `close.log`
-  - Ledger: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
-  - Trade History: `output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/trades/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_trade_history.csv/json`
+- **Logging & Ledger:**
+  - Logs: `output/{BOT_IDENTITY}/logs/close.log` (via `path_resolver.py`)
+  - Ledger: resolved via `path_resolver.py` (bot-scoped)
+  - Trade History: `output/{BOT_IDENTITY}/trades/*.csv/json` (audit-only)
+  - **All ledger I/O via `ledger_modules`; no direct SQL.**
 
 ---
-
 **Strategy Failover Logic**
-- Any `.self_check()` failure skips that strategy; all failures logged with UTC timestamp
-- If `STRATEGY_OVERRIDE` is set (e.g., `mid`), only the specified strategy executes
+- Any `.self_check()` failure skips that strategy; all failures logged with UTC timestamp.
+- If `STRATEGY_OVERRIDE` is set (e.g., `mid`), only the specified strategy executes.
+- **Ranked-pool enforcement:** Strategies must use the ranked candidate pool and fallback rules above; no pre-filtering by broker or capital is allowed inside screeners.
+- **Time handling:** All configured start times are **local** (`TIMEZONE`) and converted to UTC for scheduling/execution.
+- **Separation of duties:** Strategies never modify float, reserves, COA, or holdings configuration (handled exclusively by holdings/accounting modules).
 - All execution strictly enforces:
   - `DISABLE_ALL_TRADES`
   - `DAILY_LOSS_LIMIT`
   - `MAX_OPEN_POSITIONS`
   - `TOTAL_ALLOCATION` and `WEIGHTS`
   - Broker status, float, and account restrictions
-- All risk and execution constraints sourced dynamically from `.env_bot` (never hardcoded or inferred)
+- All risk and execution constraints are sourced dynamically from `.env_bot` (never hardcoded or inferred).
 
 
 ================================================================================
 InverseETF Integration Specification (Final v1.0)
 ================================================================================
 
-- *All ETF eligibility, logic, and lists are maintained and edited only via internal config and Web UI—never by external system or CLI utility.*
+- *All ETF eligibility, logic, and lists are maintained and edited only via internal config and the Web UI—never by external system or CLI utility.*
 - No accounting system may inject, provision, or control ETF eligibility or strategy logic.
+
+**Execution Rules (Bearish Signals):**
+- Inverse ETF routing is used **only** when the corresponding `SHORT_TYPE_* = InverseETF` for the active strategy window.
+- Orders are **long** the inverse ETF (no margin shorting). Position sizing uses the same per-trade `WEIGHTS` notional rules as longs; notional is computed on the **ETF’s price**.
+- Fractional usage follows the global `FRACTIONAL` flag and per-broker `supports_fractional(symbol)`; otherwise, enforce `get_min_order_size(symbol)`.
+
+**Allowlist & Mapping (UI-Managed):**
+- The set of tradable inverse ETFs is governed by a **UI-managed allowlist** (versioned, audit-logged). Leveraged inverse ETFs (e.g., 2x/3x) are permitted **only if present in the allowlist**; there is no implied acceptance.
+- For equity/sector/index bearish signals, the router may translate the target into an inverse ETF **via a UI-managed mapping table** (versioned).  
+  - If **no mapping** exists, or the mapped ETF is not tradable/eligible, the symbol is **rejected** and the strategy **falls back** to the next ranked candidate (see Ranked Fallback section). No pool expansion is permitted.
+
+**Ranked-Pool Integration (Do Not Pre-Filter):**
+- Screeners never include broker or ETF eligibility checks. Mapping to inverse ETFs occurs **after** ranking and **before** order submission.
+- All rejections (missing mapping, not tradable, no fractional, min-size not met) must be logged with: `symbol`, `mapped_inverse`, `reason`, `pool_rank`, `fallback_level`, UTC timestamp.
+
+**Ledger/Compliance:**
+- Inverse ETF trades post to the standard ledger/COA accounts (no special accounts required).  
+- `json_metadata` **must** tag: `{"bearish_mode":"InverseETF","target_symbol":"<original>", "inverse_symbol":"<etf>"}` and include `response_hash`.  
+- All ledger paths resolve via `tbot_bot/support/path_resolver.py`; all DB I/O goes through `tbot_bot/accounting/ledger_modules/*` (no direct SQL).
+
 
 
 ================================================================================
@@ -347,60 +389,58 @@ Ranked Candidate Pool and Fallback Logic (ALL STRATEGIES)
   - Ranking is by strategy fitness (momentum, volatility, filter score, etc.), *not* by broker eligibility or tradability.
   - Screeners do **not** check broker support or tradability; they only rank and return the full candidate pool.
 
-- **Eligibility/Execution Filtering:**
-  - Strategy or central router must query the broker module for each candidate (in ranked order):
+- **Eligibility/Execution Filtering (In Ranked Order):**
+  - The strategy/router evaluates each candidate **in rank order**, without re-sorting:
     - Is the symbol tradable right now?
-    - Does broker support fractional for this symbol (if FRACTIONAL=true)?
-    - Is minimum order size met given the session’s capital and weight?
+    - If `FRACTIONAL=true`, does broker `supports_fractional(symbol)`?
+    - If `FRACTIONAL=false`, does order meet `get_min_order_size(symbol)` (shares or notional)?
     - Any other broker/account restriction?
-  - Select top N eligible candidates (`N = MAX_TRADES`).
-  - If fewer than `MAX_TRADES` are eligible, skip, log the cause, and do not substitute lower-ranked symbols from outside the pool.
+  - Select the top **N** eligible candidates (`N = MAX_TRADES`).  
+  - If fewer than `MAX_TRADES` are eligible, **do not expand** beyond the ranked pool; skip remaining slots and log the cause.
 
-- **Fallback Cycling:**
-  - If any selected symbol fails a runtime eligibility check (e.g., no fractional support, insufficient capital, rejected order), the next-ranked eligible symbol from the pool is automatically used as fallback for that slot.
-  - Rejection causes must be logged with timestamp, rejected symbol, and reason.
-  - UI and logs must indicate which fallback level was used for each trade.
+- **Inverse ETF Substitution (Bearish Only, If Configured):**
+  - For bearish entries with `SHORT_TYPE_* = InverseETF`, map the candidate to an inverse ETF **after ranking** via the UI-managed mapping table.
+  - If mapping missing or mapped ETF fails eligibility, **reject** and proceed to next-ranked candidate. Record `target_symbol`, `inverse_symbol`, and rejection reason.
+
+- **Fallback Cycling (Deterministic):**
+  - On any rejection at eligibility or order stage (insufficient notional, no fractional, broker reject, mapping missing), the router selects the **next-ranked** eligible symbol.
+  - Each attempt must log: `symbol`, `pool_rank`, `fallback_level` (0 for primary, 1 for first fallback, ...), `reason`, UTC timestamp.
 
 - **Strategy/Router Enforcement:**
-  - **No strategy module may pre-filter or short-circuit the pool by broker eligibility.**
-  - All runtime checks must be after ranking and prior to order submission.
-  - All final selection, fallback, and eligibility filtering must be broker-agnostic until the broker module is queried.
+  - **No strategy module may pre-filter or short-circuit** the ranked pool by broker/capital rules; all such checks happen centrally in the router/broker module layer.
 
 - **Broker Module Requirements:**
   - Must implement `supports_fractional(symbol)` and `get_min_order_size(symbol)`.
-  - Must return true/false for fractional and minimum size eligibility (per symbol, per broker).
+  - Must return definitive true/false eligibility per symbol and surface the **reason** for ineligibility (e.g., `insufficient_notional`, `fractional_not_supported`, `symbol_not_tradable`).
 
 - **Order Handling:**
-  - All trade orders must pass runtime broker eligibility and capital checks.
-  - If a symbol is rejected at order stage (e.g., due to sudden broker restriction), cycle to next eligible fallback immediately.
+  - Orders are submitted only for candidates that pass eligibility. Any broker-side rejection triggers immediate fallback to the next-ranked candidate, with full logging.
 
 --------------------------------------------------------------------------------
 Parameters and Config (All in `.env_bot` Only)
 --------------------------------------------------------------------------------
 
 - `MAX_TRADES`: Number of trades per strategy session
-- `CANDIDATE_MULTIPLIER`: How many fallback candidates to include (pool size = MAX_TRADES × CANDIDATE_MULTIPLIER)
-- `FRACTIONAL`: Enable/disable fractional trade logic (if true, check per symbol)
-- All other trade, capital, and eligibility limits as already documented.
+- `CANDIDATE_MULTIPLIER`: Pool size multiplier (pool = `MAX_TRADES × CANDIDATE_MULTIPLIER`)
+- `FRACTIONAL`: Enable/disable fractional trade logic (if true, enforce per-symbol support)
+- All other trade, capital, and eligibility limits as documented elsewhere in this spec.
 
 --------------------------------------------------------------------------------
 Logging and UI
 --------------------------------------------------------------------------------
 
-- All fallback selection, eligibility rejections, and trade status changes must be logged with full context (symbol, reason, pool rank, timestamp).
-- Web UI must display the current ranked pool, fallback level in use, and rejection reasons for each trade attempt.
+- Log every decision point with: `symbol`, `pool_rank`, `fallback_level`, `eligibility_result`, `reason`, UTC timestamp.
+- Web UI must display the current ranked pool, the selected set, fallback level for each fill/attempt, and rejection reasons per candidate.
 
 --------------------------------------------------------------------------------
 Testing and Validation
 --------------------------------------------------------------------------------
 
-- Automated tests must fully cover: fallback cycling, fractional checks, minimum order size, and all capital constraints per strategy and broker module.
-- Simulate all failure/rejection modes for fallback validation.
+- Automated tests must cover: deterministic fallback cycling, fractional checks, minimum order size/notional, inverse-ETF substitution, and all capital constraints per broker.
+- Simulate broker rejects and mapping gaps; assert correct `fallback_level` progression and logging.
 
 --------------------------------------------------------------------------------
 NO EXCEPTIONS:
 - No broker/capital/fractional logic in screener modules.
 - No duplicate ranking, filtering, or fallback logic in multiple modules.
 - All risk and eligibility logic is single-source-of-truth as above.
-
-================================================================================

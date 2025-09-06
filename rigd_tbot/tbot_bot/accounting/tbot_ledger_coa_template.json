@@ -53,7 +53,7 @@
     "name": "Income",
     "children": [
       { "code": "4010", "name": "Realized Gains" },
-      { "code": "4050", "name": "Dividends" },
+      { "code": "4050", "name": "Qualified Dividends" },
       { "code": "4060", "name": "Interest Income" },
       { "code": "4090", "name": "Float/Tax/Payroll Reserve Transfers" }
     ]
@@ -74,7 +74,7 @@
     "code": "9100",
     "name": "Exports",
     "children": [
-      { "code": "9110", "name": "Daily P&L Export – Manager.io Format" },
+      { "code": "9110", "name": "Daily P&L Export – OFX Format" },
       { "code": "9120", "name": "CSV/JSON Trade Log Export" },
       { "code": "9130", "name": "SQLite Ledger Backup" },
       { "code": "9140", "name": "Broker Confirm Archive (PDFs)" },

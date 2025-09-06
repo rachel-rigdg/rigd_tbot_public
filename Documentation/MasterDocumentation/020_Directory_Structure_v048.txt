@@ -2,7 +2,7 @@
 Document: 020
 Directory_Structure
 Version: v048
-Date: UTC:2025-08-23 00:00:00
+Date: UTC:2025-09-06 00:00:00
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -25,14 +25,21 @@ rigd_tbot/
 ├── CHANGELOG.md                        # Optional: Commit-style technical history of all code and spec changes
 ├── README.md                           # Project-wide usage, setup, and architecture summary
 ├── requirements.txt                    # Python package requirements for all components
+├── pytest.ini                          # Pytest configuration for test discovery, markers, and options
+├── restart_systemd.sh                  # Dev helper to restart user-level systemd units/services for the bot
+├── run_tbot_old.sh                     # (LEGACY) Unified launcher
+├── run_tbot.sh				            # Unified launcher: boots TradeBot web UI, performs full bootstrap/config provisioning, then launches the bot on success
+├── write_secrets.py                    # Migration helper: write plaintext → encrypted secrets per schema (use Web UI in production)
 ├── .env                                # Global runtime config for Flask port, encryption, and login (plaintext)
+├── .env.enc                            # Global runtime config for Flask port, encryption, and login (Encrypted)
 ├── .env_bot                            # Decrypted bot runtime settings (overwritten if using encrypted version)
 ├── .env_bot.template-test              # Sample config for testing/cloning bots
+├── .rsyncignore_dev                    # Dev rsync excludes for run-on-save workflows and local syncs
 ├── .scpignore_env                      # File exclusion rules: env/config only
 ├── .scpignore_dev                      # File exclusion rules: dev/test artifacts
 ├── .scpignore_enc                      # File exclusion rules: deploys only encrypted config
+├── .scpignore_code                     # File exclusion rules: code-only deploys (omit env/ledgers/secrets/backups)
 ├── .scpignore_prod_archive             # File exclusion rules: production archive packaging (excludes env, ledgers, etc.)
-├── run_tbot.sh				            # Unified launcher: boots TradeBot web UI, performs full bootstrap/config provisioning, then launches the bot on success
 │   
 ├── tools/				                # One-time encryption/auth tools (DEPRECATED for runtime; provisioning now via config Web UI scripts) - NOTE: All secret and Fernet key creation/provisioning must occur via the Web UI configuration/provisioning step. Legacy tools in /tools/ are for initial import/migration ONLY and are not used by production system after first bootstrap.
 │   ├── _init_all_core_databases.sh     # [Legacy] CLI for initial database schema setup; NOT for production use
@@ -43,6 +50,7 @@ rigd_tbot/
 │   ├── hash_password.py		        # [Legacy] CLI: Creates bcrypt-hashed user, Fernet key, and DB entry; superceded by Web UI
 │   ├── init_encrypted_secrets.py	    # [Legacy] CLI: Generates encrypted secrets from plaintext templates for one-time bot setup
 │   ├── log_test.py			            # Sanity-check: Verifies log output in active runtime environment
+│   ├── secrets_template.json           # Sample JSON shape for encrypted secret payloads (reference/migration)
 │   ├── secrets_template.txt		    # Sample bot configuration values (plaintext reference only)
 │   ├── server_template.txt		        # Sample server setup values (plaintext reference only)
 │   ├── setup_server.sh                 # [Legacy] CLI/server bootstrapping script
@@ -79,6 +87,7 @@ rigd_tbot/
 │   │
 │   ├── accounting/                              # Accounting integration: COA/ledger creation, validation, export; OFX-aligned, UTC-only, double-entry, immutable audit
 │   │   ├── README_COA.md                        # Documentation: COA/ledger schema usage, UI editing instructions, compliance notes
+│   │   ├── README_LEDGER.md                     # Documentation: ledger architecture, posting rules, and reconciliation workflow
 │   │   ├── account_transaction.py               # Builds accounting-compliant journal entries for export (post-trade only; no secrets/keys management)
 │   │   ├── accounting_api.py                    # Exports finalized trade/report data to external accounting endpoints (no live config writes)
 │   │   ├── accounting_config.py                 # Validates/creates output folders; enforces ledger/COA existence and schema compliance via path_resolver
@@ -89,13 +98,21 @@ rigd_tbot/
 │   │   ├── reconciliation_log.py                # Append-only reconciliation log: trade_id, status, compare_fields, sync_run_id, api_hash, versioning/metainfo
 │   │   ├── tbot_ledger_coa_template.json        # Editable COA hierarchy/template (codes/names/structure: holdings, float, tax, payroll reserves, audit fields)
 │   │   ├── tbot_ledger_schema.sql               # SQL schema for bot ledger DB (double-entry tables, audit_trail, grouping, indices/UNIQUE guards; UTC defaults)
+│   │   ├── lots_engine.py                       # Tax-lot selection engine (FIFO/LIFO/Specific ID) for gain/loss computation
 │   │   ├── ledger_utils.py                      # (LEGACY) Deprecated helpers — retained for backward-compat only; DO NOT use in new code
 │   │   ├── ledger.py                            # (LEGACY NAME) Unified ledger API façade delegating to ledger_modules; no direct SQL; kept for compat imports
+│   │   │ 
+│   │   ├── defaults/
+│   │   │   └── coa_mapping_seed.json            # Seed mapping rules to bootstrap coa_mapping_table on first run
+│   │   │ 
+│   │   ├── sql/
+│   │   │   └──  001_lots_schema.sql            # Schema for tax-lot tracking tables used by lots_engine
 │   │   │ 
 │   │   └── ledger_modules/                      # Production ledger logic (modular, testable): mapping → compliance → dedupe → double-entry → query → audit/snapshot
 │   │       ├── ledger_account_map.py            # Thin wrapper over COA mapping: resolves account paths; flags unmapped with skip_insert=True
 │   │       ├── ledger_audit.py                  # Immutable audit logging: sync start/end, inserts/edits; includes sync_run_id/broker_code/mapping_version (UTC)
 │   │       ├── ledger_balance.py                # Per-account/running balances with Decimal; calculate_account_balances(as_of/window)
+│   │       ├── ledger_bootstrap.py              # Ensures ledger DB/schema/indices exist; opens/validates ledger state
 │   │       ├── ledger_compliance_filter.py 	 # Validates required fields, allowed actions, no-future-dates, numeric ranges; drops/flags invalid before write
 │   │       ├── ledger_core.py                   # Low-level shared/core helpers: tx_context/get_conn/identity/UTC; no business logic
 │   │       ├── ledger_db.py                     # Connection/PRAGMA/row_factory; schema presence/indices/UNIQUE(FITID) checks; path_resolver integration
@@ -107,10 +124,13 @@ rigd_tbot/
 │   │       ├── ledger_grouping.py               # Grouping/rollup for UI/reporting; collapse/expand state; orphan-safe grouping by group_id
 │   │       ├── ledger_hooks.py                  # Tax/payroll/float/rebalance/reserve hooks; produce compliant double-entry via mapping pipeline only
 │   │       ├── ledger_misc.py                   # Shared utilities: Decimal money, rounding, memo/name formatting; zero DB I/O
+│   │       ├── ledger_opening_balance.py        # Opening balance entries and initial position seeding for a new ledger
+│   │       ├── ledger_posting.py                # Posting router for buy/sell/cash actions → double-entry splits
 │   │       ├── ledger_query.py                  # Read API: fetch_grouped_trades, search, paging; ISO UTC timestamps; Decimal amounts for UI/reporting
 │   │       ├── ledger_snapshot.py               # Pre-sync snapshots to output/.../ledgers/snapshots/ (UTC+sync_run_id); retention/rollback aids
-│   │       └── ledger_sync.py                   # Orchestrates broker sync: positions(tracked opening) + trades/cash → normalize → map → comply → dedupe → post → audit → reconcile
-
+│   │       ├── ledger_sync.py                   # Orchestrates broker sync: positions(tracked opening) + trades/cash → normalize → map → comply → dedupe → post → audit → reconcile
+│   │       ├── mapping_auto_update.py           # Learns from manual mappings; proposes safe upserts to mapping table with audit
+│   │       └── schema.sql                       # Canonical SQLite DDL for ledger tables/indices used by modules
 │   │ 
 │   ├── backtest/                                # Backtesting, simulation, and research
 │   │   ├── backtest_engine.py                   # Strategy replay and simulation engine
@@ -141,14 +161,13 @@ rigd_tbot/
 │   │               ├── _trades.py                          # Trade normalization (side/action mapping, price/qty/fees, identifiers)
 │   │               ├── _cash.py                            # Cash/dividend/fee/transfer normalization
 │   │               └── _positions.py                       # Opening positions snapshot normalization (symbol, qty, basis, market value)
-
 │   │ 
 │   ├── config/                                 # Local bot config loaders, encryption, and secure settings editors
 │   │   ├── bootstrapping_helper.py		        # Runs core DB initialization scripts (calls tbot_bot/core/scripts/*); checks and sets .bootstrapped flag (called by provisioning_runner.py)
 │   │   ├── config_encryption.py                # Fernet encrypt/decrypt for config/secrets; secure file backup (called by provisioning_helper.py and configuration_web.py)
 │   │   ├── db_bootstrap.py                     # Calls tbot_bot/core/scripts/* for DB init (delegates schema logic); invoked by provisioning_runner.py
 │   │   ├── env_bot.py                          # Loads/validates/parses .env_bot for runtime; used by UI and shell launchers (never touches keys)
-│   │   ├── error_handler.py                    # Global error logging, exception tracing, system error output (imported in all runtime modules)
+│   │   ├── error_handler_bot.py                # Global error logging, exception tracing, system error output (imported in all runtime modules)
 │   │   ├── key_manager.py                      # Generates/checks/rotates Fernet keys (category-specific); called by provisioning_helper.py and provisioning_runner.py
 │   │   ├── network_config.py                   # Loads/decrypts encrypted network config (network_config.json.enc) using Fernet; called by bot, web, and shell
 │   │   ├── provisioning_helper.py		        # Generates and writes all required Fernet keys and minimal secrets (idempotent); calls key_manager.py, security_users.py; invoked by provisioning_runner.py
@@ -160,6 +179,7 @@ rigd_tbot/
 │   ├── control/                                # Control signals for runtime (web/CLI triggers)
 │   │   ├── bot_state.txt                    	# Written by main.py or tbot_runner_supervisor.py (if present). Holds current bot state for UI/status. No other process watches this file.
 │   │   ├── test_mode.flag			            # Written by test_web.py (UI action); presence triggers TEST_MODE in main.py. Removed by integration_test_runner.py or main.py only.
+│   │   ├──control_kill.flag                    # Emergency kill switch flag: forces immediate shutdown via supervisor/main
 │   │   ├── control_start.flag                  # Written by start_stop_web.py (UI action); main.py reads and handles start trigger. No separate watcher.
 │   │   └── control_stop.flag                   # Written by start_stop_web.py (UI action); main.py reads and handles stop trigger. No separate watcher.
 │   │
@@ -207,8 +227,12 @@ rigd_tbot/
 │   ├── output/
 │   │   ├── bootstrap/                                       # Bootstrap artifacts produced only during provisioning/reset
 │   │   │   └── logs/                                        # Provisioning/bootstrapping run logs (immutable once complete)
+│   │   │       └── security_users.log                       # Bootstrap-only: user/role initialization audit log
 │   │   │
 │   │   ├── logs/                                            # System/global logs (not per-bot; rendered in logs.html where specified)
+│   │   │   ├── auth_web.log                                 # Web login/auth activity (shown in logs.html)
+│   │   │   ├── db_bootstrap.log                             # DB schema initialization and migration bootstrap log
+│   │   │   ├── key_manager.log                              # Key creation/rotation/verification activity log
 │   │   │   ├── main_bot.log (alias: system_logs.log)        # Main system-level log: lifecycle + errors (shown in logs.html)
 │   │   │   ├── heartbeat.log                                # API/connection heartbeat events (shown in logs.html)
 │   │   │   ├── router.log                                   # Strategy router events (optional; shown in logs.html if present)
@@ -216,12 +240,12 @@ rigd_tbot/
 │   │   │   ├── kill_switch.log                              # Kill switch/shutdown triggers (optional; shown in logs.html if present)
 │   │   │   ├── provisioning.log                             # Provisioning run log (shown in logs.html)
 │   │   │   ├── provisioning_status.json                     # Provisioning status (shown in logs.html)
-│   │   │   ├── auth_web.log                                 # Web login/auth activity (shown in logs.html)
-│   │   │   ├── security_users.log                           # User/role management activity (shown in logs.html)
 │   │   │   ├── system_users.log                             # User create/delete/audit log (shown in logs.html)
 │   │   │   ├── user_activity_monitoring.log                 # User login/session/RBAC activity (shown in logs.html)
+│   │   │   ├── status.json                                  # Current bot/system status cache for UI consumption
 │   │   │   ├── start_log                                    # Bot/session start events (shown in logs.html)
 │   │   │   ├── stop_log                                     # Bot/session stop events (shown in logs.html)
+│   │   │   ├── test_mode.log                                # Test-mode orchestration and results log
 │   │   │   ├── init_system_logs.log                         # Bootstrap-only: initial system log DB setup (not shown in logs.html)
 │   │   │   ├── init_system_users.log                        # Bootstrap-only: initial user DB setup (not shown in logs.html)
 │   │   │   ├── init_user_activity_monitoring.log            # Bootstrap-only: initial user activity DB setup (not shown in logs.html)
@@ -241,14 +265,19 @@ rigd_tbot/
 │   │       │   ├── open.log			                		       # Trade/decision log during open strategy window
 │   │       │   ├── mid.log			                		           # Midday session (position management/adjustments)
 │   │       │   ├── close.log			            		       # Closeout phase decisions and executions
+│   │       │   ├── provisioning_status.json                   # Per-bot provisioning status snapshot (for UI)
+│   │       │   ├── security_users.log                         # User/role management activity (shown in logs.html)
 │   │       │   ├── unresolved_orders.log	        		       # Failed/rejected/stale orders unresolved during session
 │   │       │   └── error_tracebacks.log		        		       # Full Python tracebacks for uncaught exceptions (UTC timestamps)
 │   │       │
 │   │       ├── ledgers/  								               # Created at provisioning; sub-artifacts may be lazy-created on first use
 │   │       │   ├── snapshots/                                # Pre-sync DB snapshots (UTC+sync_run_id), created by ledger_snapshot; rollback safety
-│   │       │   ├── mapping_versions/                         # Versioned copies of coa_mapping_table.json (append-only, atomic writes)
+│   │       │   ├── coa_mapping_versions/                     # Versioned copies of coa_mapping_table.json (append-only, atomic writes)
+│   │       │   ├── coa.json                                  # Current COA JSON export (UI/API friendly)
+│   │       │   ├── coa_audit_log.json                        # Append-only COA change log with UTC timestamps and user metadata
+│   │       │   ├── coa_metadata.json                         # COA metadata (versions, provenance, timestamps)
 │   │       │   ├── coa_mapping_table.json                    # COA mapping rules (lazy-created on first access; edited via Web UI; versioned on save)
-│   │       │   ├── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA_v1.0.0.db  # COA DB; provisioned from template; Web UI-editable hierarchy/metadata
+│   │       │   ├── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA.db         # COA DB; provisioned from template; Web UI-editable hierarchy/metadata
 │   │       │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db      # OFX-aligned double-entry ledger; append-only inserts; UTC timestamps
 │   │       │
 │   │       ├── summaries/
@@ -260,17 +289,17 @@ rigd_tbot/
 
 │   │
 │   ├── reporting/
-│   │   ├── audit_logger.py 			# WORKER. Support structured logs for holdings management actions		(new or extend existing utils_log.py)
+│   │   ├── audit_logger.py 			        # WORKER. Support structured logs for holdings management actions		(new or extend existing utils_log.py)
 │   │   ├── auto_backup.py                      # WORKER. Compresses and archives output/ after session ends. Only launched by main.py.
 │   │   ├── daily_summary.py                    # WORKER. Builds daily trade summary stats and outcomes. Only launched by main.py.
-│   │   ├── ledger_report.py			# WORKER. Generates ledger-based compliance and COA/holdings reports. Only launched by main.py.
+│   │   ├── ledger_report.py			        # WORKER. Generates ledger-based compliance and COA/holdings reports. Only launched by main.py.
 │   │   ├── log_rotation.py                     # WORKER. Cleans output folder after N days (log file retention). Only launched by main.py.
 │   │   ├── notify_rebalance_requirements.py    # WORKER. Watches for low float; notifies accounting to rebalance. Only launched by main.py.
 │   │   ├── report_router.py                    # WORKER. Routes finalized trade output to logs/accounting system. Only launched by main.py.
 │   │   ├── session_report.py                   # WORKER. Session wrap-up summary (for UI, compliance). Only launched by main.py.
 │   │   ├── status_logger.py                    # WORKER. Syncs live bot state to UI/status.json (optional). Only launched by main.py.
 │   │   ├── trade_logger.py                     # WORKER. Records trade data to output/trades. Only launched by main.py.
-│   │   └── universe_logger.py			# WORKER. Dedicated UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions - Logs symbol universe snapshots/cache state. Only launched by main.py.
+│   │   └── universe_logger.py			        # WORKER. Dedicated UTC, audit-level logger for all universe/blocklist events, failures, file ops, user actions - Logs symbol universe snapshots/cache state. Only launched by main.py.
 │   │
 │   ├── runtime/
 │   │   ├── __init__.py
@@ -279,6 +308,7 @@ rigd_tbot/
 │   │   │                                           #  - Checks for bootstrap/init and launches portal_web_main.py (Web UI).
 │   │   │                                           #  - After successful configuration, provisioning, and bootstrapping, launches bot_supervisor.py (if present) for all persistent monitoring, phase management, and process orchestration.
 │   │   │                                           #  - No persistent supervision, bot run-loop, or process management logic in main.py.
+│   │   ├── ledger_snapshot.py                      # Utility to create on-demand ledger DB snapshots (used by sync/audit)
 │   │   ├── start_bot.py                            # CLI helper only. Writes control_start.flag; does NOT watch for flags or launch processes.
 │   │   ├── status_bot.py                           # WATCHER. Tracks bot health/state, writes status.json, session logs. Only launched by bot_supervisor.py.
 │   │   ├── stop_bot.py                             # CLI helper only. Writes control_stop.flag; does NOT watch for flags or launch processes.
@@ -318,6 +348,7 @@ rigd_tbot/
 │   │
 │   ├── storage/				                    # Persistent runtime data: encrypted secrets, keys, backups, and exports
 │   │   ├── backups/                                # Daily encrypted ledger/config backups (UTC timestamped)
+│   │   ├── holdings_secrets/                       # Versioned encrypted backups of holdings_secrets.json.enc
 │   │   │   └── {date}/                             # Subfolder for each backup snapshot date
 │   │   │
 │   │   ├── exports/                                # Daily export artifacts (for audit/recovery)
@@ -401,6 +432,11 @@ rigd_tbot/
 │   │   ├── test_ledger_web.py                      # DEV/CI TEST. Web ledger endpoints (/ledger, /ledger/sync, /ledger/groups, /ledger/balances); RBAC and JSON shapes.
 │   │   ├── test_ledger_write_failure.py            # DEV/CI TEST. Write-error propagation; transactional rollback; audit-trail integrity.
 │   │   ├── test_logging_format.py                  # DEV/CI TEST. Validates structure, content, and completeness of all bot log files. Never launched in production.
+│   │   ├── test_ledger_coa_edit.py                 # DEV/CI TEST. COA edit flows and persistence checks.
+│   │   ├── test_lots_engine.py                     # DEV/CI TEST. Validates lots_engine behavior across tax-lot methods.
+│   │   ├── test_mapping_upsert.py                  # DEV/CI TEST. Safe mapping table upserts and audit behavior.
+│   │   ├── test_opening_balance.py                 # DEV/CI TEST. Opening balance posting and snapshot creation.
+│   │   ├── test_posting_sell_cover.py              # DEV/CI TEST. Posting logic for sell-to-cover and similar actions.
 │   │   ├── test_main_bot.py                        # DEV/CI TEST. Session lifecycle: start/stop, CLI/web triggers, and state changes. Never launched in production.
 │   │   ├── test_normalizer_alpaca.py               # DEV/CI TEST. Canonical outputs for normalize_trade/cash/position (TRNTYPE, DTPOSTED UTC, FITID, quantities/prices).
 │   │   ├── test_screener_credentials.py            # DEV/CI TEST. Screener credential management encryption/persistence and UI integration.
@@ -410,37 +446,38 @@ rigd_tbot/
 │   │   ├── test_strategy_tuner.py                  # DEV/CI TEST. Strategy tuning behavior, parameter adjustments, and performance impact. Never launched in production.
 │   │   ├── test_symbol_universe_refresh.py         # DEV/CI TEST. Universe orchestrator build, credential gating, and output JSONs.
 │   │   └── test_universe_cache.py                  # DEV/CI TEST. Verifies universe cache schema, age, and content. Never launched in production.
-
+│   │
 │   └── trading/			                    # Trade Execution
-│       ├── holdings_manager.py          	# Core logic for ETF purchases, sales, rebalancing, cash top-up, tax and payroll allocations.
-│       ├── holdings_utils.py            	# Helper functions for allocation calculations, broker integration, audit logging.
-│       ├── instruments.py                    # Canonical instrument definitions (ETF, equity, put, etc.); includes formatting and validation.
-│       ├── kill_switch.py                      # Triggers shutdown on DAILY_LOSS_LIMIT or catastrophic loss violation.
-│       ├── logs_bot.py                         # Runtime logging of trade operations to output/logs.
-│       ├── notifier_bot.py                     # Sends alerts to configured channels (email/Slack/SMS/PagerDuty).
-│       ├── orders_bot.py                       # Handles order submission, modifies/fills, and broker feedback.
-│       ├── reporting_bot.py                    # Pushes trades to accounting system; manages ledger output and COA compliance.
-│       ├── risk_bot.py                         # Enforces all risk constraints (caps, allocations, Defense Mode, open trades).
-│       ├── utils_coa.py                        # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa_template.json and supports Web UI editing.
-│       ├── utils_etf.py                        # Resolves ETF and inverse ETF tickers for supported symbols (top 20+ ETFs, as per project specifications).
-│       ├── utils_puts.py                       # Returns put option contract specs for any supported broker.
-│       └──utils_shorts.py                     # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives.
+│       ├── holdings_manager.py          	        # Core logic for ETF purchases, sales, rebalancing, cash top-up, tax and payroll allocations.
+│       ├── holdings_utils.py            	        # Helper functions for allocation calculations, broker integration, audit logging.
+│       ├── instruments.py                        # Canonical instrument definitions (ETF, equity, put, etc.); includes formatting and validation.
+│       ├── kill_switch.py                         # Triggers shutdown on DAILY_LOSS_LIMIT or catastrophic loss violation.
+│       ├── logs_bot.py                            # Runtime logging of trade operations to output/logs.
+│       ├── notifier_bot.py                        # Sends alerts to configured channels (email/Slack/SMS/PagerDuty).
+│       ├── orders_bot.py                          # Handles order submission, modifies/fills, and broker feedback.
+│       ├── reporting_bot.py                       # Pushes trades to accounting system; manages ledger output and COA compliance.
+│       ├── risk_module.py.py                      # Enforces all risk constraints (caps, allocations, Defense Mode, open trades).
+│       ├── utils_coa.py                           # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa_template.json and supports Web UI editing.
+│       ├── utils_etf.py                           # Resolves ETF and inverse ETF tickers for supported symbols (top 20+ ETFs, as per project specifications).
+│       ├── utils_puts.py                          # Returns put option contract specs for any supported broker.
+│       └──utils_shorts.py                         # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives.
 │   
 └── tbot_web/                                   # Web dashboard: bot monitoring, logs, user auth, control, and COA management
     ├── static/                                 # Static frontend resources
     │   ├── fnt/                                # Embedded fonts used in the interface
     │   │
     │   ├── js/
-    │   │   ├── configuration.js            # Handles configuration form logic, validation, and AJAX submits on configuration.html
-    │   │   ├── holdings.js                 # JS for holdings.html: handles management UI, grid logic, AJAX to holdings_web.py, live compliance validation, preview/simulation, and status updates.
-    │   │   ├── ledger.js                         # Frontend JS for ledger page: table rendering, sorting, expand/collapse, UI actions
-    │   │   ├── main_ui.js         		    # Handles live dashboard behavior, state polling, and controls config overlay in main.html
-    │   │   ├── wait.js            		    # Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
-    │   │   ├── universe.js                 # JS for universe.html: updates status fields, fetches/refreshes universe tables, triggers log/status updates; NO filtering logic or direct file writes
-    │   │   ├── screener_credentials.js     # JS: Screener credential management UI logic, API calls, masking, field validation
-    │   │   ├── test_ui.js                  # JS for test.html: - triggers tests, and displays test results to window on test.html page
+    │   │   ├── configuration.js                # Handles configuration form logic, validation, and AJAX submits on configuration.html
+    │   │   ├── coa_mapping.js                  # Frontend logic for COA mapping UI (table ops, upserts, audit view)
+    │   │   ├── holdings.js                     # JS for holdings.html: handles management UI, grid logic, AJAX to holdings_web.py, live compliance validation, preview/simulation, and status updates.
+    │   │   ├── ledger.js                       # Frontend JS for ledger page: table rendering, sorting, expand/collapse, UI actions
+    │   │   ├── main_ui.js         		     # Handles live dashboard behavior, state polling, and controls config overlay in main.html
+    │   │   ├── wait.js            		     # Waits for bot to finish initialization/provisioning; auto-redirects to main.html when ready
+    │   │   ├── universe.js                     # JS for universe.html: updates status fields, fetches/refreshes universe tables, triggers log/status updates; NO filtering logic or direct file writes
+    │   │   ├── screener_credentials.js         # JS: Screener credential management UI logic, API calls, masking, field validation
+    │   │   ├── test_ui.js                      # JS for test.html: - triggers tests, and displays test results to window on test.html page
     │   │   ├── status_live.js                  # Polls /status API, updates live status panel (PnL, win rate, defense/kill switch state, holdings compliance) in status.html
-    │   │   └── shared_utils.js    		    # Provides shared API helpers and utility functions for frontend JavaScript modules        
+    │   │   └── shared_utils.js    		     # Provides shared API helpers and utility functions for frontend JavaScript modules           
     │   │
     │   └── css/
     │       ├── base
@@ -455,21 +492,22 @@ rigd_tbot/
     │       │   └── tabs.css                        # Tab navigation styles
     │       │
     │       ├── pages
-    │       │   ├── account.css                     # Account page styles: profile and settings forms
-    │       │   ├── configuration.css               # Configuration page (forms, blocks, horizontal wrapping)
-    │       │   ├── edit_user.css                   # Edit user page: user edit form layout and alignment
-    │       │   ├── holdings.css                  # Stylesheet for holdings management page.
-    │       │   ├── ledger.css                      # Ledger page: table formatting and alignment
-    │       │   ├── logs.css                        # Logs page: log view container, filter bar, color
-    │       │   ├── main.css                        # Main container, alignment, and page structure styles
-    │       │   ├── password_reset.css              # Password reset forms: input and feedback styling
-    │       │   ├── register.css                    # Register page: admin account creation form
-    │       │   ├── screener_credentials.css        # CSS: Stylesheet for screener credential config page (layout, masking, validation)
-    │       │   ├── settings.css                    # Settings page: settings form blocks and layout
-    │       │   ├── status.css                      # Status page: status grid, error color, responsive tweaks
-    │       │   ├── test.css                        # Test mode/system test sequence page
-    │       │   ├── users.css                       # Users page: user list, RBAC, user management forms
-    │       │   └── universe.css                    # Symbol universe UI page - monitor rebuild and re-filter Symbol Universe
+    │       │   ├── account.css                 # Account page styles: profile and settings forms
+    │       │   ├── coa_mapping.css             # Stylesheet for COA mapping page.
+    │       │   ├── configuration.css           # Configuration page (forms, blocks, horizontal wrapping)
+    │       │   ├── edit_user.css               # Edit user page: user edit form layout and alignment
+    │       │   ├── holdings.css                # Stylesheet for holdings management page.
+    │       │   ├── ledger.css                  # Ledger page: table formatting and alignment
+    │       │   ├── logs.css                    # Logs page: log view container, filter bar, color
+    │       │   ├── main.css                    # Main container, alignment, and page structure styles
+    │       │   ├── password_reset.css          # Password reset forms: input and feedback styling
+    │       │   ├── register.css                # Register page: admin account creation form
+    │       │   ├── screener_credentials.css    # CSS: Stylesheet for screener credential config page (layout, masking, validation)
+    │       │   ├── settings.css                # Settings page: settings form blocks and layout
+    │       │   ├── status.css                  # Status page: status grid, error color, responsive tweaks
+    │       │   ├── test.css                    # Test mode/system test sequence page
+    │       │   ├── users.css                   # Users page: user list, RBAC, user management forms
+    │       │   └── universe.css                # Symbol universe UI page - monitor rebuild and re-filter Symbol Universe
     │       │
     │       └── shared
     │           ├── forms.css                       # Form input and UI style rules

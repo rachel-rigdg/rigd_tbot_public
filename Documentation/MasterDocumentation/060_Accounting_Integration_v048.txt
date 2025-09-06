@@ -43,9 +43,9 @@ CORE INTEGRATION RULES
    - Multi-currency and multi-entity compliance is always enabled, regardless of single-broker use.
 
 3. **OFX-ALIGNED ENTRY & EXPORT (REQUIRED FIELDS)**
-   - Every ledger entry is OFX-aligned and includes **`TRNTYPE`**, **`DTPOSTED`** (UTC), and **`FITID`**.  
-   - `DTPOSTED` is persisted as UTC ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`).  
-   - `FITID` is globally unique per economic event and must be stable/idempotent.
+   - **`DTPOSTED`** is the canonical persisted timestamp (UTC ISO-8601 `YYYY-MM-DDTHH:MM:SSZ`).  
+   - `datetime_utc` MAY also be stored as an alias/mirror; if present, it must equal `DTPOSTED`.  
+   - Every entry/ export includes **`TRNTYPE`**, **`DTPOSTED`** (UTC), and **`FITID`** (globally unique/idempotent across re-syncs).
 
 4. **DOUBLE-ENTRY ENFORCEMENT (SUM=0)**
    - All postings are **double-entry**: each economic event yields at least two splits whose signed amounts **sum to 0**.  
@@ -64,7 +64,8 @@ CORE INTEGRATION RULES
    - Key/secret rotation does not require manual steps; all affected files are backed up before any overwrite and no old key or secret is reused.
 
 8. **COA GOVERNANCE VIA WEB UI**
-   - The bot’s COA is managed **exclusively** via the Web UI (`tbot_web/py/coa_web.py`) using `tbot_web/support/utils_coa_web.py`; ledger/schema helpers reside in `tbot_bot/accounting/coa_utils.py`. No CLI utilities may alter COA.
+   - The bot’s COA is managed **exclusively** via the Web UI (`tbot_web/py/coa_web.py`) using `tbot_web/support/utils_coa_web.py`; ledger/schema helpers reside in `tbot_bot/accounting/coa_utils.py`.  
+   - COA artifacts and mapping snapshots are written under `output/{BOT_IDENTITY}/ledgers/` (see PATCH 6).
 
 9. **UTC & IMMUTABILITY**
    - All timestamps persisted to ledgers/audit are UTC. Audit logs are append-only; edits are recorded as new events referencing prior entries.
@@ -89,11 +90,12 @@ All accounting table columns are defined in code at:
 Identity note: the DB column is `bot_id` (lowercase) and its value equals `{BOT_IDENTITY}`.
 
 **OFX Field Aliases & Canonicalization:**  
-- `DTPOSTED` (UTC) is the canonical timestamp. Implementation may also store `datetime_utc` as an alias, but **`DTPOSTED` must exist**.  
-- `TRNTYPE` is required for each split (e.g., `BUY`, `SELL`, `DIV`, `FEE`, `XFER`).  
-- `FITID` is required and **UNIQUE** across the database.
+- **`datetime_utc`** is the canonical stored timestamp (UTC).  
+- Exporters may emit OFX **`DTPOSTED`** derived from `datetime_utc`.  
+- **`TRNTYPE`** is required for each split/event at export time.  
+- **`FITID`** is required and **UNIQUE** at the economic-event level (idempotency across re-syncs).
 
-### A) TRADES table (order-sensitive; matches SQLite schema excluding autoincrement `id`)
+
 TRADES_FIELDS = [
     "FITID",
     "DTPOSTED",
@@ -159,10 +161,17 @@ TRADES_FIELDS = [
 ]
 
 **Minimum non-null fields on INSERT (trades):**  
-`FITID`, `DTPOSTED`, `TRNTYPE`, `symbol`, `action` (in ALLOWED_TRADE_ACTIONS), `quantity`, `price` (when applicable),  
+`FITID`, `DTPOSTED` (UTC), `TRNTYPE`, `symbol`, `action` (in ALLOWED_TRADE_ACTIONS), `quantity`, `price` (when applicable),  
 `broker_code`, `account` (valid COA), `trade_id` (stable), `jurisdiction_code`, `entity_code`, `currency_code`, `bot_id`.
 
-### B) LEDGER_ENTRIES table (double-entry split records)
+### B) LEDGER_ENTRIES table (double-entry splits; authoritative in code)
+**Authoritative source:** `tbot_bot/accounting/ledger_modules/ledger_fields.py` → `LEDGER_ENTRIES_FIELDS`  
+**Rule:** Writers/readers MUST import and use `LEDGER_ENTRIES_FIELDS` verbatim (no hardcoded lists).  
+**Minimum non-null on INSERT (ledger_entries):**  
+`datetime_utc` (UTC), `entry_type`, `action`, `account_code` (COA-resolved), `currency_code`, and either `total_value` or (`amount` + `fx_rate`), plus `jurisdiction_code`, `entity_code`, `broker_code`, `bot_id`.  
+**Constraint:** double-entry batch per event must sum to zero; enforced in `ledger_double_entry.py`.
+
+
 LEDGER_ENTRIES_FIELDS = [
     "FITID", "DTPOSTED", "TRNTYPE",
     "entry_type", "symbol", "symbol_full", "isin", "cusip", "sedol", "figi",
@@ -209,9 +218,9 @@ ALLOWED_TRADE_ACTIONS = [
 ]
 
 **Validation rules (applies to all writers):**  
-- Any broker verb outside ALLOWED_TRADE_ACTIONS must be normalized or mapped to `"other"` with the original preserved in `json_metadata`.  
-- `DTPOSTED` MUST be UTC ISO-8601 with a `Z` suffix, e.g. `2025-08-23T14:32:10.123Z`.  
-- `account`/`account_code` must resolve via the active `coa_mapping_table.json`; **unmapped ⇒ skip_insert** (record flagged for mapping).  
+- `action` MUST be in ALLOWED_TRADE_ACTIONS (nonconforming broker verbs → `"other"`; original preserved in `json_metadata`).  
+- `DTPOSTED` MUST be UTC ISO-8601 with `Z` suffix (e.g., `2025-08-23T14:32:10.123Z`).  
+- `account`/`account_code` must resolve via active `coa_mapping_table.json`; **unmapped ⇒ skip_insert** (record flagged for COA mapping).  
 - Store `raw_broker_json` and cryptographic `response_hash` for provenance.  
 - Producers/consumers must import `ledger_fields.py` (no ad-hoc column lists).
 
@@ -226,27 +235,39 @@ ENFORCEMENT & SYSTEM CONSTRAINTS
 - *All CSV/JSON exports are external artifacts, never re-ingested by the bot.*
 - Only validated, double-entry-compliant data is written to ledgers after each strategy session, sync, or holdings operation.
 - If the ledger fails schema or double-entry validation, all exports and downstream reporting are blocked until resolved.
+
 - All compliance, schema, and field requirements are enforced by:
-  - `tbot_bot/accounting/accounting_config.py`                         # Output folder structure, schema/COA existence, config validation, environment checks
-  - `tbot_bot/accounting/coa_utils.py`                                 # COA metadata structure, COA db helpers, import/export, UI-driven editing
-  - `tbot_bot/accounting/ledger_modules/ledger_account_map.py`         # Logical account path lookups and mapping for all posting ops
-  - `tbot_bot/accounting/ledger_modules/ledger_compliance_filter.py`   # Transaction validation pre-write; enforces compliance for all ledger entries
-  - `tbot_bot/accounting/ledger_modules/ledger_deduplication.py`       # Idempotency keys: **FITID** + content hash; duplicate prevention/metrics
-  - `tbot_bot/accounting/ledger_modules/ledger_double_entry.py`        # Double-entry posting, debit/credit logic, **sum==0** validation, atomic batches
-  - `tbot_bot/accounting/ledger_modules/ledger_edit.py`                # Editing, updating, resolving, or deleting ledger entries (audit-logged)
-  - `tbot_bot/accounting/ledger_modules/ledger_entry.py`               # Entry structure/normalization helpers (no direct writes)
-  - `tbot_bot/accounting/ledger_modules/ledger_grouping.py`            # Grouping/rollup logic for UI, reconciliation, and reporting
-  - `tbot_bot/accounting/ledger_modules/ledger_snapshot.py`            # **Snapshots**: atomic ledger backup before sync/update/destructive ops
-  - `tbot_bot/accounting/ledger_modules/ledger_sync.py`                # Orchestrates broker sync, mapping, compliance, dedupe, double-entry, audit, reconciliation
-  - `tbot_bot/accounting/reconciliation_log.py`                        # Reconciliation table I/O; status tracking; audit and querying
-  - Reporting/export modules (e.g., `tbot_bot/reporting/ledger_report.py`) for downstream integration
-- **All paths are obtained via `path_resolver.py`.**  
-- **No direct SQL outside `ledger_modules`.**
+  - `tbot_bot/accounting/accounting_config.py`                              # Output folder structure, schema/COA existence, config validation, environment checks
+  - `tbot_bot/accounting/coa_utils.py`                                      # COA metadata/DB helpers; import/export; UI-driven editing; never touches trading logic directly
+  - `tbot_bot/accounting/coa_mapping_table.py`                              # Load/save/version `coa_mapping_table.json`; snapshots; audit/rollback of coa_mapping rules
+  - `tbot_bot/accounting/ledger_modules/ledger_account_map.py`              # Resolve human-readable COA paths → account_code; blocks/flags unmapped with skip_insert
+  - `tbot_bot/accounting/ledger_modules/ledger_audit.py`                    # Immutable audit logging for syncs/edits; records sync_run_id, broker_code, mapping_version (UTC)
+  - `tbot_bot/accounting/ledger_modules/ledger_balance.py`                  # Compute running and point-in-time balances per account (Decimal-safe); as_of/window queries
+  - `tbot_bot/accounting/ledger_modules/ledger_bootstrap.py`                # Create/initialize ledger structures from templates; first-run checks
+  - `tbot_bot/accounting/ledger_modules/ledger_compliance_filter.py`        # Validate required fields, allowed actions, sane numeric ranges; reject/flag invalid before write
+  - `tbot_bot/accounting/ledger_modules/ledger_core.py`                     # Low-level shared helpers (tx_context/get_conn/UTC utils); no business logic
+  - `tbot_bot/accounting/ledger_modules/ledger_db.py`                       # Connection PRAGMAs, schema presence, indices, UNIQUE(FITID) guarantees; row_factory
+  - `tbot_bot/accounting/ledger_modules/ledger_deduplication.py`            # Idempotency via FITID + content hash; counts/blocks duplicates
+  - `tbot_bot/accounting/ledger_modules/ledger_double_entry.py`             # Post balanced debit/credit splits (sum==0); atomic batch insert + verify
+  - `tbot_bot/accounting/ledger_modules/ledger_edit.py`                     # Safe edit/resolve with append-only audit; preserves double-entry invariants
+  - `tbot_bot/accounting/ledger_modules/ledger_entry.py`                    # Build normalized ledger rows (OFX fields, identifiers); no direct writes
+  - `tbot_bot/accounting/ledger_modules/ledger_grouping.py`                 # Group/rollup for UI/reporting; collapse/expand; orphan-safe grouping by group_id
+  - `tbot_bot/accounting/ledger_modules/ledger_opening_balance.py`          # Opening balance creation/verification; controlled initialization flows
+  - `tbot_bot/accounting/ledger_modules/ledger_posting.py`                  # High-level posting orchestrator; routes to double-entry and compliance layers
+  - `tbot_bot/accounting/ledger_modules/ledger_query.py`                    # Read API for grouped trades/search/paging; UTC timestamps; Decimal amounts
+  - `tbot_bot/accounting/ledger_modules/ledger_snapshot.py`                 # Pre-write snapshots to output/.../ledgers/snapshots (UTC+sync_run_id); rollback safety
+  - `tbot_bot/accounting/ledger_modules/ledger_sync.py`                     # Orchestrates fetch→normalize→comply→map→dedupe→post→audit→reconcile for broker data
+  - `tbot_bot/accounting/ledger_modules/mapping_auto_update.py`             # Assist coa_mapping by proposing rules from flagged/recurring unmapped records (admin-reviewed)
+  - `tbot_bot/accounting/reconciliation_log.py`                             # Reconciliation table I/O; statuses (ok/mismatch/local-only/broker-only/resolved); compare fields
+  - Reporting/export modules (e.g., `tbot_bot/reporting/ledger_report.py`)  # Generate compliance/COA/holdings reports; downstream read-only integrations
+- **All paths are obtained via `tbot_bot/support/path_resolver.py`.**       # Centralized, BOT_IDENTITY-scoped path resolution; forbids hardcoded literals
+- **No direct SQL outside `ledger_modules`.**                               # Use module APIs only; prevents schema drift and unsafe writes
+
 
 **Schema & Indices (enforced by `ledger_db.py` / schema SQL):**  
 - Tables include at minimum: `ledger_entries`, `trades`, `audit_trail`, `reconciliation_log`, `trade_group_collapsed`.  
-- Indices include: `UNIQUE(FITID)` on `ledger_entries` (and on `trades` when present), lookups on `DTPOSTED`, `group_id`, `trade_id`, `account_code`.  
-- Foreign/key references are logical (by IDs/keys) due to SQLite constraints; integrity enforced in module code.
+- Indices include: `UNIQUE(FITID)` on `ledger_entries` (and on `trades` when present), lookups on `DTPOSTED`, `group_id`, `trade_id`, and `account_code`.  
+- **Do not inline column orders in specs**—always import `ledger_fields.py` lists to prevent drift.
 
 **Note:** Inverse ETF, leveraged, or synthetic short trades are recorded to standard accounts; type/leverage tracked via `tags` and (if used) `leverage_multiplier` in `json_metadata`, plus the broker payload `response_hash`.
 
@@ -259,7 +280,7 @@ Minimum checks applied by `ledger_compliance_filter.py` before any write:
 - Date bounds: `DTPOSTED` not in the future; not before allowable import start date (if configured).  
 - Numeric ranges: quantities/prices within sane bounds; Decimal coercion with scale checks.  
 - Action/verb normalization: `action` in ALLOWED_TRADE_ACTIONS.  
-- Mapping present: `account_code` resolvable via active `coa_mapping_table.json` (else **skip_insert** + flag).  
+- coa_mapping present: `account_code` resolvable via active `coa_mapping_table.json` (else **skip_insert** + flag).  
 - Idempotency: reject if `FITID` already exists (dedupe).  
 - Any violation ⇒ record is rejected/flagged; nothing is written for that record.
 
@@ -277,11 +298,13 @@ RISKS IF IGNORED
 Chart of Accounts – Single-Broker TBot Architecture
 =============================================================================================================================================
 
+{BOT_IDENTITY} = {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}
+
 *Every bot instance writes to a local, OFX-compliant ledger file:*  
 `output/{BOT_IDENTITY}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db` (resolved via `path_resolver.py`)
 
 ----------------------------------------------------------------------------------------------------------------------------------------------
-CHART OF ACCOUNTS: {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA_v1.0.0.db 
+CHART OF ACCOUNTS: {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA.db 
 ----------------------------------------------------------------------------------------------------------------------------------------------
 
 # -- COA Metadata (Required in all ledgers and COA files) --
@@ -289,32 +312,36 @@ COA_METADATA:
     currency_code: "USD"
     entity_code: "{ENTITY_CODE}"
     jurisdiction_code: "{JURISDICTION_CODE}"
-    coa_version: "v1.0.0"
+    coa_version: "<SEMVER>"
     created_at_utc: "<UTC_TIMESTAMP>"
     last_updated_utc: "<UTC_TIMESTAMP>"
+
+# COA artifacts under `output/{BOT_IDENTITY}/ledgers/`:
+- `coa.json` (human-readable mirror)
+- `coa_metadata.json` (metadata mirror)
+- `coa_audit_log.json` (append-only COA change log)
+- `coa_mapping_table.json` (active coa_mapping table; lazy-created)
+- `mapping_versions/` (versioned snapshots on every edit; rollback-capable)
+
 
 # -- Account Structure (core nodes + holdings/tax/payroll/allocations) --
 
 1000 Bank and Cash Accounts [Cash & Equivalents]
 ├── 1010 Float Injection – From RIGD Group
 ├── 1020 Float Returned – To RIGD Group
-├── 1030 Alpaca – Cash
-├── 1040 IBKR – Cash
-├── 1050 Tradier – Cash
-├── 1060 Robinhood – Cash
+├── 1030 Broker – Cash
 
 1100 Assets [Investing Activities]
 ├── 1110 Brokerage Accounts – Equities
-│   ├── 1111 Alpaca – Equities
-│   ├── 1112 IBKR – Equities
-│   ├── 1113 Tradier – Equities
-│   └── 1114 Robinhood – Equities
+│   └── 1111 Broker – Equities
 ├── 1120 Tax Reserve (Brokerage)
 ├── 1130 Payroll Reserve (Brokerage)
 
 2000 Liabilities [Operating Activities]
 ├── 2010 Broker Payables (Accrued Fees)
 ├── 2020 Market Data Payables (Accrued Subscriptions)
+├── 2100 Short Positions
+│   └── Broker – Short Positions
 
 3000 Equity [Financing Activities]
 ├── 3010 Capital Float Ledger
@@ -323,10 +350,7 @@ COA_METADATA:
 ├── 3040 Accumulated Profit
 
 4000 Income [Operating Activities]
-├── 4010 Realized Gains – Alpaca
-├── 4020 Realized Gains – IBKR
-├── 4030 Realized Gains – Tradier
-├── 4040 Realized Gains – Robinhood
+├── 4010 Realized Gains
 ├── 4050 Qualified Dividends
 ├── 4060 Short-Term Capital Gains
 ├── 4070 Long-Term Capital Gains
@@ -334,10 +358,7 @@ COA_METADATA:
 ├── 4090 Float/Tax/Payroll Reserve Transfers
 
 5000 Expenses [Operating Activities]
-├── 5010 Broker Fees – Alpaca
-├── 5020 Broker Fees – IBKR
-├── 5030 Broker Fees – Tradier
-├── 5040 Broker Fees – Robinhood
+├── 5010 Broker Fee
 ├── 5050 Slippage / Execution Losses
 ├── 5060 API Timeout Penalties
 ├── 5070 Bot Infrastructure Costs
@@ -345,7 +366,7 @@ COA_METADATA:
 ├── 5090 Payroll Disbursements (Owner/Operator)
 
 9100 Exports [Control & Reporting]
-├── 9110 Daily P&L Export – Manager.io Format
+├── 9110 Daily P&L Export – OFX Format
 ├── 9120 CSV/JSON Trade Log Export
 ├── 9130 SQLite Ledger Backup
 ├── 9140 Broker Confirm Archive (PDFs)
@@ -374,27 +395,23 @@ COA Metadata & Versioning Notes
 ------------------------------------------------------------------------------------------
 
 - All COA files must include at minimum:  
-  - `currency_code`, `entity_code`, `jurisdiction_code`, `coa_version`, `created_at_utc`, `last_updated_utc`
-- Schema migration = versioned filename:  
-  `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA_v1.0.0.db`
-- COA metadata is stored in `coa_metadata` table (same fields as above).
-- All ledgers and COA files must be ready for multi-entity/currency expansion.
-- **Dynamic COA mapping assignments are stored in `coa_mapping_table.json` (in `output/{BOT_IDENTITY}/ledgers/`)**.  
-  - This file is **lazy-created on first access**, and **versioned** on each change; every version is exportable for audit.  
-  - Snapshots enable rollback and compliance traceability for all mapping rules.  
-  - **Unmapped/ambiguous transactions are `skip_insert` and queued for admin assignment via Web UI.**
+  `currency_code`, `entity_code`, `jurisdiction_code`, `coa_version`, `created_at_utc`, `last_updated_utc`.
+- COA DB filename (non-suffixed):  
+  `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_COA.db`
+- COA metadata stored in DB table `coa_metadata`; JSON mirrors exist in the same ledgers folder (see above).
+- **Dynamic COA mapping assignments** live in `coa_mapping_table.json`; each save produces a snapshot in `mapping_versions/` (exportable and rollback-capable).  
+  **Unmapped/ambiguous transactions are `skip_insert` and queued for admin assignment via Web UI.**
 
+  
 ------------------------------------------------------------------------------------------
 Export Constraints and Enforcement
 ------------------------------------------------------------------------------------------
 
 - Only validated, reconciled trades are written to ledgers after session/sync.
-- If ledger fails schema or double-entry check, export is blocked.
-- `.csv`/`.json` are for external audit only, never parsed for ingestion.
-- All structure, compliance, and export logic is enforced by local accounting modules.
-- **COA mapping table (`coa_mapping_table.json`) is considered part of the COA: any change is audit-logged, versioned, and tied to a specific schema version.**
-- **COA creation/edit/export is UI-only** (via `utils_coa_web.py`); ledger/schema integration via `tbot_bot/accounting/coa_utils.py`.
-- Schema conformance: all exporters/importers must import `tbot_bot/accounting/ledger_modules/ledger_fields.py` to guarantee column order and presence; ad-hoc column lists are prohibited.
+- `.csv`/`.json` are audit artifacts only, never re-ingested.
+- **COA mapping table (`coa_mapping_table.json`) is part of the COA domain; every edit is snapshot to `mapping_versions/` and tied to postings/reconciliation via coa_mapping version.**
+- **COA creation/edit/export is UI-only** (via `tbot_web/support/utils_coa_web.py`); ledger/schema integration via `tbot_bot/accounting/coa_utils.py`.
+- All exporters/importers MUST import `tbot_bot/accounting/ledger_modules/ledger_fields.py` (no ad-hoc column lists).
 
 **Note:** Inverse ETF, leveraged, or synthetic trades are recorded as normal, with tags. No special COA accounts are required; leverage and synthetic details are tracked in `tags` and `json_metadata`.
 
@@ -426,7 +443,7 @@ Automated Holdings/Reserves – Core Flows & Ledger Entry Points
      - *Expense*: 5080 (Tax Payments), when cash outflow occurs
    - All splits, transfers, and payments to tax are logged per event.
    - **Once posted, tax reserves cannot be reduced or re-used for trading, float, or other flows except by explicit manual override, which is always audit-logged. No reserve is set aside for losses.**
-   - **All allocations and transfers are recorded against the mapping table version active at posting; each change to tax reserve mapping snapshots `coa_mapping_table.json`.**
+   - **All allocations and transfers are recorded against the coa_mapping table version active at posting; each change to tax reserve coa_mapping snapshots `coa_mapping_table.json`.**
 
 3. **Payroll Reserve**  
    - After tax, payroll split is posted to:
@@ -435,7 +452,7 @@ Automated Holdings/Reserves – Core Flows & Ledger Entry Points
      - *Expense*: 5090 (Payroll Disbursements), when cash outflow occurs
    - Allocations logged as internal transfer at split, and as expense at disbursement.
    - **Payroll allocation only occurs on positive post-tax gains from bot trading activities, never from float sales or realized losses. Payroll reserves, once posted, are never clawed back or reused for other flows.**
-   - **All payroll reserve flows are audit-linked to the mapping table snapshot in force at posting time.**
+   - **All payroll reserve flows are audit-linked to the coa_mapping table snapshot in force at posting time.**
 
 4. **Holdings Allocation/Rebalancing**  
    - Every purchase/sale of long-term securities, as well as periodic/manual rebalance, is posted to:
@@ -452,7 +469,7 @@ Automated Holdings/Reserves – Core Flows & Ledger Entry Points
    - Each automated or manual action (split, transfer, rebalance) must reference `FITID`, `DTPOSTED` (UTC), context/audit tag, and source trigger.
    - No action may be posted outside of scheduled flows, manual UI action, or validated trigger.
    - **All config or allocation changes must trigger a backup of prior config/secrets, and generate an audit entry including user, UTC timestamp, and rationale.**
-   - **The active `coa_mapping_table.json` version is bound to every posting event; all edits or rule changes snapshot the table, ensuring holdings/float/reserve postings are permanently tied to a mapping version for compliance review.**
+   - **The active `coa_mapping_table.json` version (from `mapping_versions/`) is bound to every posting event; all edits or rule changes snapshot the table, ensuring holdings/float/reserve postings are permanently tied to a mapping version for compliance review.**
 
 ----------------------------------------------------------------------
 COA Accounts Used by Holdings Management
@@ -471,7 +488,7 @@ COA Accounts Used by Holdings Management
 - **Exports:**  
     - 9160: Holdings Rebalance Audit Log Export
 
-All flows, splits, and rebalancing actions must utilize these accounts, with strict double-entry, append-only audit, and **mapping resolution enforced via `coa_mapping_table.json` with full versioning and rollback.**
+All flows, splits, and rebalancing actions must utilize these accounts, with strict double-entry, append-only audit, and **coa_mapping resolution enforced via `coa_mapping_table.json` with full versioning and rollback.**
 
 
 =================================================================================================================
@@ -659,9 +676,9 @@ PURPOSE: To enable one-click, auditable, double-entry-compliant broker transacti
     - Each sync logs which API credential (or its hash) was used.
 
 - **B. Sync Orchestrator (`tbot_bot/accounting/ledger_modules/ledger_sync.py`):**
-    - Pipeline: **fetch → normalize → compliance → mapping → dedupe → double-entry post → audit → reconciliation**.  
+    - Pipeline: **fetch → normalize → compliance → coa_mapping → dedupe → double-entry post → audit → reconciliation**.  
     - Takes **snapshots** via `ledger_snapshot.py` before write operations.  
-    - Writes audit events with `sync_run_id`, broker code, mapping version.
+    - Writes audit events with `sync_run_id`, broker code, coa_mapping version.
 
 - **C. Reconciliation Engine (`tbot_bot/accounting/reconciliation_log.py`):**
     - For each broker record: mark `ok` if matched, `broker-only` if missing locally, `local-only` if in ledger but not in broker export.  
@@ -673,10 +690,10 @@ PURPOSE: To enable one-click, auditable, double-entry-compliant broker transacti
     - All changes audit-logged; export/import supported.
 
 - **E. Log and Artifact Retention:**
-    - All logs, audits, reconciliations, and mapping versions retained ≥7 years (or per law); archival to encrypted cold storage allowed (no destruction).
+    - All logs, audits, reconciliations, and coa_mapping versions retained ≥7 years (or per law); archival to encrypted cold storage allowed (no destruction).
 
 -------------------------------------------------------------------------------
-3. TRANSACTION & FIELD MAPPING
+3. TRANSACTION & FIELD coa_mapping
 -------------------------------------------------------------------------------
 - **Alpaca (example):**
     - API: `GET /v2/orders`, `GET /v2/account/activities`
@@ -689,7 +706,7 @@ PURPOSE: To enable one-click, auditable, double-entry-compliant broker transacti
         - `filled_at` → `DTPOSTED` (UTC) + store original in `json_metadata`
         - `commission`/`fees` → `commission`/`fee`
         - `status` → `status`
-    - Cash activity (deposits, withdrawals, dividends, fees) mapped to proper `TRNTYPE` and COA accounts via mapping table.
+    - Cash activity (deposits, withdrawals, dividends, fees) mapped to proper `TRNTYPE` and COA accounts via coa_mapping table.
 
 - **Fees Handling:** store detailed breakdown in `json_metadata` where available.
 
@@ -699,7 +716,7 @@ PURPOSE: To enable one-click, auditable, double-entry-compliant broker transacti
     - Use `ledger_fields.py` lists (`TRADES_FIELDS`, `LEDGER_ENTRIES_FIELDS`, `RECONCILIATION_LOG_FIELDS`).  
     - `action` in ALLOWED_TRADE_ACTIONS; nonconforming verbs → `"other"` with original preserved.  
     - Store `raw_broker_json` and its `response_hash`.  
-    - Missing COA mapping blocks posting (`skip_insert`) and is tied to active mapping version.
+    - Missing COA mapping blocks posting (`skip_insert`) and is tied to active coa_mapping version.
 
 -------------------------------------------------------------------------------
 4. SYNC WORKFLOW (PSEUDOCODE)
@@ -716,7 +733,7 @@ def sync_broker_ledger(start_utc=None, end_utc=None):
     # Snapshot
     take_ledger_snapshot(sync_run_id)
 
-    # Normalize → Compliance → Mapping → Dedup → Double-Entry
+    # Normalize → Compliance → coa_mapping → Dedup → Double-Entry
     normalized = [normalize(record) for record in raw]
     valid, rejects = compliance_filter(normalized)
     mapped = map_accounts(valid)             # uses coa_mapping_table.json (lazy-created, versioned)
@@ -734,9 +751,9 @@ def sync_broker_ledger(start_utc=None, end_utc=None):
 -------------------------------------------------------------------------------
 - Full audit of every import/update; retries on API failures with backoff; errors logged with status.
 - Discrepancies surfaced in UI; admin resolution required for `local-only`/`broker-only`.
-- Each sync/record logs credential hash, `sync_run_id`, mapping version, and `response_hash`.
+- Each sync/record logs credential hash, `sync_run_id`, coa_mapping version, and `response_hash`.
 - Duplicates blocked by `UNIQUE(FITID)`; attempts are counted and reported.
-- Unmapped transactions are **skip_insert** and shown in mapping UI; no partial writes.
+- Unmapped transactions are **skip_insert** and shown in coa_mapping UI; no partial writes.
 
 -------------------------------------------------------------------------------
 6. WEB UI REQUIREMENTS
@@ -744,8 +761,8 @@ def sync_broker_ledger(start_utc=None, end_utc=None):
 - Ledger Page (ledger.html):
     - "Sync Broker Ledger" triggers `/ledger/sync` (POST) → `ledger_sync.py`.
     - Post-sync: show new/updated trades; statuses `ok`, `mismatch`, `local-only`, `broker-only`, `resolved`.
-    - Reconciliation log query/export; mapping UI with version history/rollback.
-    - Every mapping change snapshots `coa_mapping_table.json` and ties to reconciliation/postings.
+    - Reconciliation log query/export; coa_mapping UI with version history/rollback.
+    - Every coa_mapping change snapshots `coa_mapping_table.json` and ties to reconciliation/postings.
     - Pending/incomplete broker transactions indicated with follow-up flow.
 
 -------------------------------------------------------------------------------
@@ -758,19 +775,19 @@ def sync_broker_ledger(start_utc=None, end_utc=None):
 8. EXTENSIBILITY
 -------------------------------------------------------------------------------
 - New broker plugins conform to fetch/normalize contracts; unknown fields go to `json_metadata`.
-- Mapping table supports live extension/versioning/export/import.
-- Tests include mock/fuzzed broker data and mapping regressions.
+- coa_mapping table supports live extension/versioning/export/import.
+- Tests include mock/fuzzed broker data and coa_mapping regressions.
 
 -------------------------------------------------------------------------------
 9. TESTING & COMPLIANCE
 -------------------------------------------------------------------------------
 - Verify: all broker trades present after sync; no duplicate `FITID`; ledger double-entry invariant holds; discrepancies auditable.
-- Test: pagination/rate-limit handling; partial fills/corrections; reconciliation schema/population; mapping versioning; artifact retention.
+- Test: pagination/rate-limit handling; partial fills/corrections; reconciliation schema/population; coa_mapping versioning; artifact retention.
 
 -------------------------------------------------------------------------------
 10. VERSIONING AND DATA RETENTION
 -------------------------------------------------------------------------------
-- All artifacts/logs/mapping tables/reconciliation logs versioned with schema/export version; retained ≥ 7 years.  
+- All artifacts/logs/coa_mapping tables/reconciliation logs versioned with schema/export version; retained ≥ 7 years.  
 - Encrypted archival allowed; destruction requires explicit regulatory clearance.  
 - Version metadata embedded in filenames and contents; covered by regression tests.
 
@@ -781,3 +798,11 @@ Atomic Key/Secret Rotation Compliance
 - Rotation re-encrypts affected files, writes timestamped encrypted backups, and updates version metadata.  
 - Old keys/secrets are never reused.  
 - All rotations are append-only audit-logged with UTC timestamp, category, initiator (user/system), and affected artifacts (sanitized).
+
+=============================================================================================================================================
+Final reminder (remove hardcoded lists to prevent drift)
+=============================================================================================================================================
+
+**Spec Drift Guard:**  
+Remove any remaining hardcoded column enumerations from this document and replace with:  
+“Authoritative columns are defined in `tbot_bot/accounting/ledger_modules/ledger_fields.py`. Writers/readers MUST import these lists verbatim.”
