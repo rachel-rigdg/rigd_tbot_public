@@ -5,6 +5,8 @@
 
 from pathlib import Path
 import datetime
+from datetime import time as dt_time, timezone  # local UTC parser support
+
 from tbot_bot.strategy.strategy_meta import StrategyResult
 from tbot_bot.config.env_bot import (
     get_bot_config,
@@ -12,7 +14,7 @@ from tbot_bot.config.env_bot import (
     get_mid_time_utc,
     get_close_time_utc,
 )
-from tbot_bot.support.utils_time import utc_now, parse_time_utc
+from tbot_bot.support.utils_time import utc_now  # removed parse_time_utc (not present)
 from tbot_bot.support.utils_log import log_event
 
 config = get_bot_config()
@@ -33,14 +35,17 @@ CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode.flag"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
+
 def _bot_state() -> str:
     try:
         return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
     except Exception:
         return "unknown"
 
+
 def is_test_mode_active() -> bool:
     return TEST_FLAG_PATH.exists()
+
 
 def ensure_universe_valid():
     # Lazy import to avoid import-time side effects
@@ -56,6 +61,7 @@ def ensure_universe_valid():
     except UniverseCacheError as ue:
         log_event("router", f"Failed to rebuild universe: {ue}")
         raise
+
 
 def get_screener_class(source_name: str):
     # Lazy, selective imports to avoid dragging heavy deps at import-time
@@ -74,12 +80,26 @@ def get_screener_class(source_name: str):
         return TradierScreener
     raise ValueError(f"Unknown screener source: {src}")
 
+
+def _parse_time_utc(hhmm: str) -> dt_time:
+    """Parse 'HH:MM' into a timezone-aware UTC time object."""
+    try:
+        hh, mm = map(int, (hhmm or "00:00").strip().split(":"))
+        # clamp to valid ranges to be defensive
+        hh = max(0, min(23, hh))
+        mm = max(0, min(59, mm))
+        return dt_time(hour=hh, minute=mm, tzinfo=timezone.utc)
+    except Exception:
+        return dt_time(0, 0, tzinfo=timezone.utc)
+
+
 def _parsed_utc_times():
-    """Read UTC execution times from env getters and return as datetime.time objects."""
-    open_tt = parse_time_utc(get_open_time_utc() or "13:30")
-    mid_tt = parse_time_utc(get_mid_time_utc() or "16:00")
-    close_tt = parse_time_utc(get_close_time_utc() or "19:45")
+    """Read UTC execution times from env getters and return as datetime.time objects (tz-aware UTC)."""
+    open_tt = _parse_time_utc(get_open_time_utc() or "13:30")
+    mid_tt = _parse_time_utc(get_mid_time_utc() or "16:00")
+    close_tt = _parse_time_utc(get_close_time_utc() or "19:45")
     return open_tt, mid_tt, close_tt
+
 
 def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
@@ -126,7 +146,8 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         return execute_strategy(n, screener_override=scr)
 
     # UTC-based selection (defensive; supervisor should normally call with override)
-    now_tt = current_utc_time if isinstance(current_utc_time, datetime.time) else utc_now().time()
+    # Use timetz() to retain tzinfo for safe comparisons against tz-aware schedule times.
+    now_tt = current_utc_time if isinstance(current_utc_time, datetime.time) else utc_now().timetz()
     open_tt, mid_tt, close_tt = _parsed_utc_times()
 
     seq_map = {
@@ -143,6 +164,7 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
 
     print("[strategy_router] No eligible strategy at this time — skipped.", flush=True)
     return StrategyResult(skipped=True)
+
 
 def execute_strategy(name: str, screener_override: str = None) -> StrategyResult:
     """
@@ -177,6 +199,7 @@ def execute_strategy(name: str, screener_override: str = None) -> StrategyResult
         log_event("router", f"Error executing {n}: {e}")
         print(f"[strategy_router] ERROR executing {n}: {e}", flush=True)
         return StrategyResult(skipped=True, errors=[str(e)])
+
 
 # Entry point alias for legacy callers
 run_strategy = route_strategy

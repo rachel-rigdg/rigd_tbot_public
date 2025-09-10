@@ -33,7 +33,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     }
 
-    setInterval(checkBotStateAndRender, 3000);
+    setInterval(checkBotStateAndRender, 60000);
     checkBotStateAndRender();
 });
 function setStatusBanner(state) {

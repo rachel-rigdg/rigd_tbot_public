@@ -70,6 +70,6 @@ document.addEventListener("DOMContentLoaded", function () {
             setSafe(grids[2].children[1], `<strong>Daily Loss Limit:</strong> ${data.daily_loss_limit || ""}`);
         }
     }
-    setInterval(pollBotStatus, 2000);
+    setInterval(pollBotStatus, 60000);
     pollBotStatus();
 });
