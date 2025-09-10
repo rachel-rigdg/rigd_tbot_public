@@ -12,13 +12,15 @@ Can be run directly for diagnostics (CLI/testing). Normally launched as a subpro
 import sys
 import time
 import json
-from datetime import datetime
 from threading import Lock, Thread
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event, get_log_settings
 from tbot_bot.support.path_resolver import resolve_status_log_path
 from pathlib import Path
+from datetime import datetime, timezone
+
+print(f"[LAUNCH] status_bot.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 STATUS_FILE_PATH = Path(resolve_status_log_path())
 

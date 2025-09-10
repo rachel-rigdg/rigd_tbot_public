@@ -15,6 +15,9 @@ from tbot_bot.runtime.status_bot import bot_status
 from tbot_bot.support.utils_identity import get_bot_identity
 import subprocess
 import os
+from datetime import datetime, timezone
+
+print(f"[LAUNCH] integration_test_runner.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 PROJECT_ROOT = get_project_root()
 

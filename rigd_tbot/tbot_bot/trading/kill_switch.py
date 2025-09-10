@@ -14,6 +14,8 @@ from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.utils_identity import get_bot_identity
 from pathlib import Path
+from datetime import datetime, timezone
+print(f"[LAUNCH] kill_switch.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 config = get_bot_config()
 DAILY_LOSS_LIMIT = float(config.get("DAILY_LOSS_LIMIT", 0.05))

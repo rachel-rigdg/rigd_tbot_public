@@ -20,6 +20,9 @@ from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledge
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.utils_log import log_event  # <- already used
 
+
+print(f"[LAUNCH] ledger_snapshot.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 def get_identity_tuple():
     identity = load_bot_identity()
     return tuple(identity.split("_"))

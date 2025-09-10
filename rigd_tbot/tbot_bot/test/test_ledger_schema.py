@@ -9,6 +9,9 @@ from tbot_bot.support.path_resolver import resolve_control_path
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_ledger_schema launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

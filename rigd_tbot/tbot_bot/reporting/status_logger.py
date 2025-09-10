@@ -22,6 +22,8 @@ from tbot_bot.config.env_bot import (
     get_mid_time_utc,
     get_close_time_utc,
 )
+from datetime import datetime, timezone
+print(f"[LAUNCH] status_logger.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 BOT_IDENTITY = get_bot_identity()
 SUMMARY_STATUS_FILE = resolve_status_summary_path(BOT_IDENTITY)

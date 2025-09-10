@@ -48,8 +48,10 @@ def ensure_universe_valid():
     from tbot_bot.screeners.universe_orchestrator import main as orchestrator_main
     try:
         if is_cache_stale():
+            print("[strategy_router] Universe cache missing/stale — triggering rebuild...", flush=True)
             log_event("router", "Universe cache missing or stale. Triggering rebuild.")
             orchestrator_main()
+            print("[strategy_router] Universe cache rebuild complete.", flush=True)
             log_event("router", "Universe cache rebuild completed by strategy router.")
     except UniverseCacheError as ue:
         log_event("router", f"Failed to rebuild universe: {ue}")
@@ -87,10 +89,13 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
     - Otherwise: uses UTC now vs START_TIME_* (UTC) to pick the first eligible in STRATEGY_SEQUENCE.
     The router does NOT launch processes and does NOT stamp per-day guards; supervisor owns scheduling.
     """
-    # Gate on bot_state for normal operation (allow TEST_MODE/override bypass)
     state = _bot_state()
+    print(f"[strategy_router] route_strategy called (override={override!r}, state={state})", flush=True)
+
+    # Gate on bot_state for normal operation (allow TEST_MODE/override bypass)
     if not (override or is_test_mode_active()) and state != "running":
         log_event("router", f"Bot state '{state}' not runnable — skipping route.")
+        print(f"[strategy_router] Skipping — bot_state='{state}' (no override/TEST_MODE).", flush=True)
         return StrategyResult(skipped=True)
 
     # Ensure universe cache is available/fresh
@@ -99,24 +104,28 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
     # TEST_MODE: run all sequentially once, then clear flag
     if is_test_mode_active():
         log_event("router", "TEST_MODE active: executing open→mid→close sequentially")
+        print("[strategy_router] TEST_MODE active — running OPEN→MID→CLOSE sequentially.", flush=True)
         results = []
         for strat, scr in (("open", OPEN_SCREENER), ("mid", MID_SCREENER), ("close", CLOSE_SCREENER)):
+            print(f"[strategy_router] Launching {strat.upper()} (TEST_MODE) with screener={scr}", flush=True)
             results.append(execute_strategy(strat, screener_override=scr))
         try:
             TEST_FLAG_PATH.unlink()
             log_event("router", "TEST_MODE flag cleared after run.")
+            print("[strategy_router] TEST_MODE flag cleared.", flush=True)
         except Exception:
             pass
         return results[-1] if results else StrategyResult(skipped=True)
 
-    # Override: dispatch immediately
+    # Override: dispatch immediately (supervisor-driven path)
     if override:
         n = override.strip().lower()
         scr = {"open": OPEN_SCREENER, "mid": MID_SCREENER, "close": CLOSE_SCREENER}.get(n, SCREENER_SOURCE)
         log_event("router", f"Manual override: {n} using screener {scr}")
+        print(f"[strategy_router] Launching {n.upper()} via override with screener={scr}", flush=True)
         return execute_strategy(n, screener_override=scr)
 
-    # UTC-based selection (defensive; supervisor should normally call concrete strategies directly)
+    # UTC-based selection (defensive; supervisor should normally call with override)
     now_tt = current_utc_time if isinstance(current_utc_time, datetime.time) else utc_now().time()
     open_tt, mid_tt, close_tt = _parsed_utc_times()
 
@@ -129,8 +138,10 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
     for name in STRATEGY_SEQUENCE:
         enabled, start_tt, scr = seq_map.get(name, (False, None, None))
         if enabled and start_tt and now_tt >= start_tt:
+            print(f"[strategy_router] Time-based selection launching {name.upper()} with screener={scr}", flush=True)
             return execute_strategy(name, screener_override=scr)
 
+    print("[strategy_router] No eligible strategy at this time — skipped.", flush=True)
     return StrategyResult(skipped=True)
 
 def execute_strategy(name: str, screener_override: str = None) -> StrategyResult:
@@ -145,22 +156,26 @@ def execute_strategy(name: str, screener_override: str = None) -> StrategyResult
         if n == "open":
             from tbot_bot.strategy.strategy_open import run_open_strategy
             log_event("router", f"Executing OPEN with {screener_class.__name__}")
+            print(f"[strategy_router] Executing OPEN with {screener_class.__name__}", flush=True)
             return run_open_strategy(screener_class=screener_class)
 
         if n == "mid":
             from tbot_bot.strategy.strategy_mid import run_mid_strategy
             log_event("router", f"Executing MID with {screener_class.__name__}")
+            print(f"[strategy_router] Executing MID with {screener_class.__name__}", flush=True)
             return run_mid_strategy(screener_class=screener_class)
 
         if n == "close":
             from tbot_bot.strategy.strategy_close import run_close_strategy
             log_event("router", f"Executing CLOSE with {screener_class.__name__}")
+            print(f"[strategy_router] Executing CLOSE with {screener_class.__name__}", flush=True)
             return run_close_strategy(screener_class=screener_class)
 
         raise ValueError(f"Unknown strategy: {n}")
 
     except Exception as e:
         log_event("router", f"Error executing {n}: {e}")
+        print(f"[strategy_router] ERROR executing {n}: {e}", flush=True)
         return StrategyResult(skipped=True, errors=[str(e)])
 
 # Entry point alias for legacy callers

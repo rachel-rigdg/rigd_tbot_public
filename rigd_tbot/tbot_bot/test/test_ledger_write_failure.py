@@ -8,6 +8,9 @@ from tbot_bot.accounting.ledger_modules.ledger_db import get_db_path
 from tbot_bot.support.utils_log import log_event
 import os
 from pathlib import Path
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_ledger_write_failure launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

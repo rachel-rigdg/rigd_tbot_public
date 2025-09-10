@@ -3,6 +3,9 @@ import sqlite3
 import json
 import pytest
 from pathlib import Path
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_posting_sell_cover launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 # The module under test
 from tbot_bot.accounting.ledger_modules import ledger_posting as lp

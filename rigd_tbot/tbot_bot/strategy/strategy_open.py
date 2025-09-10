@@ -1,6 +1,7 @@
 # tbot_bot/strategy/strategy_open.py
 # summary: Implements opening range breakout strategy with full bi-directional support and updated env references; compresses analysis/monitor window to 1min if TEST_MODE
 # additions: pre-run bot_state gate, idempotent daily stamp, write start stamp on launch
+# console: adds stdout prints for launch/debug visibility (flush=True)
 
 import time
 from datetime import timedelta, datetime, timezone
@@ -19,6 +20,8 @@ from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
+
+print("[strategy_open] module loaded", flush=True)
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
@@ -86,6 +89,7 @@ def analyze_opening_range(start_time, screener_class):
     log_event("strategy_open", "Starting opening range analysis...")
     analysis_minutes = 1 if is_test_mode_active() else OPEN_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
+    print(f"[strategy_open] analyze_opening_range start; deadline={deadline.isoformat()}", flush=True)
     screener = screener_class(strategy="open")
     global range_data
     range_data = {}
@@ -118,6 +122,7 @@ def detect_breakouts(start_time, screener_class):
     trades = []
     breakout_minutes = 1 if is_test_mode_active() else OPEN_BREAKOUT_TIME
     deadline = start_time + timedelta(minutes=breakout_minutes)
+    print(f"[strategy_open] detect_breakouts start; deadline={deadline.isoformat()}", flush=True)
     screener = screener_class(strategy="open")
     global range_data
     broker_api = get_broker_api()
@@ -267,23 +272,28 @@ def detect_breakouts(start_time, screener_class):
     return trades
 
 def run_open_strategy(screener_class):
+    print("[strategy_open] run_open_strategy() called", flush=True)
     # Pre-run gate: bot must be in 'running'
     try:
         state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
     except Exception:
         state = ""
+    print(f"[strategy_open] bot_state='{state}'", flush=True)
     if state != "running":
+        print("[strategy_open] exiting: bot_state != 'running'", flush=True)
         log_event("strategy_open", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
         return StrategyResult(skipped=True)
 
     # Idempotency: if already launched today, exit quietly
     now = utc_now()
     if _has_open_run_today(now):
+        print("[strategy_open] exiting: already stamped for today (idempotent guard)", flush=True)
         log_event("strategy_open", "Detected existing daily stamp — strategy_open already launched today; exiting.")
         return StrategyResult(skipped=True)
 
     # Successful start: write daily stamp immediately (prevents duplicate concurrent launches)
     _write_iso_utc(OPEN_STAMP_PATH, now)
+    print(f"[strategy_open] launching (stamp written) @ {now.isoformat()}", flush=True)
     log_event("strategy_open", f"Launching strategy_open (stamp written {now.isoformat().replace('+00:00','Z')})")
 
     if not self_check():
@@ -292,8 +302,10 @@ def run_open_strategy(screener_class):
 
     # Use local time for window logic
     start_time = now_local()
+    print(f"[strategy_open] starting with screener={getattr(screener_class, '__name__', screener_class)}", flush=True)
     analyze_opening_range(start_time, screener_class)
     trades = detect_breakouts(start_time, screener_class)
+    print(f"[strategy_open] completed with {len(trades)} trades", flush=True)
     log_event("strategy_open", f"Open strategy completed: {len(trades)} trades placed")
     return StrategyResult(trades=trades, skipped=False)
 

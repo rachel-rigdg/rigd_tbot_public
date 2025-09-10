@@ -238,6 +238,7 @@ All filesystem paths MUST be obtained via `tbot_bot/support/path_resolver.py` (n
     - **POST `/ledger/collapse_all`** — Persist global collapse state.  
     - **POST `/ledger/edit/<entry_id>`** *(admin)* — Inline COA account change for a leg.  
     - **GET `/ledger/export`** — Export current view (CSV/JSON/Markdown).
+    - **GET `/ledger/search — Query ledger entries (flat rows; search/sort/filter).
   - **RBAC:** `viewer`=read-only (`GET` endpoints), `admin`=all mutations (`/ledger/sync`, `/ledger/edit/*`, collapse-state endpoints).
 
 - `holdings_web.py`
@@ -554,7 +555,8 @@ The ledger interface in `ledger.html` is a comprehensive, audit-compliant UI for
   - Expanded groups show constituent debit/credit legs, each with an Account `<select>` bound to active COA codes.  
   - The update touches **only** the leg’s `account` field (double-entry invariants preserved) and writes an immutable audit record (user, UTC timestamp, before/after).  
   - **Optional global rule upsert:** include `apply_to_category` (or `update_mapping`/`mapping`) to request a rule derived from the edited leg; response JSON includes `mapping_ok: true|false`.  
-  - AJAX responses include fresh `"groups"` and `"balances"` so the UI can refresh without a full reload.  
+  - AJAX responses include fresh `"groups"` and `"balances"` so the UI can refresh without a full reload. 
+  - If a rule upsert is requested, the system snapshots coa_mapping_table.json (creating a new version) on success.
   - The collapsed/top row displays a representative account (implementation detail; for operator context).  
   - **Quick-links:** each leg may expose “View COA” and “View Mapping Rule” links to `coa.html` and `coa_mapping.html` (read-only).
 
@@ -594,7 +596,6 @@ Ledger API — Endpoint Contracts (UPDATED)
 --------------------------------------------------------------------------------
 
 Notes:
-- HTML view is served at **GET `/ledger/reconcile`**.
 - JSON endpoints return **plain JSON** (lists/objects) and, for a few actions, a small `{ok: ...}` envelope. There is **no universal `{ok,error,data}` wrapper**.
 - Timestamps are UTC ISO-8601. Numeric amounts are returned as numbers.
 
@@ -609,7 +610,7 @@ Notes:
 2) **POST `/ledger/sync`** — Trigger broker sync *(admin)*
 - **Body:** *(none; optional date window not currently read by the route)*
 - **Side effects:** runs `ledger_sync.sync_broker_ledger()`; snapshots ledger; posts double-entry rows; writes reconciliation/audit.
-- **Returns:** **302 redirect** back to `/ledger/reconcile` with flash message. (Not a JSON API response.)
+- **Returns:** **302 redirect back to the Ledger UI page (rendered by main_web.py).
 - **RBAC:** `admin`
 
 3) **GET `/ledger/groups`** — Grouped rows (server-side sort; collapse state included)
@@ -642,7 +643,7 @@ Notes:
 - **Side effects:** updates only the leg’s `account` field; emits an audit-trail event; may upsert mapping rule when requested.
 - **Returns:**
   - **AJAX / JSON Accept:** `{ "ok": true, "groups": [...], "balances": {...}, "result": <updated_leg>, "mapping_ok": true|false }`
-  - **Non-AJAX:** 302 redirect back to `/ledger/reconcile` with flash message.
+  - **Non-AJAX:**302 redirect back to the Ledger UI page (rendered by main_web.py).”
 - **RBAC:** `admin`
 
 
@@ -673,7 +674,7 @@ COA Mapping UI — CRUD, Version History, Import/Export (RBAC) (UPDATED)
 
 **Rules & Enforcement:**
 - Mapping changes are **atomic and versioned**; the effective ruleset is always a snapshot (`…/coa_mapping_table.json` lineage).
-- **Unmapped transactions are imported via Suspense/PNL fallback** and **flagged** for review; they are **not dropped**.
+- **Unmapped/ambiguous transactions are skip_insert and queued for admin assignment in the Web UI (no partial writes)**.
 - **Inline per-leg COA edits (Ledger UI)**:
   - By default, they **only** change that single leg and write an audit event.
   - If the request includes `apply_to_category`/`update_mapping`/`mapping` (truthy), the server will **attempt** to create/update a **global mapping rule** derived from the edited leg. This is **best-effort** and does **not** block the leg update if it fails.

@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
+print(f"[LAUNCH] sync_broker_ledger.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 def _utc_now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -28,6 +30,7 @@ def main():
     from tbot_bot.accounting.ledger_modules.ledger_sync import sync_broker_ledger
     from tbot_bot.support.utils_log import log_event  # writes JSONL
     from tbot_bot.accounting.ledger_modules.ledger_entry import get_identity_tuple
+    
 
     # Generate and propagate a sync_run_id through the pipeline (env-based propagation)
     entity_code, jurisdiction_code, broker_code, bot_id = get_identity_tuple()

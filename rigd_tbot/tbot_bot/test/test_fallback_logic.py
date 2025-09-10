@@ -4,6 +4,9 @@ import pytest
 from unittest.mock import MagicMock, patch
 import time
 import threading
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_fallback_logic launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

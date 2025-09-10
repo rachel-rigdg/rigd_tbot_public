@@ -14,6 +14,9 @@ from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support.path_resolver import get_output_path, get_project_root, resolve_control_path
 import os
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_broker_trade_stub launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

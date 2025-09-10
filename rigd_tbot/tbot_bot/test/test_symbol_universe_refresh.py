@@ -12,6 +12,9 @@ from unittest import mock
 from tbot_bot.screeners import universe_orchestrator
 from tbot_bot.support import secrets_manager
 from tbot_bot.support.path_resolver import resolve_control_path
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_symbol_universe_refresh launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_symbol_universe_refresh.flag"

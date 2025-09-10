@@ -1,6 +1,7 @@
 # tbot_bot/strategy/strategy_mid.py
 # summary: Implements VWAP-based mid-day reversal strategy with full bi-directional logic and env-driven parameters; compresses analysis/monitor window to 1min if TEST_MODE
 # additions: pre-run bot_state gate, idempotent daily stamp, write start stamp on launch
+# console: adds stdout prints for launch/debug visibility (flush=True)
 
 from datetime import timedelta, datetime, timezone
 from pathlib import Path
@@ -18,6 +19,8 @@ from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
+
+print("[strategy_mid] module loaded", flush=True)
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
@@ -83,6 +86,7 @@ def analyze_vwap_signals(start_time, screener_class):
     signals = []
     analysis_minutes = 1 if is_test_mode_active() else MID_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
+    print(f"[strategy_mid] analyze_vwap_signals start; deadline={deadline.isoformat()}", flush=True)
     screener = screener_class(strategy="mid")
     broker_api = get_broker_api()
     candidate_status = []
@@ -172,6 +176,7 @@ def execute_mid_trades(signals, start_time):
     trades = []
     monitoring_minutes = 1 if is_test_mode_active() else MID_MONITORING_TIME
     deadline = start_time + timedelta(minutes=monitoring_minutes)
+    print(f"[strategy_mid] execute_mid_trades start; deadline={deadline.isoformat()}", flush=True)
 
     for signal in signals:
         if now_local() >= deadline:
@@ -248,23 +253,28 @@ def execute_mid_trades(signals, start_time):
     return trades
 
 def run_mid_strategy(screener_class):
+    print("[strategy_mid] run_mid_strategy() called", flush=True)
     # Pre-run gate: bot must be in 'running'
     try:
         state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
     except Exception:
         state = ""
+    print(f"[strategy_mid] bot_state='{state}'", flush=True)
     if state != "running":
+        print("[strategy_mid] exiting: bot_state != 'running'", flush=True)
         log_event("strategy_mid", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
         return StrategyResult(skipped=True)
 
     # Idempotency: if already launched today, exit quietly
     now = utc_now()
     if _has_mid_run_today(now):
+        print("[strategy_mid] exiting: already stamped for today (idempotent guard)", flush=True)
         log_event("strategy_mid", "Detected existing daily stamp — strategy_mid already launched today; exiting.")
         return StrategyResult(skipped=True)
 
     # Successful start: write daily stamp immediately (prevents duplicate concurrent launches)
     _write_iso_utc(MID_STAMP_PATH, now)
+    print(f"[strategy_mid] launching (stamp written) @ {now.isoformat()}", flush=True)
     log_event("strategy_mid", f"Launching strategy_mid (stamp written {now.isoformat().replace('+00:00','Z')})")
 
     if not self_check():
@@ -273,8 +283,10 @@ def run_mid_strategy(screener_class):
 
     # Use local time for window logic
     start_time = now_local()
+    print(f"[strategy_mid] starting with screener={getattr(screener_class, '__name__', screener_class)}", flush=True)
     signals = analyze_vwap_signals(start_time, screener_class)
     trades = execute_mid_trades(signals, start_time)
+    print(f"[strategy_mid] completed with {len(trades)} trades", flush=True)
     return StrategyResult(trades=trades, skipped=False)
 
 def simulate_mid(*args, **kwargs):

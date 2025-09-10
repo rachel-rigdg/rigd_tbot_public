@@ -4,7 +4,6 @@
 # Writes to audit log and ledger. No business logic lives in the supervisor.
 
 import time
-from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 from tbot_bot.trading.holdings_utils import (
@@ -22,6 +21,9 @@ from tbot_bot.support.path_resolver import get_bot_state_path
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from tbot_bot.reporting.audit_logger import audit_log_event
 from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
+from datetime import datetime, timezone, timedelta
+
+print(f"[LAUNCH] holdings_manager.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 log = get_logger(__name__)
 

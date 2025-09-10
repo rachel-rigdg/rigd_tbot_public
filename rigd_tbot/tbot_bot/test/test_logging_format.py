@@ -10,6 +10,9 @@ import time
 from pathlib import Path
 from tbot_bot.support.path_resolver import get_output_path, resolve_control_path
 from tbot_bot.support.utils_log import log_event
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_logging_format launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_logging_format.flag"

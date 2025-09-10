@@ -14,6 +14,9 @@ from tbot_bot.accounting.ledger_modules.ledger_sync import sync_broker_ledger, _
 from tbot_bot.accounting.ledger_modules.ledger_db import get_db_path
 from tbot_bot.accounting.ledger_modules.ledger_double_entry import validate_double_entry
 from tbot_bot.accounting.ledger_modules import ledger_compliance_filter, ledger_deduplication
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_broker_sync launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

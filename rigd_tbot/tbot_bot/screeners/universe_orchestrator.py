@@ -10,12 +10,13 @@ import subprocess
 import sys
 import os
 import json
-from datetime import datetime
 from tbot_bot.screeners.screener_utils import atomic_copy_file
 from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path,
     resolve_universe_cache_path,
 )
+from datetime import datetime, timezone
+print(f"[LAUNCH] universe_orchestrator.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 # --- Exported constants required by tests ---
 PARTIAL_PATH = resolve_universe_partial_path()

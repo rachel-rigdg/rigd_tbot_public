@@ -3,6 +3,9 @@ import sqlite3
 import math
 
 import pytest
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_lots_engine launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 from tbot_bot.accounting.lots_engine import (
     ensure_schema,

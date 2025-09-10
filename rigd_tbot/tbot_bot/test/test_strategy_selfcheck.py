@@ -10,6 +10,9 @@ from pathlib import Path
 import sys
 import subprocess
 import signal
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_strategy_selfcheck launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_strategy_selfcheck.flag"

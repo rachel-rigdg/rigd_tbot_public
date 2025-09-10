@@ -8,6 +8,9 @@ from pathlib import Path
 from tbot_bot.accounting.ledger_modules.ledger_db import reconcile_ledger_with_coa
 from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_ledger_reconciliation launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

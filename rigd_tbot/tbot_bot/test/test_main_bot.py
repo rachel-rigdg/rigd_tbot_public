@@ -12,6 +12,9 @@ from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
 import sys
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_main_bot launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

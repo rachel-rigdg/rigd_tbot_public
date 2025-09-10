@@ -15,6 +15,8 @@ from datetime import datetime
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
+from datetime import datetime, timezone
+print(f"[LAUNCH] trade_logger.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 # Load config
 config = get_bot_config()

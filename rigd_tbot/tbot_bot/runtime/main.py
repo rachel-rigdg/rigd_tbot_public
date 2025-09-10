@@ -24,7 +24,7 @@ def write_system_log(message):
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(log_entry)
     except Exception as e:
-        print(f"[main.py][ERROR][write_system_log] {e}")
+        print(f"[main.py][ERROR][write_system_log] {e}", flush=True)
 
 def write_start_log():
     from tbot_bot.support.path_resolver import get_output_path
@@ -35,7 +35,7 @@ def write_start_log():
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(log_entry)
     except Exception as e:
-        print(f"[main.py][ERROR][write_start_log] {e}")
+        print(f"[main.py][ERROR][write_start_log] {e}", flush=True)
 
 def write_stop_log():
     from tbot_bot.support.path_resolver import get_output_path
@@ -46,16 +46,17 @@ def write_stop_log():
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(log_entry)
     except Exception as e:
-        print(f"[main.py][ERROR][write_stop_log] {e}")
+        print(f"[main.py][ERROR][write_stop_log] {e}", flush=True)
 
 def main():
     try:
         from tbot_bot.support.bootstrap_utils import is_first_bootstrap
     except ImportError:
-        print("[main.py][ERROR] Failed to import is_first_bootstrap; assuming not first bootstrap.")
+        print("[main.py][ERROR] Failed to import is_first_bootstrap; assuming not first bootstrap.", flush=True)
         is_first_bootstrap = lambda: False
 
     if is_first_bootstrap():
+        print("[main.py] First bootstrap detected. Launching portal_web_main.py for configuration...", flush=True)
         write_system_log("First bootstrap detected. Launching portal_web_main.py only for configuration.")
         flask_proc = subprocess.Popen(
             ["python3", str(WEB_MAIN_PATH)],
@@ -63,11 +64,14 @@ def main():
             stderr=None
         )
         write_system_log(f"portal_web_main.py started with PID {flask_proc.pid} (bootstrap mode)")
+        print(f"[main.py] portal_web_main.py started (bootstrap) PID {flask_proc.pid}", flush=True)
         flask_proc.wait()
         write_system_log("Exiting after initial configuration/bootstrap phase.")
+        print("[main.py] Exiting after initial configuration/bootstrap phase.", flush=True)
         sys.exit(0)
 
     write_system_log("Launching unified Flask app (portal_web_main.py)...")
+    print("[main.py] Launching unified Flask app (portal_web_main.py)...", flush=True)
     write_start_log()
     flask_proc = subprocess.Popen(
         ["python3", str(WEB_MAIN_PATH)],
@@ -75,6 +79,7 @@ def main():
         stderr=None
     )
     write_system_log(f"portal_web_main.py started with PID {flask_proc.pid}")
+    print(f"[main.py] portal_web_main.py started with PID {flask_proc.pid}", flush=True)
 
     # Wait for bot_state.txt to reach post-bootstrap operational phase before launching supervisor
     operational_phases = {
@@ -82,12 +87,14 @@ def main():
         "graceful_closing_positions", "emergency_closing_positions"
     }
     write_system_log("Waiting for bot_state.txt to reach operational phase...")
+    print("[main.py] Waiting for bot_state.txt to reach operational phase...", flush=True)
     while True:
         try:
             phase = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
             write_system_log(f"[wait_for_operational_phase] Current phase: {phase}")
             if phase in operational_phases:
                 write_system_log(f"[wait_for_operational_phase] Entered operational phase: {phase}")
+                print(f"[main.py] Entered operational phase: {phase}", flush=True)
                 break
         except Exception as e:
             write_system_log(f"[wait_for_operational_phase] Exception: {e}")
@@ -96,27 +103,32 @@ def main():
 
     # Launch tbot_supervisor.py (single persistent process manager)
     write_system_log("Launching tbot_supervisor.py (phase/process supervisor)...")
+    print("[main.py] Launching tbot_supervisor.py (phase/process supervisor)...", flush=True)
     supervisor_proc = subprocess.Popen(
         ["python3", str(TBOT_SUPERVISOR_PATH)],
         stdout=None,
         stderr=None
     )
     write_system_log(f"tbot_supervisor.py started with PID {supervisor_proc.pid}")
+    print(f"[main.py] tbot_supervisor.py started with PID {supervisor_proc.pid}", flush=True)
 
     try:
         flask_proc.wait()
     except KeyboardInterrupt:
         write_system_log("KeyboardInterrupt received, terminating Flask and supervisor processes...")
+        print("[main.py] KeyboardInterrupt received, terminating Flask and supervisor processes...", flush=True)
     finally:
         try:
             if 'flask_proc' in locals() and flask_proc:
                 write_system_log("Terminating Flask process...")
+                print("[main.py] Terminating Flask process...", flush=True)
                 flask_proc.terminate()
         except Exception as ex3:
             write_system_log(f"Exception terminating Flask process: {ex3}")
         try:
             if 'supervisor_proc' in locals() and supervisor_proc:
                 write_system_log("Terminating supervisor process...")
+                print("[main.py] Terminating supervisor process...", flush=True)
                 supervisor_proc.terminate()
         except Exception as ex4:
             write_system_log(f"Exception terminating supervisor process: {ex4}")

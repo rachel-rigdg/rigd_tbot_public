@@ -6,6 +6,9 @@ import importlib
 from pathlib import Path
 
 import pytest
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_mapping_upsert launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 
 @pytest.fixture()

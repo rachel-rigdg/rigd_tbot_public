@@ -1,6 +1,7 @@
 # tbot_bot/strategy/strategy_close.py
 # summary: Implements Late-day momentum/fade strategy with VIX gating and bi-directional logic; compresses analysis/monitor window to 1min if TEST_MODE
 # additions: pre-run bot_state gate, idempotent daily stamp, write start stamp on launch
+# console: adds stdout prints for launch/debug visibility (flush=True)
 
 from datetime import timedelta, datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
+
+print("[strategy_close] module loaded", flush=True)
 
 config = get_bot_config()
 broker_creds = decrypt_json("broker_credentials")
@@ -83,10 +86,12 @@ def analyze_closing_signals(start_time, screener_class):
     log_event("strategy_close", "Starting EOD momentum/fade analysis...")
     analysis_minutes = 1 if is_test_mode_active() else CLOSE_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
+    print(f"[strategy_close] analyze_closing_signals start; deadline={deadline.isoformat()}", flush=True)
     signals = []
 
     if not is_vix_above_threshold(VIX_THRESHOLD) and not is_test_mode_active():
         log_event("strategy_close", "VIX filter blocked strategy.")
+        print("[strategy_close] VIX gate blocked strategy (not test mode) — exiting analysis.", flush=True)
         return signals
 
     screener = screener_class(strategy="close")
@@ -102,6 +107,7 @@ def analyze_closing_signals(start_time, screener_class):
 
         if not screener_data:
             log_event("strategy_close", "No symbols passed filter — none eligible for trading. Skipping to next cycle or idle.")
+            print("[strategy_close] screener returned no symbols — exiting analysis.", flush=True)
             return []
 
         allocations = []
@@ -183,6 +189,7 @@ def analyze_closing_signals(start_time, screener_class):
         SESSION_LOGS.clear()
         SESSION_LOGS.extend(candidate_status)
         log_event("strategy_close", f"EOD eligible signals: {eligible_signals}")
+        print(f"[strategy_close] eligible_signals={len(eligible_signals)}", flush=True)
         return eligible_signals
     return []
 
@@ -191,6 +198,7 @@ def monitor_closing_trades(signals, start_time):
     trades = []
     monitoring_minutes = 1 if is_test_mode_active() else CLOSE_MONITORING_TIME
     deadline = start_time + timedelta(minutes=monitoring_minutes)
+    print(f"[strategy_close] monitor_closing_trades start; deadline={deadline.isoformat()}", flush=True)
 
     for signal in signals:
         if now_local() >= deadline:
@@ -267,35 +275,44 @@ def monitor_closing_trades(signals, start_time):
     return trades
 
 def run_close_strategy(screener_class):
+    print("[strategy_close] run_close_strategy() called", flush=True)
     # Pre-run gate: bot must be in 'running'
     try:
         state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
     except Exception:
         state = ""
+    print(f"[strategy_close] bot_state='{state}'", flush=True)
     if state != "running":
+        print("[strategy_close] exiting: bot_state != 'running'", flush=True)
         log_event("strategy_close", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
         return StrategyResult(skipped=True)
 
     # Idempotency: if already launched today, exit quietly
     now = utc_now()
     if _has_close_run_today(now):
+        print("[strategy_close] exiting: already stamped for today (idempotent guard)", flush=True)
         log_event("strategy_close", "Detected existing daily stamp — strategy_close already launched today; exiting.")
         return StrategyResult(skipped=True)
 
     # Successful start: write daily stamp immediately (prevents duplicate concurrent launches)
     _write_iso_utc(CLOSE_STAMP_PATH, now)
+    print(f"[strategy_close] launching (stamp written) @ {now.isoformat()}", flush=True)
     log_event("strategy_close", f"Launching strategy_close (stamp written {now.isoformat().replace('+00:00','Z')})")
 
     if not self_check():
         log_event("strategy_close", "Strategy self_check() failed — skipping.")
+        print("[strategy_close] self_check failed — exiting", flush=True)
         return StrategyResult(skipped=True)
 
     # Use local time for window logic
     start_time = now_local()
+    print(f"[strategy_close] starting with screener={getattr(screener_class, '__name__', screener_class)}", flush=True)
     signals = analyze_closing_signals(start_time, screener_class)
     if not signals:
+        print("[strategy_close] no signals — exiting", flush=True)
         return StrategyResult(skipped=True)
     trades = monitor_closing_trades(signals, start_time)
+    print(f"[strategy_close] completed with {len(trades)} trades", flush=True)
     return StrategyResult(trades=trades, skipped=False)
 
 def simulate_close(*args, **kwargs):

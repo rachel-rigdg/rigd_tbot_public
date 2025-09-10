@@ -13,6 +13,9 @@ from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from pathlib import Path
 import sys
 from tbot_bot.support.utils_log import log_event
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_screener_integration launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")

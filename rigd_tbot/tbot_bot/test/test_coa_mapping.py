@@ -10,6 +10,9 @@ from tbot_bot.accounting.coa_mapping_table import (
 )
 from tbot_bot.support.path_resolver import resolve_control_path, get_output_path
 from tbot_bot.support.utils_log import log_event
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_coa_mapping launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

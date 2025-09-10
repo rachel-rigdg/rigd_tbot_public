@@ -8,6 +8,8 @@ All trades must be routed through this module before execution.
 
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_log import log_event
+from datetime import datetime, timezone
+print(f"[LAUNCH] risk_module.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 # --- Enhancement imports (all core, fail-safe) ---
 from tbot_bot.enhancements.ticker_blocklist import is_ticker_blocked

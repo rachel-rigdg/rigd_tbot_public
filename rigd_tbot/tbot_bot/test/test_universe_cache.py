@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 import sys
 from tbot_bot.support.utils_log import log_event
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_universe_cache launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 CONTROL_DIR = resolve_control_path()
 LOGFILE = get_output_path("logs", "test_mode.log")

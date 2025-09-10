@@ -17,6 +17,10 @@ def start_watchdog():
     from tbot_bot.support.utils_log import log_event
     from tbot_bot.trading.kill_switch import trigger_shutdown
     from tbot_bot.runtime.status_bot import update_bot_state
+    from datetime import datetime, timezone
+    
+    print(f"[LAUNCH] watchdog_bot.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
     config = get_bot_config()
     try:

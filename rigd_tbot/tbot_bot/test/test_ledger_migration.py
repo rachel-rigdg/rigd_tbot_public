@@ -8,6 +8,9 @@ from tbot_bot.accounting.ledger_modules.ledger_db import run_schema_migration, g
 from tbot_bot.support.path_resolver import resolve_control_path, get_output_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_log import log_event
 from pathlib import Path
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_ledger_migration launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 MAX_TEST_TIME = 90  # seconds per test
 

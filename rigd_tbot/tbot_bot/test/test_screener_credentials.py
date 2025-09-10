@@ -10,6 +10,9 @@ import json
 import signal
 from tbot_bot.support import secrets_manager
 from tbot_bot.support.path_resolver import resolve_control_path
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_screener_credentials launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 CONTROL_DIR = resolve_control_path()
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode_screener_credentials.flag"

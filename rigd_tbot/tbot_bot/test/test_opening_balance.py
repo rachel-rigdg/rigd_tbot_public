@@ -6,8 +6,10 @@ import sys
 import sqlite3
 import types
 import importlib
-from datetime import datetime
 import pytest
+from datetime import datetime, timezone
+print(f"[LAUNCH] test_opening_balance launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+
 
 # ------------------------------
 # Helpers: minimal OB schema (matches ledger_modules/schema.sql created in this project)
