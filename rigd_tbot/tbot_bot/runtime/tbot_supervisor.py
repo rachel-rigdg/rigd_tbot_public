@@ -11,8 +11,8 @@ import time
 import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta, timezone, time as dt_time
+from typing import Optional
 
-from tbot_bot.support import path_resolver
 from tbot_bot.support.utils_time import utc_now
 
 # --- Read schedule strictly via env_bot getters (UTC) ---
@@ -42,23 +42,23 @@ LAST_CLOSE_STAMP = CONTROL_DIR / "last_strategy_close_utc.txt"
 # ----- Launch map: friendly name -> importable module for `python -m` -----
 MODULE_MAP = {
     # runtime (always-on / utilities)
-    "status_bot":           "tbot_bot.runtime.status_bot",
-    "watchdog_bot":         "tbot_bot.runtime.watchdog_bot",
-    "sync_broker_ledger":   "tbot_bot.runtime.sync_broker_ledger",
-    "ledger_snapshot":      "tbot_bot.runtime.ledger_snapshot",
+    "status_bot":              "tbot_bot.runtime.status_bot",
+    "watchdog_bot":            "tbot_bot.runtime.watchdog_bot",
+    "sync_broker_ledger":      "tbot_bot.runtime.sync_broker_ledger",
+    "ledger_snapshot":         "tbot_bot.runtime.ledger_snapshot",
 
     # trading
-    "risk_module":          "tbot_bot.trading.risk_module",
-    "kill_switch":          "tbot_bot.trading.kill_switch",
-    "holdings_manager":     "tbot_bot.trading.holdings_manager",
+    "risk_module":             "tbot_bot.trading.risk_module",
+    "kill_switch":             "tbot_bot.trading.kill_switch",
+    "holdings_manager":        "tbot_bot.trading.holdings_manager",
 
     # reporting
-    "log_rotation":         "tbot_bot.reporting.log_rotation",
-    "trade_logger":         "tbot_bot.reporting.trade_logger",
-    "status_logger":        "tbot_bot.reporting.status_logger",
+    "log_rotation":            "tbot_bot.reporting.log_rotation",
+    "trade_logger":            "tbot_bot.reporting.trade_logger",
+    "status_logger":           "tbot_bot.reporting.status_logger",
 
     # screeners / universe
-    "universe_orchestrator":"tbot_bot.screeners.universe_orchestrator",
+    "universe_orchestrator":   "tbot_bot.screeners.universe_orchestrator",
 
     # tests
     "integration_test_runner": "tbot_bot.test.integration_test_runner",
@@ -90,7 +90,7 @@ def _spawn_for(name: str, **popen_kwargs):
         raise RuntimeError(f"Unknown launch target: {name}")
     print(f"[tbot_supervisor] launching process: {name} ({mod})", flush=True)
     cmd = ["python3", "-u", "-m", mod]
-    return subprocess.Popen(cmd, **popen_kwargs)
+    return subprocess.Popen(cmd, stdout=None, stderr=None, **popen_kwargs)
 
 def ensure_singleton(name_or_hint: str) -> bool:
     """
@@ -119,7 +119,8 @@ def ensure_singleton(name_or_hint: str) -> bool:
 def find_individual_test_flags():
     return list(CONTROL_DIR.glob("test_mode_*.flag"))
 
-def _to_aware_utc(dt: datetime | None) -> datetime | None:
+def _to_aware_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Coerce to aware UTC using datetime.timezone.utc; pass None through."""
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -176,12 +177,9 @@ def is_time_for_universe_rebuild():
     close_time = _parse_time_hhmm(market_close_str)
     today_close = now.replace(hour=close_time.hour, minute=close_time.minute, second=0, microsecond=0)
 
-    if now < today_close:
-        last_close = today_close - timedelta(days=1)
-    else:
-        last_close = today_close
-
+    last_close = today_close - timedelta(days=1) if now < today_close else today_close
     scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
+
     # All aware UTC now — safe to compare
     if build_time is None:
         return now >= scheduled_time
