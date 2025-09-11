@@ -19,7 +19,8 @@ TBOT_SUPERVISOR_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "tbot_supervisor.py"
 
 WEB_PORT = int(os.environ.get("TBOT_WEB_PORT", "6900"))
 WEB_HOST = os.environ.get("TBOT_WEB_HOST", "127.0.0.1")
-WAIT_OPS_SECS = int(os.environ.get("TBOT_WAIT_OPS_SECS", "90"))  # max time to wait before proceeding anyway
+WAIT_OPS_SECS = int(os.environ.get("TBOT_WAIT_OPS_SECS", "90"))  # normal wait
+WAIT_BOOTSTRAP_SECS = int(os.environ.get("TBOT_WAIT_BOOTSTRAP_SECS", "120"))  # first-boot longer wait (30m)
 
 def _port_occupied(host: str, port: int) -> bool:
     try:
@@ -61,10 +62,11 @@ def write_stop_log():
     except Exception as e:
         print(f"[main.py][ERROR][write_stop_log] {e}", flush=True)
 
-def _wait_for_operational_phase(deadline_epoch: float) -> None:
+def _wait_for_operational_phase(deadline_epoch: float) -> bool:
     """
     Waits until bot_state.txt reports an operational phase or until deadline.
-    Never raises; just logs and returns when time is up.
+    Returns True if we observed an operational phase; False on timeout.
+    Never raises.
     """
     operational_phases = {
         "running", "idle", "analyzing", "monitoring", "trading", "updating", "stopped",
@@ -77,65 +79,44 @@ def _wait_for_operational_phase(deadline_epoch: float) -> None:
         try:
             if BOT_STATE_PATH.exists():
                 phase = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-                # log once per 5s to avoid spam
                 if time.time() - last_logged > 5:
                     write_system_log(f"[wait_for_operational_phase] Current phase: {phase}")
                     last_logged = time.time()
                 if phase in operational_phases:
                     write_system_log(f"[wait_for_operational_phase] Entered operational phase: {phase}")
                     print(f"[main.py] Entered operational phase: {phase}", flush=True)
-                    return
+                    return True
         except Exception as e:
             if time.time() - last_logged > 5:
                 write_system_log(f"[wait_for_operational_phase] Exception: {e}")
                 last_logged = time.time()
         time.sleep(1)
 
-    write_system_log(f"[wait_for_operational_phase] Timeout after {WAIT_OPS_SECS}s; proceeding anyway.")
-    print(f"[main.py] Operational phase wait timed out after {WAIT_OPS_SECS}s; proceeding.", flush=True)
+    write_system_log(f"[wait_for_operational_phase] Timeout after {int(deadline_epoch - (time.time() - 0))}s; proceeding anyway.")
+    print(f"[main.py] Operational phase wait timed out; proceeding.", flush=True)
+    return False
 
 def main():
+    # Determine if this looks like the first bootstrap (provisioning not completed yet).
     try:
         from tbot_bot.support.bootstrap_utils import is_first_bootstrap
-    except ImportError:
-        print("[main.py][ERROR] Failed to import is_first_bootstrap; assuming not first bootstrap.", flush=True)
-        is_first_bootstrap = lambda: False
+        first_bootstrap = bool(is_first_bootstrap())
+    except Exception:
+        print("[main.py][WARN] bootstrap_utils unavailable; assuming not first bootstrap.", flush=True)
+        first_bootstrap = False
 
-    # Bootstrap path — only ensure the UI is available; do not start supervisor.
-    if is_first_bootstrap():
-        already_running = _port_occupied(WEB_HOST, WEB_PORT)
-        if already_running:
-            msg = f"First bootstrap detected, but web already running on {WEB_HOST}:{WEB_PORT}; skipping UI launch."
-            print(f"[main.py] {msg}", flush=True)
-            write_system_log(msg)
-            write_system_log("Exiting after initial configuration/bootstrap phase (UI already active).")
-            sys.exit(0)
-
-        print("[main.py] First bootstrap detected. Launching portal_web_main.py for configuration...", flush=True)
-        write_system_log("First bootstrap detected. Launching portal_web_main.py only for configuration.")
-        flask_proc = subprocess.Popen(
-            ["python3", str(WEB_MAIN_PATH)],
-            stdout=None,
-            stderr=None
-        )
-        write_system_log(f"portal_web_main.py started with PID {flask_proc.pid} (bootstrap mode)")
-        print(f"[main.py] portal_web_main.py started (bootstrap) PID {flask_proc.pid}", flush=True)
-        flask_proc.wait()
-        write_system_log("Exiting after initial configuration/bootstrap phase.")
-        print("[main.py] Exiting after initial configuration/bootstrap phase.", flush=True)
-        sys.exit(0)
-
-    # Normal path — start (or reuse) UI, then launch supervisor.
     write_start_log()
 
+    # Ensure the web UI is up (or reuse an existing one).
     flask_proc = None
     if _port_occupied(WEB_HOST, WEB_PORT):
         msg = f"Web already running on {WEB_HOST}:{WEB_PORT}; skipping UI launch."
         print(f"[main.py] {msg}", flush=True)
         write_system_log(msg)
     else:
-        write_system_log("Launching unified Flask app (portal_web_main.py)...")
-        print("[main.py] Launching unified Flask app (portal_web_main.py)...", flush=True)
+        phase_msg = " (bootstrap configuration mode)" if first_bootstrap else ""
+        write_system_log("Launching unified Flask app (portal_web_main.py)..." + phase_msg)
+        print("[main.py] Launching unified Flask app (portal_web_main.py)..." + phase_msg, flush=True)
         try:
             flask_proc = subprocess.Popen(
                 ["python3", str(WEB_MAIN_PATH)],
@@ -145,16 +126,18 @@ def main():
             write_system_log(f"portal_web_main.py started with PID {flask_proc.pid}")
             print(f"[main.py] portal_web_main.py started with PID {flask_proc.pid}", flush=True)
         except Exception as e:
-            # Don’t die if UI failed to spawn — carry on to supervisor.
             write_system_log(f"Failed to launch portal_web_main.py: {e}; proceeding to supervisor.")
             print(f"[main.py] Failed to launch UI: {e}. Proceeding.", flush=True)
             flask_proc = None
 
-    # Wait (briefly) for operational state, then always launch supervisor.
-    deadline = time.time() + WAIT_OPS_SECS
-    _wait_for_operational_phase(deadline_epoch=deadline)
+    # Wait for operational state:
+    # - First bootstrap: wait longer to allow provisioning to complete.
+    # - Normal path: brief wait (can be tuned with TBOT_WAIT_OPS_SECS).
+    wait_secs = WAIT_BOOTSTRAP_SECS if first_bootstrap else WAIT_OPS_SECS
+    deadline = time.time() + max(0, wait_secs)
+    _ = _wait_for_operational_phase(deadline_epoch=deadline)
 
-    # Launch tbot_supervisor.py (single persistent process manager)
+    # Launch tbot_supervisor.py (single persistent process manager) — ALWAYS.
     write_system_log("Launching tbot_supervisor.py (phase/process supervisor)...")
     print("[main.py] Launching tbot_supervisor.py (phase/process supervisor)...", flush=True)
     supervisor_proc = None
@@ -170,14 +153,13 @@ def main():
         write_system_log(f"ERROR launching tbot_supervisor.py: {e}")
         print(f"[main.py] ERROR launching tbot_supervisor.py: {e}", flush=True)
 
-    # Block on whichever process we actually started.
+    # Block on whichever we actually started.
     try:
         if flask_proc is not None:
             flask_proc.wait()
         elif supervisor_proc is not None:
             supervisor_proc.wait()
         else:
-            # Nothing to wait on; just idle until killed.
             while True:
                 time.sleep(60)
     except KeyboardInterrupt:
