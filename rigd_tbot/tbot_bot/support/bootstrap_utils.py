@@ -38,7 +38,7 @@ def is_first_bootstrap(quiet_mode: bool = False) -> bool:
     try:
         state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
         state = state.splitlines()[0].strip() if state else ""
-       # debug_print(f"[DEBUG] bot_state.txt state: {state}")
+        debug_print(f"[DEBUG] bot_state.txt state: {state}")
         if state in INITIALIZE_STATES:
           #  debug_print(f"[DEBUG] bot_state.txt state is {state}")
             return True
