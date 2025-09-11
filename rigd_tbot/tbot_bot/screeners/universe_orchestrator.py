@@ -26,21 +26,34 @@ UNFILTERED_PATH = os.path.join(os.path.dirname(PARTIAL_PATH), "symbol_universe.u
 # Blocklist path constant (same base as UNFILTERED_PATH, default to output/screeners/screener_blocklist.txt)
 BLOCKLIST_PATH = os.path.join(os.path.dirname(UNFILTERED_PATH), "screener_blocklist.txt")
 
+# Special meaning: raw-builder uses 2 to indicate "no provider enabled"
+NO_PROVIDER_EXIT = 2
+
 
 def log(msg):
     now = datetime.utcnow().isoformat() + "Z"
     print(f"[{now}] {msg}")
 
 
-def run_module(module_path):
+def run_module(module_path, tolerate_rcs=()):
+    """
+    Run a module via -m. Return its exit code.
+    If exit code is non-zero and not tolerated, log details.
+    """
     log(f"Starting {module_path}...")
     proc = subprocess.run([sys.executable, "-m", module_path], capture_output=True, text=True)
-    if proc.returncode != 0:
-        log(f"{module_path} failed with exit code {proc.returncode}")
-        print(proc.stdout)
-        print(proc.stderr)
-        sys.exit(proc.returncode)
-    log(f"{module_path} completed successfully.")
+    rc = proc.returncode
+    if rc != 0 and rc not in tolerate_rcs:
+        log(f"{module_path} failed with exit code {rc}")
+        # show child output for diagnostics
+        if proc.stdout:
+            print(proc.stdout)
+        if proc.stderr:
+            print(proc.stderr, file=sys.stderr)
+    else:
+        suffix = " (tolerated)" if rc in tolerate_rcs and rc != 0 else ""
+        log(f"{module_path} completed successfully{suffix}.")
+    return rc
 
 
 def poll_blocklist_recovery():
@@ -78,12 +91,37 @@ def _stage_with_timestamp(partial_path: str, final_path: str) -> str:
     return staged_path
 
 
+def _write_waiting_status(final_path: str):
+    """
+    Write a minimal universe cache file indicating we're waiting for credentials.
+    """
+    payload = {
+        "build_timestamp_utc": datetime.utcnow().isoformat() + "Z",
+        "status": "waiting_for_credentials",
+        "counts": {"raw": 0, "unfiltered": 0, "partial": 0, "final": 0},
+        "message": "Enable at least one screener API provider and mark UNIVERSE_ENABLED."
+    }
+    os.makedirs(os.path.dirname(final_path), exist_ok=True)
+    with open(final_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    log(f"Wrote waiting-for-credentials status to {final_path}")
+
+
 def main():
     # Step 1: Build raw symbols file from provider API (single API call)
-    run_module("tbot_bot.screeners.symbol_universe_raw_builder")
+    rc = run_module("tbot_bot.screeners.symbol_universe_raw_builder", tolerate_rcs=(NO_PROVIDER_EXIT,))
+    if rc == NO_PROVIDER_EXIT:
+        log("No universe provider enabled; deferring until credentials are added.")
+        _write_waiting_status(FINAL_PATH)
+        # Graceful success so supervisor doesn't treat this as a failure.
+        sys.exit(0)
+    if rc != 0:
+        sys.exit(rc)
 
     # Step 2: Enrich, filter, blocklist, and build universe files from API adapters
-    run_module("tbot_bot.screeners.symbol_enrichment")
+    rc = run_module("tbot_bot.screeners.symbol_enrichment")
+    if rc != 0:
+        sys.exit(rc)
 
     # Step 3: Finalize — inject timestamp and atomically publish staged -> final
     if not os.path.exists(PARTIAL_PATH):
@@ -101,7 +139,8 @@ def main():
         log(f"Universe orchestration completed successfully. Published {FINAL_PATH}")
     except Exception as e:
         log(f"ERROR: Failed to publish universe: {e}")
-        sys.exit(2)
+        # use distinct code (not 2) so it doesn't collide with NO_PROVIDER_EXIT
+        sys.exit(3)
 
     # Step 4: Poll for blocklist/manual recovery flag
     if poll_blocklist_recovery():

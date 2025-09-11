@@ -3,27 +3,28 @@
 # MUST ONLY BE LAUNCHED BY tbot_supervisor.py. Direct execution by CLI, main.py, or any other process is forbidden.
 # --------------------------------------------------
 
+import os
 import sys
 
-if __name__ == "__main__":
+# Block direct CLI runs; allow when launched by the supervisor (env flag set in launch_registry.spawn_module).
+if __name__ == "__main__" and not os.environ.get("TBOT_LAUNCHED_BY_SUPERVISOR"):
     print("[status_logger.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
     sys.exit(1)
 
-import os
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from tbot_bot.runtime.status_bot import bot_status
 from tbot_bot.support.utils_log import log_event
-from tbot_bot.support.path_resolver import resolve_status_summary_path, get_bot_identity
+from tbot_bot.support.path_resolver import resolve_status_summary_path
+from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.config.env_bot import (
     get_open_time_utc,
     get_mid_time_utc,
     get_close_time_utc,
 )
-from datetime import datetime, timezone
-print(f"[LAUNCH] status_logger.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 BOT_IDENTITY = get_bot_identity()
 SUMMARY_STATUS_FILE = resolve_status_summary_path(BOT_IDENTITY)
@@ -125,7 +126,7 @@ def _check_schedule(strategy: str, sched_hhmm: str, stamp_path: Path):
 def write_status():
     """Serializes the current bot_status into JSON for archival/accounting summary only and emits schedule events."""
     status_data = bot_status.to_dict()
-    status_data["written_at"] = datetime.utcnow().isoformat()
+    status_data["written_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     # Force state to match bot_state.txt on disk (always freshest)
     try:
@@ -153,3 +154,21 @@ def write_status():
         log_event("status_logger", f"Status written to {SUMMARY_STATUS_FILE}")
     except Exception as e:
         log_event("status_logger", f"Failed to write status.json to {SUMMARY_STATUS_FILE}: {e}")
+
+
+# Lightweight persistent service so the supervisor doesn't thrash-restart us.
+if __name__ == "__main__":
+    from tbot_bot.config.env_bot import get_bot_config
+
+    print(f"[LAUNCH] status_logger.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
+    log_event("status_logger", "Status logger service started.")
+
+    cfg = get_bot_config()
+    period_sec = int(cfg.get("STATUS_LOGGER_PERIOD_SEC", 30))  # default: every 30s
+
+    while True:
+        try:
+            write_status()
+        except Exception as e:
+            log_event("status_logger", f"Exception during write_status: {e}", level="error")
+        time.sleep(max(5, period_sec))

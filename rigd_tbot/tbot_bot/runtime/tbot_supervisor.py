@@ -53,6 +53,13 @@ def read_env_var(key, default=None):
     env = load_env_bot_config()
     return env.get(key, default)
 
+# FIX: make the strategy launch window configurable (fallback 300s)
+STRATEGY_WINDOW_SEC = int(read_env_var("STRATEGY_WINDOW_SEC", "300"))
+
+# FIX: throttle universe attempts before creds exist (avoid rapid relaunch loops)
+UNIVERSE_LAST_ATTEMPT_PATH = CONTROL_DIR / "last_universe_attempt_utc.txt"
+UNIVERSE_RETRY_COOLDOWN_MIN = int(read_env_var("UNIVERSE_RETRY_COOLDOWN_MIN", "30"))
+
 def read_bot_state():
     try:
         return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
@@ -130,9 +137,14 @@ def is_time_for_universe_rebuild():
     last_close = today_close - timedelta(days=1) if now < today_close else today_close
     scheduled_time = last_close + timedelta(hours=REBUILD_DELAY_HOURS)
 
-    # All aware UTC now — safe to compare
+    # If we've never built, throttle attempts by cooldown window
     if build_time is None:
+        last_attempt = _to_aware_utc(_read_stamp(UNIVERSE_LAST_ATTEMPT_PATH))
+        if last_attempt and (now - last_attempt) < timedelta(minutes=UNIVERSE_RETRY_COOLDOWN_MIN):
+            return False
         return now >= scheduled_time
+
+    # All aware UTC now — safe to compare
     return now >= scheduled_time and build_time < scheduled_time
 
 # --- BROKER SYNC NIGHTLY LAUNCH LOGIC ---
@@ -253,7 +265,8 @@ def launch_strategy_if_time(strategy_name, processes, state):
 
     run_time = _scheduled_run_datetime(hhmm, now)
     delta = (now - run_time).total_seconds()
-    if abs(delta) <= window_sec:
+    # FIX: use STRATEGY_WINDOW_SEC (was undefined window_sec)
+    if abs(delta) <= STRATEGY_WINDOW_SEC:
         # Write stamp immediately to prevent duplicate concurrent launches
         _write_stamp(stamp, now)
         _run_via_router(strategy_name)
@@ -408,6 +421,8 @@ def main():
                 # Treat universe build as one-off
                 if not ensure_singleton("universe_orchestrator"):
                     print("[tbot_supervisor] Triggering universe cache rebuild (universe_orchestrator)...", flush=True)
+                    # FIX: record attempt to avoid tight loops before creds are added
+                    _write_stamp(UNIVERSE_LAST_ATTEMPT_PATH, utc_now())
                     processes["universe_orchestrator"] = _spawn_for("universe_orchestrator")
                 else:
                     print("[tbot_supervisor] Universe cache rebuild already running.", flush=True)

@@ -62,12 +62,18 @@ def to_local(dt_obj: datetime) -> datetime:
 def to_utc(dt_obj: datetime) -> datetime:
     """
     Convert a datetime to UTC.
-    If dt_obj is naive, assume it is in the configured local timezone (safer than assuming UTC),
-    then convert to UTC.
+    If dt_obj is naive, assume it is in the configured local timezone,
+    then convert to UTC (handles DST gaps/ambiguity).
     """
     if dt_obj.tzinfo is None:
         tz = get_timezone()
-        dt_obj = tz.localize(dt_obj)
+        try:
+            local_dt = tz.localize(dt_obj, is_dst=None)
+        except AmbiguousTimeError:
+            local_dt = tz.localize(dt_obj, is_dst=False)  # prefer standard time
+        except NonExistentTimeError:
+            local_dt = tz.localize(dt_obj + timedelta(hours=1), is_dst=True)  # skip spring-forward gap
+        return local_dt.astimezone(pytz.UTC)
     return dt_obj.astimezone(pytz.UTC)
 
 # -----------------------------
@@ -80,7 +86,10 @@ def parse_time_local(tstr) -> dt_time:
     """
     if isinstance(tstr, dt_time):
         return tstr
-    h, m = map(int, str(tstr).strip().split(":"))
+    s = str(tstr).strip()
+    if not validate_hhmm(s):
+        raise ValueError(f"Invalid HH:MM value: '{tstr}'")
+    h, m = map(int, s.split(":"))
     return dt_time(hour=h, minute=m)
 
 def ensure_time_obj(val) -> dt_time:
@@ -90,7 +99,10 @@ def ensure_time_obj(val) -> dt_time:
     """
     if isinstance(val, dt_time):
         return val
-    h, m = map(int, str(val).strip().split(":"))
+    s = str(val).strip()
+    if not validate_hhmm(s):
+        raise ValueError(f"Invalid HH:MM value: '{val}'")
+    h, m = map(int, s.split(":"))
     return dt_time(hour=h, minute=m)
 
 def is_now_in_window(start: str, end: str) -> bool:
@@ -143,7 +155,7 @@ def read_utc_stamp(path: Path) -> Optional[datetime]:
         return None
 
 def write_utc_stamp(path: Path, when: datetime) -> None:
-    """Write aware UTC datetime to file as ISO-8601 with trailing Z."""
+    """Write aware UTC datetime to file as ISO-8601 with trailing 'Z'."""
     when = ensure_aware_utc(when) or utc_now()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(isoformat_utc_z(when), encoding="utf-8")
@@ -157,7 +169,7 @@ def has_run_today(stamp_path: Path, now_utc: Optional[datetime] = None) -> bool:
 # -----------------------------
 # Market-day aware reference date (LOCAL)
 # -----------------------------
-def nearest_market_day_reference(now_utc: Optional[datetime] = None, tzstr: str = None):
+def nearest_market_day_reference(now_utc: Optional[datetime] = None, tzstr: Optional[str] = None):
     """
     Pick a date (in the given timezone) to anchor LOCAL→UTC conversions for market session times.
     Rules:
@@ -195,9 +207,9 @@ def nearest_market_day_reference(now_utc: Optional[datetime] = None, tzstr: str 
 # -----------------------------
 # LOCAL 'HH:MM' -> UTC 'HH:MM' (DST-aware, anchored)
 # -----------------------------
-def local_hhmm_to_utc_hhmm(timestr: str, tzstr: str, reference_date=None) -> str:
+def local_hhmm_to_utc_hhmm(timestr: str, tzstr: Optional[str] = None, reference_date=None) -> str:
     """
-    Convert a local 'HH:MM' (in tzstr) to a UTC 'HH:MM' string.
+    Convert a local 'HH:MM' (in tzstr or configured TZ) to a UTC 'HH:MM' string.
     - Validates HH:MM format.
     - Anchors conversion to `reference_date` in tzstr if provided; otherwise uses nearest_market_day_reference().
     - Handles DST ambiguous/non-existent times by choosing a safe interpretation.
@@ -205,9 +217,9 @@ def local_hhmm_to_utc_hhmm(timestr: str, tzstr: str, reference_date=None) -> str
     if not validate_hhmm(timestr):
         raise ValueError(f"Invalid HH:MM value: '{timestr}'")
 
-    tz = pytz.timezone(tzstr)
+    tz = pytz.timezone(tzstr) if tzstr else get_timezone()
     if reference_date is None:
-        reference_date = nearest_market_day_reference(utc_now(), tzstr)
+        reference_date = nearest_market_day_reference(utc_now(), tz.zone if hasattr(tz, "zone") else tzstr)
 
     hh, mm = map(int, timestr.split(":"))
     naive_local_dt = datetime(reference_date.year, reference_date.month, reference_date.day, hh, mm)

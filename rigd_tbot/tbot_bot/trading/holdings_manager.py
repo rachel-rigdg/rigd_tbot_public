@@ -3,8 +3,15 @@
 # Loads config from holdings_secrets, routes all trades via broker_api.
 # Writes to audit log and ledger. No business logic lives in the supervisor.
 
+import os
+import sys
 import time
 from dateutil.relativedelta import relativedelta
+
+# Enforce supervised launch
+if __name__ == "__main__" and not os.environ.get("TBOT_LAUNCHED_BY_SUPERVISOR"):
+    print("[holdings_manager.py] Direct execution is not permitted. This module must only be launched by tbot_supervisor.py.")
+    sys.exit(1)
 
 from tbot_bot.trading.holdings_utils import (
     parse_etf_allocations,
@@ -81,7 +88,7 @@ def _compliance_preview_or_abort(holdings, etf_targets, account_value):
     if not compliance_ok:
         _warn_or_info(f"Rebalance/compliance preview failed: {preview}")
         log_event("holdings_compliance_block", f"Compliance block: {preview}", level="warning", extra={"reason": preview})
-        audit_log_event("holdings_compliance_block", user="holdings_manager", reference=None, details={"reason": preview})
+        audit_log_event("holdings_compliance_block", actor="holdings_manager", reference=None, details={"reason": preview})
         return False
     return True
 
@@ -166,7 +173,7 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
                 log_event("holdings_float_topup", f"Topped up cash by selling {sell_amt} of {symbol}", level="info", extra={
                     "symbol": symbol, "amount": sell_amt, "reason": "float_topup"
                 })
-                audit_log_event("holdings_float_topup", user=user, reference=symbol, details={"amount": sell_amt, "reason": "float_topup"})
+                audit_log_event("holdings_float_topup", actor=user, reference=symbol, details={"amount": sell_amt, "reason": "float_topup"})
             if deficit <= 1:
                 break
 
@@ -177,7 +184,7 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
     log_event("holdings_reserve_allocation", f"Tax Reserve: {tax_cut}, Payroll: {payroll_cut}", level="info", extra={
         "tax_cut": tax_cut, "payroll_cut": payroll_cut
     })
-    audit_log_event("holdings_reserve_allocation", user=user, reference=None, details={"tax_cut": tax_cut, "payroll_cut": payroll_cut})
+    audit_log_event("holdings_reserve_allocation", actor=user, reference=None, details={"tax_cut": tax_cut, "payroll_cut": payroll_cut})
 
     # === Step 3: Reinvest post-reserve remainder into target ETFs ===
     remainder = realized_gains - tax_cut - payroll_cut
@@ -193,7 +200,7 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
                 log_event("holdings_reinvest", f"Reinvested {alloc_amt} into {symbol}", level="info", extra={
                     "symbol": symbol, "amount": alloc_amt, "reason": "reinvest"
                 })
-                audit_log_event("holdings_reinvest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "reinvest"})
+                audit_log_event("holdings_reinvest", actor=user, reference=symbol, details={"amount": alloc_amt, "reason": "reinvest"})
 
     # === Step 4: Float excess auto-invest logic ===
     float_target_value = account_value * (float_pct / 100)
@@ -210,7 +217,7 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
                 log_event("holdings_float_excess_invest", f"Invested float excess: {alloc_amt} into {symbol}", level="info", extra={
                     "symbol": symbol, "amount": alloc_amt, "reason": "float_excess"
                 })
-                audit_log_event("holdings_float_excess_invest", user=user, reference=symbol, details={"amount": alloc_amt, "reason": "float_excess"})
+                audit_log_event("holdings_float_excess_invest", actor=user, reference=symbol, details={"amount": alloc_amt, "reason": "float_excess"})
 
 def perform_rebalance_cycle(user: str = "holdings_manager"):
     if not _is_bot_initialized():
@@ -238,7 +245,7 @@ def perform_rebalance_cycle(user: str = "holdings_manager"):
             broker.place_order(order['symbol'], order['action'], order['amount'])
             _warn_or_info(f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}")
             log_event("holdings_rebalance", f"Rebalance: {order['action']} ${order['amount']} of {order['symbol']}", level="info", extra=order)
-            audit_log_event("holdings_rebalance", user=user, reference=order['symbol'], details=order)
+            audit_log_event("holdings_rebalance", actor=user, reference=order['symbol'], details=order)
 
 def manual_holdings_action(action, user="manual"):
     if action == "rebalance":
@@ -254,7 +261,7 @@ def main():
         except Exception as e:
             _warn_or_info(f"Exception in holdings cycle: {e}")
             log_event("holdings_manager_error", f"Exception: {e}", level="error", extra={"error": str(e)})
-            audit_log_event("holdings_manager_error", user="holdings_manager", reference=None, details={"error": str(e)})
+            audit_log_event("holdings_manager_error", actor="holdings_manager", reference=None, details={"error": str(e)})
         time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":

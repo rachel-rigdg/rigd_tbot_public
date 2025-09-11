@@ -22,7 +22,7 @@ What you get:
     module_exists(module_path)             -> bool (checks importability)
     normalize_target(name_or_module)       -> (friendly_name or None, module_path or None)
     build_launch_cmd(name_or_module, ...)  -> list argv for Popen
-    spawn_module(name_or_module, ...)      -> subprocess.Popen
+    spawn_module(name_or_module, ...)      -> subprocess.Popen  (injects TBOT_LAUNCHED_BY_SUPERVISOR=1)
     is_process_running(name_or_module)     -> bool (best-effort; uses psutil if available)
     kill_processes(name_or_module, ...)    -> int count (best-effort; uses psutil if available)
 
@@ -107,6 +107,7 @@ ALIASES: Dict[str, str] = {
 # Default one-offs the supervisor should NOT auto-restart
 NON_RESTARTABLE = {
     "universe_orchestrator",
+    "integration_test_runner",  # tests are launched by flags; do not auto-restart
 }
 
 # -----------------------------------------------------------------------------
@@ -249,12 +250,29 @@ def spawn_module(
 ) -> subprocess.Popen:
     """
     Launch a module as a subprocess with `python -m`.
+    Injects TBOT_LAUNCHED_BY_SUPERVISOR=1 so workers with direct-exec guards run.
     Returns the Popen object.
     """
     argv = build_launch_cmd(name_or_module, python_exe=python_exe, unbuffered=unbuffered, extra_args=extra_args)
-    # Default to inheriting parent stdio unless caller overrides
+
+    # Merge/augment environment: always mark supervised launch
+    base_env = os.environ.copy()
+    user_env = popen_kwargs.pop("env", None)
+    if user_env:
+        base_env.update(user_env)
+    base_env["TBOT_LAUNCHED_BY_SUPERVISOR"] = "1"
+
+    # Helpful tag for logs
+    friendly, module_path = normalize_target(name_or_module)
+    worker_name = friendly or (module_path.rsplit(".", 1)[-1] if module_path else "")
+    if worker_name:
+        base_env.setdefault("TBOT_WORKER_NAME", worker_name)
+
+    # Defaults: inherit stdio unless explicitly overridden
     popen_kwargs.setdefault("stdout", None)
     popen_kwargs.setdefault("stderr", None)
+    popen_kwargs["env"] = base_env
+
     print(f"[launch_registry] launching: {' '.join(argv)}", flush=True)
     return subprocess.Popen(argv, **popen_kwargs)
 

@@ -3,7 +3,7 @@
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app, jsonify
 import subprocess
-from tbot_bot.screeners.screener_utils import load_universe_cache, load_blocklist, UniverseCacheError, get_screener_secrets
+from tbot_bot.screeners.screener_utils import load_universe_cache, load_blocklist, UniverseCacheError
 from tbot_bot.screeners.blocklist_manager import (
     add_to_blocklist,
     remove_from_blocklist,
@@ -28,16 +28,43 @@ universe_bp = Blueprint("universe", __name__, template_folder="../templates")
 UNFILTERED_PATH = resolve_universe_unfiltered_path()
 BLOCKLIST_PATH = resolve_screener_blocklist_path()
 LOG_PATH = resolve_universe_log_path()
+FINAL_PATH = resolve_universe_cache_path()
+PARTIAL_PATH = resolve_universe_partial_path()
+
 
 def screener_creds_exist():
+    """True if a credentials file exists (UI may still show 'waiting' if none enabled)."""
     creds_path = get_screener_credentials_path()
     return os.path.exists(creds_path)
 
+
 def load_json_file(path):
+    """
+    Load a newline-delimited JSON file OR a single JSON array/object file.
+    Returns a Python list (best-effort). Non-fatal on errors.
+    """
     try:
         with open(path, "r", encoding="utf-8") as f:
+            txt = f.read().strip()
+            if not txt:
+                return []
+            # Try full JSON first
+            try:
+                data = json.loads(txt)
+                if isinstance(data, list):
+                    return data
+                if isinstance(data, dict):
+                    # common keys used by builders
+                    for key in ("symbols", "items", "universe"):
+                        if isinstance(data.get(key), list):
+                            return data.get(key)
+                    # if dict but no obvious list, return empty (UI focuses on counts)
+                    return []
+            except Exception:
+                pass
+            # Fallback: treat as NDJSON
             items = []
-            for line in f:
+            for line in txt.splitlines():
                 line = line.strip()
                 if not line:
                     continue
@@ -49,9 +76,39 @@ def load_json_file(path):
     except Exception:
         return []
 
+
+def load_final_symbols_and_status():
+    """
+    Best-effort loader for final cache that also extracts a 'status' field
+    like 'waiting_for_credentials' if present.
+    Returns (symbols: list, status: str|None).
+    """
+    status = None
+    if not os.path.exists(FINAL_PATH):
+        return [], status
+    try:
+        with open(FINAL_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data, status
+        if isinstance(data, dict):
+            status = data.get("status")
+            # prefer explicit list if provided
+            for key in ("symbols", "items", "universe"):
+                if isinstance(data.get(key), list):
+                    return data[key], status
+            return [], status
+    except Exception:
+        # fall back to legacy loader and ignore status
+        try:
+            return load_universe_cache(), None
+        except Exception:
+            return [], None
+
+
 def get_symbols_and_source():
-    main_path = resolve_universe_cache_path()
-    partial_path = resolve_universe_partial_path()
+    main_path = FINAL_PATH
+    partial_path = PARTIAL_PATH
     use_partial = False
     main_mtime = os.path.getmtime(main_path) if os.path.exists(main_path) else 0
     partial_mtime = os.path.getmtime(partial_path) if os.path.exists(partial_path) else 0
@@ -60,23 +117,21 @@ def get_symbols_and_source():
             symbols = load_json_file(partial_path)
             use_partial = True
         else:
-            symbols = load_universe_cache()
+            symbols, _status = load_final_symbols_and_status()
             use_partial = False
-    except UniverseCacheError:
-        symbols = []
-        use_partial = False
     except Exception:
         symbols = []
         use_partial = False
     return symbols, use_partial
 
+
 def get_all_counts():
     unfiltered = load_json_file(UNFILTERED_PATH)
-    partial = load_json_file(resolve_universe_partial_path())
+    partial = load_json_file(PARTIAL_PATH)
     try:
-        filtered = load_universe_cache()
+        final, _status = load_final_symbols_and_status()
     except Exception:
-        filtered = []
+        final = []
     try:
         block_count = get_blocklist_count()
     except Exception:
@@ -84,28 +139,42 @@ def get_all_counts():
     return {
         "unfiltered": len(unfiltered),
         "partial": len(partial),
-        "filtered": len(filtered),
+        "filtered": len(final),
         "blocklist": block_count,
     }
+
 
 @universe_bp.route("/", methods=["GET", "POST"])
 def universe_status():
     unfiltered_symbols = load_json_file(UNFILTERED_PATH)
-    partial_symbols = load_json_file(resolve_universe_partial_path())
-    try:
-        final_symbols = load_universe_cache()
-    except Exception:
-        final_symbols = []
+    partial_symbols = load_json_file(PARTIAL_PATH)
+    final_symbols, final_status = load_final_symbols_and_status()
+
+    # Blocklist entries (best-effort)
     try:
         with open(BLOCKLIST_PATH, "r", encoding="utf-8") as bf:
             blocklist_entries = [line.strip() for line in bf if line.strip() and not line.startswith("#")]
     except Exception:
         blocklist_entries = []
-    cache_path = resolve_universe_cache_path()
-    status_msg = f"Universe cache loaded: {len(final_symbols)} symbols." if final_symbols else "Universe cache not loaded or empty."
+
+    cache_path = FINAL_PATH
+    creds_exists = screener_creds_exist()
+
+    # Friendly status message logic
+    if final_status == "waiting_for_credentials":
+        status_msg = "Waiting for screener credentials."
+    elif final_symbols:
+        status_msg = f"Universe cache loaded: {len(final_symbols)} symbols."
+    else:
+        status_msg = "Universe cache not loaded or empty."
+
+    # If no creds at all, prefer explicit message
+    if not creds_exists:
+        status_msg = "Screener credentials not configured."
+
     data_source_label = "Final (complete)"
     search = request.args.get("search", "").upper()
-    creds_exists = screener_creds_exist()
+
     return render_template(
         "universe.html",
         unfiltered_symbols=unfiltered_symbols,
@@ -113,12 +182,13 @@ def universe_status():
         final_symbols=final_symbols,
         blocklist_entries=blocklist_entries,
         cache_ok=bool(final_symbols),
-        status_msg=status_msg if creds_exists else "Screener credentials not configured.",
+        status_msg=status_msg,
         cache_path=cache_path,
         search=search,
         data_source_label=data_source_label,
         screener_creds_exist=creds_exists
     )
+
 
 @universe_bp.route("/rebuild", methods=["POST"])
 def universe_rebuild():
@@ -126,22 +196,21 @@ def universe_rebuild():
         flash("Screener credentials not configured. Please configure screener credentials before building the universe.", "error")
         return redirect(url_for("universe.universe_status"))
     try:
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'screeners'))
-        script_path = os.path.join(base_dir, 'universe_orchestrator.py')
-        current_app.logger.info(f"Running universe_orchestrator at {script_path}")
+        current_app.logger.info("Running universe_orchestrator via -m")
         proc = subprocess.run(
-            ["python3", "-m", "tbot_bot.screeners.universe_orchestrator"],
+            ["python3", "-u", "-m", "tbot_bot.screeners.universe_orchestrator"],
             capture_output=True,
             text=True
         )
-        current_app.logger.info(f"[universe_rebuild] universe_orchestrator.py exit={proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
+        current_app.logger.info(f"[universe_rebuild] universe_orchestrator exit={proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
         if proc.returncode != 0:
-            flash(f"Universe cache rebuild failed: {proc.stderr}", "error")
+            flash(f"Universe cache rebuild failed: {proc.stderr or proc.stdout}", "error")
         else:
             flash("Universe cache rebuild complete.", "success")
     except Exception as e:
         flash(f"Universe cache rebuild failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))
+
 
 @universe_bp.route("/log")
 def universe_log():
@@ -152,18 +221,18 @@ def universe_log():
     except Exception:
         return Response("Log file not found.", mimetype="text/plain")
 
+
 @universe_bp.route("/export/<fmt>", methods=["GET"])
 def universe_export(fmt):
     if not screener_creds_exist():
         flash("Screener credentials not configured. Please configure screener credentials before exporting.", "error")
         return redirect(url_for("universe.universe_status"))
-    try:
-        final_symbols = load_universe_cache()
-    except Exception:
-        final_symbols = []
+
+    final_symbols, _status = load_final_symbols_and_status()
     if not final_symbols:
         flash("Universe cache not loaded.", "error")
         return redirect(url_for("universe.universe_status"))
+
     if fmt == "csv":
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=list(final_symbols[0].keys()))
@@ -197,6 +266,7 @@ def universe_export(fmt):
         flash("Unsupported export format.", "error")
         return redirect(url_for("universe.universe_status"))
 
+
 @universe_bp.route('/static/output/screeners/<path:filename>')
 def universe_output_static(filename):
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tbot_bot', 'output', 'screeners'))
@@ -206,16 +276,19 @@ def universe_output_static(filename):
         current_app.logger.warning(f"Universe static file not found: {full_path}")
     return send_from_directory(base_dir, filename)
 
+
 @universe_bp.route('/status_message')
 def universe_status_message():
     counts = get_all_counts()
+    total = counts["unfiltered"] + counts["partial"] + counts["filtered"] + counts["blocklist"]
     status_msg = (
         f"Unfiltered: {counts['unfiltered']} | Partial: {counts['partial']} | Filtered: {counts['filtered']} | Blocklist: {counts['blocklist']}"
-        if sum(counts.values()) > 0 else
+        if total > 0 else
         "Universe files not loaded or empty."
     )
     current_app.logger.debug(f"Status message requested, returning: {status_msg}")
     return status_msg, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
 
 @universe_bp.route("/refilter", methods=["POST"])
 def universe_refilter():
@@ -229,6 +302,7 @@ def universe_refilter():
     except Exception as e:
         flash(f"Refilter failed: {e}", "error")
     return redirect(url_for("universe.universe_status"))
+
 
 @universe_bp.route("/blocklist", methods=["GET", "POST"])
 def universe_blocklist():
@@ -254,20 +328,19 @@ def universe_blocklist():
         blocklist_entries=blocklist,
     )
 
+
 @universe_bp.route("/table/<table_type>")
 def universe_table_api(table_type):
     search = request.args.get("search", "").upper()
     offset = int(request.args.get("offset", 0))
     limit = int(request.args.get("limit", 100))
+
     if table_type == "unfiltered":
         data = load_json_file(UNFILTERED_PATH)
     elif table_type == "partial":
-        data = load_json_file(resolve_universe_partial_path())
+        data = load_json_file(PARTIAL_PATH)
     elif table_type == "final":
-        try:
-            data = load_universe_cache()
-        except Exception:
-            data = []
+        data, _status = load_final_symbols_and_status()
     elif table_type == "blocklist":
         try:
             with open(BLOCKLIST_PATH, "r", encoding="utf-8") as bf:
@@ -276,9 +349,11 @@ def universe_table_api(table_type):
             data = []
     else:
         return jsonify({"error": "Invalid table type"}), 400
+
     if search:
         data = [s for s in data if search in (s if isinstance(s, str) else s.get("symbol", "")).upper()]
     return jsonify(data[offset:offset+limit])
+
 
 @universe_bp.route("/counts")
 def universe_counts():

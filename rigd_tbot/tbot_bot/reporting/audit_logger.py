@@ -33,34 +33,50 @@ def _require_non_empty_str(name: str, value: Optional[str]) -> str:
     return s
 
 
+def _normalize_actor(actor: Optional[str], user: Optional[str]) -> str:
+    """
+    Prefer explicit 'actor', but accept legacy 'user' kwarg.
+    Falls back to 'system' if neither is provided or both are empty.
+    """
+    for cand in (actor, user):
+        if cand is not None:
+            s = str(cand).strip()
+            if s:
+                return s
+    return "system"
+
+
 def audit_log_event(
     event_type: str,
-    actor: str,
+    actor: Optional[str] = None,  # was required; kept positional for compat, now optional
     /,
     *,
+    user: Optional[str] = None,   # NEW: legacy alias accepted (e.g., user="holdings_manager")
     reference: Optional[str] = None,
     details: Optional[Dict[str, Any]] = None,
     reason: Optional[str] = None,
     bot_identity: Optional[str] = None,
+    **_ignored,                   # tolerate unexpected kwargs from older call sites
 ) -> None:
     """
     Appends a single audit event to holdings_audit.log with UTC ISO-8601 timestamp.
 
-    REQUIRED (no defaults):
+    REQUIRED:
       - event_type: Non-null, non-empty string.
-      - actor:      Non-null, non-empty string.
 
-    OPTIONAL (pass through as-is, no substitution defaults):
+    ACTOR:
+      - actor: preferred
+      - user:  accepted as a legacy alias (mapped to actor)
+      If neither provided/non-empty, defaults to "system" (prevents crashes).
+
+    OPTIONAL:
       - reference:  ID or context string.
       - details:    JSON-serializable dict for full event context.
       - reason:     Human-readable rationale for the action.
       - bot_identity: Explicit identity string override.
-
-    Raises:
-      ValueError if event_type or actor are missing/empty.
     """
     etype = _require_non_empty_str("event_type", event_type)
-    who = _require_non_empty_str("actor", actor)
+    who = _normalize_actor(actor, user)
 
     log_file = _get_audit_log_path(bot_identity)
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -80,23 +96,21 @@ def audit_log_event(
 
 def log_holdings_event(
     event_type: str,
-    actor: str,
-    message: str,
+    actor: Optional[str] = None,
+    message: str = "",
     /,
     *,
+    user: Optional[str] = None,   # accept legacy alias here as well
     reason: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
     bot_identity: Optional[str] = None,
 ) -> None:
     """
     Legacy convenience wrapper that logs a simpler event line with message text.
-    Still enforces non-null event_type and actor; no defaults.
-
-    Raises:
-      ValueError if event_type or actor are missing/empty.
+    Accepts 'actor' or legacy 'user'; defaults to 'system' if neither provided.
     """
     etype = _require_non_empty_str("event_type", event_type)
-    who = _require_non_empty_str("actor", actor)
+    who = _normalize_actor(actor, user)
 
     log_file = _get_audit_log_path(bot_identity)
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
