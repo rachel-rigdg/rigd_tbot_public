@@ -1,8 +1,5 @@
 # tbot_bot/runtime/tbot_supervisor.py
 # Central phase/process supervisor for TradeBot.
-# Responsible for all phase transitions, persistent monitoring, and launching all watcher/worker/test runner processes.
-# Only launched by main.py after successful provisioning/bootstrapping and transition to operational state.
-# No watcher/worker/test runner is ever launched except by this supervisor.
 
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
@@ -39,38 +36,17 @@ LAST_OPEN_STAMP  = CONTROL_DIR / "last_strategy_open_utc.txt"
 LAST_MID_STAMP   = CONTROL_DIR / "last_strategy_mid_utc.txt"
 LAST_CLOSE_STAMP = CONTROL_DIR / "last_strategy_close_utc.txt"
 
-# ----- Launch map: friendly name -> importable module for `python -m` -----
-MODULE_MAP = {
-    # runtime (always-on / utilities)
-    "status_bot":              "tbot_bot.runtime.status_bot",
-    "watchdog_bot":            "tbot_bot.runtime.watchdog_bot",
-    "sync_broker_ledger":      "tbot_bot.runtime.sync_broker_ledger",
-    "ledger_snapshot":         "tbot_bot.runtime.ledger_snapshot",
-
-    # trading
-    "risk_module":             "tbot_bot.trading.risk_module",
-    "kill_switch":             "tbot_bot.trading.kill_switch",
-    "holdings_manager":        "tbot_bot.trading.holdings_manager",
-
-    # reporting
-    "log_rotation":            "tbot_bot.reporting.log_rotation",
-    "trade_logger":            "tbot_bot.reporting.trade_logger",
-    "status_logger":           "tbot_bot.reporting.status_logger",
-
-    # screeners / universe
-    "universe_orchestrator":   "tbot_bot.screeners.universe_orchestrator",
-
-    # tests
-    "integration_test_runner": "tbot_bot.test.integration_test_runner",
-}
+# Launch registry (single source of truth for module names)
+from tbot_bot.support.launch_registry import (
+    spawn_module,            # to launch a worker
+    is_process_running,      # singleton check
+    NON_RESTARTABLE,         # one-offs policy (do NOT shadow locally)
+)
 
 UNIVERSE_TIMESTAMP_PATH = ROOT_DIR / "tbot_bot" / "output" / "screeners" / "symbol_universe.json"
 REBUILD_DELAY_HOURS = 4
 
 BOOT_PHASES = ("initialize", "provisioning", "bootstrapping", "registration")
-
-# One-off processes that must NOT be auto-restarted (strategies are no longer processes)
-NON_RESTARTABLE = {"universe_orchestrator"}
 
 def read_env_var(key, default=None):
     from tbot_bot.config.env_bot import load_env_bot_config
@@ -84,37 +60,11 @@ def read_bot_state():
         return ""
 
 def _spawn_for(name: str, **popen_kwargs):
-    """Launch a mapped module via `python -m` with unbuffered output."""
-    mod = MODULE_MAP.get(name)
-    if not mod:
-        raise RuntimeError(f"Unknown launch target: {name}")
-    print(f"[tbot_supervisor] launching process: {name} ({mod})", flush=True)
-    cmd = ["python3", "-u", "-m", mod]
-    return subprocess.Popen(cmd, stdout=None, stderr=None, **popen_kwargs)
+    print(f"[tbot_supervisor] launching process: {name}", flush=True)
+    return spawn_module(name, **popen_kwargs)
 
 def ensure_singleton(name_or_hint: str) -> bool:
-    """
-    Best-effort singleton detector. For module launches, cmdline contains '-m <module>'.
-    We check for either the fully qualified module or the short hint.
-    """
-    try:
-        import psutil
-    except Exception:
-        # If psutil is missing, don't block launches
-        return False
-
-    hint = name_or_hint
-    mod = MODULE_MAP.get(name_or_hint, name_or_hint)
-    short = mod.rsplit(".", 1)[-1]
-
-    for proc in psutil.process_iter(["cmdline"]):
-        try:
-            cmd = " ".join(proc.info.get("cmdline") or [])
-            if f"-m {mod}" in cmd or f"-m {short}" in cmd or short + ".py" in cmd:
-                return True
-        except Exception:
-            continue
-    return False
+    return is_process_running(name_or_hint)
 
 def find_individual_test_flags():
     return list(CONTROL_DIR.glob("test_mode_*.flag"))
@@ -185,7 +135,7 @@ def is_time_for_universe_rebuild():
         return now >= scheduled_time
     return now >= scheduled_time and build_time < scheduled_time
 
-# --- BROKER SYNC NIGHTLY LAUNCH LOGIC (timezone-safe; market close via getter) ---
+# --- BROKER SYNC NIGHTLY LAUNCH LOGIC ---
 def get_last_sync_broker_ledger_timestamp():
     ts_path = CONTROL_DIR / "last_broker_sync_utc.txt"
     if not ts_path.exists():
@@ -217,7 +167,7 @@ def is_time_for_broker_sync():
     already_synced_today = last_sync and last_sync.date() == now.date() and last_sync > sync_time - timedelta(minutes=5)
     return now >= sync_time and not already_synced_today
 
-# --- LEDGER SNAPSHOT NIGHTLY LAUNCH LOGIC (identical schedule to broker sync) ---
+# --- LEDGER SNAPSHOT NIGHTLY LAUNCH LOGIC ---
 def get_last_ledger_snapshot_timestamp():
     ts_path = CONTROL_DIR / "last_ledger_snapshot_utc.txt"
     if not ts_path.exists():
@@ -263,8 +213,7 @@ def _parse_time_hhmm(hhmm_utc: str) -> dt_time:
 
 def _scheduled_run_datetime(hhmm_utc: str, now: datetime) -> datetime:
     t = _parse_time_hhmm(hhmm_utc)
-    run_dt = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
-    return run_dt
+    return now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
 
 def _run_via_router(which: str):
     """Call the router with override and print a concise result line."""
@@ -303,7 +252,6 @@ def launch_strategy_if_time(strategy_name, processes, state):
         return
 
     run_time = _scheduled_run_datetime(hhmm, now)
-    window_sec = 300  # ±300s window
     delta = (now - run_time).total_seconds()
     if abs(delta) <= window_sec:
         # Write stamp immediately to prevent duplicate concurrent launches
@@ -340,17 +288,12 @@ def main():
     ]
 
     previous_state = None
-    is_first_bootstrap = False
     if BOT_STATE_PATH.exists():
         previous_state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        if previous_state not in (
-            "idle", "running", "started", "trading", "monitoring", "analyzing", "updating", "stopped"
-        ):
+        if previous_state not in ("idle", "running", "started", "trading", "monitoring", "analyzing", "updating", "stopped"):
             previous_state = "idle"
-    else:
-        is_first_bootstrap = True
 
-    # Force kill any stale status_bot.py before launching
+    # Kill stale status_bot (best-effort)
     try:
         import psutil
         for proc in psutil.process_iter(["pid", "cmdline"]):
@@ -364,7 +307,7 @@ def main():
     except Exception:
         pass
 
-    # Launch status_bot as a persistent subprocess (always runs, updates status.json every 2s)
+    # Launch status_bot (live status process)
     status_bot_proc = _spawn_for("status_bot")
     print("[tbot_supervisor] Launched status_bot.py as dedicated live status process.", flush=True)
 
