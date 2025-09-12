@@ -53,10 +53,10 @@ def read_env_var(key, default=None):
     env = load_env_bot_config()
     return env.get(key, default)
 
-# make the strategy launch window configurable (fallback 300s)
+# Configurable strategy launch window (default 300s)
 STRATEGY_WINDOW_SEC = int(read_env_var("STRATEGY_WINDOW_SEC", "300"))
 
-# throttle universe attempts before creds exist (avoid rapid relaunch loops)
+# Throttle universe attempts before creds exist (avoid rapid relaunch loops)
 UNIVERSE_LAST_ATTEMPT_PATH = CONTROL_DIR / "last_universe_attempt_utc.txt"
 UNIVERSE_RETRY_COOLDOWN_MIN = int(read_env_var("UNIVERSE_RETRY_COOLDOWN_MIN", "30"))
 
@@ -227,22 +227,26 @@ def _scheduled_run_datetime(hhmm_utc: str, now: datetime) -> datetime:
     t = _parse_time_hhmm(hhmm_utc)
     return now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
 
-def _run_via_router(which: str):
-    """Call the router with override and print a concise result line."""
+def _run_via_router(which: str) -> bool:
+    """
+    Call the router with override and print a concise result line.
+    Returns True only if the router actually ran (not skipped and no exception).
+    """
     print(f"[tbot_supervisor] Launching via router: {which}", flush=True)
     try:
         res = route_strategy(override=which)
-        # Summarize outcome
         if getattr(res, "skipped", False):
             print(f"[tbot_supervisor] Router {which}: skipped (errors={len(getattr(res, 'errors', []) or [])})", flush=True)
-        else:
-            trades = getattr(res, "trades", []) or []
-            print(f"[tbot_supervisor] Router {which}: completed (trades={len(trades)}, errors={len(getattr(res, 'errors', []) or [])})", flush=True)
+            return False
+        trades = getattr(res, "trades", []) or []
+        print(f"[tbot_supervisor] Router {which}: completed (trades={len(trades)}, errors={len(getattr(res, 'errors', []) or [])})", flush=True)
+        return True
     except Exception as e:
         print(f"[tbot_supervisor] Router {which}: exception: {e}", flush=True)
+        return False
 
 def launch_strategy_if_time(strategy_name, processes, state):
-    """Launch strategy within ±STRATEGY_WINDOW_SEC via router; per-day guard; state == 'running' required."""
+    """Launch strategy within ±window via router; per-day guard; state == 'running' required."""
     if state != "running":
         return
 
@@ -265,20 +269,31 @@ def launch_strategy_if_time(strategy_name, processes, state):
 
     run_time = _scheduled_run_datetime(hhmm, now)
     delta = (now - run_time).total_seconds()
+
     if abs(delta) <= STRATEGY_WINDOW_SEC:
-        # Write stamp immediately to prevent duplicate concurrent launches
-        _write_stamp(stamp, now)
-        _run_via_router(strategy_name)
+        # Only stamp if the router actually ran
+        ran = _run_via_router(strategy_name)
+        if ran:
+            _write_stamp(stamp, now)
+        else:
+            print(f"[tbot_supervisor] Router '{strategy_name}' did not run; stamp not written.", flush=True)
 
 def _late_open_catchup():
-    """One-time catch-up for OPEN if we just transitioned to running and missed the window by ≤STRATEGY_WINDOW_SEC."""
+    """
+    One-time catch-up for OPEN if we just transitioned to running and missed the window by ≤300s.
+    Only stamps if router actually runs.
+    """
     now = _to_aware_utc(utc_now())
     hhmm = get_open_time_utc() or "13:30"
     run_time = _scheduled_run_datetime(hhmm, now)
-    if 0 < (now - run_time).total_seconds() <= STRATEGY_WINDOW_SEC and not _has_run_today(LAST_OPEN_STAMP, now):
-        _write_stamp(LAST_OPEN_STAMP, now)
-        print(f"[tbot_supervisor] Late launch: OPEN (scheduled {hhmm}Z, actual {now.strftime('%H:%M:%SZ')})", flush=True)
-        _run_via_router("open")
+    if 0 < (now - run_time).total_seconds() <= 300 and not _has_run_today(LAST_OPEN_STAMP, now):
+        print(f"[tbot_supervisor] Late launch candidate: OPEN (scheduled {hhmm}Z, now {now.strftime('%H:%M:%SZ')})", flush=True)
+        ran = _run_via_router("open")
+        if ran:
+            _write_stamp(LAST_OPEN_STAMP, now)
+            print(f"[tbot_supervisor] Late launch: OPEN stamped @ {now.isoformat()}", flush=True)
+        else:
+            print("[tbot_supervisor] Late launch OPEN skipped/failed; stamp not written.", flush=True)
 
 def main():
     print("[tbot_supervisor] Starting TradeBot phase supervisor.", flush=True)
@@ -288,7 +303,8 @@ def main():
         "status_bot",
         "watchdog_bot",
         # DO NOT LAUNCH strategy_router here — it is not a worker.
-        # risk_module & kill_switch are one-offs; do not run as persistent workers
+        "risk_module",
+        "kill_switch",
         "log_rotation",
         "trade_logger",
         "status_logger",
@@ -331,6 +347,8 @@ def main():
         else:
             print(f"[tbot_supervisor] {name} already running.", flush=True)
 
+    first_loop = True
+
     try:
         while True:
             state = read_bot_state()
@@ -361,7 +379,8 @@ def main():
                 launch_strategy_if_time("close", processes, state)
 
                 # One-time late catch-up for OPEN on transition to 'running'
-                if previous_state != "running" and state == "running":
+                # Also handle the case where we *start up already in 'running'*
+                if ((previous_state != "running") or first_loop) and state == "running":
                     _late_open_catchup()
 
                 # ---- BROKER SYNC NIGHTLY (once per day) ----
@@ -439,6 +458,7 @@ def main():
                 processes.pop(name, None)
 
             previous_state = state
+            first_loop = False
             time.sleep(2)
 
     except KeyboardInterrupt:
