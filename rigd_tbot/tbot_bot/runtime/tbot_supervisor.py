@@ -53,10 +53,10 @@ def read_env_var(key, default=None):
     env = load_env_bot_config()
     return env.get(key, default)
 
-# FIX: make the strategy launch window configurable (fallback 300s)
+# make the strategy launch window configurable (fallback 300s)
 STRATEGY_WINDOW_SEC = int(read_env_var("STRATEGY_WINDOW_SEC", "300"))
 
-# FIX: throttle universe attempts before creds exist (avoid rapid relaunch loops)
+# throttle universe attempts before creds exist (avoid rapid relaunch loops)
 UNIVERSE_LAST_ATTEMPT_PATH = CONTROL_DIR / "last_universe_attempt_utc.txt"
 UNIVERSE_RETRY_COOLDOWN_MIN = int(read_env_var("UNIVERSE_RETRY_COOLDOWN_MIN", "30"))
 
@@ -242,7 +242,7 @@ def _run_via_router(which: str):
         print(f"[tbot_supervisor] Router {which}: exception: {e}", flush=True)
 
 def launch_strategy_if_time(strategy_name, processes, state):
-    """Launch strategy within ±300s window via router; per-day guard; state == 'running' required."""
+    """Launch strategy within ±STRATEGY_WINDOW_SEC via router; per-day guard; state == 'running' required."""
     if state != "running":
         return
 
@@ -265,18 +265,17 @@ def launch_strategy_if_time(strategy_name, processes, state):
 
     run_time = _scheduled_run_datetime(hhmm, now)
     delta = (now - run_time).total_seconds()
-    # FIX: use STRATEGY_WINDOW_SEC (was undefined window_sec)
     if abs(delta) <= STRATEGY_WINDOW_SEC:
         # Write stamp immediately to prevent duplicate concurrent launches
         _write_stamp(stamp, now)
         _run_via_router(strategy_name)
 
 def _late_open_catchup():
-    """One-time catch-up for OPEN if we just transitioned to running and missed the window by ≤300s."""
+    """One-time catch-up for OPEN if we just transitioned to running and missed the window by ≤STRATEGY_WINDOW_SEC."""
     now = _to_aware_utc(utc_now())
     hhmm = get_open_time_utc() or "13:30"
     run_time = _scheduled_run_datetime(hhmm, now)
-    if 0 < (now - run_time).total_seconds() <= 300 and not _has_run_today(LAST_OPEN_STAMP, now):
+    if 0 < (now - run_time).total_seconds() <= STRATEGY_WINDOW_SEC and not _has_run_today(LAST_OPEN_STAMP, now):
         _write_stamp(LAST_OPEN_STAMP, now)
         print(f"[tbot_supervisor] Late launch: OPEN (scheduled {hhmm}Z, actual {now.strftime('%H:%M:%SZ')})", flush=True)
         _run_via_router("open")
@@ -289,8 +288,7 @@ def main():
         "status_bot",
         "watchdog_bot",
         # DO NOT LAUNCH strategy_router here — it is not a worker.
-        "risk_module",
-        "kill_switch",
+        # risk_module & kill_switch are one-offs; do not run as persistent workers
         "log_rotation",
         "trade_logger",
         "status_logger",
@@ -421,7 +419,7 @@ def main():
                 # Treat universe build as one-off
                 if not ensure_singleton("universe_orchestrator"):
                     print("[tbot_supervisor] Triggering universe cache rebuild (universe_orchestrator)...", flush=True)
-                    # FIX: record attempt to avoid tight loops before creds are added
+                    # record attempt to avoid tight loops before creds are added
                     _write_stamp(UNIVERSE_LAST_ATTEMPT_PATH, utc_now())
                     processes["universe_orchestrator"] = _spawn_for("universe_orchestrator")
                 else:

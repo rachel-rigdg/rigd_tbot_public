@@ -98,6 +98,18 @@ def get_active_broker():
     module = importlib.import_module(mod_path)
     broker_cls = getattr(module, cls_name)
     _broker_instance = broker_cls(env)
+
+    # --- HARD REDIRECT: force any broker.get_price(...) to use Screeners creds (e.g., FINNHUB)
+    try:
+        def _screeners_get_price(self, symbol: str) -> float:
+            from tbot_bot.screeners.screener_utils import get_realtime_price
+            return get_realtime_price(symbol)
+        # bind method to instance regardless of adapter implementation
+        _broker_instance.get_price = _screeners_get_price.__get__(_broker_instance, _broker_instance.__class__)
+    except Exception:
+        # best-effort; we still provide a module-level fallback get_price()
+        pass
+
     return _broker_instance
 
 
@@ -167,6 +179,13 @@ def fetch_cash_activity(start_date, end_date=None):
     return _normalize_and_filter(acts)
 
 
+# --- MODULE-LEVEL PRICE HELPER: keep callers off broker adapters entirely
+def get_price(symbol: str) -> float:
+    """Single source of truth for market prices via Screeners (e.g., FINNHUB)."""
+    from tbot_bot.screeners.screener_utils import get_realtime_price
+    return get_realtime_price(symbol)
+
+
 __all__ = [
     "get_active_broker",
     "place_order",
@@ -179,4 +198,5 @@ __all__ = [
     "get_min_order_size",
     "fetch_all_trades",
     "fetch_cash_activity",
+    "get_price",  # added
 ]

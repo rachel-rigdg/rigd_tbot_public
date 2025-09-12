@@ -44,6 +44,10 @@ try:
 except ImportError:
     validate_option = None
 
+# NOTE: If this module ever needs real-time prices, use screeners (FINNHUB) only.
+# (Surgical fix directive)
+from tbot_bot.screeners.screener_utils import get_realtime_price  # noqa: F401
+
 config = get_bot_config()
 TOTAL_ALLOCATION = float(config.get("TOTAL_ALLOCATION", 0.02))
 MAX_TRADES = int(config.get("MAX_TRADES", 4))

@@ -12,12 +12,12 @@ Why this file?
 What you get:
 - MODULE_IMPORTS: canonical friendly-name -> module path mapping
 - ALIASES: optional synonyms -> canonical friendly-name
-- NON_RESTARTABLE: default set of one-off modules the supervisor shouldn't auto-restart
+- NON_RESTARTABLE: modules the supervisor must NOT auto-restart (one-offs / short-lived)
 - Helper functions:
     resolve_runtime_module(name)           -> str (module path; raises on unknown)
     list_runtime_modules()                 -> dict copy
     list_aliases()                         -> dict copy
-    registry_info()                        -> dict {name: {"module": ..., "aliases": [...]}}
+    registry_info()                        -> dict {name: {"module": ..., "aliases": [...], "exists": bool}}
     is_registered(name_or_module)          -> bool
     module_exists(module_path)             -> bool (checks importability)
     normalize_target(name_or_module)       -> (friendly_name or None, module_path or None)
@@ -104,10 +104,15 @@ ALIASES: Dict[str, str] = {
     "holdings":         "holdings_manager",
 }
 
-# Default one-offs the supervisor should NOT auto-restart
+# Modules the supervisor must NOT auto-restart when they exit.
+# This prevents tight restart loops for short-lived/one-off tasks.
 NON_RESTARTABLE = {
-    "universe_orchestrator",
-    "integration_test_runner",  # tests are launched by flags; do not auto-restart
+    "universe_orchestrator",   # one-off rebuild
+    "integration_test_runner", # launched by flags; do not auto-restart
+    "risk_module",             # exits immediately; not a daemon
+    "kill_switch",             # exits immediately; not a daemon
+    "sync_broker_ledger",      # nightly one-off
+    "ledger_snapshot",         # nightly one-off
 }
 
 # -----------------------------------------------------------------------------

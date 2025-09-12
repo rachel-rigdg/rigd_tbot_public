@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
+import requests  # <<< ADDED
 
 from tbot_bot.support.path_resolver import (
     resolve_universe_cache_path,
@@ -115,6 +116,47 @@ def get_universe_screener_secrets() -> Dict[str, Dict]:
         raise UniverseCacheError("No screener providers enabled for universe operations. Enable at least one provider (UNIVERSE_ENABLED=true).")
 
     return result
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# ADDED: single-source realtime price helper using Screener Credentials
+def get_realtime_price(symbol: str, timeout: int = 4) -> float:
+    """
+    Single source of truth for market prices.
+    Uses the currently enabled Screener Credentials (prefers FINNHUB).
+    """
+    providers = get_universe_screener_secrets()  # uses the same credentials store/UI
+    # Prefer FINNHUB if multiple providers are enabled
+    if "FINNHUB" in providers:
+        provider = "FINNHUB"
+    else:
+        # take the first enabled provider if any
+        provider = next(iter(providers.keys()))
+
+    cfg = providers[provider]
+
+    if provider == "FINNHUB":
+        token = (
+            cfg.get("SCREENER_API_KEY")
+            or cfg.get("API_KEY")
+            or cfg.get("FINNHUB_API_KEY")
+            or cfg.get("TOKEN")
+        )
+        if not token:
+            raise UniverseCacheError("FINNHUB API key missing in Screener Credentials.")
+        r = requests.get(
+            "https://finnhub.io/api/v1/quote",
+            params={"symbol": symbol, "token": token},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        data = r.json() or {}
+        px = data.get("c")
+        if px is None:
+            raise UniverseCacheError(f"FINNHUB returned no price for {symbol}: {data}")
+        return float(px)
+
+    raise UniverseCacheError(f"Market-data provider '{provider}' not supported for quotes.")
+# <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)

@@ -189,7 +189,6 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
     # === Step 3: Reinvest post-reserve remainder into target ETFs ===
     remainder = realized_gains - tax_cut - payroll_cut
     if remainder > 1:
-        prices = {symbol: broker.get_price(symbol) for symbol in etf_targets}
         total_pct = sum(etf_targets.values())
         for symbol, pct in etf_targets.items():
             alloc_amt = remainder * (pct / total_pct)
@@ -206,7 +205,6 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
     float_target_value = account_value * (float_pct / 100)
     float_excess = current_cash - float_target_value
     if float_excess > 1:
-        prices = {symbol: broker.get_price(symbol) for symbol in etf_targets}
         total_pct = sum(etf_targets.values())
         for symbol, pct in etf_targets.items():
             alloc_amt = float_excess * (pct / total_pct)
