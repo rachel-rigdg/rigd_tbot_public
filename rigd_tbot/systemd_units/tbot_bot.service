@@ -1,29 +1,22 @@
 # systemd_units/tbot_bot.service
 [Unit]
-Description=RIGD Tbot Core Web UI (no scheduler here)
-After=default.target
+Description=RIGD TradeBot Web UI (no scheduler)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-# Absolute working dir; no env files, no venv needed
+# Project lives here
 WorkingDirectory=%h/rigd_tbot
+# No venv; add project root to PYTHONPATH so `tbot_bot` imports resolve
 Environment=PYTHONUNBUFFERED=1
-# Use system Python explicitly (no venv paths)
+Environment=PYTHONPATH=%h/rigd_tbot
 ExecStart=/usr/bin/python3 %h/rigd_tbot/tbot_bot/runtime/main.py
 Restart=on-failure
 RestartSec=2s
 
-# Hardening (safe for Flask + subprocess children)
+# Hardening (kept modest for web UI)
 NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=full
-ProtectHome=yes
-ProtectKernelTunables=yes
-ProtectControlGroups=yes
-LockPersonality=yes
-RestrictRealtime=yes
-RestrictSUIDSGID=yes
-UMask=0077
 
 [Install]
 WantedBy=default.target
