@@ -1,18 +1,19 @@
 # systemd_units/tbot_bot.service
 [Unit]
-Description=RIGD Tbot Core Web UI (no scheduling)
-After=network-online.target
-Wants=network-online.target
+Description=RIGD Tbot Core Web UI (no scheduler here)
+After=default.target
 
 [Service]
 Type=simple
+# Absolute working dir; no env files, no venv needed
 WorkingDirectory=%h/rigd_tbot
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/rigd_tbot/venv/bin/python3 %h/rigd_tbot/tbot_bot/runtime/main.py
+# Use system Python explicitly (no venv paths)
+ExecStart=/usr/bin/python3 %h/rigd_tbot/tbot_bot/runtime/main.py
 Restart=on-failure
 RestartSec=2s
 
-# Hardening
+# Hardening (safe for Flask + subprocess children)
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full

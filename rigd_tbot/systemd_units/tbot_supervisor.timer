@@ -1,6 +1,6 @@
 # systemd_units/tbot_supervisor.timer
 [Unit]
-Description=RIGD TradeBot Daily Supervisor Timer
+Description=RIGD TradeBot Daily Supervisor Timer (UTC)
 
 [Timer]
 OnCalendar=Mon..Fri 00:01 UTC
