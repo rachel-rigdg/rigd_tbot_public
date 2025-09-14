@@ -3,18 +3,15 @@
 Description=RIGD TradeBot Daily Supervisor (%i)
 After=network-online.target tbot_bot.service
 Wants=network-online.target tbot_bot.service
-# Do not run the supervisor if the bot is still bootstrapping/provisioning
-ConditionPathExists=!%E/rigd_tbot/tbot_bot/control/provisioning.lock
-ConditionPathExists=!%E/rigd_tbot/tbot_bot/control/bootstrapping.lock
+# Block supervisor until initial config/provisioning finishes
+ConditionPathExists=!%h/rigd_tbot/tbot_bot/control/provisioning.lock
+ConditionPathExists=!%h/rigd_tbot/tbot_bot/control/bootstrapping.lock
 
 [Service]
 Type=oneshot
-# NOTE: We intentionally do NOT load any EnvironmentFile here.
-#       The project uses encrypted configs (.env.enc / .env_bot.enc) with keys in storage/keys/.
-#       Avoid any plaintext .env discovery by systemd.
-WorkingDirectory=%E/rigd_tbot
+WorkingDirectory=%h/rigd_tbot
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%E/rigd_tbot/venv/bin/python3 -m tbot_bot.runtime.tbot_supervisor --date=%i
+ExecStart=%h/rigd_tbot/venv/bin/python3 -m tbot_bot.runtime.tbot_supervisor --date=%i
 
 # Hardening
 NoNewPrivileges=yes
@@ -27,6 +24,3 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 UMask=0077
-
-[Install]
-WantedBy=default.target

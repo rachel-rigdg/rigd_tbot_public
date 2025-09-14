@@ -1,31 +1,28 @@
 # systemd_units/tbot_bot.service
 [Unit]
-Description=RIGD Tbot Web UI / Core Dispatcher (Supervisor Orchestration v045+)
+Description=RIGD Tbot Core Web UI (no scheduling)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-# Optional overrides:
-#   TBOT_WORKDIR=/home/USER/rigd_tbot
-#   TBOT_PYTHON=/home/USER/rigd_tbot/venv/bin/python
-EnvironmentFile=-/etc/default/rigd_tbot
-EnvironmentFile=-%h/.config/rigd_tbot/env
-
-# Defaults (can be overridden by the EnvironmentFile above)
-WorkingDirectory=${TBOT_WORKDIR:-%h/rigd_tbot}
+WorkingDirectory=%h/rigd_tbot
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=${TBOT_WORKDIR:-%h/rigd_tbot}
-Environment=PATH=${TBOT_WORKDIR:-%h/rigd_tbot}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-# main.py is a dispatcher: build checks, env decrypt, identity snapshot, bot_state.txt, optional Web UI; no scheduling.
-ExecStart=${TBOT_PYTHON:-%h/rigd_tbot/venv/bin/python3} ${TBOT_WORKDIR:-%h/rigd_tbot}/tbot_bot/runtime/main.py
-
+ExecStart=%h/rigd_tbot/venv/bin/python3 %h/rigd_tbot/tbot_bot/runtime/main.py
 Restart=on-failure
 RestartSec=2s
 
-# All persistent worker/watcher/test runner modules are orchestrated ONLY by tbot_supervisor.py.
-# No process in tbot_bot/ may be launched by CLI, systemd, or main.py except tbot_supervisor.py (v045+).
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+UMask=0077
 
 [Install]
 WantedBy=default.target
