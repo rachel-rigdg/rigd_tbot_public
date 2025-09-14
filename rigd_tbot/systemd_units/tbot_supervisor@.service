@@ -1,20 +1,18 @@
-# systemd_units/tbot_supervisor@.service
 [Unit]
-Description=RIGD TradeBot Daily Supervisor (%i) — one-shot orchestration
+Description=RIGD TradeBot Daily Supervisor (%i)
 After=network-online.target tbot_bot.service
 Wants=network-online.target tbot_bot.service
-# Do NOT run while provisioning/bootstrap locks exist
-ConditionPathExists=!%h/rigd_tbot/tbot_bot/control/provisioning.lock
-ConditionPathExists=!%h/rigd_tbot/tbot_bot/control/bootstrapping.lock
+# block until you’ve configured/provisioned
+ConditionPathExists=!/home/tbot/rigd_tbot/tbot_bot/control/provisioning.lock
+ConditionPathExists=!/home/tbot/rigd_tbot/tbot_bot/control/bootstrapping.lock
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/rigd_tbot
+WorkingDirectory=/home/tbot/rigd_tbot
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=%h/rigd_tbot
 ExecStart=/usr/bin/python3 -m tbot_bot.runtime.tbot_supervisor --date=%i
 
-# Hardening
+# Hardening (kept as-is)
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full
@@ -27,5 +25,4 @@ RestrictSUIDSGID=yes
 UMask=0077
 
 [Install]
-# (Template unit is started by the timer; no need to enable it directly)
 WantedBy=default.target

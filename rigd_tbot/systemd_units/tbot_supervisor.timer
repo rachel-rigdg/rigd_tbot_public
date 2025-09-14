@@ -1,13 +1,12 @@
-# systemd_units/tbot_supervisor.timer
 [Unit]
-Description=RIGD TradeBot Daily Supervisor Timer (UTC)
+Description=RIGD TradeBot Daily Supervisor Timer
 
 [Timer]
-OnCalendar=Mon..Fri 00:01:00 UTC
+OnCalendar=Mon..Fri 00:01 UTC
 Unit=tbot_supervisor@%Y-%m-%d.service
 Persistent=true
 AccuracySec=1min
-RandomizedDelaySec=0
+RandomizedDelaySec=0s
 
 [Install]
 WantedBy=timers.target

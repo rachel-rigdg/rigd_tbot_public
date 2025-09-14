@@ -4,11 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%E/rigd_tbot
-Environment=PYTHONPATH=%E/rigd_tbot
+WorkingDirectory=/home/tbot/rigd_tbot
 ExecStart=/usr/bin/python3 -m tbot_bot.runtime.main
 Restart=always
 RestartSec=2s
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=default.target
