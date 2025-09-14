@@ -1,22 +1,14 @@
-# systemd_units/tbot_bot.service
 [Unit]
 Description=RIGD TradeBot Web UI (no scheduler)
-After=network-online.target
-Wants=network-online.target
+After=network.target
 
 [Service]
 Type=simple
-# Project lives here
-WorkingDirectory=%h/rigd_tbot
-# No venv; add project root to PYTHONPATH so `tbot_bot` imports resolve
-Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=%h/rigd_tbot
-ExecStart=/usr/bin/python3 %h/rigd_tbot/tbot_bot/runtime/main.py
-Restart=on-failure
+WorkingDirectory=%E/rigd_tbot
+Environment=PYTHONPATH=%E/rigd_tbot
+ExecStart=/usr/bin/python3 -m tbot_bot.runtime.main
+Restart=always
 RestartSec=2s
-
-# Hardening (kept modest for web UI)
-NoNewPrivileges=yes
 
 [Install]
 WantedBy=default.target
