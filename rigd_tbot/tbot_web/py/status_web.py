@@ -1,170 +1,186 @@
 # tbot_web/py/status_web.py
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
-import pytz
 from flask import Blueprint, render_template, jsonify
 
 from .login_web import login_required
 from tbot_bot.support.path_resolver import (
     resolve_status_log_path,
-    get_output_path
+    get_output_path,
+    get_bot_state_path,
+    get_schedule_json_path,
 )
-# UTC schedule getters (runtime MUST read UTC-only keys)
 from tbot_bot.config.env_bot import (
     get_open_time_utc,
     get_mid_time_utc,
     get_close_time_utc,
     get_market_close_utc,
-    get_timezone as get_cfg_timezone,   # returns timezone name string for UI display only
 )
 
 status_blueprint = Blueprint("status_web", __name__)
 
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
-BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
-OPEN_STAMP = CONTROL_DIR / "last_strategy_open_utc.txt"
-MID_STAMP = CONTROL_DIR / "last_strategy_mid_utc.txt"
-CLOSE_STAMP = CONTROL_DIR / "last_strategy_close_utc.txt"
+# ----- Defaults so UI never renders blank -----
+DEFAULT_STATUS = {
+    "state": "idle",
+    "bot_state": "idle",
+    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "active_strategy": "none",
+    "trade_count": 0,
+    "win_trades": 0,
+    "loss_trades": 0,
+    "win_rate": 0.0,
+    "pnl": 0.0,
+    "error_count": 0,
+    "version": "n/a",
+    "enabled_strategies": {"open": False, "mid": False, "close": False},
+}
 
-
-def _read_status_json():
+def _read_status_json() -> dict:
+    """
+    Always return a fully-populated dict so templates have values (zeros/'none') even if file missing/malformed.
+    """
+    payload = dict(DEFAULT_STATUS)
     status_file_path = Path(resolve_status_log_path())
     try:
         with open(status_file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        data.setdefault("win_rate", 0.0)
-        data.setdefault("win_trades", 0)
-        data.setdefault("loss_trades", 0)
-        data.setdefault("pnl", 0.0)
-        data.setdefault("trade_count", 0)
-        return data
-    except FileNotFoundError:
-        return {"error": "Status file not found."}
-    except json.JSONDecodeError:
-        return {"error": "Malformed status file."}
-    except Exception as e:
-        return {"error": str(e)}
-
+            data = json.load(f) or {}
+        # Merge with defaults; file values win
+        payload.update({k: v for k, v in data.items() if v is not None})
+    except Exception:
+        # keep defaults
+        pass
+    return payload
 
 def _read_bot_state() -> str:
     try:
-        return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        return Path(get_bot_state_path()).read_text(encoding="utf-8").strip() or "idle"
     except Exception:
-        return "unknown"
+        return "idle"
 
-
-def _read_iso_stamp(path: Path):
-    if not path.exists():
+def _parse_iso_utc(s: str):
+    if not s:
         return None
     try:
-        s = path.read_text(encoding="utf-8").strip()
-        if s.endswith("Z"):
-            s = s.replace("Z", "+00:00")
-        return datetime.fromisoformat(s)
+        s2 = s.strip()
+        if s2.endswith("Z"):
+            s2 = s2.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s2)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
     except Exception:
         return None
 
-
-def _hhmm_to_time(hhmm: str):
-    h, m = map(int, hhmm.split(":"))
-    return h, m
-
-
-def _today_dt_for(hhmm: str) -> datetime:
-    now = datetime.now(timezone.utc)
-    h, m = _hhmm_to_time(hhmm)
-    return now.replace(hour=h, minute=m, second=0, microsecond=0)
-
-
-def _next_dt_for(hhmm: str) -> datetime:
-    now = datetime.now(timezone.utc)
-    today_dt = _today_dt_for(hhmm)
-    return today_dt if today_dt >= now else today_dt + timedelta(days=1)
-
-
-def _format_local(dt_utc: datetime, tz_name: str) -> str:
-    try:
-        tz = pytz.timezone(tz_name or "UTC")
-    except Exception:
-        tz = pytz.UTC
-    return dt_utc.astimezone(tz).strftime("%Y-%m-%d %H:%M")
-
-
-def _badge_for(kind: str, stamp_path: Path, sched_hhmm: str, bot_state: str) -> str:
+def _read_schedule():
     """
-    Returns one of:
-      - "Ran @ HH:MMZ"
-      - "Late Launch"
-      - "Pending"
+    Read logs/schedule.json; if absent, fall back to config HH:MM (UTC) for today.
+    Returns dict with UTC strings the UI can render.
     """
-    now = datetime.now(timezone.utc)
-    stamp = _read_iso_stamp(stamp_path)
-    if stamp and stamp.date() == now.date():
-        return f"Ran @ {stamp.strftime('%H:%M')}Z"
-    sched_today = _today_dt_for(sched_hhmm)
-    grace = timedelta(seconds=300)
-    if bot_state == "running" and now > (sched_today + grace):
-        return "Late Launch"
-    return "Pending"
+    sched_path = Path(get_schedule_json_path())
+    if sched_path.exists():
+        try:
+            raw = json.load(open(sched_path, "r", encoding="utf-8"))
+            # Ensure string fields exist (UI-friendly)
+            out = {
+                "trading_date": raw.get("trading_date", ""),
+                "created_at_utc": raw.get("created_at_utc", ""),
+                "open_utc": raw.get("open_utc", ""),
+                "mid_utc": raw.get("mid_utc", ""),
+                "close_utc": raw.get("close_utc", ""),
+                "holdings_utc": raw.get("holdings_utc", ""),
+                "universe_utc": raw.get("universe_utc", ""),
+                "holdings_after_open_min": raw.get("holdings_after_open_min", 10),
+                "universe_after_close_min": raw.get("universe_after_close_min", 120),
+            }
+            # Attach parsed instants (internal use)
+            out["_dt_open"] = _parse_iso_utc(out["open_utc"])
+            out["_dt_mid"] = _parse_iso_utc(out["mid_utc"])
+            out["_dt_close"] = _parse_iso_utc(out["close_utc"])
+            out["_dt_hold"] = _parse_iso_utc(out["holdings_utc"])
+            out["_dt_univ"] = _parse_iso_utc(out["universe_utc"])
+            return out
+        except Exception:
+            pass
 
+    # Fallback: build a minimal schedule for today using config HH:MM UTC (strings only)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    def _mk(hhmm: str) -> str:
+        hhmm = (hhmm or "00:00").strip()
+        return f"{today}T{hhmm}:00Z" if len(hhmm) == 5 else f"{today}T{hhmm}Z"
 
-def _enrich_status(base_status: dict) -> dict:
-    # Bot state
-    bot_state = _read_bot_state()
-    base_status["state"] = bot_state
-    base_status["bot_state"] = bot_state
-
-    # Schedules (UTC-only for runtime), plus localized display for UI
     open_hhmm = (get_open_time_utc() or "13:30").strip()
     mid_hhmm = (get_mid_time_utc() or "16:00").strip()
     close_hhmm = (get_close_time_utc() or "19:45").strip()
-    mclose_hhmm = (get_market_close_utc() or "21:00").strip()
 
-    tz_name = get_cfg_timezone() or "UTC"
-
-    schedules = {}
-    for key, hhmm in {
-        "open": open_hhmm,
-        "mid": mid_hhmm,
-        "close": close_hhmm,
-        "market_close": mclose_hhmm,
-    }.items():
-        today_utc = _today_dt_for(hhmm)
-        next_utc = _next_dt_for(hhmm)
-        schedules[key] = {
-            "today_utc": today_utc.strftime("%Y-%m-%dT%H:%MZ"),
-            "today_local": _format_local(today_utc, tz_name),
-            "next_utc": next_utc.strftime("%Y-%m-%dT%H:%MZ"),
-            "next_local": _format_local(next_utc, tz_name),
-        }
-
-    base_status["timezone"] = tz_name
-    base_status["schedules"] = schedules
-
-    # Run badges for today based on stamps
-    run_badges = {
-        "open": _badge_for("open", OPEN_STAMP, open_hhmm, bot_state),
-        "mid": _badge_for("mid", MID_STAMP, mid_hhmm, bot_state),
-        "close": _badge_for("close", CLOSE_STAMP, close_hhmm, bot_state),
+    fallback = {
+        "trading_date": today,
+        "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "open_utc": _mk(open_hhmm),
+        "mid_utc": _mk(mid_hhmm),
+        "close_utc": _mk(close_hhmm),
+        "holdings_utc": "",  # computed by supervisor; leave empty in fallback
+        "universe_utc": "",
+        "holdings_after_open_min": 10,
+        "universe_after_close_min": 120,
     }
-    base_status["run_badges"] = run_badges
+    fallback["_dt_open"] = _parse_iso_utc(fallback["open_utc"])
+    fallback["_dt_mid"] = _parse_iso_utc(fallback["mid_utc"])
+    fallback["_dt_close"] = _parse_iso_utc(fallback["close_utc"])
+    fallback["_dt_hold"] = None
+    fallback["_dt_univ"] = None
+    return fallback
 
-    return base_status
+def _determine_current_phase(schedule: dict) -> str:
+    if not schedule:
+        return "unknown"
+    now = datetime.now(timezone.utc)
+    t_open = schedule.get("_dt_open")
+    t_mid = schedule.get("_dt_mid")
+    t_close = schedule.get("_dt_close")
+    t_univ = schedule.get("_dt_univ")
+    if not t_open or not t_mid or not t_close:
+        return "unknown"
+    if now < t_open:
+        return "pre"
+    if t_open <= now < t_mid:
+        return "open"
+    if t_mid <= now < t_close:
+        return "mid"
+    if t_close <= now and (not t_univ or now < t_univ):
+        return "close"
+    if t_univ and now >= t_univ:
+        return "post"
+    return "post"
 
+def _enrich_status(base_status: dict) -> dict:
+    # Ensure baseline keys exist
+    enriched = dict(DEFAULT_STATUS)
+    enriched.update(base_status or {})
+    # Bot state
+    bot_state = _read_bot_state()
+    enriched["state"] = bot_state
+    enriched["bot_state"] = bot_state
+    # Config (UTC HH:MM) for display fallback
+    enriched["config_schedule_utc"] = {
+        "open_hhmm": (get_open_time_utc() or "13:30").strip(),
+        "mid_hhmm": (get_mid_time_utc() or "16:00").strip(),
+        "close_hhmm": (get_close_time_utc() or "19:45").strip(),
+        "market_close_hhmm": (get_market_close_utc() or "21:00").strip(),
+    }
+    # Supervisor schedule (strings in UTC) and current phase
+    schedule = _read_schedule()
+    enriched["schedule"] = {k: v for k, v in (schedule or {}).items() if not k.startswith("_dt_")}
+    enriched["current_phase"] = _determine_current_phase(schedule)
+    return enriched
 
 @status_blueprint.route("/status")
 @login_required
 def status_page():
-    """
-    Loads bot status from JSON and renders to dashboard.
-    Surfaces bot_state, run badges (open/mid/close), next UTC/localized schedule times.
-    """
     status_data = _enrich_status(_read_status_json())
-
-    # Load candidate status data (if present)
+    # Candidate status (optional)
     candidate_status_file = Path(get_output_path("logs", "candidate_pool_status.json"))
     try:
         with open(candidate_status_file, "r", encoding="utf-8") as f:
@@ -173,21 +189,15 @@ def status_page():
         candidate_data = []
     except Exception as e:
         candidate_data = [{"error": f"Failed to load candidate status: {e}"}]
-
-    return render_template("status.html", status=status_data, candidate_status=candidate_data)
-
+    schedule = status_data.get("schedule")
+    return render_template("status.html", status=status_data, candidate_status=candidate_data, schedule=schedule)
 
 @status_blueprint.route("/api/bot_state")
 @login_required
 def bot_state_api():
-    data = _enrich_status(_read_status_json())
-    return jsonify(data)
-
+    return jsonify(_enrich_status(_read_status_json()))
 
 @status_blueprint.route("/api/full_status")
 @login_required
 def full_status_api():
-    data = _enrich_status(_read_status_json())
-    return jsonify(data)
-
-# Remove candidate_status endpoint; candidate data is now integrated into /status page
+    return jsonify(_enrich_status(_read_status_json()))

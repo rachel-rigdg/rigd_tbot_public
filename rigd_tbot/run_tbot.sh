@@ -1,7 +1,8 @@
 #!/bin/bash
 # run_tbot.sh
-# Launches TradeBot unified entrypoint (main.py is a pure dispatcher: only launches Flask UI and tbot_supervisor.py).
-# All persistent worker/watcher/test runner modules are launched exclusively by tbot_supervisor.py (v045+).
+# Launches TradeBot with daily one-shot supervisor via systemd user units.
+# - tbot_bot.service: Web UI only
+# - tbot_supervisor@.service + tbot_supervisor.timer: daily orchestration (UTC)
 
 set -e
 
@@ -17,26 +18,44 @@ IBKR_SYMLINK="$USER_IBKR_PATH/ibgateway.sh"
 IBKR_SYSTEMD_UNIT="$ROOT_DIR/systemd_units/ibgateway.service"
 LOG_TAG="[run_tbot_launcher]"
 
+SUPERVISOR_TEMPLATE_UNIT="$SYSTEMD_UNIT_PATH/tbot_supervisor@.service"
+SUPERVISOR_TIMER_UNIT="$SYSTEMD_UNIT_PATH/tbot_supervisor.timer"
+
 # Ensure user session bus is available
 if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
     export $(dbus-launch)
 fi
 
 echo "$LOG_TAG Checking if user lingering is enabled..."
-if ! loginctl show-user $(id -u) | grep -q "Linger=yes"; then
+if ! loginctl show-user "$(id -u)" | grep -q "Linger=yes"; then
     echo "$LOG_TAG Enabling user lingering for $(whoami)..."
-    sudo loginctl enable-linger $(whoami)
+    sudo loginctl enable-linger "$(whoami)"
 fi
 
-echo "$LOG_TAG Stopping any existing TradeBot core systemd process..."
+echo "$LOG_TAG Preparing user systemd unit directory..."
+mkdir -p ~/.config/systemd/user/
+
+echo "$LOG_TAG Stopping any existing TradeBot core web service (if running)..."
 systemctl --user stop tbot_bot.service || true
 
-systemctl --user daemon-reexec
-systemctl --user daemon-reload
+echo "$LOG_TAG Reloading systemd user manager..."
+systemctl --user daemon-reexec || true
+systemctl --user daemon-reload || true
 
-echo "$LOG_TAG Linking systemd unit file for TradeBot core..."
-mkdir -p ~/.config/systemd/user/
+echo "$LOG_TAG Linking systemd unit file for TradeBot Web UI..."
 ln -sf "$SYSTEMD_UNIT_PATH"/tbot_bot.service ~/.config/systemd/user/
+
+echo "$LOG_TAG Linking daily supervisor units..."
+if [ -f "$SUPERVISOR_TEMPLATE_UNIT" ]; then
+  ln -sf "$SUPERVISOR_TEMPLATE_UNIT" ~/.config/systemd/user/
+else
+  echo "$LOG_TAG [ERROR] Missing $SUPERVISOR_TEMPLATE_UNIT"; exit 1
+fi
+if [ -f "$SUPERVISOR_TIMER_UNIT" ]; then
+  ln -sf "$SUPERVISOR_TIMER_UNIT" ~/.config/systemd/user/
+else
+  echo "$LOG_TAG [ERROR] Missing $SUPERVISOR_TIMER_UNIT"; exit 1
+fi
 
 # === IB Gateway Auto-Deploy (for remote/server use) ===
 echo "$LOG_TAG Checking for IB Gateway installer..."
@@ -58,9 +77,18 @@ else
     echo "$LOG_TAG [WARN] IBKR Gateway installer not found at $IBKR_INSTALLER_PATH. Skipping IB Gateway setup."
 fi
 
+echo "$LOG_TAG Reloading user units after linking…"
 systemctl --user daemon-reload
 
-echo "$LOG_TAG Enabling and starting tbot_bot.service..."
+echo "$LOG_TAG Enabling and starting Web UI (tbot_bot.service)…"
 systemctl --user enable --now tbot_bot.service
 
-echo "$LOG_TAG TradeBot launched. Supervisor orchestration is enforced. Unified runtime and web UI are ready for testing."
+echo "$LOG_TAG Enabling daily supervisor timer (UTC 00:01 on trading days)…"
+systemctl --user enable --now tbot_supervisor.timer
+
+# Kick off today's one-shot run explicitly (safe no-op if already ran/locked)
+TODAY_UTC="$(date -u +%F)"
+echo "$LOG_TAG Starting today's supervisor instance: tbot_supervisor@${TODAY_UTC}.service"
+systemctl --user start "tbot_supervisor@${TODAY_UTC}.service" || true
+
+echo "$LOG_TAG TradeBot launched. Web UI is active; supervisor is scheduled daily via timer and started for today."

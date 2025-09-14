@@ -1,5 +1,11 @@
 # tbot_bot/runtime/main.py
 # Main entrypoint for TradeBot (single systemd-launched entry).
+# Launches a single unified Flask app (portal_web_main.py) for UI,
+# performs build checks/env decrypt/identity snapshot, updates bot_state,
+# waits briefly for provisioning, and exits. NO scheduling or supervisor launch here.
+
+# tbot_bot/runtime/main.py
+# Main entrypoint for TradeBot (single systemd-launched entry).
 # Launches a single unified Flask app (portal_web_main.py) for all phases,
 # waits for configuration/provisioning to complete, then launches tbot_supervisor.py.
 
@@ -63,17 +69,15 @@ def write_stop_log():
         print(f"[main.py][ERROR][write_stop_log] {e}", flush=True)
 
 def _wait_for_operational_phase(deadline_epoch: float) -> bool:
-    """
-    Waits until bot_state.txt reports an operational phase or until deadline.
-    Returns True if we observed an operational phase; False on timeout.
-    Never raises.
-    """
     operational_phases = {
-        "running", "idle", "analyzing", "monitoring", "trading", "updating", "stopped",
-        "graceful_closing_positions", "emergency_closing_positions"
+        "idle",
+        "analyzing",
+        "trading",
+        "monitoring",
+        "updating",
+        "graceful_closing_positions",
+        "shutdown_triggered",
     }
-    write_system_log("Waiting for bot_state.txt to reach operational phase...")
-    print("[main.py] Waiting for bot_state.txt to reach operational phase...", flush=True)
     last_logged = 0
     while time.time() < deadline_epoch:
         try:
@@ -92,9 +96,40 @@ def _wait_for_operational_phase(deadline_epoch: float) -> bool:
                 last_logged = time.time()
         time.sleep(1)
 
-    write_system_log(f"[wait_for_operational_phase] Timeout after {int(deadline_epoch - (time.time() - 0))}s; proceeding anyway.")
+    write_system_log(f"[wait_for_operational_phase] Timeout afte...{int(deadline_epoch - (time.time() - 0))}s; proceeding anyway.")
     print(f"[main.py] Operational phase wait timed out; proceeding.", flush=True)
     return False
+
+def _write_bot_state(state: str) -> None:
+    try:
+        CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+        BOT_STATE_PATH.write_text(state.strip() + "\n", encoding="utf-8")
+    except Exception as e:
+        write_system_log(f"[write_bot_state] failed: {e}")
+
+def _run_build_checks_and_env_decrypt() -> None:
+    """Best-effort: run build checks and decrypt env, but never crash main."""
+    try:
+        try:
+            from tbot_bot.support.build_check import run_build_check
+            run_build_check()
+            write_system_log("build_check: OK")
+        except Exception as e:
+            write_system_log(f"build_check: ERROR: {e}")
+        try:
+            from tbot_bot.security.security_bot import load_and_cache_env
+            load_and_cache_env()
+            write_system_log("env_decrypt: OK")
+        except Exception as e:
+            write_system_log(f"env_decrypt: ERROR: {e}")
+        try:
+            from tbot_bot.support.utils_identity import write_identity_snapshot
+            write_identity_snapshot()
+            write_system_log("identity_snapshot: OK")
+        except Exception as e:
+            write_system_log(f"identity_snapshot: ERROR: {e}")
+    except Exception as ex:
+        write_system_log(f"_run_build_checks_and_env_decrypt: unexpected error: {ex}")
 
 def main():
     # Determine if this looks like the first bootstrap (provisioning not completed yet).
@@ -105,19 +140,23 @@ def main():
         print("[main.py][WARN] bootstrap_utils unavailable; assuming not first bootstrap.", flush=True)
         first_bootstrap = False
 
+    # Write start, set analyzing
     write_start_log()
+    _write_bot_state("analyzing")
 
-    # Ensure the web UI is up (or reuse an existing one).
+    # Build checks, env decrypt, identity snapshot
+    _run_build_checks_and_env_decrypt()
+
+    # Optional Web UI
     flask_proc = None
-    if _port_occupied(WEB_HOST, WEB_PORT):
-        msg = f"Web already running on {WEB_HOST}:{WEB_PORT}; skipping UI launch."
-        print(f"[main.py] {msg}", flush=True)
-        write_system_log(msg)
-    else:
-        phase_msg = " (bootstrap configuration mode)" if first_bootstrap else ""
-        write_system_log("Launching unified Flask app (portal_web_main.py)..." + phase_msg)
-        print("[main.py] Launching unified Flask app (portal_web_main.py)..." + phase_msg, flush=True)
-        try:
+    try:
+        if _port_occupied(WEB_HOST, WEB_PORT):
+            msg = f"Web already running on {WEB_HOST}:{WEB_PORT}; skipping UI launch."
+            print(f"[main.py] {msg}", flush=True)
+            write_system_log(msg)
+        else:
+            write_system_log("Launching unified Flask app (portal_web_main.py)...")
+            print("[main.py] Launching unified Flask app (portal_web_main.py)...", flush=True)
             flask_proc = subprocess.Popen(
                 ["python3", str(WEB_MAIN_PATH)],
                 stdout=None,
@@ -125,62 +164,19 @@ def main():
             )
             write_system_log(f"portal_web_main.py started with PID {flask_proc.pid}")
             print(f"[main.py] portal_web_main.py started with PID {flask_proc.pid}", flush=True)
-        except Exception as e:
-            write_system_log(f"Failed to launch portal_web_main.py: {e}; proceeding to supervisor.")
-            print(f"[main.py] Failed to launch UI: {e}. Proceeding.", flush=True)
-            flask_proc = None
+    except Exception as e:
+        write_system_log(f"Failed to launch portal_web_main.py: {e}")
+        print(f"[main.py] Failed to launch UI: {e}", flush=True)
 
-    # Wait for operational state:
-    # - First bootstrap: wait longer to allow provisioning to complete.
-    # - Normal path: brief wait (can be tuned with TBOT_WAIT_OPS_SECS).
+    # Allow provisioning window then exit; NO scheduling here.
     wait_secs = WAIT_BOOTSTRAP_SECS if first_bootstrap else WAIT_OPS_SECS
     deadline = time.time() + max(0, wait_secs)
     _ = _wait_for_operational_phase(deadline_epoch=deadline)
 
-    # Launch tbot_supervisor.py (single persistent process manager) — ALWAYS.
-    write_system_log("Launching tbot_supervisor.py (phase/process supervisor)...")
-    print("[main.py] Launching tbot_supervisor.py (phase/process supervisor)...", flush=True)
-    supervisor_proc = None
-    try:
-        supervisor_proc = subprocess.Popen(
-            ["python3", str(TBOT_SUPERVISOR_PATH)],
-            stdout=None,
-            stderr=None
-        )
-        write_system_log(f"tbot_supervisor.py started with PID {supervisor_proc.pid}")
-        print(f"[main.py] tbot_supervisor.py started with PID {supervisor_proc.pid}", flush=True)
-    except Exception as e:
-        write_system_log(f"ERROR launching tbot_supervisor.py: {e}")
-        print(f"[main.py] ERROR launching tbot_supervisor.py: {e}", flush=True)
-
-    # Block on whichever we actually started.
-    try:
-        if flask_proc is not None:
-            flask_proc.wait()
-        elif supervisor_proc is not None:
-            supervisor_proc.wait()
-        else:
-            while True:
-                time.sleep(60)
-    except KeyboardInterrupt:
-        write_system_log("KeyboardInterrupt received, terminating child processes...")
-        print("[main.py] KeyboardInterrupt received, terminating child processes...", flush=True)
-    finally:
-        try:
-            if flask_proc is not None:
-                write_system_log("Terminating Flask process...")
-                print("[main.py] Terminating Flask process...", flush=True)
-                flask_proc.terminate()
-        except Exception as ex3:
-            write_system_log(f"Exception terminating Flask process: {ex3}")
-        try:
-            if supervisor_proc is not None:
-                write_system_log("Terminating supervisor process...")
-                print("[main.py] Terminating supervisor process...", flush=True)
-                supervisor_proc.terminate()
-        except Exception as ex4:
-            write_system_log(f"Exception terminating supervisor process: {ex4}")
-        write_stop_log()
+    _write_bot_state("idle")
+    write_system_log("Exiting main.py (no scheduling; supervisor is timer-driven).")
+    write_stop_log()
+    # Do not manage/terminate web process here; this entrypoint exits cleanly.
 
 if __name__ == "__main__":
     main()

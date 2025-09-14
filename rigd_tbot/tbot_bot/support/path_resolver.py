@@ -24,7 +24,8 @@ CATEGORIES = {
     "summaries": "summaries",
     "trades": "trades",
     "screeners": "screeners",
-    "enhancements": "enhancements"
+    "enhancements": "enhancements",
+    "locks": "locks",  # NEW: for per-day/per-task lockfiles
 }
 
 SYSTEM_LOG_FILES = [
@@ -367,6 +368,38 @@ def resolve_holdings_secrets_backup_dir() -> Path:
     backup_dir.mkdir(parents=True, exist_ok=True)
     return backup_dir
 
+# ----------------------------------------------------------------------
+# NEW HELPERS (scoped to {BOT_IDENTITY}) for supervisor, logs, and lockfiles
+# ----------------------------------------------------------------------
+
+def get_schedule_json_path(bot_identity: str = None) -> str:
+    """
+    .../output/{BOT_IDENTITY}/logs/schedule.json
+    Falls back to generic output/logs if identity is not yet available (bootstrap).
+    """
+    return get_output_path(category="logs", filename="schedule.json", bot_identity=bot_identity)
+
+def get_supervisor_lock_path(trading_date: str, bot_identity: str = None) -> str:
+    """
+    .../output/{BOT_IDENTITY}/locks/supervisor_<date>.lock
+    """
+    fname = f"supervisor_{trading_date}.lock"
+    return get_output_path(category="locks", filename=fname, bot_identity=bot_identity)
+
+def get_holdings_lock_path(trading_date: str, bot_identity: str = None) -> str:
+    """
+    .../output/{BOT_IDENTITY}/locks/holdings_<date>.lock
+    """
+    fname = f"holdings_{trading_date}.lock"
+    return get_output_path(category="locks", filename=fname, bot_identity=bot_identity)
+
+def get_phase_log_path(phase: str, bot_identity: str = None) -> str:
+    """
+    .../output/{BOT_IDENTITY}/logs/{phase}.log
+    """
+    fname = f"{phase}.log"
+    return get_output_path(category="logs", filename=fname, bot_identity=bot_identity)
+
 __all__ = [
     "get_bot_identity",
     "validate_bot_identity",
@@ -423,5 +456,10 @@ __all__ = [
     "resolve_holdings_audit_log_path",
     "resolve_holdings_secrets_path",
     "resolve_holdings_secrets_key_path",
-    "resolve_holdings_secrets_backup_dir"
+    "resolve_holdings_secrets_backup_dir",
+    # NEW:
+    "get_schedule_json_path",
+    "get_supervisor_lock_path",
+    "get_holdings_lock_path",
+    "get_phase_log_path",
 ]

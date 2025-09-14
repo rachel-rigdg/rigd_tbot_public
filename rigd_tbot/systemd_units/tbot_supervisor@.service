@@ -1,0 +1,34 @@
+# systemd_units/tbot_supervisor@.service
+[Unit]
+Description=RIGD TradeBot Daily Supervisor (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Optional environment overrides:
+#  - /etc/default/rigd_tbot            (system-wide)
+#  - ~/.config/rigd_tbot/env           (per-user)
+EnvironmentFile=-/etc/default/rigd_tbot
+EnvironmentFile=-%h/.config/rigd_tbot/env
+# Expected vars if provided via EnvironmentFile(s):
+#   TBOT_WORKDIR=/path/to/rigd_tbot
+#   TBOT_PYTHON=/path/to/venv/bin/python
+WorkingDirectory=${TBOT_WORKDIR}
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${TBOT_PYTHON:-/usr/bin/python3} -m tbot_bot.runtime.tbot_supervisor --date=%i
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

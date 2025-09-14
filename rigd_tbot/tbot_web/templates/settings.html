@@ -15,6 +15,13 @@
 <body class="settings-page">
     <header class="dashboard-header">
         <h1>TradeBot Settings</h1>
+        <p style="margin:.5rem 0 0;color:#666;">
+            <strong>Scheduler:</strong> Daily one-shot supervisor (runs via timer at <code>00:01 UTC</code>).
+            <br>
+            <strong>Start/Stop:</strong> Changes affect the <em>next trading day</em>. Same-day cancel is honored <em>between phases</em>.
+            <br>
+            <strong>Time inputs:</strong> Enter times in your <em>local timezone</em>; they are converted to UTC on save.
+        </p>
     </header>
 
     <main class="dashboard-main">
@@ -30,7 +37,12 @@
                 {% for key in keys %}
                     {% if key in config and key != "TEST_MODE" %}
                     <div class="form-group">
-                        <label for="{{ key }}">{{ key }}</label>
+                        <label for="{{ key }}">
+                            {{ key }}
+                            {% if key in ["START_TIME_OPEN_LOCAL","START_TIME_MID_LOCAL","START_TIME_CLOSE_LOCAL"] %}
+                                <span style="color:#888;font-weight:normal;">(local time; converted to UTC on save)</span>
+                            {% endif %}
+                        </label>
                         <input 
                             type="text" 
                             id="{{ key }}" 
@@ -55,7 +67,12 @@
                 <h3 style="margin-top:2em;">Other</h3>
                 {% for key in other_keys %}
                 <div class="form-group">
-                    <label for="{{ key }}">{{ key }}</label>
+                    <label for="{{ key }}">
+                        {{ key }}
+                        {% if key in ["START_TIME_OPEN_LOCAL","START_TIME_MID_LOCAL","START_TIME_CLOSE_LOCAL"] %}
+                            <span style="color:#888;font-weight:normal;">(local time; converted to UTC on save)</span>
+                        {% endif %}
+                    </label>
                     <input 
                         type="text" 
                         id="{{ key }}" 
@@ -75,8 +92,6 @@
         <p class="update-status">{{ status }}</p>
         {% endif %}
     </main>
-
- 
 
     <script>
         // Optional: Enhance UX with client-side validation or AJAX submit in future

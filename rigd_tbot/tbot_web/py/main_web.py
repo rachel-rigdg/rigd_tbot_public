@@ -1,4 +1,6 @@
 # tbot_web/py/main_web.py
+# Routing does NOT assume an always-on supervisor. UI renders based on bot_state only.
+# Daily one-shot supervisor orchestration is external; this file makes no liveness assumptions.
 
 from flask import Blueprint, redirect, url_for, render_template, session, request, jsonify
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
@@ -9,6 +11,7 @@ from pathlib import Path
 main_blueprint = Blueprint("main", __name__)
 BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
+# States per Document 070 (unchanged semantics)
 PHASE1_STATES = ("initialize", "provisioning", "bootstrapping", "registration")
 
 def get_current_bot_state():
@@ -48,7 +51,7 @@ def root_router():
     if not user_exists():
         return redirect(url_for("register_web.register_page"))
 
-    # Normal operational state: serve main UI
+    # Normal operational state: serve main UI (independent of whether today's supervisor has run yet)
     return render_template("main.html", bot_state=state)
 
 @main_blueprint.route("/provisioning", methods=["GET"])

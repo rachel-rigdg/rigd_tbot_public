@@ -16,10 +16,35 @@
     <div class="main-container">
         <div style="width:70%; margin-left:auto; margin-right:auto;">
             <h1>TradeBot Status</h1>
+            <p style="margin-top:-6px;color:#666;">
+                Orchestration: <strong>daily one-shot supervisor</strong> (systemd timer @ <code>00:01 UTC</code>).
+            </p>
 
             {% if status.error %}
                 <p class="error">{{ status.error }}</p>
             {% else %}
+                <!-- Daily one-shot supervisor schedule (from logs/schedule.json if present) -->
+                <hr>
+                <h2>Supervisor Schedule (UTC)</h2>
+                <p style="color:#666;margin-top:-6px;">Times below are in UTC and generated once per day by the supervisor.</p>
+
+                {% if schedule %}
+                    <div class="status-grid">
+                        <div><strong>Trading Date:</strong> {{ schedule.trading_date }}</div>
+                        <div><strong>Created:</strong> {{ schedule.created_at_utc }}</div>
+                        <div><strong>Open:</strong> {{ schedule.open_utc }}</div>
+                        <div><strong>Holdings (after open):</strong> {{ schedule.holdings_utc }} <span style="color:#666;">(+{{ schedule.holdings_after_open_min }}m)</span></div>
+                        <div><strong>Mid:</strong> {{ schedule.mid_utc }}</div>
+                        <div><strong>Close:</strong> {{ schedule.close_utc }}</div>
+                        <div><strong>Universe (after close):</strong> {{ schedule.universe_utc }} <span style="color:#666;">(+{{ schedule.universe_after_close_min }}m)</span></div>
+                    </div>
+                {% else %}
+                    <p><em>Schedule not generated yet for today.</em></p>
+                    <p><strong>Next run:</strong> tomorrow <code>00:01 UTC</code> (timer)</p>
+                {% endif %}
+
+                <hr>
+
                 <div class="status-grid">
                     <div><strong>Running State:</strong> 
                         <span id="status-running-state">

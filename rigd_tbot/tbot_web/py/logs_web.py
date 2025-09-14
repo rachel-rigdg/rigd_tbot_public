@@ -18,6 +18,16 @@ TIME_FORMATS = [
     "%Y-%m-%d %H:%M:%S",
 ]
 
+# Ensure these appear in the dropdown even if the files are not present yet
+REQUIRED_DEFAULT_LOGS = {
+    "open.log",
+    "mid.log",
+    "close.log",
+    "router.log",
+    "schedule.json",
+    "error_tracebacks.log",
+}
+
 def parse_timestamp(line):
     for tag in ('"timestamp":', "'timestamp':", "timestamp=", "timestamp:"):
         idx = line.find(tag)
@@ -41,17 +51,41 @@ def parse_timestamp(line):
     return None
 
 def enumerate_log_files():
-    # List all .log and .json files in logs dir and add to dropdown (dedup, sorted)
-    logs_dirs = [
-        Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs",
-        Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs"
-    ]
+    """
+    List .log and .json files from identity-scoped logs, global logs, and bootstrap logs.
+    Always include REQUIRED_DEFAULT_LOGS in the dropdown (even if missing on disk).
+    """
     file_set = set()
-    for log_dir in logs_dirs:
-        if log_dir.exists() and log_dir.is_dir():
-            for p in log_dir.iterdir():
+
+    # 1) Identity-scoped logs (preferred)
+    try:
+        bot_identity_string = load_bot_identity()
+        validate_bot_identity(bot_identity_string)
+        identity_logs_dir = Path(get_output_path("logs", None, bot_identity=bot_identity_string, output_subdir=True))
+        if identity_logs_dir.exists() and identity_logs_dir.is_dir():
+            for p in identity_logs_dir.iterdir():
                 if p.is_file() and (p.suffix in (".log", ".json") or "log" in p.name):
                     file_set.add(p.name)
+    except Exception:
+        pass  # fall back to shared/bootstrapping directories
+
+    # 2) Shared logs directory
+    shared_logs_dir = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "logs"
+    if shared_logs_dir.exists() and shared_logs_dir.is_dir():
+        for p in shared_logs_dir.iterdir():
+            if p.is_file() and (p.suffix in (".log", ".json") or "log" in p.name):
+                file_set.add(p.name)
+
+    # 3) Bootstrap logs directory
+    bootstrap_logs_dir = Path(__file__).resolve().parents[2] / "tbot_bot" / "output" / "bootstrap" / "logs"
+    if bootstrap_logs_dir.exists() and bootstrap_logs_dir.is_dir():
+        for p in bootstrap_logs_dir.iterdir():
+            if p.is_file() and (p.suffix in (".log", ".json") or "log" in p.name):
+                file_set.add(p.name)
+
+    # Ensure required defaults are present for selection
+    file_set |= REQUIRED_DEFAULT_LOGS
+
     return sorted(file_set)
 
 def find_log_file(selected_log, warn_list=None):

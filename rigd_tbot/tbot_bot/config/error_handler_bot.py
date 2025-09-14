@@ -17,11 +17,15 @@ LOG_FORMAT = config.get("LOG_FORMAT", "json")
 # Use new path_resolver logic, always require both category and filename
 LOG_FILE = get_output_path(category="logs", filename="unresolved_orders.log")
 
+# NEW: Dedicated consolidated error traceback log for all workers/supervisor
+ERROR_TRACEBACKS_FILE = get_output_path(category="logs", filename="error_tracebacks.log")
+
 ERROR_CATEGORIES = ["NetworkError", "BrokerError", "LogicError", "ConfigError"]
 
 def log_error(error_type, strategy_name, broker, exception, error_code=None):
     """
     Logs error in a structured format and sends alert if necessary.
+    Also appends a full record (incl. stack) to error_tracebacks.log for unified diagnostics.
     """
     timestamp = datetime.now(timezone.utc).isoformat()
     trace = traceback.format_exc(limit=5)
@@ -41,6 +45,7 @@ def log_error(error_type, strategy_name, broker, exception, error_code=None):
     for k, v in log_data.items():
         print(f"    {k}: {v}", file=sys.stderr)
 
+    # Legacy/structured destination (preserved)
     try:
         Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -52,7 +57,16 @@ def log_error(error_type, strategy_name, broker, exception, error_code=None):
                     f"{timestamp},{strategy_name},{broker},{error_type},{error_code},{exception}\n"
                 )
     except Exception as log_exc:
-        print("[error_handler_bot] Failed to write to log:", log_exc, file=sys.stderr)
+        print("[error_handler_bot] Failed to write to unresolved_orders.log:", log_exc, file=sys.stderr)
+
+    # NEW: Unified error tracebacks log (required)
+    try:
+        Path(ERROR_TRACEBACKS_FILE).parent.mkdir(parents=True, exist_ok=True)
+        with open(ERROR_TRACEBACKS_FILE, "a", encoding="utf-8") as ef:
+            import json
+            ef.write(json.dumps(log_data) + "\n")
+    except Exception as et_exc:
+        print("[error_handler_bot] Failed to write to error_tracebacks.log:", et_exc, file=sys.stderr)
 
     if error_type in ["BrokerError", "NetworkError", "ConfigError"]:
         notify_critical_error(

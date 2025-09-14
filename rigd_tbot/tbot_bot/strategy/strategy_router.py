@@ -21,6 +21,7 @@ config = get_bot_config()
 
 # Router respects enable/disable flags and declared order but does not self-schedule.
 STRATEGY_SEQUENCE = [s.strip().lower() for s in config.get("STRATEGY_SEQUENCE", "open,mid,close").split(",")]
+
 STRAT_OPEN_ENABLED = bool(config.get("STRAT_OPEN_ENABLED", True))
 STRAT_MID_ENABLED = bool(config.get("STRAT_MID_ENABLED", True))
 STRAT_CLOSE_ENABLED = bool(config.get("STRAT_CLOSE_ENABLED", True))
@@ -203,3 +204,93 @@ def execute_strategy(name: str, screener_override: str = None) -> StrategyResult
 
 # Entry point alias for legacy callers
 run_strategy = route_strategy
+
+# ---------------------------
+# SINGLE-RUN CLI ENTRYPOINT
+# ---------------------------
+
+def _router_log(line: str) -> None:
+    """Append a line to router.log via path_resolver; also print for phase logs."""
+    try:
+        from tbot_bot.support.path_resolver import get_output_path
+        log_file = Path(get_output_path(category="logs", filename="router.log"))
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, "a", encoding="utf-8") as f:
+            import datetime as _dt
+            f.write(f"{_dt.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} [strategy_router] {line}\n")
+    except Exception:
+        pass
+    try:
+        print(f"[strategy_router] {line}", flush=True)
+    except Exception:
+        pass
+
+
+def _self_check(session: str) -> None:
+    """Fail fast on invalid session, missing strategy import, env/config/logs issues."""
+    if session not in {"open", "mid", "close"}:
+        raise ValueError(f"invalid --session '{session}', expected one of: open, mid, close")
+    # Strategy importability
+    try:
+        if session == "open":
+            from tbot_bot.strategy.strategy_open import run_open_strategy  # noqa: F401
+        elif session == "mid":
+            from tbot_bot.strategy.strategy_mid import run_mid_strategy  # noqa: F401
+        else:
+            from tbot_bot.strategy.strategy_close import run_close_strategy  # noqa: F401
+    except Exception as e:
+        raise RuntimeError(f"strategy import failed for session={session}: {e}") from e
+
+    # Env/config minimal sanity
+    try:
+        from tbot_bot.config.env_bot import get_bot_config as _get_cfg
+        cfg = _get_cfg()
+        for k in ("START_TIME_OPEN", "START_TIME_MID", "START_TIME_CLOSE"):
+            if not str(cfg.get(k, "")).strip():
+                raise RuntimeError(f"missing required config: {k}")
+    except Exception as e:
+        raise RuntimeError(f"env/config bootstrap failed: {e}") from e
+
+    # path_resolver logging available
+    try:
+        from tbot_bot.support.path_resolver import get_output_path as _gop
+        _ = _gop(category="logs", filename="router.log")
+    except Exception as e:
+        raise RuntimeError(f"path_resolver/logs not available: {e}") from e
+
+
+def _run_session(session: str) -> int:
+    """Run the requested session once; treat skipped/errors as non-zero for supervisor."""
+    try:
+        res = execute_strategy(session)
+    except Exception as e:
+        _router_log(f"execute_strategy exception: {e}")
+        return 1
+    if getattr(res, "errors", None):
+        return 1
+    if getattr(res, "skipped", False):
+        return 1
+    return 0
+
+
+def main(argv=None) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description="Strategy Router (single-run worker)")
+    parser.add_argument("--session", required=True, choices=["open","mid","close"],
+                        help="Trading session to run once.")
+    args = parser.parse_args(argv)
+
+    try:
+        _self_check(args.session)
+    except Exception as e:
+        _router_log(f"self_check FAILED: {e}")
+        return 2
+
+    rc = _run_session(args.session)
+    _router_log(f"session={args.session} exit_code={rc}")
+    return rc
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    _sys.exit(main())

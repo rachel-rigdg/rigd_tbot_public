@@ -191,3 +191,29 @@ def get_close_time_local() -> str:
     """UI-only: START_TIME_CLOSE_LOCAL as 'HH:MM' in configured TIMEZONE."""
     v = load_env_var("START_TIME_CLOSE_LOCAL", "")
     return str(v or "").strip()
+
+# ----------------------------------------------------------------------
+# NEW: Supervisor delay/after-close getters (numeric with sane defaults)
+# ----------------------------------------------------------------------
+
+def get_sup_open_delay_min() -> int:
+    """
+    Minutes to wait AFTER open strategy finishes before running holdings maintenance.
+    Default: 10.
+    """
+    v = load_env_var("SUP_OPEN_DELAY_MIN", 10)
+    try:
+        return int(v)
+    except Exception:
+        return 10
+
+def get_sup_universe_after_close_min() -> int:
+    """
+    Minutes to wait AFTER close strategy finishes before running the universe build.
+    Default: 120.
+    """
+    v = load_env_var("SUP_UNIVERSE_AFTER_CLOSE_MIN", 120)
+    try:
+        return int(v)
+    except Exception:
+        return 120
