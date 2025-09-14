@@ -3,11 +3,12 @@
 Description=RIGD TradeBot Daily Supervisor Timer
 
 [Timer]
-OnCalendar=Mon..Fri 00:01 UTC
+# Fire every weekday at 00:01 UTC (explicit form with date + seconds for robustness)
+OnCalendar=Mon..Fri *-*-* 00:01:00 UTC
 Unit=tbot_supervisor@%Y-%m-%d.service
 Persistent=true
 AccuracySec=1min
-RandomizedDelaySec=0s
+RandomizedDelaySec=0
 
 [Install]
 WantedBy=timers.target
