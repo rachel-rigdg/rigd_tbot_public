@@ -23,7 +23,7 @@ REQUIRED_DEFAULT_LOGS = {
     "open.log",
     "mid.log",
     "close.log",
-    "router.log",
+    "strategy_router.log",
     "schedule.json",
     "error_tracebacks.log",
 }

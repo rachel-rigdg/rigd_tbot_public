@@ -210,10 +210,10 @@ run_strategy = route_strategy
 # ---------------------------
 
 def _router_log(line: str) -> None:
-    """Append a line to router.log via path_resolver; also print for phase logs."""
+    """Append a line to strategy_router.log via path_resolver; also print for phase logs."""
     try:
         from tbot_bot.support.path_resolver import get_output_path
-        log_file = Path(get_output_path(category="logs", filename="router.log"))
+        log_file = Path(get_output_path(category="logs", filename="strategy_router.log"))
         log_file.parent.mkdir(parents=True, exist_ok=True)
         with open(log_file, "a", encoding="utf-8") as f:
             import datetime as _dt
@@ -254,7 +254,7 @@ def _self_check(session: str) -> None:
     # path_resolver logging available
     try:
         from tbot_bot.support.path_resolver import get_output_path as _gop
-        _ = _gop(category="logs", filename="router.log")
+        _ = _gop(category="logs", filename="strategy_router.log")
     except Exception as e:
         raise RuntimeError(f"path_resolver/logs not available: {e}") from e
 

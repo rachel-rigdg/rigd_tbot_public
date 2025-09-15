@@ -238,7 +238,7 @@ rigd_tbot/
 │   │   │   ├── key_manager.log                              # Key creation/rotation/verification activity log
 │   │   │   ├── main_bot.log (alias: system_logs.log)        # Main system-level log: lifecycle + errors (shown in logs.html)
 │   │   │   ├── heartbeat.log                                # API/connection heartbeat events (shown in logs.html)
-│   │   │   ├── router.log                                   # Strategy router events (optional; shown in logs.html if present)
+│   │   │   ├── strategy_router.log                          # strategy_router events (optional; shown in logs.html if present)
 │   │   │   ├── screener.log                                 # Screener/universe events (optional; shown in logs.html if present)
 │   │   │   ├── kill_switch.log                              # Kill switch/shutdown triggers (optional; shown in logs.html if present)
 │   │   │   ├── provisioning.log                             # Provisioning run log (shown in logs.html)
