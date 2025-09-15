@@ -1,14 +1,16 @@
 [Unit]
-Description=RIGD TradeBot Web UI (no scheduler)
-After=network.target
+Description=RIGD TradeBot (single-entry: web + scheduler)
 
 [Service]
 Type=simple
 WorkingDirectory=/home/tbot/rigd_tbot
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 -m tbot_bot.runtime.main
 Restart=always
-RestartSec=2s
-Environment=PYTHONUNBUFFERED=1
+RestartSec=5
+# (Optional) hardening
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=default.target
