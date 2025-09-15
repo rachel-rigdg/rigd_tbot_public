@@ -22,40 +22,66 @@ RIGD PHASE SUPERVISOR: USER-MODE SYSTEMD SPECIFICATION
 ================================================================================
 
 OBJECTIVE:
-Fully eliminate `sudo`/`visudo` from bot orchestration. The phase supervisor and
-systemd unit run entirely in *user mode*. Any `tbot`-like account can bootstrap
-and run the bot without elevated permissions.
+Eliminate `sudo`/`visudo` from bot orchestration. All orchestration runs in
+*user mode* under the `tbot` account. The bot is launched via a single
+user-mode unit (`tbot_bot.service`); **no separate `.timer` or `@instance`
+units exist.**
 
-Systemd model: **exactly one user-mode unit `tbot_bot.service` (no additional
-services or timers).** Strategy windows are orchestrated inside
-`main.py` + `tbot_supervisor.py` (supervisor is **mandatory** and launched by
-`main.py`).
+Systemd model: **exactly one user-mode unit `tbot_bot.service`.**
+- `tbot_bot/runtime/main.py` is the single entrypoint, launched by systemd or CLI.
+- `main.py` performs build checks, launches the unified Flask UI
+  (`tbot_web/py/portal_web_main.py`), and **self-schedules** the daily run of
+  `tbot_supervisor.py` at a configurable UTC time.
+- `tbot_supervisor.py` runs all phases (open → holdings → mid → close → universe)
+  sequentially, writes `bot_state.txt`, and exits. It is **never** a systemd unit.
+
+Environment knobs (read by `main.py`):
+- `TBOT_WEB_HOST` (default `0.0.0.0`) — Flask bind host.
+- `TBOT_WEB_PORT` (default `6900`)   — Flask port.
+- `TBOT_SUPERVISOR_ENABLE` (`1`/`0`, default `1`) — enable daily supervisor.
+- `TBOT_SUPERVISOR_UTC_HHMM` (default `0600`) — daily supervisor trigger (UTC).
+  - `0600` UTC ≈ 01:00 EST / 02:00 EDT.
+- `TBOT_MAIN_POLL_SECS` (default `5`) — main loop poll cadence.
+
+Late start behavior:
+- If `main.py` starts **after** the configured UTC trigger, it launches
+  `tbot_supervisor.py` **immediately** for “today” and then schedules the next
+  run for the following day.
 
 --------------------------------------------------------------------------------
 CORE IMPLEMENTATION
 --------------------------------------------------------------------------------
 
-1) Replace all `sudo systemctl …` with `systemctl --user …`
-   - Applies to any docs/scripts.
+1) Use user-mode systemd only:
+   - Replace all `sudo systemctl …` with `systemctl --user …`.
    - Example: `systemctl --user restart tbot_bot.service`
 
-2) Unit files live in the user tree
-   - Path: `/home/tbot/.config/systemd/user/`
-   - Do not set `User=` in user units (invalid).
+2) User unit path:
+   - `~/.config/systemd/user/tbot_bot.service`
    - `[Install]` must use `WantedBy=default.target`.
 
-3) Enable a persistent user systemd session
-   loginctl enable-linger tbot
+3) Persistent user manager:
+   - `loginctl enable-linger tbot`
 
-4) Environment setup for user services
-   Add to `~/.bashrc` (or launcher profile):
-     export XDG_RUNTIME_DIR=/run/user/$(id -u)
-   Timezone is UTC at the OS level; do not override per-process TZ.
+4) Session environment (add to shell profile):
+   ```bash
+   export XDG_RUNTIME_DIR=/run/user/$(id -u)
+
 
 5) Launch & manage the bot via user systemd
-   Start:  systemctl --user start tbot_bot.service
-   Enable: systemctl --user enable --now tbot_bot.service
+  systemctl --user daemon-reload
+  systemctl --user enable --now tbot_bot.service
    No `sudo` anywhere in Python or shell.
+
+Notes
+
+No .timer or @instance units are used.
+
+All paths resolved via tbot_bot/support/path_resolver.py.
+
+Logs go to journald and tbot_bot/output/ per policy.
+
+
 
 --------------------------------------------------------------------------------
 SYSTEMD INSTALLATION
@@ -67,7 +93,7 @@ cd ~/.config/systemd/user
 # Option A: symlink the provided unit
 ln -sf /home/tbot/rigd_tbot/systemd_units/tbot_bot.service tbot_bot.service
 
-# Option B: write the unit file here (see example below)
+# Option B: copy the unit file here
 
 systemctl --user daemon-reload
 systemctl --user enable --now tbot_bot.service
@@ -75,34 +101,32 @@ systemctl --user enable --now tbot_bot.service
 Example user unit (~/.config/systemd/user/tbot_bot.service):
 ----------------------------------------------------------------
 [Unit]
-Description=RIGD TradeBot (user-mode)
-After=network-online.target
-Wants=network-online.target
+Description=RIGD TradeBot Web UI (no scheduler)
+After=network.target
 
 [Service]
-Type=simple
-WorkingDirectory=/home/tbot/rigd_tbot
-ExecStart=/home/tbot/rigd_tbot/.venv/bin/python -m tbot_bot.runtime.main
-Restart=on-failure
-RestartSec=5
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/rigd_tbot
+ExecStart=/usr/bin/python3 -m tbot_bot.runtime.main
+# main.py stays resident (runs its own loop) or exits cleanly by design
+Restart=no
+
+# Flask bind and port (override via env if you want)
+Environment=TBOT_WEB_HOST=0.0.0.0
+Environment=TBOT_WEB_PORT=6900
+
+# Journaling only
 StandardOutput=journal
 StandardError=journal
-NoNewPrivileges=yes
-PrivateTmp=yes
 
 [Install]
 WantedBy=default.target
 ----------------------------------------------------------------
 
-Notes
-- `tbot_supervisor.py` is invoked by `tbot_bot.runtime.main` after provisioning;
-  it never runs as its own unit.
-- Logs go to journald and to `tbot_bot/output/` as per bot policy.
-- All internal paths are resolved via `tbot_bot/support/path_resolver.py`.
-
 Validation
-- systemctl --user status tbot_bot.service
-- journalctl --user -u tbot_bot.service -e
+- `systemctl --user status tbot_bot.service`
+- `journalctl --user -u tbot_bot.service -e`
 
 
 =============================================================================================================================================
@@ -113,67 +137,55 @@ Phase 0: Pre-Session (Preparation)
 ↓
 - Edit and validate `.env_bot` (strategy, risk, runtime) and `.env` (keypaths, credentials).
 - If encrypted, decrypt `.env_bot.enc` using `security_bot.py` with AES-256 key from `storage/keys/env_bot.key` (path via `path_resolver.py`).
-- Bootstrap via Web UI only (which writes `control_start.flag`).
+- Bootstrap via Web UI only (which writes required secrets and config).
 - Ensure all encrypted secret files (`bot_identity.json.enc`, `broker.json.enc`, etc.) exist post-bootstrap.
-- `.env_bot.enc` must exist pre-bootstrap.
 
 Phase 1: System Boot Validation
 ↓
 - `security_bot.py` decrypts `.env_bot.enc` using key from `storage/keys/env_bot.key`.
 - `env_bot.py` validates required env vars; missing/malformed values cause fatal error and halt.
 - Run `.self_check()` on critical modules (`risk_module.py`, `kill_switch.py`, `watchdog_bot.py`, `error_handler.py`, `strategy_router.py`).
-- Failures abort session and log error in UTC to `output/logs/error_tracebacks.log`.
-- All checks pass proceed to session init.
+- Failures abort session and log error to `output/logs/error_tracebacks.log` (UTC).
 
 Phase 2: Session Initialization
 ↓
-- `holdings_manager.py` manages all float, reserve, and long-term holdings logic, maintaining float target, tax reserve, payroll allocations, and persistent portfolio allocations per configuration.
-- Loads all holdings, float, tax, payroll, and allocation settings from the encrypted holdings secrets file (`holdings_secrets.json.enc`), not from `.env_bot`.
-- Runtime parameters for trading operations (e.g., `MAX_TRADES`, `TOTAL_ALLOCATION`) are loaded from `.env_bot` as before.
-- If `DEFENSE_MODE_ACTIVE=true`, apply stricter overrides to risk and allocation parameters.
-- All float, reserve, allocation, and holdings-related adjustments are posted exclusively to the modular ledger via `ledger_modules/` with full audit metadata; legacy audit logs and helpers are deprecated.
-- `status_bot.py` writes initial bot state to `output/status.json`.
-- Begin strategy cycle.
+- `holdings_manager.py` manages float/reserve/allocations with settings from encrypted holdings secrets.
+- Runtime trading parameters are loaded from `.env_bot`.
+- Defense-mode overrides enforced when enabled.
+- `status_bot.py` writes initial status to `output/{BOT_IDENTITY}/logs/status.json`.
+- Unified Flask UI starts (binding controlled by `TBOT_WEB_HOST`/`TBOT_WEB_PORT`).
 
-Phase 3: Strategy Cycle (Open → Mid → Close, UTC)
-For each enabled strategy:
+Phase 3: Daily Scheduling & Strategy Cycle (supervisor-driven, UTC)
 ↓
-- Load strategy module as per `.env_bot` toggles and schedule.
-- Each strategy runs `.self_check()` (API availability, timing, float).
-- Load the **active screener module(s)** selected via the Web UI/Credentials panel (no default). The operator chooses screeners for universe build, enrichment, and trading; the runtime loads the corresponding data-feed module(s).
-- For each symbol passing filters, calculate allocation and enforce caps (`MAX_RISK_PER_TRADE`, `MAX_TRADES`, etc.).
-- Submit orders via `broker_api.py`.
-- Log trades to `output/trades/`.
-- Log unresolved orders to `output/logs/unresolved_orders.log`.
-- Monitor positions continuously (stop loss, VWAP, PnL).
-- Strategy phase ends when time window closes.
-Each strategy writes ONLY its assigned log (open/mid/close) via main.py and not by any sub-process or worker.
+- `main.py` self-schedules the daily supervisor trigger at `TBOT_SUPERVISOR_UTC_HHMM` (UTC).
+  - If `main.py` starts **after** the trigger, it fires the supervisor immediately.
+- `tbot_supervisor.py` executes the day’s phases in order:
+  1) **Open**  → `strategy_router --session=open`
+  2) **Holdings** (after open, delay from `.env_bot`)
+  3) **Mid**   → `strategy_router --session=mid`
+  4) **Close** → `strategy_router --session=close`
+  5) **Universe** (after close, delay from `.env_bot`)
+- Supervisor writes:
+  - `bot_state.txt` transitions (`analyzing`, `trading`, `updating`, `idle`, etc.)
+  - Phase logs: `open.log`, `holdings.log`, `mid.log`, `close.log`, `universe.log`
+  - `supervisor.log` and a JSON schedule snapshot `schedule.json`
+- Strategy and worker subprocess stdout/stderr are appended to the respective phase logs.
 
 Phase 4: Risk/Fault Monitoring (Continuous)
 ↓
-- Enforce risk constraints (`risk_module.py`).
-- Monitor PnL and daily loss limits (`kill_switch.py`).
-- Verify API health (`watchdog_bot.py`).
-- Log uncaught exceptions (`error_handler.py`).
-- On breach, halt broker or suspend trading.
-- DEFENSE_MODE events are logged to `kill_switch.log` and system logs.
+- Risk, loss limits, API health, and watchdogs as specified remain active.
+- Defense mode events are logged and enforced.
 
 Phase 5: Session Termination
 ↓
-- `stop_bot.py` closes open positions gracefully.
-- `reporting_bot.py` compiles logs (trades, daily summary, disaster logs).
-- Trades and PnL routed to the accounting ledger:
-  `output/{BOT_IDENTITY}/ledgers/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db` (resolved via `path_resolver.py`).
-- `auto_backup.py` archives logs and ledgers (UTC).
-- Mark session "CLOSED" in status.json.
-- Session complete.
+- Positions closed as configured; reporting & backups run.
+- Ledgers written via `ledger_modules/` only.
+- Mark session closed in `status.json`.
 
 Phase 6: Manual Review / Rebalancing
-- Operator reviews all logs and session summary, including all holdings, float, reserve, and allocation events as posted in the modular ledger (via `ledger_modules/`); legacy audit logs or helpers are deprecated and forbidden.
-- All float reconciliations, reserve adjustments, and rebalancing actions are performed exclusively via the Web UI holdings module, which records all such actions in the modular ledger for full audit compliance. Accounting is no longer responsible for direct float management or ledger posting.
-- `generate_ofx.py` is used for OFX exports, including all holdings and reserve actions as recorded in the modular ledger (`ledger_modules/`).
-- Any manual override or rebalancing action triggers versioned audit logging via the modular ledger and immediate config/secret backup.
-- Manual reset of defense flags is required after any defense mode event.
+↓
+- Operator reviews logs, ledgers, and summaries in the Web UI.
+- All holdings/float/reserve actions use the holdings module and ledger modules for audit.
 
 --------------------------------------------------------------------------------
 Runtime Worker: `sync_broker_ledger` (Structured Logs & Snapshot Retention)
@@ -222,21 +234,25 @@ UI Behavior Based on Bot State
 - `shutdown`, `shutdown_triggered`, `error` → show error or shutdown page; halt further operations.
 
 =============================================================================================================================================
-Bot Control Commands via Web UI
+Bot Control Commands via Web UI  (clarified)
 =============================================================================================================================================
 
-- Start Bot:
-  - Transition bot_state.txt to `started`, then `idle` after init.
-  - Strategies not running until schedule triggers.
-- Stop Bot:
-  - Transition bot_state.txt to `graceful_closing_positions`.
-  - Strategies finish naturally, close positions.
-  - Transition to `stopped`.
-- Kill Now:
-  - Transition bot_state.txt to `emergency_closing_positions`.
-  - Immediate position close.
-  - Transition to `stopped`.
+- **Stop Bot (graceful):**
+  - Web UI writes `control_stop.flag`.
+  - `tbot_supervisor.py` detects the flag **between phases**, transitions `bot_state.txt` to
+    `graceful_closing_positions`, completes any current phase if safe, and halts remaining phases.
+
+- **Kill Now (immediate):**
+  - Web UI writes `control_kill.flag`.
+  - `tbot_supervisor.py` detects the flag **between phases**, transitions `bot_state.txt` to
+    `shutdown_triggered`, and aborts remaining phases.
+
+- **Start / Resume:**
+  - Remove any stop/kill flags in the UI.
+  - `main.py` continues to self-schedule daily runs; next run occurs at the next UTC trigger (or immediately if started after the trigger).
+
 - UI remains accessible in all states.
+
 
 =============================================================================================================================================
 Hot Configuration Updates
@@ -573,6 +589,14 @@ PURPOSE:
 - Prevent real capital usage, real orders, notifications, or permanent ledger changes.
 - Allow automated/manual testing via Web UI or CLI triggers, including individual test selection.
 
+SCOPE:
+If the optional TEST_MODE subsystem is enabled:
+- Flags are written by the Web UI (`test_web.py`).
+- Test orchestration is handled by **main.py** (not the supervisor) which may launch
+  the integration test runner when global/per-test flags are present.
+- No tests are launched from systemd directly; production runs never execute tests
+  unless flags are explicitly set via the UI/CI.
+
 TRIGGERING:
 - Presence of `test_mode.flag` enables TEST_MODE for a full end-to-end test run.
 - Presence of `test_mode_<test>.flag` triggers execution of a single corresponding test module.
@@ -745,13 +769,14 @@ Definitions:
 tbot_bot/runtime/
 --------------------------------------------------------------------------------
 main.py
-    # ENTRY DISPATCHER. Only script launched by systemd or run_tbot.sh.
-    # Handles bootstrap, provisioning, and launches main_web.py (Web UI).
-    # After successful provisioning and bootstrapping, launches tbot_supervisor.py (if present) for persistent monitoring, phase management, and process orchestration.
-    # No watcher/worker/runner is ever launched except by main.py.
-    # In TEST_MODE, launches test runners directly.
-    # Writes: all control flags in tbot_bot/control/
-    # Writes: main_bot.log, start_log, stop_log (system logs, shown in logs.html)
+    # SINGLE ENTRYPOINT. Launched by systemd (user-mode) or CLI.
+    # - Runs build checks/env decrypt/identity snapshot.
+    # - Launches unified Flask UI (portal_web_main.py) — bind/port via TBOT_WEB_HOST/TBOT_WEB_PORT.
+    # - Self-schedules and launches tbot_supervisor.py daily at TBOT_SUPERVISOR_UTC_HHMM (UTC).
+    #   * Fires immediately if started after the daily trigger; schedules next for tomorrow.
+    # - Clean shutdown: propagates SIGTERM/SIGINT to child processes.
+    # Writes: main_bot.log, start_log, stop_log; updates bot_state to reflect activity.
+
 
 status_bot.py
     # WATCHER. Launched by main.py only.
@@ -764,11 +789,11 @@ watchdog_bot.py
     # Writes: tbot_bot/output/logs/heartbeat.log (shown in logs.html)
 
 tbot_supervisor.py
-    # PHASE SUPERVISOR. Launched by main.py (if present) after successful provisioning and bootstrapping.
-    # Central controller for bot phase/state and process supervision.
-    # Only one instance allowed; manages all bot state transitions and can start, stop, or monitor critical subprocesses (monitor, runtime, etc).
-    # Never directly runs strategy code.
-    # In test mode: checks for per-test flags (test_mode_<test>.flag) and launches only that test, or global test_mode.flag to launch all.
+    # DAILY ONE-SHOT SUPERVISOR. Launched only by main.py (never a systemd unit).
+    # - Computes today’s UTC schedule using env_bot (already UTC).
+    # - Writes schedule.json; runs phases sequentially: open → holdings → mid → close → universe.
+    # - Honors control flags between phases; updates bot_state; routes stdout/stderr to per-phase logs.
+    # - Exits after completing the day’s phases (no daemon loop).
 
 sync_broker_ledger.py
     # WORKER. Launched by main.py on admin Web UI POST /ledger/sync (RBAC: Admin only).
@@ -834,56 +859,57 @@ All modules (utils_*, path_resolver.py, etc.)
 --------------------------------------------------------------------------------
 LOG FILE LOCATIONS & RESPONSIBILITY
 --------------------------------------------------------------------------------
-tbot_bot/output/logs/main_bot.log / system_logs.log           # Written only by: main.py, status_bot.py (shown in logs.html)
-tbot_bot/output/logs/heartbeat.log                            # Written only by: watchdog_bot.py (shown in logs.html)
-tbot_bot/output/logs/router.log                               # Written only by: strategy_router.py (optional, shown in logs.html if present)
-tbot_bot/output/logs/screener.log                             # Written only by: screener modules (optional, shown in logs.html if present)
-tbot_bot/output/logs/kill_switch.log                          # Written only by: kill_switch.py (optional, shown in logs.html if present)
-tbot_bot/output/logs/start_log                                # Written only by: main.py (shown in logs.html)
-tbot_bot/output/logs/stop_log                                 # Written only by: main.py (shown in logs.html)
-tbot_bot/output/logs/provisioning.log                         # Written only by: provisioning_runner.py (shown in logs.html)
-tbot_bot/output/logs/provisioning_status.json                 # Written only by: provisioning_runner.py (shown in logs.html)
-tbot_bot/output/logs/auth_web.log                             # Written only by: web auth modules (shown in logs.html)
-tbot_bot/output/logs/security_users.log                       # Written only by: user management modules (shown in logs.html)
-tbot_bot/output/logs/system_users.log                         # Written only by: user management modules (shown in logs.html)
-tbot_bot/output/logs/user_activity_monitoring.log             # Written only by: session manager/modules (shown in logs.html)
-tbot_bot/output/logs/password_reset_tokens.log                # Written only by: password reset handler (optional, shown in logs.html if present)
-tbot_bot/output/logs/init_system_logs.log                     # Bootstrap-only, not shown in logs.html
-tbot_bot/output/logs/init_system_users.log                    # Bootstrap-only, not shown in logs.html
-tbot_bot/output/logs/init_user_activity_monitoring.log        # Bootstrap-only, not shown in logs.html
-tbot_bot/output/logs/init_password_reset_tokens.log           # Bootstrap-only, not shown in logs.html
+tbot_bot/output/logs/main_bot.log               # Written only by: main.py (system lifecycle) — shown in logs.html
+tbot_bot/output/logs/supervisor.log             # Written only by: tbot_supervisor.py (daily orchestration) — shown
+tbot_bot/output/logs/schedule.json              # Written only by: tbot_supervisor.py (daily schedule snapshot) — shown
+tbot_bot/output/logs/heartbeat.log              # Written only by: watchdog_bot.py — shown
+tbot_bot/output/logs/router.log                 # Optional, strategy router — shown if present
+tbot_bot/output/logs/screener.log               # Optional, screener modules — shown if present
+tbot_bot/output/logs/kill_switch.log            # Optional, kill/defense events — shown if present
+tbot_bot/output/logs/start_log                  # Written only by: main.py — shown
+tbot_bot/output/logs/stop_log                   # Written only by: main.py — shown
+tbot_bot/output/logs/provisioning.log           # Provisioning runner — shown
+tbot_bot/output/logs/provisioning_status.json   # Provisioning status — shown
+tbot_bot/output/logs/auth_web.log               # Web auth activity — shown
+tbot_bot/output/logs/security_users.log         # User/role management — shown
+tbot_bot/output/logs/system_users.log           # User CRUD/audit — shown
+tbot_bot/output/logs/user_activity_monitoring.log # Session/RBAC — shown
+tbot_bot/output/logs/init_*                     # Bootstrap-only (not shown in logs.html)
 
-tbot_bot/output/{bot_id}/logs/open.log                        # Written only by: main.py (open strategy run, shown in logs.html)
-tbot_bot/output/{bot_id}/logs/mid.log                         # Written only by: main.py (mid strategy run, shown in logs.html)
-tbot_bot/output/{bot_id}/logs/close.log                       # Written only by: main.py (close strategy run, shown in logs.html)
-tbot_bot/output/{bot_id}/logs/error_tracebacks.log            # Written only by: main.py, status_bot.py (on uncaught error, shown in logs.html)
-tbot_bot/output/{bot_id}/logs/unresolved_orders.log           # Written only by: main.py, orders_bot.py (shown in logs.html)
-tbot_bot/output/{bot_id}/logs/daily_summary.json              # Written only by: daily_summary.py (optional, may be shown in logs.html)
-tbot_bot/output/{bot_id}/logs/ledger_sync.log                 # Written only by: runtime/sync_broker_ledger.py (shown in logs.html)
-tbot_bot/output/{bot_id}/logs/status.json                     # Written only by: status_bot.py, status_logger.py (not shown in logs.html; status.html only)
+tbot_bot/output/{bot_id}/logs/open.log          # Written only by: supervisor (open phase) — shown
+tbot_bot/output/{bot_id}/logs/holdings.log      # Written only by: supervisor (post-open holdings) — shown
+tbot_bot/output/{bot_id}/logs/mid.log           # Written only by: supervisor (mid phase) — shown
+tbot_bot/output/{bot_id}/logs/close.log         # Written only by: supervisor (close phase) — shown
+tbot_bot/output/{bot_id}/logs/universe.log      # Written only by: supervisor (post-close universe) — shown
+tbot_bot/output/{bot_id}/logs/error_tracebacks.log # Exceptions/errors — shown
+tbot_bot/output/{bot_id}/logs/unresolved_orders.log # Orders needing attention — shown
+tbot_bot/output/{bot_id}/logs/daily_summary.json   # Session summary — (optional shown)
+tbot_bot/output/{bot_id}/logs/ledger_sync.log      # Sync worker JSONL — shown
+tbot_bot/output/{bot_id}/logs/status.json          # Status (used by dashboard; not shown in logs.html)
 
 --------------------------------------------------------------------------------
 CONTROL FILES & FLAGS
 --------------------------------------------------------------------------------
-tbot_bot/control/bot_state.txt        # Written by: tbot_supervisor.py (if used), main.py (phase update)
-tbot_bot/control/test_mode.flag       # Written by: test_web.py (UI action), removed by: integration_test_runner.py or main.py. Launches full test suite if present.
-tbot_bot/control/test_mode_<test>.flag# Written by: test_web.py (UI action), removed by: integration_test_runner.py or main.py. Launches only specified test if present.
-tbot_bot/control/control_start.flag   # Written by: main_web.py (UI action), read by: main.py
-tbot_bot/control/control_stop.flag    # Written by: main_web.py (UI action), read by: main.py
+tbot_bot/control/bot_state.txt         # Written by: tbot_supervisor.py (during phases), main.py (lifecycle hints)
+tbot_bot/control/control_start.flag    # (If used) Written by Web UI; read by main.py (legacy compatibility)
+tbot_bot/control/control_stop.flag     # Written by Web UI; read by supervisor between phases for graceful halt
+tbot_bot/control/control_kill.flag     # Written by Web UI; read by supervisor between phases for immediate abort
+tbot_bot/control/test_mode.flag        # (If test system enabled) Global full test trigger; removed by test runner
+tbot_bot/control/test_mode_<test>.flag # (If test system enabled) Per-test trigger; removed by test runner
 
---------------------------------------------------------------------------------
-SUMMARY TABLE (Add to Doc End)
---------------------------------------------------------------------------------
-Script Name                    | Launched By           | Role        | When Launched            | Writes/Reads
--------------------------------|-----------------------|-------------|--------------------------|------------------------
-main.py                        | systemd/CLI           | Entry Point | always                   | all control flags, system logs, start_log, stop_log
-status_bot.py                  | main.py               | Watcher     | always                   | status.json, system_logs.log
-watchdog_bot.py                | main.py               | Watcher     | always                   | heartbeat logs
-tbot_supervisor.py             | main.py               | Supervisor  | after provisioning/boot  | bot_state.txt, process mgmt, test flags
-sync_broker_ledger.py          | main.py               | Worker      | on Admin /ledger/sync    | ledger_sync.log, snapshots (pre-sync), audit entries
-integration_test_runner.py     | main.py, test UI/CI   | Test runner | test mode only           | test_mode.log, output logs, cleans up flags
-test_web.py                    | web UI                | Test flag   | admin/test action        | test_mode.flag, test_mode_<test>.flag, log read
-test_*.py                      | manual/CI/pytest      | Dev/CI test | never prod               | temp logs/console only, cleans up flags
+================================================================================
+SUMMARY TABLE (Updated)
+================================================================================
+Script Name                    | Launched By           | Role        | When Launched                                  | Writes/Reads
+-------------------------------|-----------------------|-------------|-----------------------------------------------|------------------------
+main.py                        | systemd/CLI           | Entry Point | always                                         | main_bot.log, start_log, stop_log; launches Flask; schedules/starts supervisor; bot_state (hints)
+status_bot.py                  | main.py               | Watcher     | always (if enabled)                            | status.json; system logs
+watchdog_bot.py                | main.py               | Watcher     | always (if enabled)                            | heartbeat.log
+tbot_supervisor.py             | main.py               | Supervisor  | daily at TBOT_SUPERVISOR_UTC_HHMM (UTC); immediate if late | supervisor.log, schedule.json; phase logs; bot_state transitions; honors stop/kill flags
+sync_broker_ledger.py          | main.py (via Web UI)  | Worker      | on Admin POST /ledger/sync                     | ledger_sync.log; snapshots; audit events
+integration_test_runner.py     | main.py / CI (opt.)   | Test runner | test mode only (flags present)                 | test_mode.log; cleans up flags
+test_web.py                    | Web UI                | Test flags  | admin/test action (optional subsystem)         | test_mode.flag / test_mode_<test>.flag
+test_*.py                      | CI/manual             | Dev/CI test | never prod                                     | temp logs/console; cleans up flags
 
 --------------------------------------------------------------------------------
 NOTES

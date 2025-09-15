@@ -1,8 +1,8 @@
 ================================================================================
 Document: 010
 010_Introduction_Objective_and_Overview
-Version: v048
-Date: UTC:2025-09-06 00:00:00
+Version: v049
+Date: UTC:2025-09-14 00:00:00
 ================================================================================
 
 
@@ -13,17 +13,18 @@ Master_Index_and_Summary
 This master index provides a comprehensive reference to all TradeBot system specification documents. Each entry includes document number, filename, title, version, timestamp, summary of contents, and cross-reference notes for quick lookup and navigation.
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-| Filename                                      	| Title/Subject                                  		| Summary & Key Contents                                                 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-| 000_chatKick-off.txt                          		| Initial Chat Kickoff & Setup Overview           	| Project goals, workflow, onboarding, and initial constraints            
-| 010_Introduction_Objective_and_Overview_v048.txt 		| Objective & System Overview                 		| High-level system objective, instructions, deployment, time zone std    
-| 020_Directory_Structure_v048.txt               		| Directory Structure & Module Layout           	| Authoritative directory/file structure, launch/control notes            
-| 030_Trading_Bot_Core_Specs_v048.txt            		| Core Trading Bot Specifications                	| Infrastructure, risk, strategy logic, integration, float/ledger rules   
-| 040_Screener_Symbol_Universe_v048.txt          		| Symbol Screener & Universe Controls            	| Screener modules, universe management, dynamic symbol filtering         
-| 050_Enhancements_and_Safety_v048.txt           		| Safety/Enhancement Modules                    	| Kill switch, risk gating, VIX, filters, session enforcement             
-| 060_Accounting_Integration_v048.txt            		| Accounting & Ledger Integration                 	| OFX schema, double-entry, COA, export, reconciliation                   
-| 070_Runtime_Lifecycle_Logging_Reporting_and_Testing_v048.txt 	| Runtime, Logging, Testing, & Reporting 		| Session lifecycle, state machine, logging/report/test specs, TEST_MODE  
-| 080_Env_Security_Integration_and_Expansion_Modules_v048.txt 	| Env, Security, & Expansion Modules        		| Environment, encrypted config, key management, future enhancements      
-| 090_Web_Interface_and_Dashboard_v048.txt       		| Web UI & Dashboard Specification                	| Flask UI, RBAC, bot control, dashboard logic, live status, COA mgmt    
+| Filename                                      	| Title/Subject                                  		| Summary & Key Contents                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 000_chatKick-off.txt                          		| Initial Chat Kickoff & Setup Overview           	| Project goals, workflow, onboarding, and initial constraints            |
+| 010_Introduction_Objective_and_Overview_v048.txt 		| Objective & System Overview                 		| High-level system objective, instructions, deployment, time zone std    |
+| 020_Directory_Structure_v048.txt               		| Directory Structure & Module Layout           	| Authoritative directory/file structure, launch/control notes            |
+| 030_Trading_Bot_Core_Specs_v048.txt            		| Core Trading Bot Specifications                	| Infrastructure, risk, strategy logic, integration, float/ledger rules   |
+| 040_Screener_Symbol_Universe_v048.txt          		| Symbol Screener & Universe Controls            	| Screener modules, universe management, dynamic symbol filtering         |
+| 050_Enhancements_and_Safety_v048.txt           		| Safety/Enhancement Modules                    	| Kill switch, risk gating, VIX, filters, session enforcement             |
+| 060_Accounting_Integration_v048.txt            		| Accounting & Ledger Integration                 	| OFX schema, double-entry, COA, export, reconciliation                   |
+| 070_Runtime_Lifecycle_Logging_Reporting_and_Testing_v049.txt 	| Runtime, Logging, Testing, & Reporting 		| Session lifecycle, state machine, logging/report/test specs, TEST_MODE  |
+| 080_Env_Security_Integration_and_Expansion_Modules_v048.txt 	| Env, Security, & Expansion Modules        		| Environment, encrypted config, key management, future enhancements      |
+| 090_Web_Interface_and_Dashboard_v048.txt       		| Web UI & Dashboard Specification                	| Flask UI, RBAC, bot control, dashboard logic, live status, COA mgmt     |
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 Usage Notes:
@@ -54,28 +55,34 @@ TradeBot (TBot) executes bi-directional trades using long equity for bullish sig
 
 The system operates intraday strategies in real time with fully automated, risk-weighted execution. All risk controls are enforced exclusively via .env_bot parameters (DAILY_LOSS_LIMIT, MAX_RISK_PER_TRADE, TOTAL_ALLOCATION, MAX_OPEN_POSITIONS, etc.). **All trade output is logged immutably to OFX-compliant, entity-scoped SQLite ledgers with double-entry enforcement and UTC timestamps.**
 
-**Bot bootstrap is initiated solely through a required Web UI submission (`configuration.html`), which invokes `configuration_web.py` and the required init scripts.** This is the exclusive entry point for creating users, credentials, system logs, identity metadata, and initial Chart of Accounts (COA)—CLI-based initialization is explicitly forbidden.
+**Bootstrap and orchestration flow:**  
+- Bot bootstrap is initiated solely through the Web UI (`configuration.html` → `configuration_web.py`), which invokes provisioning/init scripts.  
+- Runtime is orchestrated by **one user-mode systemd unit (`tbot_bot.service`)**, which launches `runtime/main.py`.  
+- `main.py` performs build checks, starts the unified Flask UI, and **self-schedules** the daily `tbot_supervisor.py` run at `TBOT_SUPERVISOR_UTC_HHMM` (UTC).  
+- `tbot_supervisor.py` executes all daily phases (open → holdings → mid → close → universe), updates `bot_state.txt`, writes logs, then exits. It is **never a systemd unit**.
 
-**COA Management and Editing:**
-- The bot's Chart of Accounts (COA) is self-contained and managed entirely within the bot instance.
-- **All COA creation, updates, and human-readable exports are performed via a dedicated COA Management page in the tbot_web UI.**
-- The default COA is generated on initial bootstrap and can be viewed or modified only through the Web UI. CLI or accounting system pushes are not permitted.
-- COA metadata is stored in the `coa_metadata` table with all required versioning and extensibility fields.
-- **All Web UI/admin logic for COA must utilize `tbot_web/support/utils_coa_web.py`, and all ledger/schema integration must utilize `tbot_bot/accounting/coa_utils.py`, per the current directory specification.**
+**COA Management and Editing:**  
+- Self-contained, UI-only (via `coa.html` and `utils_coa_web.py`).  
+- Stored in both JSON and `coa_metadata` table; versioned, validated, and audit-logged.  
+- All ledger/schema integration via `coa_utils.py`.  
 
-**Accounting System Role (Post-Session Only):**
-- The accounting system may read/export ledgers and trade data after session completion for audit, reporting, or reconciliation.
-- All float injections, reserves, and transfers are executed externally after notification or on operator schedule; the bot only logs float deviation/rebalance events and does not manage any funds transfer.
-- All entity, broker, float, and config metadata used by the bot at runtime must be present in the locally decrypted config files (`.env_bot.enc`, `bot_identity.json.enc`) at session start. No runtime injection or modification by any external system is permitted.
+**Accounting System Role:**  
+- Post-session only: may export ledgers, reconcile, or report.  
+- Float/reserve/payroll transfers are external; the bot only logs deviation/rebalance events.  
 
-**Ledger and trade routing rules:**
-- All execution toggles are set via `.env_bot` (`ALPACA_ENABLED`, `IBKR_ENABLED`, etc.), with per-strategy toggles (`STRAT_OPEN_ENABLED`, `STRAT_MID_ENABLED`, `STRAT_CLOSE_ENABLED`).
-- **All trades and PnL activity must write to `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`** in the identity-scoped `tbot_bot/output/{IDENTITY}/ledgers/` path, with all ledger paths and metadata resolved by internal config at session start.
-- **The bot does not read, manage, or calculate float or ledger updates from any external system during runtime; all provisioning occurs during Web UI bootstrap or by manual config update only.**
+**Ledger Routing Rules:**  
+- All trades/PnL must write to `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db` under `output/{IDENTITY}/ledgers/`.  
+- All ledger paths resolved via config/path_resolver.  
+- No runtime push/pull from external systems.  
 
-PnL, float tracking, and revenue movements are ingested, reconciled, and logged by the accounting system only after session completion. 
+**TEST_MODE:**  
+- Triggered by presence of `control/test_mode.flag` (or per-test flags).  
+- Flags are written by Web UI (`test_web.py`).  
+- `main.py` supervises integration tests (`tbot_bot/test/`), which simulate bot logic with **no production ledger/output impact**.  
 
-TEST_MODE is an active, runtime-only feature triggered by the presence of `tbot_bot/control/test_mode.flag`, typically set via the Web UI (`test_web.py`). When TEST_MODE is enabled, `main.py` supervises execution of dedicated test routines in `tbot_bot/test/`—these simulate end-to-end bot logic without affecting production ledgers or outputs. No production data or state is modified in TEST_MODE, and all test logs/artifacts are isolated from live outputs.
+**Key/Secret Rotation:**  
+- **All Fernet keys and encrypted secrets (credentials, config, COA, holdings) are rotated atomically on any change** (user, credential, config, holdings, or COA/mapping).  
+- Old keys/secrets are never reused; all rotations are versioned and backed up automatically.  
 
 ==============================
 System Instructions 
@@ -132,7 +139,7 @@ Deployment Notes
   - Path: `tbot_bot/output/{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/ledgers/`
   - File: `{ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}_BOT_ledger.db`
 - Ledger protection:
-  - Pre-sync snapshot before writes (`tbot_bot/runtime/ledger_snapshot.py`)
+  - Pre-sync snapshot before writes (`tbot_bot/accounting/ledger_modules/ledger_snapshot.py`)
   - EOD archival/rotation (`tbot_bot/reporting/auto_backup.py`)
 - OFX-aligned exports and reports are generated by `tbot_bot/reporting/ledger_report.py`; external accounting export is via `tbot_bot/accounting/accounting_api.py`.
 - Log files (global): `tbot_bot/output/logs/*.log` (`main_bot.log`, `heartbeat.log`, `router.log`, `screener.log`, `kill_switch.log`, `provisioning.log`, `system_users.log`, `user_activity_monitoring.log`, `status.json`, `start_log`, `stop_log`, `test_mode.log`, password reset logs).
@@ -143,6 +150,8 @@ Deployment Notes
 - Session timing: `.env_bot` defines `START_TIME_*`, `[STRAT]_ANALYSIS_TIME`, `[STRAT]_MONITORING_TIME`
 - Respect `TRADING_DAYS`—block execution on weekends/holidays
 - Start/Stop/Kill controls: Web UI writes `tbot_bot/control/control_start.flag`, `control_stop.flag`, optional `control_kill.flag`; `runtime/main.py` orchestrates via `tbot_supervisor.py`
+- **Systemd orchestration:** exactly one user-mode unit (`tbot_bot.service`) launches `runtime/main.py`; there are **no** `.timer` or `@instance` units. `main.py` launches the Flask UI and **self-schedules** the daily supervisor run at `TBOT_SUPERVISOR_UTC_HHMM` (UTC).
+- **Late-start behavior & flags:** if `main.py` starts after the configured UTC trigger, it launches the supervisor **immediately** for that day; the supervisor reads `control_stop.flag` / `control_kill.flag` **between phases** to halt or abort safely.
 
 
 --------------------------------------------------------------------------------
@@ -251,6 +260,7 @@ Time Zone Standards
 - All persistent time variables, logs, ledger entries, alerts, and OFX timestamps use **UTC (Coordinated Universal Time)**—this is enforced system-wide.
 - **Strategy start times** in `.env_bot` (e.g., `START_TIME_OPEN`, `START_TIME_MID`, `START_TIME_CLOSE`) are now specified in **local time** according to the configured `TIMEZONE` (e.g., `"US/Eastern"`, `"Europe/London"`).  
   The system automatically converts local times to UTC for all scheduling and execution.
+- **Supervisor trigger:** `TBOT_SUPERVISOR_UTC_HHMM` is specified **in UTC** and is **not** converted from local time (e.g., `0600` UTC ≈ 01:00 EST / 02:00 EDT).
 - Ledger writes (e.g., `tbot_bot/output/{IDENTITY}/ledgers/{..._BOT_ledger.db}`) **must set `DTPOSTED` and all OFX timestamps in UTC**.
 - All COA/ledger metadata tables (`coa_metadata`) include `created_at_utc` and `last_updated_utc` fields, set in UTC at creation/update.
 - Internal logic and comparisons in `strategy_router.py`, `status_bot.py`, and all time utilities **must always standardize to UTC** before storing or logging.  
@@ -263,7 +273,8 @@ Time Zone Standards
 - **Local debugging:** Convert between UTC and the configured `TIMEZONE` before interpreting logs or DB entries. Use `utils_time.py` helpers for safe conversion.
 - **Best practice:** Always use the centralized helpers in `utils_time.py` for all time parsing, conversion, and comparison.
 
-```python
+Example Code:
+
 from datetime import datetime, timezone
 import pytz
 
@@ -276,6 +287,7 @@ def now_local():
     config = get_bot_config()
     tz = pytz.timezone(config.get("TIMEZONE", "UTC"))
     return utc_now().astimezone(tz)
+
 
 
 ================================================================================
