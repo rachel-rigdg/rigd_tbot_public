@@ -1,8 +1,8 @@
 ================================================================================
 Document: 020
 Directory_Structure
-Version: v048
-Date: UTC:2025-09-06 00:00:00
+Version: v049
+Date: UTC:2025-09-14 00:00:00
 ================================================================================
 
 This document defines the authoritative directory and file structure for the RIGD TradeBot project.
@@ -133,6 +133,7 @@ rigd_tbot/
 │   │       └── schema.sql                       # Canonical SQLite DDL for ledger tables/indices used by modules
 │   │ 
 │   ├── backtest/                                # Backtesting, simulation, and research
+│   │   ├── results/
 │   │   ├── backtest_engine.py                   # Strategy replay and simulation engine
 │   │   ├── load_historical_data.py              # Loads CSV/OHLCV/tick data for backtesting
 │   │   ├── performance_metrics.py               # Computes Sharpe, win rate, drawdown, and related stats
@@ -177,11 +178,12 @@ rigd_tbot/
 │   │   └── settings_bot.py                     # Editor/validator for .env_bot (strategy/runtime vars); used by Web UI/scripts; never manages key files
 │   │
 │   ├── control/                                # Control signals for runtime (web/CLI triggers)
-│   │   ├── bot_state.txt                    	# Written by main.py or tbot_runner_supervisor.py (if present). Holds current bot state for UI/status. No other process watches this file.
-│   │   ├── test_mode.flag			            # Written by test_web.py (UI action); presence triggers TEST_MODE in main.py. Removed by integration_test_runner.py or main.py only.
-│   │   ├──control_kill.flag                    # Emergency kill switch flag: forces immediate shutdown via supervisor/main
-│   │   ├── control_start.flag                  # Written by start_stop_web.py (UI action); main.py reads and handles start trigger. No separate watcher.
-│   │   └── control_stop.flag                   # Written by start_stop_web.py (UI action); main.py reads and handles stop trigger. No separate watcher.
+│   │   ├── bot_state.txt                        # Written by main.py and tbot_supervisor.py. Holds current bot state for UI/status.
+│   │   ├── test_mode.flag                       # Written by test_web.py (UI action); presence triggers TEST_MODE in main.py. Cleared by integration_test_runner.py or main.py.
+│   │   ├── control_kill.flag                    # Emergency kill switch flag: detected between phases; forces immediate shutdown.
+│   │   ├── control_start.flag                   # Written by start_stop_web.py (UI action); main.py reads/handles start trigger.
+│   │   ├── control_stop.flag                    # Written by start_stop_web.py (UI action); main.py reads/handles stop trigger.
+│   │   └── web.ready                           #
 │   │
 │   ├── core/                                       # Persistent state, user authentication, and schema files
 │   │   ├── databases/					            # created during the provisioning process
@@ -195,6 +197,7 @@ rigd_tbot/
 │   │   ├── schemas/
 │   │   │   ├── ledger_status_schema.sql             # DB schema for LEDGER_STATUS.db (never altered by runtime)
 │   │   │   ├── password_reset_schema.sql            # Schema for PASSWORD_RESET_TOKENS.db (Web UI reset logic)
+│   │   │   ├── screener_credentials_schema.json     # Schema for Screener Credential system
 │   │   │   ├── system_logs_schema.sql               # Schema for SYSTEM_LOGS.db (UI/CLI logs panel)
 │   │   │   ├── system_schema.sql                    # Schema for SYSTEM.db (system settings, enforced at startup)
 │   │   │   ├── system_users_schema.sql              # Schema for SYSTEM_USERS.db (bcrypt, roles, enforced at user add/change)
@@ -240,8 +243,11 @@ rigd_tbot/
 │   │   │   ├── kill_switch.log                              # Kill switch/shutdown triggers (optional; shown in logs.html if present)
 │   │   │   ├── provisioning.log                             # Provisioning run log (shown in logs.html)
 │   │   │   ├── provisioning_status.json                     # Provisioning status (shown in logs.html)
+│   │   │   ├── supervisor.log                               # Daily supervisor orchestration log (shown in logs.html)
+│   │   │   ├── schedule.json                                # Snapshot of computed daily schedule (shown in logs.html)
 │   │   │   ├── system_users.log                             # User create/delete/audit log (shown in logs.html)
 │   │   │   ├── user_activity_monitoring.log                 # User login/session/RBAC activity (shown in logs.html)
+│   │   │   ├── screener_credentials_audit.log              # Audit trail for screener credentials updates and edits
 │   │   │   ├── status.json                                  # Current bot/system status cache for UI consumption
 │   │   │   ├── start_log                                    # Bot/session start events (shown in logs.html)
 │   │   │   ├── stop_log                                     # Bot/session stop events (shown in logs.html)
@@ -263,11 +269,16 @@ rigd_tbot/
 │   │   └── {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}/    # ← Scoped per bot ID; mirrored to Accounting system
 │   │       ├── logs/                                		               # Unified strategy logs (per phase/failure mode)
 │   │       │   ├── open.log			                		       # Trade/decision log during open strategy window
+│   │       │   ├── holdings.log                                   # Post-open holdings workflow log (float/tax/payroll checks)
 │   │       │   ├── mid.log			                		           # Midday session (position management/adjustments)
 │   │       │   ├── close.log			            		       # Closeout phase decisions and executions
-│   │       │   ├── provisioning_status.json                   # Per-bot provisioning status snapshot (for UI)
-│   │       │   ├── security_users.log                         # User/role management activity (shown in logs.html)
+│   │       │   ├── universe.log                                   # Post-close universe maintenance/rebuild log
+│   │       │   ├── provisioning_status.json                        # Per-bot provisioning status snapshot (for UI)
+│   │       │   ├── security_users.log                              # User/role management activity (shown in logs.html)
 │   │       │   ├── unresolved_orders.log	        		       # Failed/rejected/stale orders unresolved during session
+│   │       │   ├── ledger_sync.log                                 # Structured JSONL from runtime sync worker (Admin-triggered)
+│   │       │   ├── daily_summary.json                              # End-of-day/session metrics (PnL, stats); optional logs.html
+│   │       │   ├── status.json                                     # Live per-bot status for dashboard (not shown in logs.html)
 │   │       │   └── error_tracebacks.log		        		       # Full Python tracebacks for uncaught exceptions (UTC timestamps)
 │   │       │
 │   │       ├── ledgers/  								               # Created at provisioning; sub-artifacts may be lazy-created on first use
@@ -304,17 +315,19 @@ rigd_tbot/
 │   ├── runtime/
 │   │   ├── __init__.py
 │   │   ├── holdings_maintenance.py                 # Schedules and invokes holdings_manager workflow post-open (daily, 10 min after open strategy finishes)
-│   │   ├── main.py                                 # ENTRY DISPATCHER. SINGLE SYSTEMD ENTRY for all bot operations.
-│   │   │                                           #  - Checks for bootstrap/init and launches portal_web_main.py (Web UI).
-│   │   │                                           #  - After successful configuration, provisioning, and bootstrapping, launches bot_supervisor.py (if present) for all persistent monitoring, phase management, and process orchestration.
-│   │   │                                           #  - No persistent supervision, bot run-loop, or process management logic in main.py.
+│   │   ├── main.py                                 # SINGLE ENTRYPOINT. Always launched by systemd (tbot_bot.service) or CLI.
+│   │   │                                           #  - Performs build checks, starts portal_web_main.py (Flask UI).
+│   │   │                                           #  - Self-schedules the daily supervisor run at TBOT_SUPERVISOR_UTC_HHMM (UTC).
+│   │   │                                           #  - If started after the trigger, runs supervisor immediately for “today,” then schedules next day.
+│   │   │                                           #  - main.py itself does not trade; it only orchestrates UI + supervisor scheduling.
 │   │   ├── ledger_snapshot.py                      # Utility to create on-demand ledger DB snapshots (used by sync/audit)
-│   │   ├── start_bot.py                            # CLI helper only. Writes control_start.flag; does NOT watch for flags or launch processes.
-│   │   ├── status_bot.py                           # WATCHER. Tracks bot health/state, writes status.json, session logs. Only launched by bot_supervisor.py.
-│   │   ├── stop_bot.py                             # CLI helper only. Writes control_stop.flag; does NOT watch for flags or launch processes.
-│   │   ├── sync_broker_ledger.py		    # WORKER. On-demand or scheduled broker→ledger sync task. Can be triggered via Web UI or supervisor; never runs persistently.
-│   │   ├── tbot_supervisor.py                      # CENTRAL SUPERVISOR. Manages all bot phase/state transitions, persistent monitoring, and all subprocess lifecycle. Only one instance allowed; always launched by main.py if present. Handles/waits for and may restart monitor, runtime, or other persistent bot subprocesses. Never runs strategy code directly.
-│   │   └── watchdog_bot.py                         # WATCHER. Dedicated connection/process monitor. Only launched by bot_supervisor.py.
+│   │   ├── start_bot.py                            # CLI helper only. Writes control_start.flag; does NOT launch processes directly.
+│   │   ├── status_bot.py                           # WATCHER. Tracks bot health/state, writes status.json, session logs. Only launched by supervisor.
+│   │   ├── stop_bot.py                             # CLI helper only. Writes control_stop.flag; does NOT launch processes directly.
+│   │   ├── sync_broker_ledger.py                   # WORKER. On-demand or scheduled broker→ledger sync task. Triggered via Web UI or supervisor; never runs persistently.
+│   │   ├── tbot_supervisor.py                      # DAILY ONE-SHOT SUPERVISOR. Executes all phases (open → holdings → mid → close → universe),
+│   │   │                                           #  writes bot_state.txt, logs, and exits. Never a systemd unit, never persistent. Launched only by main.py.
+│   │   └── watchdog_bot.py                         # WATCHER. Connection/process monitor. Launched by supervisor when needed.
 │   │
 │   ├── screeners/			            	# Screener & Symbol Selection: direct provider-API universe build (no txt), atomic per-symbol writes, blocklist-first, quota-efficient, modular providers, resumable
 │   │   ├── providers/                              	# Pure data fetch/enrichment adapters, stateless, config-injected only, fetch from provider API universe
@@ -402,6 +415,7 @@ rigd_tbot/
 │   │   ├── decrypt_secrets.py                  # Loads/decrypts *.json.enc secrets using Fernet keys from tbot_bot/storage/keys/; called by config/runtime modules
 │   │   ├── encrypt_secrets.py                  # Encrypts/rotates all secret/config JSONs in tbot_bot/storage/secrets/ using Fernet keys from tbot_bot/storage/keys/
 │   │   ├── holdings_secrets.py                 # Module for encrypted holdings config/secrets CRUD, atomic writes, rollback support, and audit integration - triggers key, secrets rotation/backup
+│   │   ├── launch_registry.py
 │   │   ├── path_resolver.py                    # Resolves tbot_bot/storage/output/config paths for all modules, based on BOT_IDENTITY and file category; called by all runtime modules for dynamic file routing
 │   │   ├── rotate_keys.py                      # Rotates all Fernet keys in tbot_bot/storage/keys/, re-encrypts matching secrets in tbot_bot/storage/secrets/, and triggers versioned backup
 │   │   ├── secrets_manager.py                  # Central secrets CRUD/rotation manager; abstracts encrypt/decrypt, validates key–secret pairing, provides high-level API to web/provisioning
@@ -456,8 +470,7 @@ rigd_tbot/
 │       ├── notifier_bot.py                        # Sends alerts to configured channels (email/Slack/SMS/PagerDuty).
 │       ├── orders_bot.py                          # Handles order submission, modifies/fills, and broker feedback.
 │       ├── reporting_bot.py                       # Pushes trades to accounting system; manages ledger output and COA compliance.
-│       ├── risk_module.py.py                      # Enforces all risk constraints (caps, allocations, Defense Mode, open trades).
-│       ├── utils_coa.py                           # Loads, validates, and updates the bot COA; integrates with tbot_ledger_coa_template.json and supports Web UI editing.
+│       ├── risk_module.py                        # Enforces all risk constraints (caps, allocations, Defense Mode, open trades).
 │       ├── utils_etf.py                           # Resolves ETF and inverse ETF tickers for supported symbols (top 20+ ETFs, as per project specifications).
 │       ├── utils_puts.py                          # Returns put option contract specs for any supported broker.
 │       └──utils_shorts.py                         # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives.
@@ -465,6 +478,8 @@ rigd_tbot/
 └── tbot_web/                                   # Web dashboard: bot monitoring, logs, user auth, control, and COA management
     ├── static/                                 # Static frontend resources
     │   ├── fnt/                                # Embedded fonts used in the interface
+    │   │   ├── Vonique/                        # Vonique Font Collection
+    │   │   └── fnt/
     │   │
     │   ├── js/
     │   │   ├── configuration.js                # Handles configuration form logic, validation, and AJAX submits on configuration.html
@@ -498,6 +513,7 @@ rigd_tbot/
     │       │   ├── edit_user.css               # Edit user page: user edit form layout and alignment
     │       │   ├── holdings.css                # Stylesheet for holdings management page.
     │       │   ├── ledger.css                  # Ledger page: table formatting and alignment
+    │       │   ├── login.css                    # placeholder for login.html styling
     │       │   ├── logs.css                    # Logs page: log view container, filter bar, color
     │       │   ├── main.css                    # Main container, alignment, and page structure styles
     │       │   ├── password_reset.css          # Password reset forms: input and feedback styling
@@ -507,6 +523,7 @@ rigd_tbot/
     │       │   ├── status.css                  # Status page: status grid, error color, responsive tweaks
     │       │   ├── test.css                    # Test mode/system test sequence page
     │       │   ├── users.css                   # Users page: user list, RBAC, user management forms
+    │       │   ├── wait.css                    # placeholder for wait.html styling
     │       │   └── universe.css                # Symbol universe UI page - monitor rebuild and re-filter Symbol Universe
     │       │
     │       └── shared
