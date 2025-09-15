@@ -129,6 +129,14 @@ def create_unified_app():
 if __name__ == "__main__":
     print("[portal_web_main] __main__ entry, launching unified Flask app...")
     app = create_unified_app()
-    port = int(os.environ.get("PORT", 6900))
-    print(f"[portal_web_main] Listening on 0.0.0.0:{port}")
-    app.run(host="0.0.0.0", port=port)
+    # Prefer TBOT_WEB_*; fall back to PORT and 0.0.0.0:6900
+    host = os.environ.get("TBOT_WEB_HOST", os.environ.get("HOST", "0.0.0.0"))
+    port = int(os.environ.get("TBOT_WEB_PORT", os.environ.get("PORT", 6900)))
+    print(f"[portal_web_main] Listening on {host}:{port}")
+    # Write a tiny readiness marker (best-effort)
+    try:
+        (CONTROL_DIR / "web.ready").write_text("ok\n", encoding="utf-8")
+    except Exception as _e:
+        print(f"[portal_web_main] readiness file write failed: {_e}")
+    # Important for systemd: no reloader, no debug
+    app.run(host=host, port=port, use_reloader=False, debug=False, threaded=True)

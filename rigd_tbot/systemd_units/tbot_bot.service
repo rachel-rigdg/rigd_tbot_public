@@ -1,16 +1,29 @@
+# ~/.config/systemd/user/tbot_bot.service
+# Single entrypoint: launches Flask UI and self-schedules supervisor.
 [Unit]
-Description=RIGD TradeBot (single-entry: web + scheduler)
+Description=RIGD TradeBot (single entrypoint: web + supervisor)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/tbot/rigd_tbot
-Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=%h/rigd_tbot
 ExecStart=/usr/bin/python3 -m tbot_bot.runtime.main
-Restart=always
-RestartSec=5
-# (Optional) hardening
-NoNewPrivileges=true
-PrivateTmp=true
+
+# Keep it up if it crashes; let SIGTERM land for graceful stop.
+Restart=on-failure
+RestartSec=5s
+KillMode=mixed
+TimeoutStopSec=20
+
+# Defaults; override in environment if needed.
+Environment=TBOT_WEB_HOST=0.0.0.0
+Environment=TBOT_WEB_PORT=6900
+Environment=TBOT_SUPERVISOR_ENABLE=1
+Environment=TBOT_SUPERVISOR_UTC_HHMM=0001
+
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=default.target
