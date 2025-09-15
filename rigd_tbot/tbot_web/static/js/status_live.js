@@ -1,9 +1,32 @@
+// tbot_web/static/js/status_live.js
 document.addEventListener("DOMContentLoaded", function () {
     function setSafe(el, html) {
         if (el) el.innerHTML = html;
     }
+    function setText(id, text) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    }
+    function setBadge(id, ok, unknownText = "—") {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (ok === true) {
+            el.textContent = "✓";
+            el.style.color = "green";
+            el.title = "True";
+        } else if (ok === false) {
+            el.textContent = "✗";
+            el.style.color = "red";
+            el.title = "False";
+        } else {
+            el.textContent = unknownText;
+            el.style.color = "#666";
+            el.title = "Unknown";
+        }
+    }
 
     const DEFAULTS = {
+        // status.json fields
         state: "idle",
         timestamp: "",
         active_strategy: "none",
@@ -16,7 +39,17 @@ document.addEventListener("DOMContentLoaded", function () {
         version: "n/a",
         enabled_strategies: { open: false, mid: false, close: false },
         max_risk_per_trade: 0,
-        daily_loss_limit: 0
+        daily_loss_limit: 0,
+        // server-provided extras (optional)
+        supervisor: {
+            scheduled: null,         // boolean
+            launched: null,          // boolean
+            running: null,           // boolean
+            failed: null,            // boolean
+            scheduled_at: null,      // ISO string
+            launched_at: null        // ISO string
+        },
+        schedule: null              // object from logs/schedule.json (optional)
     };
 
     let lastData = null;
@@ -25,29 +58,77 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const resp = await fetch('/status/api/full_status', { cache: "no-store" });
             if (!resp.ok) throw new Error("HTTP not OK");
-            const data = await resp.json();
-            if (!data || Object.keys(data).length === 0) throw new Error("Empty JSON");
-            lastData = data;
-            updateUI(data);
+            const payload = await resp.json();
+            if (!payload || Object.keys(payload).length === 0) throw new Error("Empty JSON");
+            lastData = payload;
+            updateUI(payload);
         } catch (e) {
             updateUI(lastData || DEFAULTS);
         }
     }
 
-    function updateUI(data) {
-        // Merge with defaults to prevent blanks
+    function normalizePayload(payload) {
+        // Backend may return either a flat status object or {status, schedule, supervisor}
+        const status = payload.status ? payload.status : payload;
+        const schedule = payload.schedule || null;
+        const supervisor = payload.supervisor || {};
+
+        // Merge with DEFAULTS, keeping nested merges safe
         const merged = {
             ...DEFAULTS,
-            ...(data || {}),
+            ...status,
             enabled_strategies: {
                 ...DEFAULTS.enabled_strategies,
-                ...((data && data.enabled_strategies) || {})
+                ...(status.enabled_strategies || {})
+            },
+            schedule: schedule || null,
+            supervisor: {
+                ...DEFAULTS.supervisor,
+                ...supervisor
             }
         };
 
-        const d = merged;
+        // If supervisor.scheduled is unknown, infer from presence of schedule for today (UTC)
+        if (merged.supervisor.scheduled === null) {
+            const sch = merged.schedule;
+            if (sch && sch.trading_date) {
+                try {
+                    const todayUtc = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+                    merged.supervisor.scheduled = (sch.trading_date === todayUtc);
+                } catch {
+                    merged.supervisor.scheduled = null;
+                }
+            }
+        }
+        // If scheduled_at unknown but schedule exists, expose created_at_utc
+        if (!merged.supervisor.scheduled_at && merged.schedule && merged.schedule.created_at_utc) {
+            merged.supervisor.scheduled_at = merged.schedule.created_at_utc;
+        }
+
+        return merged;
+    }
+
+    function updateSupervisorBanners(merged) {
+        const sup = merged.supervisor || DEFAULTS.supervisor;
+
+        setBadge("banner-scheduled", sup.scheduled);
+        setBadge("banner-launched", sup.launched);
+        setBadge("banner-running", sup.running);
+        setBadge("banner-failed", sup.failed);
+
+        // Optional timestamps (if you later add spans with these IDs in the template)
+        // setText("banner-scheduled-at", sup.scheduled_at || "—");
+        // setText("banner-launched-at", sup.launched_at || "—");
+    }
+
+    function updateUI(payload) {
+        const d = normalizePayload(payload);
         const grids = document.querySelectorAll('.status-grid');
 
+        // --- Supervisor banners (new) ---
+        updateSupervisorBanners(d);
+
+        // --- Primary status grid ---
         if (grids[0]) {
             setSafe(
                 grids[0].children[0],
@@ -89,6 +170,7 @@ document.addEventListener("DOMContentLoaded", function () {
             setSafe(grids[0].children[9], `<strong>Version:</strong> ${d.version || "n/a"}`);
         }
 
+        // --- Strategy toggles grid ---
         if (grids[1]) {
             const es = d.enabled_strategies || DEFAULTS.enabled_strategies;
             setSafe(grids[1].children[0], `<strong>Open:</strong> ${String(es.open)}`);
@@ -96,12 +178,15 @@ document.addEventListener("DOMContentLoaded", function () {
             setSafe(grids[1].children[2], `<strong>Close:</strong> ${String(es.close)}`);
         }
 
+        // --- Risk controls grid ---
         if (grids[2]) {
             setSafe(grids[2].children[0], `<strong>Max Risk per Trade:</strong> ${Number.isFinite(d.max_risk_per_trade) ? d.max_risk_per_trade : 0}`);
             setSafe(grids[2].children[1], `<strong>Daily Loss Limit:</strong> ${Number.isFinite(d.daily_loss_limit) ? d.daily_loss_limit : 0}`);
         }
     }
 
+    // Poll every 60s
     setInterval(pollBotStatus, 60000);
+    // Initial fetch
     pollBotStatus();
 });

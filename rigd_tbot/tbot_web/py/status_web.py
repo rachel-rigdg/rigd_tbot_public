@@ -36,6 +36,9 @@ DEFAULT_STATUS = {
     "error_count": 0,
     "version": "n/a",
     "enabled_strategies": {"open": False, "mid": False, "close": False},
+    # supervisor-related defaults (UI banner + machine state)
+    "supervisor_banner": "Supervisor not scheduled.",
+    "supervisor_state": "not_scheduled",  # one of: not_scheduled|scheduled|launched|running|failed
 }
 
 def _read_status_json() -> dict:
@@ -155,6 +158,40 @@ def _determine_current_phase(schedule: dict) -> str:
         return "post"
     return "post"
 
+def _compute_supervisor_banner(enriched: dict, schedule: dict) -> tuple[str, str]:
+    """
+    Derive supervisor_state + banner message from available data.
+    Priority:
+      1) If status.json already has explicit supervisor_state/supervisor_status, respect it.
+      2) Else infer from schedule presence and bot_state.
+    """
+    # Accept either key written by tbot_supervisor/status_bot
+    existing_state = (enriched or {}).get("supervisor_state", "") or (enriched or {}).get("supervisor_status", "")
+    existing_state = existing_state.strip().lower()
+    if existing_state in {"scheduled", "launched", "running", "failed"}:
+        banner_map = {
+            "scheduled": "Supervisor scheduled.",
+            "launched": "Supervisor launched.",
+            "running": "Supervisor running.",
+            "failed": "Supervisor failed.",
+        }
+        return existing_state, banner_map[existing_state]
+
+    # Inference path (unchanged)
+    bot_state = (enriched or {}).get("bot_state", "idle")
+    sched_exists = bool(schedule)
+    if not sched_exists:
+        return "not_scheduled", "Supervisor not scheduled."
+
+    if bot_state in {"analyzing"}:
+        return "launched", "Supervisor launched."
+    if bot_state in {"trading", "updating", "running", "monitoring"}:
+        return "running", "Supervisor running."
+    if bot_state in {"error", "shutdown_triggered"}:
+        return "failed", "Supervisor failed."
+    return "scheduled", "Supervisor scheduled."
+
+
 def _enrich_status(base_status: dict) -> dict:
     # Ensure baseline keys exist
     enriched = dict(DEFAULT_STATUS)
@@ -170,10 +207,36 @@ def _enrich_status(base_status: dict) -> dict:
         "close_hhmm": (get_close_time_utc() or "19:45").strip(),
         "market_close_hhmm": (get_market_close_utc() or "21:00").strip(),
     }
-    # Supervisor schedule (strings in UTC) and current phase
+   # schedule + current_phase (existing)
     schedule = _read_schedule()
     enriched["schedule"] = {k: v for k, v in (schedule or {}).items() if not k.startswith("_dt_")}
     enriched["current_phase"] = _determine_current_phase(schedule)
+
+    # supervisor banner/state (now also accepts supervisor_status), unchanged call:
+    sup_state, sup_banner = _compute_supervisor_banner(enriched, schedule)
+    enriched["supervisor_state"] = sup_state
+    enriched["supervisor_banner"] = sup_banner
+
+    # NEW: provide compact 'supervisor' object for JS badges
+    sup = {"scheduled": None, "launched": None, "running": None, "failed": None,
+           "scheduled_at": None, "launched_at": None}
+    if sup_state == "scheduled":
+        sup["scheduled"] = True
+    elif sup_state == "launched":
+        sup["launched"] = True
+    elif sup_state == "running":
+        sup["running"] = True
+    elif sup_state == "failed":
+        sup["failed"] = True
+
+    # optional timestamps (use schedule.created_at_utc for scheduled_at)
+    if enriched["schedule"].get("created_at_utc"):
+        sup["scheduled_at"] = enriched["schedule"]["created_at_utc"]
+    # if supervisor wrote supervisor_updated_at into status.json, surface it
+    if base_status and base_status.get("supervisor_updated_at"):
+        sup["launched_at"] = base_status["supervisor_updated_at"]
+
+    enriched["supervisor"] = sup
     return enriched
 
 @status_blueprint.route("/status")

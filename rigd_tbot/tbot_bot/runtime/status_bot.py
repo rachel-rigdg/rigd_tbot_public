@@ -55,6 +55,12 @@ class BotStatus:
             self.pnl = 0.0
             self.win_rate = 0.0
 
+            # --- Supervisor status flags (added) ---
+            self.supervisor_scheduled = False
+            self.supervisor_launched = False
+            self.supervisor_running = False
+            self.supervisor_failed = False
+
     def update_config(self, config: dict):
         with self.lock:
             self.enabled_strategies["open"] = config.get("STRAT_OPEN_ENABLED", False)
@@ -104,6 +110,24 @@ class BotStatus:
         with self.lock:
             self.pnl = pnl
 
+    # --- Supervisor setters (added, optional convenience) ---
+    def set_supervisor_flags(
+        self,
+        supervisor_scheduled: bool = None,
+        supervisor_launched: bool = None,
+        supervisor_running: bool = None,
+        supervisor_failed: bool = None,
+    ):
+        with self.lock:
+            if supervisor_scheduled is not None:
+                self.supervisor_scheduled = bool(supervisor_scheduled)
+            if supervisor_launched is not None:
+                self.supervisor_launched = bool(supervisor_launched)
+            if supervisor_running is not None:
+                self.supervisor_running = bool(supervisor_running)
+            if supervisor_failed is not None:
+                self.supervisor_failed = bool(supervisor_failed)
+
     def _update_win_rate(self):
         if self.trade_count > 0:
             self.win_rate = round(100.0 * self.win_trades / self.trade_count, 2)
@@ -137,7 +161,12 @@ class BotStatus:
                 "daily_loss_limit": self.daily_loss_limit,
                 "max_risk_per_trade": self.max_risk_per_trade,
                 "pnl": self.pnl,
-                "win_rate": self.win_rate
+                "win_rate": self.win_rate,
+                # --- Supervisor fields (added) ---
+                "supervisor_scheduled": self.supervisor_scheduled,
+                "supervisor_launched": self.supervisor_launched,
+                "supervisor_running": self.supervisor_running,
+                "supervisor_failed": self.supervisor_failed,
             }
 
     def save_status(self):
@@ -177,7 +206,19 @@ try:
 except Exception:
     bot_status.save_status()
 
-def update_bot_state(state: str = None, strategy: str = None, error: bool = False, trade: bool = False, win: bool = None, pnl: float = 0.0):
+def update_bot_state(
+    state: str = None,
+    strategy: str = None,
+    error: bool = False,
+    trade: bool = False,
+    win: bool = None,
+    pnl: float = 0.0,
+    # --- Supervisor flags (added) ---
+    supervisor_scheduled: bool = None,
+    supervisor_launched: bool = None,
+    supervisor_running: bool = None,
+    supervisor_failed: bool = None,
+):
     if state:
         bot_status.set_state(state)
     if strategy:
@@ -189,6 +230,19 @@ def update_bot_state(state: str = None, strategy: str = None, error: bool = Fals
             bot_status.set_trade_result(win=win, pnl=pnl)
         else:
             bot_status.increment_trade_count()
+    # Apply supervisor flags if provided
+    if (
+        supervisor_scheduled is not None
+        or supervisor_launched is not None
+        or supervisor_running is not None
+        or supervisor_failed is not None
+    ):
+        bot_status.set_supervisor_flags(
+            supervisor_scheduled=supervisor_scheduled,
+            supervisor_launched=supervisor_launched,
+            supervisor_running=supervisor_running,
+            supervisor_failed=supervisor_failed,
+        )
     bot_status.save_status()
 
 def start_heartbeat(interval: int = 15):

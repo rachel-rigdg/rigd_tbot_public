@@ -20,6 +20,43 @@
                 Orchestration: <strong>daily one-shot supervisor</strong> (systemd timer @ <code>00:01 UTC</code>).
             </p>
 
+            <!-- Supervisor banner (pure-template logic; no backend change required) -->
+            <div style="margin:14px 0;padding:10px 12px;border-radius:6px;background:#f7f7f7;border:1px solid #e2e2e2;">
+                {% set sup_from_status = status.supervisor_state if status and status.supervisor_state is defined else None %}
+                {% if sup_from_status %}
+                    {% if sup_from_status|lower == "running" %}
+                        <strong style="color:green;">Supervisor running.</strong>
+                    {% elif sup_from_status|lower == "launched" %}
+                        <strong style="color:#2a7;">Supervisor launched.</strong>
+                    {% elif sup_from_status|lower == "scheduled" %}
+                        <strong style="color:#444;">Supervisor scheduled.</strong>
+                    {% elif sup_from_status|lower == "failed" %}
+                        <strong style="color:red;">Supervisor failed.</strong>
+                    {% else %}
+                        <strong style="color:#666;">Supervisor: {{ sup_from_status }}</strong>
+                    {% endif %}
+                {% else %}
+                    {% if schedule %}
+                        <!-- If a schedule.json is present, we can at least say "scheduled" -->
+                        <strong style="color:#444;">Supervisor scheduled.</strong>
+                        {% if status and status.state in ["analyzing","trading","updating"] %}
+                            <span style="margin-left:8px;color:green;font-weight:bold;">Supervisor running.</span>
+                        {% elif status and status.state == "error" %}
+                            <span style="margin-left:8px;color:red;font-weight:bold;">Supervisor failed.</span>
+                        {% endif %}
+                    {% else %}
+                        <!-- No schedule yet; try to infer from bot state -->
+                        {% if status and status.state in ["analyzing","trading","updating"] %}
+                            <strong style="color:green;">Supervisor running.</strong>
+                        {% elif status and status.state == "error" %}
+                            <strong style="color:red;">Supervisor failed.</strong>
+                        {% else %}
+                            <strong style="color:#666;">Supervisor not scheduled yet.</strong>
+                        {% endif %}
+                    {% endif %}
+                {% endif %}
+            </div>
+
             {% if status.error %}
                 <p class="error">{{ status.error }}</p>
             {% else %}
@@ -29,7 +66,8 @@
                 <p style="color:#666;margin-top:-6px;">Times below are in UTC and generated once per day by the supervisor.</p>
 
                 {% if schedule %}
-                    <div class="status-grid">
+                    <!-- NOTE: class changed from 'status-grid' to 'schedule-grid' so JS status updater doesn't target this block -->
+                    <div class="schedule-grid">
                         <div><strong>Trading Date:</strong> {{ schedule.trading_date }}</div>
                         <div><strong>Created:</strong> {{ schedule.created_at_utc }}</div>
                         <div><strong>Open:</strong> {{ schedule.open_utc }}</div>

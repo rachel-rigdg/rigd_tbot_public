@@ -39,6 +39,36 @@ def _write_log(line: str) -> None:
         # last-ditch
         print(f"{_iso_utc_now()} [tbot_supervisor] {line}", flush=True)
 
+# ---- Status helpers (status.json in tbot_bot/output/logs) ----
+
+def _status_path() -> Path:
+    return _path_resolver_get("logs", "status.json")
+
+def _read_status() -> Dict:
+    try:
+        with open(_status_path(), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _write_status(payload: Dict) -> None:
+    payload = dict(payload or {})
+    payload["supervisor_updated_at"] = _iso_utc_now()
+    with open(_status_path(), "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+
+def _status_update(state: str, message: str = None, extra: Dict = None) -> None:
+    data = _read_status()
+    data["supervisor_status"] = str(state)
+    if message is not None:
+        data["supervisor_message"] = str(message)
+    if isinstance(extra, dict):
+        data.update(extra)
+    try:
+        _write_status(data)
+    except Exception as e:
+        _write_log(f"[status] ERROR writing status.json: {e}")
+
 def _write_state(state: str) -> None:
     try:
         CONTROL_DIR.mkdir(parents=True, exist_ok=True)
@@ -162,12 +192,14 @@ def _guard_double_run(trading_date: str) -> bool:
     lk = _lock_path(trading_date)
     if lk.exists():
         _write_log(f"Lock exists: {lk.name}; already executed for {trading_date}.")
+        _status_update("already_ran", f"Supervisor already ran for {trading_date}.", {"trading_date": trading_date})
         return False
     try:
         lk.write_text(_iso_utc_now() + "\n", encoding="utf-8")
         return True
     except Exception as e:
         _write_log(f"[lock] ERROR cannot create {lk}: {e}")
+        _status_update("failed", f"Supervisor failed creating lock: {e}")
         return False
 
 # --- Main (one-shot) ---
@@ -181,22 +213,31 @@ def main() -> int:
 
     _write_state("analyzing")
     _write_log("Starting daily one-shot supervisor")
+    _status_update("launched", "Supervisor launched.")
 
     # Compute and persist schedule
     try:
         schedule = _compute_schedule()
         _write_schedule_json(schedule)
         _write_log(f"Schedule: {json.dumps(schedule, sort_keys=True)}")
+        _status_update("scheduled", "Supervisor scheduled.", {"schedule": schedule})
     except Exception as e:
         _write_log(f"[schedule] ERROR {e}")
         _write_state("error")
+        _status_update("failed", f"Supervisor failed while scheduling: {e}")
         return 1
 
     trading_date = provided_date or schedule["trading_date"]
     if not _guard_double_run(trading_date):
+        _status_update("scheduled", "Supervisor already executed today; lock present.", {"trading_date": trading_date})
         return 0  # consider already-run as success (idempotent behavior)
 
     rc_nonzero = False
+    _status_update("running", "Supervisor running.", {"trading_date": trading_date})
+
+
+
+
 
     # ---- OPEN ----
     try:
@@ -218,6 +259,7 @@ def main() -> int:
     except Exception as e:
         _write_log(f"[open] ERROR {e}")
         _write_state("error")
+        _status_update("failed", f"Supervisor failed during OPEN: {e}")
         return 1
 
     # ---- HOLDINGS (after open) ----
@@ -240,6 +282,7 @@ def main() -> int:
     except Exception as e:
         _write_log(f"[holdings] ERROR {e}")
         _write_state("error")
+        _status_update("failed", f"Supervisor failed during HOLDINGS: {e}")
         return 1
 
     # ---- MID ----
@@ -262,6 +305,7 @@ def main() -> int:
     except Exception as e:
         _write_log(f"[mid] ERROR {e}")
         _write_state("error")
+        _status_update("failed", f"Supervisor failed during MID: {e}")
         return 1
 
     # ---- CLOSE ----
@@ -284,6 +328,7 @@ def main() -> int:
     except Exception as e:
         _write_log(f"[close] ERROR {e}")
         _write_state("error")
+        _status_update("failed", f"Supervisor failed during CLOSE: {e}")
         return 1
 
     # ---- UNIVERSE (after close) ----
@@ -306,10 +351,12 @@ def main() -> int:
     except Exception as e:
         _write_log(f"[universe] ERROR {e}")
         _write_state("error")
+        _status_update("failed", f"Supervisor failed during UNIVERSE: {e}")
         return 1
 
     _write_state("idle")
     _write_log(f"Supervisor complete. rc_nonzero={int(rc_nonzero)}")
+    _status_update("complete", "Supervisor complete.", {"rc_nonzero": int(rc_nonzero)})
     return 0 if not rc_nonzero else 1
 
 
@@ -320,6 +367,7 @@ if __name__ == "__main__":
         _write_log("Interrupted by user")
         try:
             _write_state("shutdown_triggered")
+            _status_update("failed", "Supervisor interrupted by user (KeyboardInterrupt).")
         except Exception:
             pass
         sys.exit(130)
