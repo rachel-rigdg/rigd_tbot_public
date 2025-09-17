@@ -471,6 +471,7 @@ rigd_tbot/
 │       ├── orders_bot.py                          # Handles order submission, modifies/fills, and broker feedback.
 │       ├── reporting_bot.py                       # Pushes trades to accounting system; manages ledger output and COA compliance.
 │       ├── risk_module.py                        # Enforces all risk constraints (caps, allocations, Defense Mode, open trades).
+│       ├── trailing_stop.py                    # Single source of truth for bot-enforced trailing stop math & state.
 │       ├── utils_etf.py                           # Resolves ETF and inverse ETF tickers for supported symbols (top 20+ ETFs, as per project specifications).
 │       ├── utils_puts.py                          # Returns put option contract specs for any supported broker.
 │       └──utils_shorts.py                         # Provides broker-agnostic helpers for executing short trades, including real shorts, synthetic shorts, and alternatives.
