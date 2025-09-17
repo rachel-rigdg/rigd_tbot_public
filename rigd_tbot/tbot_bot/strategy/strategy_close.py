@@ -20,6 +20,8 @@ from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
+# --- NEW (surgical): centralized trailing-stop helper ---
+from tbot_bot.trading.trailing_stop import build_trailing_spec
 
 print("[strategy_close] module loaded", flush=True)
 
@@ -100,6 +102,7 @@ def analyze_closing_signals(start_time, screener_class):
     # Use local time for window
     while now_local() < deadline:
         try:
+            # Use screener-provided candidates only; no internal price/volume/mcap filtering here
             screener_data = screener.run_screen(pool_size=MAX_TRADES * CANDIDATE_MULTIPLIER)
         except Exception as e:
             handle_error("strategy_close", "LogicError", e)
@@ -121,24 +124,15 @@ def analyze_closing_signals(start_time, screener_class):
                 break
             symbol = stock["symbol"]
             price = float(stock["price"])
+            # Strategy-specific signal logic (not eligibility filtering):
+            # prefer late-day momentum near highs; fade if deep below intraday midpoint.
             high = float(stock.get("high", 0))
             low = float(stock.get("low", 0))
-            if high <= 0 or low <= 0 or price <= 0:
-                candidate_status.append({
-                    "symbol": symbol,
-                    "rank": idx + 1,
-                    "fractional": None,
-                    "min_order_size": None,
-                    "alloc": None,
-                    "status": "rejected",
-                    "reason": "Invalid high/low/price",
-                    "price": price
-                })
-                continue
-            range_mid = (high + low) / 2
-            if price > high * 0.995:
+            range_mid = (high + low) / 2 if (high > 0 and low > 0) else 0
+
+            if high > 0 and price > high * 0.995:
                 direction = "buy"
-            elif price < range_mid * 0.9:
+            elif range_mid > 0 and price < range_mid * 0.9:
                 direction = "sell"
             else:
                 candidate_status.append({
@@ -148,7 +142,7 @@ def analyze_closing_signals(start_time, screener_class):
                     "min_order_size": None,
                     "alloc": None,
                     "status": "rejected",
-                    "reason": "No valid EOD breakout",
+                    "reason": "No valid EOD momentum/fade signal",
                     "price": price
                 })
                 continue
@@ -218,7 +212,8 @@ def monitor_closing_trades(signals, start_time):
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        stop_loss_pct=0.02,
+                        # --- CHANGED (surgical): use centralized helper for trailing spec ---
+                        trailing_stop_spec=build_trailing_spec(mode="long", percent=0.02),  # peak × 0.98
                         strategy_name="close"
                     )
                     if result:
@@ -263,7 +258,8 @@ def monitor_closing_trades(signals, start_time):
                             side=side_exec,
                             capital=alloc_amt,
                             price=price,
-                            stop_loss_pct=0.02,
+                            # --- CHANGED (surgical): use centralized helper for trailing spec ---
+                            trailing_stop_spec=build_trailing_spec(mode="short", percent=0.02),  # trough × 1.02
                             strategy_name="close"
                         )
                         if result:

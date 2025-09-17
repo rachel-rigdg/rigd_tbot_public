@@ -21,6 +21,12 @@ from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
 
+# NEW: central trailing-stop helper import (used for any runtime-managed trailing logic)
+from tbot_bot.trading.trailing_stop import (
+    compute_trailing_exit_threshold,
+    should_exit_by_trailing,
+)
+
 print("[strategy_open] module loaded", flush=True)
 
 config = get_bot_config()
@@ -161,8 +167,6 @@ def detect_breakouts(start_time, screener_class):
             reason = f"Order size {alloc} below minimum {min_order_size}"
         elif symbol not in range_data:
             reason = "No range data"
-        else:
-            reason = None
 
         status_entry = {
             "symbol": symbol,
@@ -176,11 +180,8 @@ def detect_breakouts(start_time, screener_class):
         }
         candidate_status.append(status_entry)
 
-        if reason:
-            log_event("strategy_open", f"REJECT: {symbol} - {reason}")
-            rejected_candidates.append(status_entry)
-            continue
-        eligible_symbols.append({"symbol": symbol, "price": price, "alloc": alloc})
+        if not reason:
+            eligible_symbols.append({"symbol": symbol, "price": price, "alloc": alloc})
 
     # Logging for UI/session
     SESSION_LOGS.clear()
@@ -201,13 +202,15 @@ def detect_breakouts(start_time, screener_class):
             valid, alloc_amt = validate_trade(symbol, "buy", ACCOUNT_BALANCE, 0, 0, 1)
             if valid:
                 try:
+                    # NOTE: trailing-stop handled centrally; native if broker supports, else runtime can use helper
                     result = create_order(
-                        ticker=symbol,
+                        symbol=symbol,
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        stop_loss_pct=0.02,
-                        strategy_name="open"
+                        stop_loss_pct=0.02,     # 2% trailing per spec (uses trailing_stop helper centrally)
+                        strategy="open",
+                        use_trailing_stop=True,
                     )
                     if result:
                         trades.append(result)
@@ -232,7 +235,7 @@ def detect_breakouts(start_time, screener_class):
                         if not instrument:
                             log_event("strategy_open", f"No inverse ETF mapping for {symbol}, skipping short trade")
                             continue
-                        side = "buy"
+                        side = "buy"  # buy inverse ETF to synthetically short underlying
 
                     elif SHORT_TYPE_OPEN == "LongPut":
                         instrument = get_put_option(symbol)
@@ -254,13 +257,16 @@ def detect_breakouts(start_time, screener_class):
                         continue
 
                     try:
+                        # NOTE: for inverse ETF (side='buy'), trailing helper semantics are short-like at the underlying,
+                        # but orders_bot will apply correct directionality using the helper.
                         result = create_order(
-                            ticker=instrument,
+                            symbol=instrument,
                             side=side,
                             capital=alloc_amt,
                             price=price,
-                            stop_loss_pct=0.02,
-                            strategy_name="open"
+                            stop_loss_pct=0.02,   # 2% trailing per spec
+                            strategy="open",
+                            use_trailing_stop=True,
                         )
                         if result:
                             trades.append(result)
@@ -310,7 +316,5 @@ def run_open_strategy(screener_class):
     return StrategyResult(trades=trades, skipped=False)
 
 def simulate_open(*args, **kwargs):
-    """
-    Stub for backtest/CI/test: returns empty list (no simulated trades).
-    """
+    """Stub for backtest/CI/test: returns empty list (no simulated trades)."""
     return []

@@ -5,6 +5,7 @@ from tbot_bot.broker.core.broker_interface import BrokerInterface
 from tbot_bot.broker.utils.broker_request import safe_request
 from tbot_bot.broker.utils.ledger_normalizer import normalize_trade
 
+
 class IBKRBroker(BrokerInterface):
     def __init__(self, env):
         super().__init__(env)
@@ -50,13 +51,24 @@ class IBKRBroker(BrokerInterface):
             return None
 
     def submit_order(self, order):
+        # Standard order payload
         payload = {
             "symbol": order["symbol"],
             "qty": order["qty"],
             "side": order["side"],
             "type": order.get("order_type", "market"),
-            "tif": order.get("time_in_force", "DAY")
+            "tif": order.get("time_in_force", "DAY"),
         }
+
+        # --- NEW: Trailing stop order support ---
+        if order.get("trailing_stop_pct") is not None:
+            # IBKR relative order with trailing stop offset
+            payload["type"] = "trailing_stop"
+            payload["trailing_amount_type"] = "percent"
+            payload["trailing_amount"] = order["trailing_stop_pct"] * 100.0  # IBKR expects percent value
+            # Ensure time in force and other defaults
+            payload.setdefault("tif", "GTC")
+
         return self._request("POST", f"/v1/accounts/{self.account_id}/orders", data=payload)
 
     def place_order(self, symbol=None, side=None, amount=None, order=None):

@@ -61,15 +61,116 @@ class AlpacaBroker:
         except Exception:
             return None
 
+    # ------------------------
+    # Orders
+    # ------------------------
     def submit_order(self, order):
+        """
+        Generic order submit. Supports:
+          - market/limit/stop/stop_limit (existing behavior)
+          - trailing stop via either:
+              order["type"] in {"trailing_stop","trail","trailing"} and
+                order["trail_percent"] or order["trail_price"]
+            OR
+              order["trailing_stop_pct"] (fraction, e.g. 0.02) or order["trailing_stop_price"]
+        """
+        # Detect trailing-stop intent and route to trailing-stop submit
+        otype = (order.get("order_type") or order.get("type") or "market").lower()
+        trail_percent = order.get("trail_percent")
+        trail_price = order.get("trail_price")
+        # Back-compat keys from upstream order flow
+        if trail_percent is None and "trailing_stop_pct" in order:
+            try:
+                # incoming fraction (e.g. 0.02) -> Alpaca percent units (2.0)
+                trail_percent = float(order["trailing_stop_pct"]) * 100.0
+            except Exception:
+                trail_percent = None
+        if trail_price is None and "trailing_stop_price" in order:
+            try:
+                trail_price = float(order["trailing_stop_price"])
+            except Exception:
+                trail_price = None
+
+        if otype in {"trailing_stop", "trail", "trailing"} or trail_percent is not None or trail_price is not None:
+            return self.submit_trailing_stop(
+                symbol=order["symbol"],
+                qty=order["qty"],
+                side=order["side"],
+                trail_percent=trail_percent,
+                trail_price=trail_price,
+                time_in_force=order.get("time_in_force", "day"),
+                extended_hours=bool(order.get("extended_hours", False)),
+                client_order_id=order.get("client_order_id")
+            )
+
         payload = {
             "symbol": order["symbol"],
             "qty": order["qty"],
             "side": order["side"],
             "type": order.get("order_type", "market"),
             "time_in_force": order.get("time_in_force", "day"),
-            "extended_hours": False,
+            "extended_hours": bool(order.get("extended_hours", False)),
         }
+        if order.get("client_order_id"):
+            payload["client_order_id"] = order["client_order_id"]
+
+        # Optional price fields for limit/stop/stop_limit
+        if "limit_price" in order:
+            payload["limit_price"] = order["limit_price"]
+        if "stop_price" in order:
+            payload["stop_price"] = order["stop_price"]
+
+        return self._request("POST", "/v2/orders", data=payload)
+
+    def submit_trailing_stop(self, symbol, qty, side, trail_percent=None, trail_price=None,
+                             time_in_force="day", extended_hours=False, client_order_id=None):
+        """
+        Submit a broker-side trailing stop order.
+
+        Alpaca expects:
+          type = "trailing_stop"
+          trail_percent: percent in whole units (2.0 == 2%)
+          OR
+          trail_price: absolute price offset
+
+        'side' should be:
+          - "sell" to exit a LONG position
+          - "buy"  to cover a SHORT position
+        """
+        payload = {
+            "symbol": symbol,
+            "qty": qty,
+            "side": side,
+            "type": "trailing_stop",
+            "time_in_force": time_in_force,
+            "extended_hours": bool(extended_hours),
+        }
+        if client_order_id:
+            payload["client_order_id"] = client_order_id
+
+        # Prefer trail_percent if provided, else trail_price
+        if trail_percent is not None:
+            # Ensure numeric and positive
+            try:
+                tp = float(trail_percent)
+                if tp <= 0:
+                    raise ValueError("trail_percent must be > 0")
+                payload["trail_percent"] = tp
+            except Exception:
+                # Fallback to trail_price if available
+                if trail_price is None:
+                    raise
+        if "trail_percent" not in payload:
+            if trail_price is None:
+                raise ValueError("Must provide trail_percent or trail_price for trailing stop order")
+            try:
+                tr = float(trail_price)
+                if tr <= 0:
+                    raise ValueError("trail_price must be > 0")
+                payload["trail_price"] = tr
+            except Exception:
+                raise
+
         return self._request("POST", "/v2/orders", data=payload)
 
     def place_order(self, symbol=None, side=None, amount=None, order=None):
@@ -263,6 +364,15 @@ class AlpacaBroker:
                 trade["group_id"] = trade.get("trade_id")
             normed_acts.append(trade)
         return normed_acts
+
+    # ======================================================================
+    # NEW: Trailing stop capability helpers
+    # ======================================================================
+    def supports_trailing_stop(self) -> bool:
+        """
+        Alpaca supports broker-side trailing stops via /v2/orders type=trailing_stop.
+        """
+        return True
 
     # ======================================================================
     # NEW: First-sync Opening Balance helpers (non-breaking additions)

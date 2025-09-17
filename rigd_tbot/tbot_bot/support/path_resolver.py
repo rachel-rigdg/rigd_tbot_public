@@ -2,6 +2,8 @@
 # Resolves dynamic paths for TradeBot modules based on identity and file category.
 # Fully supports staged universe/blocklist build, archival, and validation/diff ops per specification.
 # All ledger, reporting, and COA outputs are aligned to compliance and accounting spec.
+# TEST-MODE AWARE: When TEST_MODE flag exists, ALL writes are redirected under output/_test/...
+#                  This keeps test artifacts isolated from live logs/ledgers/trades.
 
 import os
 import re
@@ -53,6 +55,18 @@ BOOTSTRAP_ONLY_LOGS = [
     "init_password_reset_tokens.log"
 ]
 
+# --- TEST-MODE detection (flag file) ---
+_CONTROL_DIR = PROJECT_ROOT / "tbot_bot" / "control"
+_TEST_MODE_FLAG = _CONTROL_DIR / "test_mode.flag"
+
+def is_test_mode_active() -> bool:
+    """Return True if TEST_MODE flag file exists."""
+    try:
+        return _TEST_MODE_FLAG.exists()
+    except Exception:
+        return False
+
+# --- Identity helpers ---
 def get_bot_identity(explicit_identity: str = None) -> str:
     """
     Returns a validated BOT_IDENTITY_STRING or None during first bootstrap.
@@ -71,29 +85,53 @@ def validate_bot_identity(bot_identity: str) -> None:
 def get_bot_identity_string_regex():
     return re.compile(IDENTITY_PATTERN)
 
+# --- Base output root (TEST-MODE aware) ---
+def _base_output_root(identity: str | None) -> Path:
+    """
+    Returns the base output directory:
+      - Live:  .../output/{IDENTITY}  (or generic .../output when identity is None for bootstrap/generic categories)
+      - Test:  .../output/_test/{IDENTITY or 'generic'}
+    """
+    output_root = PROJECT_ROOT / "tbot_bot" / "output"
+    if is_test_mode_active():
+        test_bucket = output_root / "_test" / (identity if identity else "generic")
+        test_bucket.mkdir(parents=True, exist_ok=True)
+        return test_bucket
+    # live paths
+    if identity:
+        live_bucket = output_root / identity
+        live_bucket.mkdir(parents=True, exist_ok=True)
+        return live_bucket
+    # generic (no identity yet)
+    output_root.mkdir(parents=True, exist_ok=True)
+    return output_root
+
 def get_output_path(category: str = None, filename: str = None, bot_identity: str = None, output_subdir: bool = False) -> str:
     # Always allow system/bootstrap logs to resolve even in bootstrap mode.
     if category == "logs" and (filename in SYSTEM_LOG_FILES + BOOTSTRAP_ONLY_LOGS or filename == "test_mode.log"):
-        logs_dir = PROJECT_ROOT / "tbot_bot" / "output" / "logs"
+        logs_dir = _base_output_root(None) / "logs" if is_test_mode_active() else (PROJECT_ROOT / "tbot_bot" / "output" / "logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
         return str(logs_dir / filename) if filename else str(logs_dir)
-    # During bootstrap or if identity not available, use generic logs path
+
+    # During bootstrap or if identity not available, use generic path roots
     identity = get_bot_identity(bot_identity)
     if not identity:
         # Generic non-identity logs path for early bootstrap, until config is saved
         if category == "logs":
-            logs_dir = PROJECT_ROOT / "tbot_bot" / "output" / "logs"
+            logs_dir = _base_output_root(None) / "logs"
             logs_dir.mkdir(parents=True, exist_ok=True)
             return str(logs_dir / filename) if filename else str(logs_dir)
         else:
             # Fallback to generic output for non-logs categories
-            generic_dir = PROJECT_ROOT / "tbot_bot" / "output" / (CATEGORIES.get(category, category or "logs"))
+            generic_dir = _base_output_root(None) / (CATEGORIES.get(category, category or "logs"))
             generic_dir.mkdir(parents=True, exist_ok=True)
             return str(generic_dir / filename) if filename else str(generic_dir)
+
+    # Identity present
     validate_bot_identity(identity)
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity
     if category not in CATEGORIES:
         raise ValueError(f"[path_resolver] Invalid output category: {category}")
+    base_output_dir = _base_output_root(identity)
     subdir = base_output_dir / CATEGORIES[category]
     subdir.mkdir(parents=True, exist_ok=True)
     if output_subdir:
@@ -107,12 +145,12 @@ def resolve_ledger_snapshot_dir(entity: str, jurisdiction: str, broker: str, bot
     """
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
-    snapshot_dir = PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers" / "snapshots"
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    return str(snapshot_dir)
+    snapshots_dir = Path(get_output_path(category="ledgers", bot_identity=bot_identity, output_subdir=True)) / "snapshots"
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    return str(snapshots_dir)
 
 def resolve_control_path() -> Path:
-    return PROJECT_ROOT / "tbot_bot" / "control"
+    return _CONTROL_DIR
 
 def resolve_category_path(category: str, filename: str = None, bot_identity: str = None, output_subdir: bool = False) -> str:
     return get_output_path(category=category, filename=filename, bot_identity=bot_identity, output_subdir=output_subdir)
@@ -158,21 +196,21 @@ def resolve_coa_json_path(bot_identity: str = None) -> str:
     if not identity:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
-    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa.json")
+    return get_output_path(category="ledgers", filename="coa.json", bot_identity=identity)
 
 def resolve_coa_metadata_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
     if not identity:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
-    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_metadata.json")
+    return get_output_path(category="ledgers", filename="coa_metadata.json", bot_identity=identity)
 
 def resolve_coa_audit_log_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
     if not identity:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
-    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "ledgers" / "coa_audit_log.json")
+    return get_output_path(category="ledgers", filename="coa_audit_log.json", bot_identity=identity)
 
 def resolve_coa_mapping_json_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> Path:
     """
@@ -183,21 +221,25 @@ def resolve_coa_mapping_json_path(entity: str, jurisdiction: str, broker: str, b
     """
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
-    mapping_dir = PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers"
+    mapping_dir = Path(get_output_path(category="ledgers", bot_identity=bot_identity, output_subdir=True))
     mapping_dir.mkdir(parents=True, exist_ok=True)
     return mapping_dir / "coa_mapping_table.json"
 
 def resolve_output_folder_path(bot_identity: str) -> str:
     validate_bot_identity(bot_identity)
-    return str(PROJECT_ROOT / "tbot_bot" / "output" / bot_identity)
+    return str(_base_output_root(bot_identity))
 
 def resolve_output_path(rel_path):
     """
     Returns absolute path for any output file, creating parent directories as needed.
-    All logs/output go to tbot_bot/output/.
+    TEST-MODE aware: prefixes with output/_test when active.
     """
-    root = Path(__file__).resolve().parents[2]
-    out_path = root / "tbot_bot" / "output" / rel_path
+    # Normalize to Path
+    rel_path = Path(rel_path)
+    if is_test_mode_active():
+        out_path = PROJECT_ROOT / "tbot_bot" / "output" / "_test" / "generic" / rel_path
+    else:
+        out_path = PROJECT_ROOT / "tbot_bot" / "output" / rel_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     return str(out_path)
 
@@ -210,83 +252,56 @@ def resolve_ledger_db_path(entity: str, jurisdiction: str, broker: str, bot_id: 
     """
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
-    return str(Path(resolve_output_folder_path(bot_identity)) / "ledgers" / f"{bot_identity}_BOT_ledger.db")
+    return str(Path(get_output_path(category="ledgers", bot_identity=bot_identity, output_subdir=True)) / f"{bot_identity}_BOT_ledger.db")
 
 def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str) -> str:
     bot_identity = f"{entity}_{jurisdiction}_{broker}_{bot_id}"
     validate_bot_identity(bot_identity)
-    return str(PROJECT_ROOT / "tbot_bot" / "output" / bot_identity / "ledgers" / f"{bot_identity}_BOT_COA.db")
+    return str(Path(get_output_path(category="ledgers", bot_identity=bot_identity, output_subdir=True)) / f"{bot_identity}_BOT_COA.db")
 
 def resolve_universe_cache_path(bot_identity: str = None) -> str:
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    screeners_dir = base_output_dir / "screeners"
-    screeners_dir.mkdir(parents=True, exist_ok=True)
-    return str(screeners_dir / "symbol_universe.json")
+    return get_output_path(category="screeners", filename="symbol_universe.json", bot_identity=bot_identity)
 
 def resolve_universe_raw_path():
-    return os.path.abspath(os.path.join(
-        os.path.dirname(__file__), '..', 'output', 'screeners', 'symbol_universe.symbols_raw.json'
-    ))
+    # legacy raw dump path; keep under screeners category
+    return get_output_path(category="screeners", filename="symbol_universe.symbols_raw.json", bot_identity=None)
 
 def resolve_universe_unfiltered_path() -> str:
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    screeners_dir = base_output_dir / "screeners"
-    screeners_dir.mkdir(parents=True, exist_ok=True)
-    return str(screeners_dir / "symbol_universe.unfiltered.json")
+    return get_output_path(category="screeners", filename="symbol_universe.unfiltered.json", bot_identity=None)
 
 def resolve_universe_partial_path() -> str:
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    screeners_dir = base_output_dir / "screeners"
-    screeners_dir.mkdir(parents=True, exist_ok=True)
-    return str(screeners_dir / "symbol_universe.partial.json")
+    return get_output_path(category="screeners", filename="symbol_universe.partial.json", bot_identity=None)
 
 def resolve_universe_log_path() -> str:
     # === Reporting logger refactor: reporting/universe_logger.py ===
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    screeners_dir = base_output_dir / "screeners"
-    screeners_dir.mkdir(parents=True, exist_ok=True)
-    return str(screeners_dir / "universe_ops.log")
+    return get_output_path(category="screeners", filename="universe_ops.log", bot_identity=None)
 
 def resolve_universe_logger_path() -> str:
     # Path for reporting/universe_logger.py (for backward compatibility)
     return str(PROJECT_ROOT / "tbot_bot" / "reporting" / "universe_logger.py")
 
 def resolve_screener_blocklist_path() -> str:
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    screeners_dir = base_output_dir / "screeners"
-    screeners_dir.mkdir(parents=True, exist_ok=True)
-    return str(screeners_dir / "screener_blocklist.txt")
+    return get_output_path(category="screeners", filename="screener_blocklist.txt", bot_identity=None)
 
 def resolve_blocklist_archive_path(archive_date: str = None) -> str:
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    screeners_dir = base_output_dir / "screeners"
-    screeners_dir.mkdir(parents=True, exist_ok=True)
     if not archive_date:
         archive_date = datetime.utcnow().strftime("%Y%m%d")
-    return str(screeners_dir / f"blocklist_archive_{archive_date}.txt")
+    return get_output_path(category="screeners", filename=f"blocklist_archive_{archive_date}.txt", bot_identity=None)
 
 def resolve_universe_archive_path(archive_date: str = None) -> str:
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    screeners_dir = base_output_dir / "screeners"
-    screeners_dir.mkdir(parents=True, exist_ok=True)
     if not archive_date:
         archive_date = datetime.utcnow().strftime("%Y%m%d")
-    return str(screeners_dir / f"symbol_universe_{archive_date}.json")
+    return get_output_path(category="screeners", filename=f"symbol_universe_{archive_date}.json", bot_identity=None)
 
 def resolve_status_log_path(bot_identity: str = None) -> str:
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    logs_dir = base_output_dir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    return str(logs_dir / "status.json")
+    return get_output_path(category="logs", filename="status.json", bot_identity=bot_identity)
 
 def resolve_status_summary_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
     if not identity:
         raise RuntimeError("[path_resolver] BOT_IDENTITY_STRING not available or invalid (not yet configured)")
     validate_bot_identity(identity)
-    summaries_dir = PROJECT_ROOT / "tbot_bot" / "output" / identity / "summaries"
-    summaries_dir.mkdir(parents=True, exist_ok=True)
-    return str(summaries_dir / "status.json")
+    return get_output_path(category="summaries", filename="status.json", bot_identity=identity)
 
 def resolve_runtime_script_path(script_name: str) -> str:
     if script_name == "universe_orchestrator.py":
@@ -342,15 +357,12 @@ def resolve_integration_test_runner_path() -> str:
     return resolve_test_script_path("integration_test_runner.py")
 
 def resolve_nasdaqlisted_txt_path() -> str:
-    base_output_dir = PROJECT_ROOT / "tbot_bot" / "output"
-    screeners_dir = base_output_dir / "screeners"
-    screeners_dir.mkdir(parents=True, exist_ok=True)
-    return str(screeners_dir / "nasdaqlisted.txt")
+    return get_output_path(category="screeners", filename="nasdaqlisted.txt", bot_identity=None)
 
 def resolve_holdings_audit_log_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
     validate_bot_identity(identity)
-    return str(PROJECT_ROOT / "tbot_bot" / "output" / identity / "logs" / "holdings_audit.log")
+    return get_output_path(category="logs", filename="holdings_audit.log", bot_identity=identity)
 
 # --- Holdings Management Paths (NEW) ---
 
@@ -374,7 +386,7 @@ def resolve_holdings_secrets_backup_dir() -> Path:
 
 def get_schedule_json_path(bot_identity: str = None) -> str:
     """
-    .../output/{BOT_IDENTITY}/logs/schedule.json
+    .../output/{BOT_IDENTITY or _test/generic}/logs/schedule.json
     Falls back to generic output/logs if identity is not yet available (bootstrap).
     """
     return get_output_path(category="logs", filename="schedule.json", bot_identity=bot_identity)
@@ -400,7 +412,15 @@ def get_phase_log_path(phase: str, bot_identity: str = None) -> str:
     fname = f"{phase}.log"
     return get_output_path(category="logs", filename=fname, bot_identity=bot_identity)
 
+# --- Enhancements path helper (referenced in __all__) ---
+def get_enhancements_path(bot_identity: str = None, output_subdir: bool = True) -> str:
+    """
+    Returns the enhancements output directory (TEST-MODE aware).
+    """
+    return get_output_path(category="enhancements", bot_identity=bot_identity, output_subdir=output_subdir)
+
 __all__ = [
+    "is_test_mode_active",
     "get_bot_identity",
     "validate_bot_identity",
     "get_bot_identity_string_regex",

@@ -9,13 +9,14 @@ Triggered on order execution and exit.
 import json
 import csv
 import os
+from pathlib import Path
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.accounting.export_manager import export_trade_to_manager
+from tbot_bot.accounting.ledger_modules import ledger_entry, ledger_double_entry
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.path_resolver import get_output_path
 from tbot_bot.support.utils_identity import get_bot_identity
-from pathlib import Path
 
 config = get_bot_config()
 FORCE_PAPER_EXPORT = config.get("FORCE_PAPER_EXPORT", False)
@@ -36,12 +37,13 @@ def is_test_mode_active():
 def append_trade_log(trade_data):
     """
     Appends trade to JSON or CSV file with correct bot-scoped filename.
-    Skips actual logging if TEST_MODE active.
+    In TEST_MODE, route to ephemeral test path instead of skipping.
     """
-    if not ENABLE_LOGGING or is_test_mode_active():
+    if not ENABLE_LOGGING:
         return
 
-    filepath = get_output_path("trades", history_file)
+    category = "trades"
+    filepath = get_output_path(category, history_file)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
     if LOG_FORMAT == "json":
@@ -67,9 +69,9 @@ def append_trade_log(trade_data):
 def append_summary(summary):
     """
     Writes session summary JSON with bot-scoped filename.
-    Skips writing if TEST_MODE active.
+    In TEST_MODE, route to ephemeral test path instead of skipping.
     """
-    if not ENABLE_LOGGING or is_test_mode_active():
+    if not ENABLE_LOGGING:
         return
 
     filepath = get_output_path("summaries", summary_file)
@@ -84,9 +86,9 @@ def append_summary(summary):
 def export_to_manager(trade_data):
     """
     Routes trade to Manager.io ledger if GNC_EXPORT_MODE is 'auto'.
-    Skips export if TEST_MODE active.
+    Always invoked, but suppressed only if explicitly disabled.
     """
-    if GNC_EXPORT_MODE != "auto" or is_test_mode_active():
+    if GNC_EXPORT_MODE != "auto":
         return
     try:
         export_trade_to_manager(trade_data)
@@ -94,10 +96,23 @@ def export_to_manager(trade_data):
     except Exception as e:
         log_event("reporting_bot", f"Manager.io export failed: {e}")
 
+def post_to_ledger(trade_data):
+    """
+    Ensure every trade is posted into ledger and double-entry validated.
+    """
+    try:
+        entry = ledger_entry.create_trade_entry(trade_data)
+        ledger_double_entry.validate_double_entry(entry)
+        log_event("reporting_bot", f"Trade posted to ledger: {entry.get('trade_id')}")
+    except Exception as e:
+        log_event("reporting_bot", f"Ledger posting failed: {e}")
+
 def finalize_trade(trade_data):
     """
-    Logs and exports a trade.
+    Logs, posts to ledger, and exports a trade.
+    Ensures even TEST_MODE trades and fallback instruments are recorded.
     """
     trade_data["timestamp"] = utc_now().isoformat()
     append_trade_log(trade_data)
+    post_to_ledger(trade_data)
     export_to_manager(trade_data)

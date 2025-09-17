@@ -21,6 +21,7 @@ CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 WEB_MAIN_PATH = ROOT_DIR / "tbot_web" / "py" / "portal_web_main.py"
 TBOT_SUPERVISOR_PATH = ROOT_DIR / "tbot_bot" / "runtime" / "tbot_supervisor.py"
+INTEGRATION_TEST_RUNNER_MOD = "tbot_bot.test.integration_test_runner"
 
 WEB_PORT = int(os.environ.get("TBOT_WEB_PORT", "6900"))
 WEB_HOST = os.environ.get("TBOT_WEB_HOST", "0.0.0.0")  # default: listen on all interfaces
@@ -30,7 +31,7 @@ SUP_ENABLE = os.environ.get("TBOT_SUPERVISOR_ENABLE", "1") != "0"
 SUP_TRIGGER_HHMM = os.environ.get("TBOT_SUPERVISOR_UTC_HHMM", "0600")  # "HHMM" in UTC
 POLL_SECS = int(os.environ.get("TBOT_MAIN_POLL_SECS", "5"))
 
-child_procs = {"flask": None, "supervisor": None}
+child_procs = {"flask": None, "supervisor": None, "test_runner": None}
 _shutting_down = False
 
 def _port_occupied(host: str, port: int) -> bool:
@@ -147,6 +148,65 @@ def _launch_supervisor():
     write_system_log(f"tbot_supervisor.py started with PID {proc.pid}")
     return proc
 
+def _launch_integration_test_runner():
+    """
+    Start the integration test runner in TEST_MODE and keep supervisor paused.
+    """
+    write_system_log("TEST_MODE detected — launching integration_test_runner and suspending live schedule.")
+    print("[main.py] TEST_MODE detected — launching integration_test_runner…", flush=True)
+    env = os.environ.copy()
+    # Ensure PYTHONPATH so -m works reliably
+    env["PYTHONUNBUFFERED"] = "1"
+    env.setdefault("PYTHONPATH", str(ROOT_DIR))
+    # Ensure the global test flag exists (runner will handle inner flags & cleanup)
+    (CONTROL_DIR / "test_mode.flag").write_text("1\n", encoding="utf-8")
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-u", "-m", INTEGRATION_TEST_RUNNER_MOD],
+            cwd=str(ROOT_DIR),
+            stdout=None,
+            stderr=None,
+            env=env
+        )
+        write_system_log(f"integration_test_runner started with PID {proc.pid}")
+        return proc
+    except Exception as e:
+        write_system_log(f"Failed to launch integration_test_runner: {e}")
+        return None
+
+def _is_test_mode_active() -> bool:
+    """
+    TEST_MODE is active if a global test_mode.flag or any test_mode_*.flag exists.
+    """
+    if (CONTROL_DIR / "test_mode.flag").exists():
+        return True
+    # any individual test flag also indicates active testing
+    for p in CONTROL_DIR.glob("test_mode_*.flag"):
+        return True
+    return False
+
+def _ensure_no_supervisor_when_test():
+    """
+    If supervisor is running while TEST_MODE is active, terminate it to avoid overlap.
+    """
+    sup = child_procs.get("supervisor")
+    if sup and sup.poll() is None:
+        write_system_log("TEST_MODE active → terminating running supervisor to prevent live trades.")
+        try:
+            sup.terminate()
+        except Exception:
+            pass
+        # best effort wait
+        t0 = time.time()
+        while time.time() - t0 < 5 and sup.poll() is None:
+            time.sleep(0.2)
+        if sup.poll() is None:
+            try:
+                sup.kill()
+            except Exception:
+                pass
+    child_procs["supervisor"] = None
+
 def _graceful_shutdown(*_args):
     global _shutting_down
     if _shutting_down:
@@ -227,9 +287,18 @@ def main():
     wait_secs = WAIT_BOOTSTRAP_SECS if first_bootstrap else WAIT_OPS_SECS
     _wait_for_operational_phase(deadline_epoch=time.time() + max(0, wait_secs))
 
-    # Self-schedule supervisor
+    # --- TEST MODE GATE (startup) -----------------------------------------
+    # If test mode is active at startup, do NOT launch supervisor. Run tests instead.
+    if _is_test_mode_active():
+        _write_bot_state("analyzing")
+        _ensure_no_supervisor_when_test()
+        if child_procs.get("test_runner") is None or child_procs["test_runner"].poll() is not None:
+            child_procs["test_runner"] = _launch_integration_test_runner()
+        # Fall through to main loop; scheduling logic below will remain suspended until flags clear.
+
+    # Self-schedule supervisor (live mode only)
     next_fire = None
-    if SUP_ENABLE:
+    if SUP_ENABLE and not _is_test_mode_active():
         now = _utc_now()
         target = _next_utc_trigger(now)
         if now >= target:
@@ -242,7 +311,10 @@ def main():
             next_fire = target
         write_system_log(f"Next supervisor trigger set for {next_fire.isoformat() if next_fire else 'disabled'}")
     else:
-        write_system_log("Supervisor disabled by TBOT_SUPERVISOR_ENABLE=0")
+        if SUP_ENABLE:
+            write_system_log("Supervisor launch deferred due to TEST_MODE at startup.")
+        else:
+            write_system_log("Supervisor disabled by TBOT_SUPERVISOR_ENABLE=0")
         next_fire = None
 
     # Main loop: tick, (re)launch supervisor at window, keep main alive, watch children
@@ -257,15 +329,35 @@ def main():
             write_system_log("Flask process died; relaunching.")
             child_procs["flask"] = _launch_flask()
 
-        # Handle supervisor schedule
-        if SUP_ENABLE:
-            sup = child_procs["supervisor"]
-            sup_dead = (sup is not None and sup.poll() is not None)
-            if next_fire and now >= next_fire and (sup is None or sup_dead):
-                child_procs["supervisor"] = _launch_supervisor()
-                # Set next window to tomorrow 00:01Z
-                next_fire = _next_utc_trigger(_utc_now())
-                write_system_log(f"Supervisor launched; next trigger {next_fire.isoformat()}")
+        # -------- TEST MODE SUPERVISION -----------------------------------
+        if _is_test_mode_active():
+            # Ensure no supervisor runs while in TEST_MODE
+            _ensure_no_supervisor_when_test()
+            # Start test runner if not already running
+            tr = child_procs.get("test_runner")
+            if tr is None or tr.poll() is not None:
+                child_procs["test_runner"] = _launch_integration_test_runner()
+            # While tests run, do not schedule supervisor (keep next_fire None)
+            next_fire = None
+        else:
+            # Not in TEST_MODE. If test runner had been running and finished, just ensure it is cleared.
+            tr = child_procs.get("test_runner")
+            if tr and tr.poll() is None:
+                # Runner still alive but flags cleared unexpectedly — let it finish, still do NOT launch supervisor yet.
+                write_system_log("Test runner still active; postponing live scheduling until it exits.")
+            elif SUP_ENABLE:
+                # Handle supervisor schedule normally
+                sup = child_procs["supervisor"]
+                sup_dead = (sup is not None and sup.poll() is not None)
+                # If we have no next_fire (e.g., resuming after tests), set next trigger
+                if next_fire is None:
+                    next_fire = _next_utc_trigger(_utc_now())
+                    write_system_log(f"Resumed live scheduling. Next supervisor trigger {next_fire.isoformat()}")
+                if next_fire and now >= next_fire and (sup is None or sup_dead):
+                    child_procs["supervisor"] = _launch_supervisor()
+                    # Set next window to tomorrow at configured time
+                    next_fire = _next_utc_trigger(_utc_now())
+                    write_system_log(f"Supervisor launched; next trigger {next_fire.isoformat()}")
 
         time.sleep(POLL_SECS)
 

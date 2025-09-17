@@ -11,7 +11,6 @@ from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.screeners.screener_utils import load_universe_cache
 from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.support.utils_log import log_event
-from tbot_bot.trading.risk_module import validate_trade
 
 def get_trading_screener_creds():
     # Only use providers with TRADING_ENABLED == "true" and PROVIDER == "FINNHUB"
@@ -53,25 +52,34 @@ TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 def is_test_mode_active():
     return TEST_MODE_FLAG.exists()
 
+def _parse_test_universe():
+    raw = str(config.get("SCREENER_TEST_MODE_UNIVERSE", "")).strip()
+    if not raw:
+        return []
+    parts = [p.strip().upper() for p in raw.replace(",", " ").split() if p.strip()]
+    return list(dict.fromkeys(parts))
+
 def log(msg):
     if LOG_LEVEL == "verbose":
         print(f"[Finnhub Screener] {msg}")
+
+def _normalize_price_fields(c, o, vwap):
+    # Correct for possible cents-vs-dollars mis-scaling from API
+    if max(c or 0, o or 0, vwap or 0) > 10000:
+        return (c / 100 if c else 0, o / 100 if o else 0, vwap / 100 if vwap else 0)
+    return (c, o, vwap)
 
 class FinnhubScreener(ScreenerBase):
     """
     Finnhub screener: loads eligible symbols from universe cache,
     fetches latest quotes from Finnhub API using screener credentials,
-    filters per strategy, test mode aware, always flags is_fractional eligibility.
+    filters using centralized screener_filter. Test-mode aware.
     """
     def __init__(self, *args, strategy=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.strategy = strategy
 
     def fetch_live_quotes(self, symbols):
-        """
-        Fetches latest price/open/vwap for each symbol using Finnhub API.
-        Returns list of dicts: [{"symbol":..., "c":..., "o":..., "vwap":...}, ...]
-        """
         quotes = []
         for idx, symbol in enumerate(symbols):
             url = f"{SCREENER_URL.rstrip('/')}/quote?symbol={symbol}&token={SCREENER_API_KEY}"
@@ -82,15 +90,11 @@ class FinnhubScreener(ScreenerBase):
                     log(f"Error fetching quote for {symbol}: HTTP {resp.status_code}")
                     continue
                 data = resp.json()
-                c = float(data.get("c", 0))
-                o = float(data.get("o", 0))
-                vwap = float(data.get("vwap", 0)) if "vwap" in data and data.get("vwap", 0) else (c if c else 0)
-                quotes.append({
-                    "symbol": symbol,
-                    "c": c,
-                    "o": o,
-                    "vwap": vwap
-                })
+                c = float(data.get("c", 0) or 0)
+                o = float(data.get("o", 0) or 0)
+                vwap = float(data.get("vwap", 0) or 0)
+                c, o, vwap = _normalize_price_fields(c, o, vwap if vwap else (c if c else 0))
+                quotes.append({"symbol": symbol, "c": c, "o": o, "vwap": vwap or c})
             except Exception as e:
                 log(f"Exception fetching quote for {symbol}: {e}")
                 continue
@@ -99,204 +103,92 @@ class FinnhubScreener(ScreenerBase):
             time.sleep(STRATEGY_SLEEP_TIME)
         return quotes
 
-    def run_screen(self, pool_size=15):
-        """
-        Returns the full, ranked pool of symbol candidates (not filtered by final cut).
-        pool_size: number of symbols to return (CANDIDATE_MULTIPLIER x MAX_TRADES from strategy).
-        """
-        universe = load_universe_cache()
-        all_symbols = [s["symbol"] for s in universe][:pool_size * 2]
-        quotes = self.fetch_live_quotes(all_symbols)
-        strategy = self.strategy or self.env.get("STRATEGY_NAME", "open")
-        gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
-        min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
-        max_cap_key = f"MAX_MARKET_CAP_{strategy.upper()}"
-        max_gap = float(self.env.get(gap_key, 0.1))
-        min_cap = float(self.env.get(min_cap_key, 2e9))
-        max_cap = float(self.env.get(max_cap_key, 1e10))
-
+    def _build_price_candidates(self, quotes):
         try:
             universe_cache = {s["symbol"]: s for s in load_universe_cache()}
         except Exception:
             universe_cache = {}
-
-        price_candidates = []
+        candidates = []
         for q in quotes:
             symbol = q["symbol"]
-            current = float(q.get("c", 0))
-            open_ = float(q.get("o", 0))
-            vwap = float(q.get("vwap", 0))
-            if current <= 0 or open_ <= 0 or vwap <= 0:
+            c, o, vwap = q["c"], q["o"], q["vwap"]
+            if c <= 0 or o <= 0 or vwap <= 0:
                 continue
-            mc = universe_cache.get(symbol, {}).get("marketCap", 0)
+            mc = float(universe_cache.get(symbol, {}).get("marketCap", 0) or 0)
             exch = universe_cache.get(symbol, {}).get("exchange", "US")
-            is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
-            # PATCH: convert to millions for compatibility with screener_filter.py normalization
-            mc_millions = mc / 1_000_000 if mc else 0
-            price_candidates.append({
+            frac = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
+            candidates.append({
                 "symbol": symbol,
-                "lastClose": current,
-                "marketCap": mc_millions,
+                "lastClose": c,
+                "marketCap": mc / 1_000_000 if mc else 0,
                 "exchange": exch,
-                "isFractional": is_fractional,
-                "price": current,
+                "isFractional": frac,
+                "price": c,
                 "vwap": vwap,
-                "open": open_
+                "open": o
             })
+        return candidates
 
-        filtered = core_filter_symbols(
-            price_candidates,
-            min_price=MIN_PRICE,
-            max_price=MAX_PRICE,
-            min_market_cap=min_cap,
-            max_market_cap=max_cap,
-            max_size=pool_size * 2
-        )
+    def run_screen(self, pool_size=15):
+        test_mode = is_test_mode_active()
+        if test_mode:
+            override = _parse_test_universe()
+            all_symbols = override[: pool_size * 4] if override else [s["symbol"] for s in load_universe_cache()][: pool_size * 4]
+        else:
+            all_symbols = [s["symbol"] for s in load_universe_cache()][: pool_size * 4]
 
+        quotes = self.fetch_live_quotes(all_symbols)
+        candidates = self._build_price_candidates(quotes)
+        if test_mode:
+            filtered = core_filter_symbols(candidates, min_price=MIN_PRICE, max_price=MAX_PRICE,
+                                           min_market_cap=0, max_market_cap=1e12, max_size=pool_size * 2)
+        else:
+            filtered = core_filter_symbols(candidates, min_price=MIN_PRICE, max_price=MAX_PRICE,
+                                           min_market_cap=float(config.get("MIN_MARKET_CAP", 0) or 0.0),
+                                           max_market_cap=float(config.get("MAX_MARKET_CAP", 1e12) or 1e12),
+                                           max_size=pool_size * 2)
         results = []
-        open_positions_count = 0  # Should be fetched from runtime if possible
-        account_balance = float(self.env.get("ACCOUNT_BALANCE", 0))
-        signal_index = 0
-        total_signals = pool_size
-
-        for q in price_candidates:
-            if not any(f["symbol"] == q["symbol"] for f in filtered):
+        present = {f["symbol"] for f in filtered}
+        for q in candidates:
+            if q["symbol"] not in present:
                 continue
-            symbol = q["symbol"]
-            current = q["price"]
-            open_ = q["open"]
-            vwap = q["vwap"]
-            gap = abs((current - open_) / open_) if open_ else 0
-            if gap > max_gap:
-                continue
-            # Risk/Enhancement gating
-            valid, reason_or_alloc = validate_trade(
-                symbol=symbol,
-                side="long",
-                account_balance=account_balance,
-                open_positions_count=open_positions_count,
-                signal_index=signal_index,
-                total_signals=total_signals
-            )
-            if not valid:
-                continue
-            momentum = abs(current - open_) / open_
+            momentum = abs(q["price"] - q["open"]) / q["open"] if q["open"] else 0
             results.append({
-                "symbol": symbol,
-                "price": current,
-                "vwap": vwap,
+                "symbol": q["symbol"],
+                "price": q["price"],
+                "vwap": q["vwap"],
                 "momentum": momentum,
                 "is_fractional": q["isFractional"]
             })
-            signal_index += 1
-
         results.sort(key=lambda x: x["momentum"], reverse=True)
         log_event("finnhub_screener", f"run_screen returned {len(results[:pool_size])} candidates")
         return results[:pool_size]
 
-    # (Retain filter_candidates only for legacy support, but strategies must use run_screen.)
     def filter_candidates(self, quotes):
-        strategy = self.strategy or self.env.get("STRATEGY_NAME", "open")
-        gap_key = f"MAX_GAP_PCT_{strategy.upper()}"
-        min_cap_key = f"MIN_MARKET_CAP_{strategy.upper()}"
-        max_cap_key = f"MAX_MARKET_CAP_{strategy.upper()}"
-        max_gap = float(self.env.get(gap_key, 0.1))
-        min_cap = float(self.env.get(min_cap_key, 2e9))
-        max_cap = float(self.env.get(max_cap_key, 1e10))
+        test_mode = is_test_mode_active()
         limit = int(self.env.get("SCREENER_LIMIT", 3))
-        test_mode_active = is_test_mode_active()
-
-        try:
-            universe_cache = {s["symbol"]: s for s in load_universe_cache()}
-        except Exception:
-            universe_cache = {}
-
-        price_candidates = []
-        for q in quotes:
-            symbol = q["symbol"]
-            current = float(q.get("c", 0))
-            open_ = float(q.get("o", 0))
-            vwap = float(q.get("vwap", 0))
-            if current <= 0 or open_ <= 0 or vwap <= 0:
-                continue
-            mc = universe_cache.get(symbol, {}).get("marketCap", 0)
-            exch = universe_cache.get(symbol, {}).get("exchange", "US")
-            is_fractional = bool(universe_cache.get(symbol, {}).get("isFractional", FRACTIONAL))
-            # PATCH: convert to millions for compatibility with screener_filter.py normalization
-            mc_millions = mc / 1_000_000 if mc else 0
-            price_candidates.append({
-                "symbol": symbol,
-                "lastClose": current,
-                "marketCap": mc_millions,
-                "exchange": exch,
-                "isFractional": is_fractional,
-                "price": current,
-                "vwap": vwap,
-                "open": open_
-            })
-
-        filtered = core_filter_symbols(
-            price_candidates,
-            min_price=MIN_PRICE,
-            max_price=MAX_PRICE,
-            min_market_cap=min_cap,
-            max_market_cap=max_cap,
-            max_size=limit
-        )
-
+        candidates = self._build_price_candidates(quotes)
+        if test_mode:
+            filtered = core_filter_symbols(candidates, min_price=MIN_PRICE, max_price=MAX_PRICE,
+                                           min_market_cap=0, max_market_cap=1e12, max_size=limit)
+        else:
+            filtered = core_filter_symbols(candidates, min_price=MIN_PRICE, max_price=MAX_PRICE,
+                                           min_market_cap=float(config.get("MIN_MARKET_CAP", 0) or 0.0),
+                                           max_market_cap=float(config.get("MAX_MARKET_CAP", 1e12) or 1e12),
+                                           max_size=limit)
         results = []
-        open_positions_count = 0  # Should be fetched from runtime if possible
-        account_balance = float(self.env.get("ACCOUNT_BALANCE", 0))
-        signal_index = 0
-        total_signals = limit
-
-        for q in price_candidates:
-            if not any(f["symbol"] == q["symbol"] for f in filtered):
+        present = {f["symbol"] for f in filtered}
+        for q in candidates:
+            if q["symbol"] not in present:
                 continue
-            symbol = q["symbol"]
-            current = q["price"]
-            open_ = q["open"]
-            vwap = q["vwap"]
-
-            if test_mode_active:
-                results.append({
-                    "symbol": symbol,
-                    "price": current,
-                    "vwap": vwap,
-                    "momentum": abs(current - open_) / open_
-                })
-                if len(results) >= limit:
-                    break
-                continue
-
-            gap = abs(current - open_) / open_
-            if gap > max_gap:
-                continue
-
-            valid, reason_or_alloc = validate_trade(
-                symbol=symbol,
-                side="long",
-                account_balance=account_balance,
-                open_positions_count=open_positions_count,
-                signal_index=signal_index,
-                total_signals=total_signals
-            )
-            if not valid:
-                continue
-
-            momentum = abs(current - open_) / open_
+            momentum = abs(q["price"] - q["open"]) / q["open"] if q["open"] else 0
             results.append({
-                "symbol": symbol,
-                "price": current,
-                "vwap": vwap,
+                "symbol": q["symbol"],
+                "price": q["price"],
+                "vwap": q["vwap"],
                 "momentum": momentum,
                 "is_fractional": q["isFractional"]
             })
-            signal_index += 1
-
-        if not test_mode_active:
-            results.sort(key=lambda x: x["momentum"], reverse=True)
-            log_event("finnhub_screener", f"filter_candidates returned {len(results[:limit])} candidates (legacy mode)")
-            return results[:limit]
-        else:
-            return results[:limit]
+        results.sort(key=lambda x: x["momentum"], reverse=True)
+        log_event("finnhub_screener", f"filter_candidates returned {len(results[:limit])} candidates (legacy mode)")
+        return results[:limit]

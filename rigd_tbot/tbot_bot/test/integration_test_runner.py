@@ -14,6 +14,7 @@ from tbot_bot.support.utils_log import log_event
 from tbot_bot.runtime.status_bot import bot_status
 from tbot_bot.support.utils_identity import get_bot_identity
 import subprocess
+import importlib
 import os
 from datetime import datetime, timezone
 
@@ -226,6 +227,85 @@ def _test_module_map():
         "universe_cache": "tbot_bot.test.test_universe_cache",
     }
 
+# --------------------------
+# NEW: Strict TEST_MODE fast-path for strategies (surgical addition)
+# --------------------------
+def _resolve_screener_class():
+    """
+    Resolve screener class from config; supports dotted path in SCREENER_CLASS_PATH,
+    or provider keyword in SCREENER_CLASS. Falls back to FinnhubScreener.
+    """
+    cfg = get_bot_config()
+    dotted = cfg.get("SCREENER_CLASS_PATH") or ""
+    if dotted:
+        mod, cls = dotted.rsplit(".", 1)
+        return getattr(importlib.import_module(mod), cls)
+    key = (cfg.get("SCREENER_CLASS") or "").upper()
+    if key in ("FINNHUB", "FINNHUB_SCREENER"):
+        from tbot_bot.screeners.screeners.finnhub_screener import FinnhubScreener
+        return FinnhubScreener
+    # Fallback: Finnhub
+    from tbot_bot.screeners.screeners.finnhub_screener import FinnhubScreener
+    return FinnhubScreener
+
+def _force_test_timing_env():
+    os.environ["OPEN_ANALYSIS_TIME"] = "1"
+    os.environ["OPEN_BREAKOUT_TIME"] = "1"
+    os.environ["OPEN_MONITORING_TIME"] = "1"
+    os.environ["MID_ANALYSIS_TIME"] = "1"
+    os.environ["MID_MONITORING_TIME"] = "1"
+    os.environ["CLOSE_ANALYSIS_TIME"] = "1"
+    os.environ["CLOSE_MONITORING_TIME"] = "1"
+
+def _clear_test_timing_env():
+    for var in [
+        "OPEN_ANALYSIS_TIME", "OPEN_BREAKOUT_TIME", "OPEN_MONITORING_TIME",
+        "MID_ANALYSIS_TIME", "MID_MONITORING_TIME",
+        "CLOSE_ANALYSIS_TIME", "CLOSE_MONITORING_TIME"
+    ]:
+        if var in os.environ:
+            del os.environ[var]
+
+def _run_strategies_sequentially():
+    """
+    Immediate sequential execution of open→mid→close with 1-minute windows,
+    honoring TEST_MODE semantics and without injecting fallback symbols.
+    """
+    from tbot_bot.strategy.strategy_open import run_open_strategy
+    from tbot_bot.strategy.strategy_mid import run_mid_strategy
+    from tbot_bot.strategy.strategy_close import run_close_strategy
+
+    screener_cls = _resolve_screener_class()
+
+    results = {}
+
+    try:
+        res_open = run_open_strategy(screener_cls)
+        results["open"] = "PASSED" if getattr(res_open, "skipped", False) is False else "NO_TRADES"
+    except Exception:
+        results["open"] = "ERRORS"
+        with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+            logf.write(f"[integration_test_runner] Open strategy crashed:\n{traceback.format_exc()}\n")
+
+    try:
+        res_mid = run_mid_strategy(screener_cls)
+        results["mid"] = "PASSED" if getattr(res_mid, "skipped", False) is False else "NO_TRADES"
+    except Exception:
+        results["mid"] = "ERRORS"
+        with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+            logf.write(f"[integration_test_runner] Mid strategy crashed:\n{traceback.format_exc()}\n")
+
+    try:
+        res_close = run_close_strategy(screener_cls)
+        results["close"] = "PASSED" if getattr(res_close, "skipped", False) is False else "NO_TRADES"
+    except Exception:
+        results["close"] = "ERRORS"
+        with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+            logf.write(f"[integration_test_runner] Close strategy crashed:\n{traceback.format_exc()}\n")
+
+    return results
+# --------------------------
+
 def run_single_test_module(flag):
     test_name = flag.name.replace("test_mode_", "").replace(".flag", "")
     test_map = _test_module_map()
@@ -259,6 +339,24 @@ def run_single_test_module(flag):
 
 def run_integration_test():
     set_cwd_and_syspath()
+
+    # If global TEST_MODE flag exists, run the strict sequential strategy test and exit cleanly.
+    global_flag = Path(CONTROL_DIR) / "test_mode.flag"
+    if global_flag.exists():
+        log_event("integration_test", "Global test_mode.flag detected — running open→mid→close sequentially with 1-minute windows.")
+        # Force short windows, ensure cleanup afterwards
+        try:
+            _force_test_timing_env()
+            results = _run_strategies_sequentially()
+            with open(get_output_path("logs", "integration_test_results.json"), "w", encoding="utf-8") as f:
+                json.dump(results, f, indent=2)
+        finally:
+            _clear_flag(global_flag)
+            _clear_test_timing_env()
+        # Exit clean (hand control back to main process)
+        return
+
+    # Otherwise, retain original behavior: orchestrate individual or full test suite.
     flag = detect_individual_test_flag()
     if flag and flag.name != "test_mode.flag":
         run_single_test_module(flag)
@@ -358,9 +456,14 @@ def run_integration_test():
             logf.write("Integration test failed with error:\n" + tb + "\n")
         sys.exit(1)
     finally:
-        flag = Path(CONTROL_DIR) / "test_mode.flag"
-        if flag.exists():
-            flag.unlink()
+        # Final cleanup: remove any lingering flags (global or individual)
+        try:
+            gflag = Path(CONTROL_DIR) / "test_mode.flag"
+            _clear_flag(gflag)
+            for f in Path(CONTROL_DIR).glob("test_mode_*.flag"):
+                _clear_flag(f)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     run_integration_test()

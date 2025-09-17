@@ -19,6 +19,8 @@ from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
+# --- NEW (surgical): centralized trailing stop helper ---
+from tbot_bot.trading.trailing_stop import trailing_spec_for_long, trailing_spec_for_short
 
 print("[strategy_mid] module loaded", flush=True)
 
@@ -196,7 +198,7 @@ def execute_mid_trades(signals, start_time):
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        stop_loss_pct=0.02,
+                        trailing_stop_spec=trailing_spec_for_long(0.02),  # (surgical) centralized helper
                         strategy_name="mid"
                     )
                     if result:
@@ -241,7 +243,7 @@ def execute_mid_trades(signals, start_time):
                             side=side_exec,
                             capital=alloc_amt,
                             price=price,
-                            stop_loss_pct=0.02,
+                            trailing_stop_spec=trailing_spec_for_short(0.02),  # (surgical) centralized helper
                             strategy_name="mid"
                         )
                         if result:
@@ -290,7 +292,5 @@ def run_mid_strategy(screener_class):
     return StrategyResult(trades=trades, skipped=False)
 
 def simulate_mid(*args, **kwargs):
-    """
-    Stub for backtest/CI/test: returns empty list (no simulated trades).
-    """
+    """Stub for backtest/CI/test: returns empty list (no simulated trades)."""
     return []
