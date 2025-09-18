@@ -78,7 +78,7 @@ def create_unified_app():
     app.register_blueprint(account_blueprint, url_prefix="/account")
     app.register_blueprint(screener_credentials_bp, url_prefix="/screener_credentials")
     app.register_blueprint(holdings_web, url_prefix="/holdings")
-    app.register_blueprint(coa_mapping_web)  # NEW: expose /coa_mapping routes (no prefix)
+    app.register_blueprint(coa_mapping_web, url_prefix="/coa_mapping")  # NEW: expose /coa_mapping routes (no prefix)
 
     @app.before_request
     def enforce_bootstrap():

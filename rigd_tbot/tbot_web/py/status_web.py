@@ -19,6 +19,7 @@ from tbot_bot.config.env_bot import (
     get_close_time_utc,
     get_market_close_utc,
 )
+from tbot_bot.config.env_bot import get_bot_config  # <-- ensure enabled flags come from encrypted config
 
 status_blueprint = Blueprint("status_web", __name__)
 
@@ -237,6 +238,19 @@ def _enrich_status(base_status: dict) -> dict:
         sup["launched_at"] = base_status["supervisor_updated_at"]
 
     enriched["supervisor"] = sup
+
+    # --- FIX: source strategy enabled flags from encrypted config (not stale status.json defaults) ---
+    try:
+        cfg = get_bot_config() or {}
+        enriched["enabled_strategies"] = {
+            "open": bool(cfg.get("STRAT_OPEN_ENABLED", False)),
+            "mid": bool(cfg.get("STRAT_MID_ENABLED", False)),
+            "close": bool(cfg.get("STRAT_CLOSE_ENABLED", False)),
+        }
+    except Exception:
+        # keep whatever was present (defaults already false)
+        pass
+
     return enriched
 
 @status_blueprint.route("/status")

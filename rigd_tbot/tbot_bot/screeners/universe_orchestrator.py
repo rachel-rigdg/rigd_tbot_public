@@ -17,6 +17,7 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path,
     resolve_universe_cache_path,
     resolve_universe_log_path,
+    get_output_path,
 )
 
 print(f"[LAUNCH] universe_orchestrator.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
@@ -50,6 +51,17 @@ def log(msg):
     line = f"[{now}] {msg}"
     print(line, flush=True)
     _append_log(line)
+
+
+def _write_job_stamp(status_text: str) -> None:
+    """Write a one-line stamp: 'YYYY-MM-DDTHH:MM:SSZ OK|Failed' (best-effort)."""
+    try:
+        stamp_path = Path(get_output_path("stamps", "universe_rebuild_last.txt"))
+        stamp_path.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stamp_path.write_text(f"{ts} {status_text}", encoding="utf-8")
+    except Exception:
+        pass
 
 
 def run_module(module_path, tolerate_rcs=()):
@@ -154,26 +166,32 @@ def main():
     if rc == NO_PROVIDER_EXIT:
         log("No universe provider enabled; deferring until credentials are added.")
         _write_waiting_status(FINAL_PATH)
+        _write_job_stamp("Failed")
         sys.exit(0)
     if rc != 0:
+        _write_job_stamp("Failed")
         sys.exit(rc)
 
     # Step 2: Enrich, filter, blocklist, and build universe files from API adapters
     rc = run_module("tbot_bot.screeners.symbol_enrichment")
     if rc != 0:
+        _write_job_stamp("Failed")
         sys.exit(rc)
 
     # Step 3: Finalize — inject timestamp and atomically publish staged -> final
     if not os.path.exists(PARTIAL_PATH):
         log(f"ERROR: Missing partial universe: {PARTIAL_PATH}")
+        _write_job_stamp("Failed")
         sys.exit(1)
 
     try:
         data = _stage_with_timestamp(PARTIAL_PATH)
         _atomic_publish_json(data, FINAL_PATH)
         log(f"Universe orchestration completed successfully. Published {FINAL_PATH}")
+        _write_job_stamp("OK")
     except Exception as e:
         log(f"ERROR: Failed to publish universe: {e}")
+        _write_job_stamp("Failed")
         sys.exit(3)
 
     # Step 4: Poll for blocklist/manual recovery flag

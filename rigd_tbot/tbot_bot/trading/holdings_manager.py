@@ -24,7 +24,7 @@ from tbot_bot.trading.holdings_utils import (
 from tbot_bot.support.holdings_secrets import load_holdings_secrets, save_holdings_secrets
 from tbot_bot.support.utils_log import get_logger, log_event
 from tbot_bot.broker.broker_api import get_active_broker
-from tbot_bot.support.path_resolver import get_bot_state_path
+from tbot_bot.support.path_resolver import get_bot_state_path, get_output_path
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from tbot_bot.reporting.audit_logger import audit_log_event
 from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
@@ -91,6 +91,17 @@ def _compliance_preview_or_abort(holdings, etf_targets, account_value):
         audit_log_event("holdings_compliance_block", actor="holdings_manager", reference=None, details={"reason": preview})
         return False
     return True
+
+def _write_job_stamp(status_text: str) -> None:
+    """Write a one-line stamp: 'YYYY-MM-DDTHH:MM:SSZ OK|Failed' (best-effort)."""
+    try:
+        stamp_path = os.path.join(get_output_path("stamps", "holdings_manager_last.txt"))
+        os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(stamp_path, "w", encoding="utf-8") as f:
+            f.write(f"{ts} {status_text}")
+    except Exception:
+        pass
 
 def get_holdings_status():
     broker = get_active_broker()
@@ -256,10 +267,12 @@ def main():
     while True:
         try:
             perform_holdings_cycle()
+            _write_job_stamp("OK")
         except Exception as e:
             _warn_or_info(f"Exception in holdings cycle: {e}")
             log_event("holdings_manager_error", f"Exception: {e}", level="error", extra={"error": str(e)})
             audit_log_event("holdings_manager_error", actor="holdings_manager", reference=None, details={"error": str(e)})
+            _write_job_stamp("Failed")
         time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":

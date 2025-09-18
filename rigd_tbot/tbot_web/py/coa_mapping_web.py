@@ -123,7 +123,7 @@ def _flatten_mapping_table(doc) -> list:
 # ---------------------------
 # Pages / Views
 # ---------------------------
-@coa_mapping_web.route("/coa_mapping", methods=["GET"])
+@coa_mapping_web.route("/", methods=["GET"])
 def view_mapping():
     """
     Render the COA mapping management page.
@@ -174,7 +174,7 @@ def view_mapping():
     mapping["mappings"] = mapping_rows  # <-- template expects mapping.mappings
 
     username, role = _current_user_and_role()
-    coa_api_base = "/coa/api"
+    coa_api_base = "/coa_mapping/api"
     api_urls = {
         "base": coa_api_base,
         "get_mapping": f"{coa_api_base}/get_mapping",
@@ -203,7 +203,7 @@ def view_mapping():
 # ---------------------------
 # JSON APIs under /coa/api/* (expected by the UI)
 # ---------------------------
-@coa_mapping_web.route("/coa/api/mapping_table", methods=["GET"])
+@coa_mapping_web.route("/api/mapping_table", methods=["GET"])
 def mapping_table_api():
     """Return normalized mapping rows for client-side refresh."""
     try:
@@ -230,7 +230,7 @@ def mapping_table_api():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@coa_mapping_web.route("/coa/api/get_mapping", methods=["POST"])
+@coa_mapping_web.route("/api/get_mapping", methods=["POST"])
 def api_get_mapping():
     try:
         txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
@@ -241,7 +241,7 @@ def api_get_mapping():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@coa_mapping_web.route("/coa/api/assign", methods=["POST"])
+@coa_mapping_web.route("/api/assign", methods=["POST"])
 @admin_required
 def api_assign():
     data = request.get_json(silent=True) if request.is_json else request.form.to_dict()
@@ -310,7 +310,7 @@ def api_assign():
             return redirect("/coa_mapping")
 
 
-@coa_mapping_web.route("/coa/api/versions", methods=["GET"])
+@coa_mapping_web.route("/api/versions", methods=["GET"])
 def api_versions():
     try:
         mapping = load_mapping_table() or {}
@@ -321,7 +321,7 @@ def api_versions():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@coa_mapping_web.route("/coa/api/rollback", methods=["POST"])
+@coa_mapping_web.route("/api/rollback", methods=["POST"])
 @admin_required
 def api_rollback():
     payload = request.get_json(silent=True) or request.form.to_dict()
@@ -336,7 +336,7 @@ def api_rollback():
     return jsonify({"ok": False, "error": "version not found"}), 404
 
 
-@coa_mapping_web.route("/coa/api/export", methods=["GET"])
+@coa_mapping_web.route("/api/export", methods=["GET"])
 @admin_required
 def api_export():
     mapping_json = export_mapping_table()
@@ -351,7 +351,7 @@ def api_export():
     )
 
 
-@coa_mapping_web.route("/coa/api/import", methods=["POST"])
+@coa_mapping_web.route("/api/import", methods=["POST"])
 @admin_required
 def api_import():
     if "file" not in request.files:
@@ -371,14 +371,14 @@ def api_import():
 # ---------------------------
 # Back-compat routes under /coa_mapping/* (kept for callers that use them)
 # ---------------------------
-@coa_mapping_web.route("/coa_mapping/assign", methods=["POST"])
+@coa_mapping_web.route("/assign", methods=["POST"])
 @admin_required
 def assign_mapping_route():
     # delegate to API version
     return api_assign()
 
 
-@coa_mapping_web.route("/coa_mapping/flag_unmapped", methods=["POST"])
+@coa_mapping_web.route("/flag_unmapped", methods=["POST"])
 def flag_unmapped():
     """Viewer can report; admin reviews later."""
     txn = request.get_json(silent=True) if request.is_json else request.form.to_dict()
@@ -392,24 +392,24 @@ def flag_unmapped():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@coa_mapping_web.route("/coa_mapping/versions", methods=["GET"])
+@coa_mapping_web.route("/versions", methods=["GET"])
 def list_versions():
     return api_versions()
 
 
-@coa_mapping_web.route("/coa_mapping/rollback", methods=["POST"])
+@coa_mapping_web.route("/rollback", methods=["POST"])
 @admin_required
 def rollback_mapping():
     return api_rollback()
 
 
-@coa_mapping_web.route("/coa_mapping/export", methods=["GET"])
+@coa_mapping_web.route("/export", methods=["GET"])
 @admin_required
 def export_mapping():
     return api_export()
 
 
-@coa_mapping_web.route("/coa_mapping/import", methods=["POST"])
+@coa_mapping_web.route("/import", methods=["POST"])
 @admin_required
 def import_mapping():
     return api_import()
@@ -418,7 +418,7 @@ def import_mapping():
 # ---------------------------
 # INTERNAL helper for inline edit hook (admin-only + CSRF-exempt)
 # ---------------------------
-@coa_mapping_web.route("/coa_mapping/_internal/upsert_rule", methods=["POST"])
+@coa_mapping_web.route("/_internal/upsert_rule", methods=["POST"])
 @csrf_exempt
 @admin_required
 def internal_upsert_rule():

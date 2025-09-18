@@ -1,3 +1,4 @@
+from __future__ import annotations
 # tbot_bot/accounting/lots_engine.py
 """
 Lot engine for position basis tracking (FIFO by default).
@@ -8,7 +9,6 @@ Lot engine for position basis tracking (FIFO by default).
 - Immutable audit logging for opens/closes
 """
 
-from __future__ import annotations
 import sqlite3
 from typing import List, Dict, Optional
 from datetime import datetime, timezone

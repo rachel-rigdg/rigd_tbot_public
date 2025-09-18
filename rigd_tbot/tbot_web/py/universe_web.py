@@ -22,6 +22,7 @@ import csv
 import io
 import json
 import os
+import sys
 
 universe_bp = Blueprint("universe", __name__, template_folder="../templates")
 
@@ -198,7 +199,7 @@ def universe_rebuild():
     try:
         current_app.logger.info("Running universe_orchestrator via -m")
         proc = subprocess.run(
-            ["python3", "-u", "-m", "tbot_bot.screeners.universe_orchestrator"],
+            [sys.executable, "-u", "-m", "tbot_bot.screeners.universe_orchestrator"],
             capture_output=True,
             text=True
         )
