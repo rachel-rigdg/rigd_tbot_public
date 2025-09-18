@@ -104,7 +104,8 @@ Real-Time Monitoring Dashboard
 **Frontend UI Components:**
 - `templates/index.html`: Login portal; RBAC, rate-limited authentication, audit-logged.
 - `templates/main.html`: Dashboard shell embedding all panels (strategy, log, status, COA, COA mapping, test, users, settings, screener credentials, **holdings**, etc.) using iframes.
-- `templates/status.html`: Displays live bot health, session lifecycle, active strategy state, float metrics, win-rate, cumulative PnL, **holdings compliance/deviation**, and risk/defense/kill switch state. **Data is provided by `status_web.py`, which obtains paths via `path_resolver.py` and derives PnL/win-rate from approved accounting APIs in `ledger_modules/` (never from ad-hoc logs or hardcoded paths).**
+- `templates/status.html`: Displays live bot health, session lifecycle, **strategy states** (enabled/scheduled/running/failed) with per-strategy sections, float metrics, win-rate, **daily gain/loss (via opening-equity stamp)**, **account equity & cash**, **job confirmations for holdings manager and universe rebuild**, and risk/defense/kill switch state. **Data is provided by `status_web.py`, which obtains paths via `path_resolver.py` and derives PnL/win-rate from approved accounting APIs in `ledger_modules/` (never from ad-hoc logs or hardcoded paths).**  
+  - Per-strategy section shows: current state (enabled/scheduled at {time}/running/failed), last-run timestamp, last candidate snapshot (top N), last trade summary (count/wins/losses/realized PnL).
 - `templates/ledger.html`: **Ledger interface** (grouped rows with expand/collapse & persisted state, balances panel, inline COA leg selector, sync controls); **MUST source data exclusively from `tbot_bot/accounting/ledger_modules/`**. Display includes **`DTPOSTED` (UTC)**, **`FITID`**, and **`group_id`** for auditability.
 - `templates/holdings.html`: **Dedicated UI for holdings management:** view and edit float top-ups, reserve splits, allocations, symbol list, periodic/manual rebalancing, and full audit history. **Holdings events/balances/compliance are surfaced via `ledger_modules/`; holdings configuration (targets/symbols/splits) is read/written only through the holdings manager API backed by the encrypted secrets file `tbot_bot/storage/secrets/holdings_secrets.json.enc` (key: `tbot_bot/storage/keys/holdings_secrets.key`).** All changes are versioned, RBAC-controlled, and cryptographically logged.
 - `templates/configuration.html`: Secure interface for credentials, email, API/broker config; encrypted at rest. Submits configuration and sets provisioning trigger/flag.
@@ -128,8 +129,8 @@ Real-Time Monitoring Dashboard
 - `py/coa_mapping_web.py`: **COA→Ledger Mapping UI & API (CRUD, versions, import/export).** Uses `tbot_bot/accounting/coa_mapping_table.py` for load/save/versioning; mapping changes are validated and always versioned (never in-place overwrite); admin-only with audit logs.
 - `py/configuration_web.py`: Web UI route handling user, email, API, and broker credential configuration via encrypted multi-category config files. Only writes config and provisioning trigger; does *not* execute provisioning logic.
 - `py/settings_web.py`: Loads and validates **decrypted bot config** from `tbot_bot/support/.env_bot.enc` via system APIs; provides API for updates/errors; includes TEST_MODE flag toggle reflecting presence of `test_mode.flag`.
-- `py/status_web.py`: Serves live bot/session status with strategy metrics, system health, win-rate, PnL, float deviation, rebalance triggers, Defense/kill switch states, and alert counts as JSON. **All paths resolved via `path_resolver.py`; PnL/win-rate computed from `ledger_modules/` (no direct SQL or file reads outside approved modules).**
-- `py/ledger_web.py`: **Ledger UI & API (NEW endpoints):**
+- `py/status_web.py`: Serves live bot/session status with **strategy states (enabled/scheduled/running/failed)**, system health, **account equity & cash**, **daily gain/loss (opening-equity stamp)**, win-rate, PnL, float deviation, **job confirmations for holdings manager and universe rebuild**, per-strategy last-run snapshots (candidates/trades), Defense/kill switch states, and alert counts as JSON. **All paths resolved via `path_resolver.py`; PnL/win-rate computed from `ledger_modules/` (no direct SQL or file reads outside approved modules).**
+- `py/ledger_web.py`: **Ledger UI & API (NEW endpoints)** … *(unchanged content continues as in master)*
   - **GET `/ledger`** — paginated list for ledger table (search/sort/filter).
   - **POST `/ledger/sync` (admin)** — triggers broker sync worker (`ledger_sync.py`); returns `sync_run_id`.
   - **GET `/ledger/groups`** — returns grouped rows by `group_id` with collapse state and legs.
@@ -218,7 +219,20 @@ All filesystem paths MUST be obtained via `tbot_bot/support/path_resolver.py` (n
 - `status_web.py`
   - URL Prefix: `/status`
   - Role: Provides live bot status and health JSON API, used for dashboard updates. Metrics that derive from trades/PNL are read from approved accounting APIs in `ledger_modules/` (never ad-hoc files), with paths resolved via `path_resolver.py`.
+  - **New/Expanded JSON fields (non-breaking):**
+    - `strategy_states`: `{ open: {state, scheduled_utc, running: bool, failed: bool, last_error}, mid: {...}, close: {...} }`
+      - `state ∈ { "enabled", "scheduled", "running", "failed" }`
+      - `scheduled_utc`: ISO-8601 from daily supervisor schedule
+    - `strategy_last_run`: `{ open: {ts_utc, candidates:[...topN], trades:{count,wins,losses,realized_pnl}}, mid: {...}, close: {...} }`
+      - `candidates`: truncated snapshot (symbol + key signal metrics)
+      - `trades`: **ledger-derived** counts and realized PnL (authoritative)
+    - `account_balances`: `{ equity, cash, liabilities, nav, as_of_utc }` (from `ledger_balance.py`)
+    - `daily_gain_loss`: `{ opening_equity_utc, opening_equity, realized_equity_now, delta }`
+      - Uses **opening-equity stamp** captured at market open and reconciled via ledger
+    - `jobs`: `{ holdings_manager: {last_run_utc, status}, universe_rebuild: {last_run_utc, status} }`
+      - Values come from stamp/log files written by those jobs; `status ∈ { "OK", "Failed" }`
   - Accessible during all active states (per Document 070) except `initialize` and shutdown/error states.
+  - **Security/RBAC:** read-only; no mutations. All filesystem paths are resolved exclusively via `tbot_bot/support/path_resolver.py`. PnL/win-rate/balances come from `tbot_bot/accounting/ledger_modules/` (no direct SQL).
 
 - `logs_web.py`
   - URL Prefix: `/logs`
@@ -403,86 +417,109 @@ Contents:
 The design ensures real-time operational visibility and audit compliance.
 
 =======================================================================================
-RIGD GROUP LLC — Web Interface: Status Dashboard Design 
+RIGD GROUP LLC — Web Interface: Status Dashboard Design  (UPDATED)
 =======================================================================================
 
 **Table: System Status Overview**
 
-| Column                      | Description                                         | Notes                                                                 |
-|-----------------------------|-----------------------------------------------------|-----------------------------------------------------------------------|
-| Broker                      | Name of active broker                               | From decrypted config via standardized fields (**`BROKER_CODE` + identity metadata**) |
-| Trading Mode                | Current live/paper mode                             | **Derived from config; UI displays current mode (never hard-coded).** |
-| Float Allocation ($)        | Current deployed float for this broker              | From accounting API/config                                            |
-| **Holdings Balance ($)**    | Current total holdings tracked and allocated        | From holdings manager via encrypted holdings secrets **and surfaced through `ledger_modules/`** |
-| **Holdings Deviation (%)**  | % deviation from target allocation or compliance    | Calculated vs. target/reserve float; triggers rebalance               |
-| Defense Mode Active         | true / false                                        | Mirrors `DEFENSE_MODE_ACTIVE` in decrypted config                     |
-| Kill Switch Armed           | true / false                                        | True at session start                                                 |
-| Kill Switch Triggered       | true / false                                        | True if halted by `kill_switch.py`                                    |
-| **Daily PnL ($)**           | Realized PnL this session for this broker           | **Authoritative from `tbot_bot/accounting/ledger_modules/ledger_query.py`** (OFX-aligned, reconciled) |
-| **Cumulative PnL ($)**      | Realized PnL since bot inception for this broker    | **Computed from ledger via `ledger_query.py` / `ledger_balance.py`**  |
-| **Win Rate (%)**            | % profitable trades this session                    | **From ledger (authoritative); session-inflight view may display `trade_logger.py` as non-canonical** |
-| **Cumulative Win Rate (%)** | % profitable trades since bot inception             | **Computed from full ledger history (no log-derived shortcuts)**      |
-| Daily Loss Threshold ($)    | float * `DAILY_LOSS_LIMIT`                          | Runtime-calculated                                                    |
-| Open Positions              | Number of active trades for this bot                | Enforced by `MAX_OPEN_POSITIONS`                                      |
-| Max Allowed Trades          | `MAX_TRADES` or Defense Mode scaled                 | Dynamic per `risk_bot.py`                                             |
-| API Status                  | healthy / degraded / down                           | From `watchdog_bot.py`                                                |
-| Strategy Running            | open / mid / close / idle                           | Live from `strategy_router.py`                                        |
-| Last Trade ID               | Most recent executed trade ID                       | From `trade_logger.py`                                                |
-| Last Error Event            | Last critical warning or exception                  | From `error_handler.py`                                               |
-| Universe Cache Status       | up-to-date / stale / missing                        | From `universe_web.py` and screener utilities                         |
-| User Session Status         | active / expired / locked                           | From `session_manager.py`                                             |
-| **Holdings Compliance**     | OK / Warning / Out-of-Spec                          | From holdings manager/audit log (compliance/thresholds)               |
+| Column                          | Description                                                       | Notes                                                                 |
+|---------------------------------|-------------------------------------------------------------------|-----------------------------------------------------------------------|
+| Broker                          | Name of active broker                                             | From decrypted config via standardized fields (**`BROKER_CODE` + identity metadata**) |
+| Trading Mode                    | Current live/paper mode                                           | **Derived from config; UI displays current mode (never hard-coded).** |
+| **Account Equity ($)**          | Current equity snapshot                                           | From `ledger_modules/ledger_balance.py`                               |
+| **Cash Balance ($)**            | Current cash available                                            | From `ledger_modules/ledger_balance.py`                               |
+| Float Allocation ($)            | Current deployed float for this broker                            | From accounting API/config                                            |
+| **Holdings Balance ($)**        | Current total holdings tracked and allocated                      | From holdings manager via encrypted holdings secrets **and surfaced through `ledger_modules/`** |
+| **Holdings Deviation (%)**      | % deviation from target allocation or compliance                  | Calculated vs. target/reserve float; triggers rebalance               |
+| Defense Mode Active             | true / false                                                      | Mirrors `DEFENSE_MODE_ACTIVE` in decrypted config                     |
+| Kill Switch Armed               | true / false                                                      | True at session start                                                 |
+| Kill Switch Triggered           | true / false                                                      | True if halted by `kill_switch.py`                                    |
+| **Daily Gain/Loss ($)**         | Realized change since **opening equity stamp**                    | Opening-equity stamp vs. current realized equity (ledger-derived)     |
+| **Daily PnL ($)**               | Realized PnL this session                                         | `ledger_modules/ledger_query.py` (OFX-aligned, reconciled)            |
+| **Cumulative PnL ($)**          | Realized PnL since bot inception                                  | `ledger_query.py` / `ledger_balance.py`                               |
+| **Win Rate (%)**                | % profitable trades this session                                  | From ledger (authoritative)                                           |
+| **Cumulative Win Rate (%)**     | % profitable trades since bot inception                           | Computed from full ledger history                                     |
+| Daily Loss Threshold ($)        | float * `DAILY_LOSS_LIMIT`                                        | Runtime-calculated                                                    |
+| Open Positions                  | Number of active trades for this bot                              | Enforced by `MAX_OPEN_POSITIONS`                                      |
+| Max Allowed Trades              | `MAX_TRADES` or Defense Mode scaled                               | Dynamic per `risk_bot.py`                                             |
+| API Status                      | healthy / degraded / down                                         | From `watchdog_bot.py`                                                |
+| **Strategy States**             | open / mid / close → enabled/scheduled/running/failed             | Scheduled times from supervisor; running state from strategy router; failed from last error stamp |
+| Last Trade ID                   | Most recent executed trade ID                                     | From `trade_logger.py`                                                |
+| Last Error Event                | Last critical warning or exception                                | From `error_handler.py`                                               |
+| **Holdings Manager (UTC)**      | Last run timestamp + status (OK/Failed)                           | From holdings manager stamp/log                                       |
+| **Universe Rebuild (UTC)**      | Last run timestamp + status (OK/Failed)                           | From universe rebuild stamp/log                                       |
+| Universe Cache Status           | up-to-date / stale / missing                                      | From `universe_web.py` and screener utilities                         |
+| User Session Status             | active / expired / locked                                         | From `session_manager.py`                                             |
+| **Holdings Compliance**         | OK / Warning / Out-of-Spec                                        | From holdings manager/audit log (compliance/thresholds)               |
+
+**Per-Strategy Sections (below overview table):**
+- **Open / Mid / Close** panels each display:
+  - **State:** enabled / scheduled at `{time}` / running / failed (with last error short message if failed)
+  - **Last Run (UTC):** timestamp
+  - **Last Candidates:** top N symbols with key signal metrics (truncated)
+  - **Last Trades:** count, wins, losses, realized PnL (from ledger)
+  - **Next Scheduled (UTC):** time from daily schedule file written by supervisor
 
 **Operational Notes:**  
 - **All dashboard timestamps are UTC; no local time rendering.**  
-- **Holdings Balance, Holdings Deviation, and Holdings Compliance reflect the real-time, audit-logged status of all holdings, float, and reserve allocations for this bot. These fields are populated by the holdings management module and surfaced via the modular ledger API.**
-- **PnL and win-rate metrics shown in the dashboard are computed from the ledger only (`ledger_query.py` / `ledger_balance.py`); log-based figures are display-only and non-authoritative.**
-- Cumulative metrics (`Cumulative PnL`, `Cumulative Win Rate`) are computed from the full persistent ledger dataset for this bot instance, since creation/inception.  
-- Values update in real time as new trades are posted; recalculated on every dashboard poll.
-- Dashboard polls status every 15–30 seconds for live visibility.
-- Visual state: Green (OK), Yellow (Warning), Red (Critical) based on API health, Defense Mode, Kill Switch, **holdings compliance**, or stale universe cache.
-- Session tags: `DEFENSE_MODE_ACTIVE=true` triggers banner and log tag.
-- All UI-visible state changes logged for 7+ days (rotated JSON).
-- **All filesystem paths are resolved via `tbot_bot/support/path_resolver.py`; the UI never performs direct SQL. All ledger/COA access goes through `tbot_bot/accounting/ledger_modules/`.**
-- **COA structure metadata is loaded via `utils_coa_web.py`; holdings compliance via `utils_holdings_web.py`. COA→Ledger mapping is managed in `coa_mapping_web.py` and not edited from the status panel. Underlying ledger/schema integration uses `tbot_bot/accounting/coa_utils.py`.**
-- Universe cache, holdings status, and screener API health are surfaced directly in the dashboard status table.
+- **Account Equity, Cash Balance, Daily Gain/Loss, Daily PnL and Cumulative PnL** are **ledger-derived** (`ledger_balance.py`, `ledger_query.py`); the **Daily Gain/Loss** compares the “opening equity stamp” (captured once at market open) to current realized equity.  
+- **Strategy States**:
+  - `enabled` is the configuration toggle.
+  - `scheduled` comes from the supervisor schedule for the current trading date.
+  - `running` is emitted by strategy router when a strategy enters its execution window.
+  - `failed` reflects the most recent run result with an error stamp.  
+- **Job Confirmations**:
+  - **Holdings Manager** and **Universe Rebuild** write stamp/log files on completion. The dashboard surfaces last run time and result (OK/Failed).
+- **PnL and win-rate metrics** shown in the dashboard are computed from the ledger only; log-based figures are display-only and non-authoritative.  
+- Values update in real time as new trades are posted; recalculated on every dashboard poll.  
+- Visual state: Green (OK), Yellow (Warning), Red (Critical) based on API health, Defense Mode, Kill Switch, **holdings compliance**, or stale universe cache.  
+- Session tags: `DEFENSE_MODE_ACTIVE=true` triggers banner and log tag.  
+- All UI-visible state changes logged for 7+ days (rotated JSON).  
+- **All filesystem paths are resolved via `tbot_bot/support/path_resolver.py`; the UI never performs direct SQL. All ledger/COA access goes through `tbot_bot/accounting/ledger_modules/`.**  
+- **COA structure metadata is loaded via `utils_coa_web.py`; holdings compliance via `utils_holdings_web.py`. COA→Ledger mapping is managed in `coa_mapping_web.py` and not edited from the status panel.**  
+- Universe cache, holdings status, and screener API health are surfaced directly in the dashboard status table.  
 - User session status column assists with support, troubleshooting, and RBAC enforcement at a glance.
 
 **API/Data Feed Source Modules:**
 - `float_bot.py`                               — Provides float allocation and open positions
 - **`tbot_bot/accounting/ledger_modules/ledger_query.py`** — Authoritative realized PnL, trade counts, win-rate
-- **`tbot_bot/accounting/ledger_modules/ledger_balance.py`** — Balances and cumulative PnL totals
-- **`holdings_manager.py` / `holdings_utils.py`** — Real-time holdings, compliance, allocation, deviation status
+- **`tbot_bot/accounting/ledger_modules/ledger_balance.py`** — Balances, equity, cash, cumulative PnL totals
+- **`ledger_opening_balance.py`**               — Provides opening-equity stamp used for Daily Gain/Loss
+- **`holdings_manager.py` / `holdings_utils.py`** — Real-time holdings, compliance, allocation, deviation status (stamps for last run)
 - `risk_bot.py`                                — Defense Mode and allocation limits
 - `kill_switch.py`                             — Kill switch armed/triggered, daily loss threshold
 - `watchdog_bot.py`                            — Broker API health status
 - `error_handler.py`                           — Last error event, type, timestamp
 - `trade_logger.py`                            — Session-inflight echo of events (non-canonical for metrics)
-- `universe_web.py`                            — Universe cache status and health
+- `universe_web.py`                            — Universe cache status and **universe rebuild** stamps
 - `session_manager.py`                         — Current user/session status
 
+
 =======================================================================================
-Session Status Summary Panel
+Session Status Summary Panel  (UPDATED)
 =======================================================================================
 
 **Panel Title:** System Session Summary
 
-| Field                        | Description                                               | Notes                                                                                                                     |
-|-----------------------------|-----------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
-| Overall System Status       | OK / Warning / Critical                                   | Derived from: API health, Defense Mode, Kill Switch, Universe Cache, **Holdings Compliance**, **PnL/Balance Health**.     |
-| Defense Mode Active         | true / false                                              | Mirrors `DEFENSE_MODE_ACTIVE` (decrypted config).                                                                         |
-| Total Bots Active           | Count of TradeBot instances currently online              | E.g., 1–N; reflects all deployed bots.                                                                                    |
-| Bots in Kill Switch         | Count where Kill Switch Triggered = true                  | E.g., 0/3 bots.                                                                                                           |
-| Active Strategy             | open / mid / close / idle                                 | From `strategy_router.py`.                                                                                                |
-| Open Trades (Total)         | Total live trades across all bots                         | Sum, enforced by `MAX_OPEN_POSITIONS`.                                                                                    |
-| Universe Cache Status       | up-to-date / stale / missing                              | Aggregated from all active bots.                                                                                          |
-| **Holdings Compliance**     | OK / Warning / Out-of-Spec                                | Aggregated from holdings manager/audit log (ledger-backed).                                                               |
-| **COA Version (Active)**    | Currently loaded Chart of Accounts version                | Read-only; surfaced via `utils_coa_web.py` and `ledger_modules/`; edited only in COA UI.                                  |
-| **Mapping Version (Active)**| Currently active COA→Ledger mapping version               | Read-only; surfaced via `coa_mapping_web.py` and backed by `coa_mapping_table.py`; not editable here.                     |
-| **PnL Snapshot (Realized)** | Today / MTD / YTD realized PnL                            | Calculated in `ledger_modules/ledger_pnl.py` from immutable ledger entries.                                               |
-| **Unrealized PnL (Intraday)**| Unrealized PnL for all open positions                    | Live positions × market value; provided by holdings manager/broker adapter; surfaced via `ledger_modules/`.               |
-| **Ledger Balance Summary**  | Cash, Equity, Liabilities, NAV                            | Snapshot balances via `ledger_modules/ledger_balance.py`; reconciled nightly against broker snapshot.                      |
-| System Uptime               | Elapsed time since bot instance started                   | From `status_web.py` (`boot_time_utc`); **all timestamps are UTC ISO-8601**.                                              |
+| Field                          | Description                                                   | Notes                                                                                                                     |
+|-------------------------------|---------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| Overall System Status         | OK / Warning / Critical                                       | Derived from: API health, Defense Mode, Kill Switch, Universe Cache, **Holdings Compliance**, **PnL/Balance Health**.     |
+| Defense Mode Active           | true / false                                                  | Mirrors `DEFENSE_MODE_ACTIVE` (decrypted config).                                                                         |
+| Total Bots Active             | Count of TradeBot instances currently online                  | E.g., 1–N; reflects all deployed bots.                                                                                    |
+| Bots in Kill Switch           | Count where Kill Switch Triggered = true                      | E.g., 0/3 bots.                                                                                                           |
+| Active Strategy               | open / mid / close / idle                                     | From `strategy_router.py`.                                                                                                |
+| **Strategy States Matrix**    | Open/Mid/Close → enabled/scheduled/running/failed             | Scheduled times from supervisor; running from strategy router; failed from error stamps.                                   |
+| Open Trades (Total)           | Total live trades across all bots                             | Sum, enforced by `MAX_OPEN_POSITIONS`.                                                                                    |
+| Universe Cache Status         | up-to-date / stale / missing                                  | Aggregated from all active bots.                                                                                          |
+| **Holdings Manager (UTC)**    | Last run timestamp + status (OK/Failed)                       | From holdings manager stamp/log.                                                                                           |
+| **Universe Rebuild (UTC)**    | Last run timestamp + status (OK/Failed)                       | From universe rebuild stamp/log.                                                                                           |
+| **Account Equity ($)**        | Equity snapshot                                               | `ledger_modules/ledger_balance.py`                                                                                        |
+| **Cash Balance ($)**          | Cash snapshot                                                 | `ledger_modules/ledger_balance.py`                                                                                        |
+| **PnL Snapshot (Realized)**   | Today / MTD / YTD realized PnL                                | `ledger_modules/ledger_pnl.py` or `ledger_query.py`                                                                       |
+| **Daily Gain/Loss ($)**       | Current realized Δ vs opening-equity stamp                    | Opening stamp captured at market open vs current realized equity (ledger-derived).                                         |
+| **Unrealized PnL (Intraday)** | Unrealized PnL for all open positions                         | Live positions × market value; provided by holdings manager/broker adapter; surfaced via `ledger_modules/`.               |
+| **Ledger Balance Summary**    | Cash, Equity, Liabilities, NAV                                | Snapshot balances via `ledger_modules/ledger_balance.py`; reconciled nightly against broker snapshot.                      |
+| System Uptime                 | Elapsed time since bot instance started                       | From `status_web.py` (`boot_time_utc`); **all timestamps are UTC ISO-8601**.                                              |
 
 **Severity Logic (Overall System Status):**
 - OK (Green): Defense Mode=false, APIs healthy, Kill Switch=off, universe cache up-to-date, Holdings Compliance OK, no balance/PnL anomalies.
@@ -492,14 +529,16 @@ Session Status Summary Panel
 **Layout:**
 - Horizontal bar/widget above Broker Detail Table.
 - Color bands/icons: Green (OK), Yellow (Warning), Red (Critical).
-- **PnL Snapshot and Ledger Balance Summary** shown as compact, read-only cards under the bar for at-a-glance financials.
+- **Per-Strategy cards** show state, last-run UTC time, last candidate snapshot, last trade summary, and next scheduled UTC time.
+- **PnL Snapshot, Daily Gain/Loss, Account Equity & Cash** shown as compact, read-only cards under the bar for at-a-glance financials.
 
 **Design Rationale:**
 - Extends session triage beyond ops into finance: PnL, balances, compliance.
-- Confirms Defense Mode/Kill Switch/universe cache/holdings compliance events in real time.
+- Confirms Defense Mode/Kill Switch/universe cache/holdings compliance and **job confirmations** (holdings manager & universe rebuild) in real time.
 - Surfaces COA/mapping versions for traceability; display-only here.
 - PnL and balance snapshots are ledger-derived, double-entry validated, and audit-backed.
 - Audit trail: all state changes, PnL snapshots, and balance deviations logged immutably for 7+ years.
+
 
 ================================================================================
 Ledger Interface — Search, Sort, and Interactive Features
