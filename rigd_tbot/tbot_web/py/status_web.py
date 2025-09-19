@@ -1,3 +1,4 @@
+from __future__ import annotations
 # tbot_web/py/status_web.py
 
 import json
@@ -99,16 +100,24 @@ def _read_schedule():
                 "open_utc": raw.get("open_utc", ""),
                 "mid_utc": raw.get("mid_utc", ""),
                 "close_utc": raw.get("close_utc", ""),
+                # Legacy single holdings time (kept for back-compat)
                 "holdings_utc": raw.get("holdings_utc", ""),
+                # NEW: explicit holdings windows
+                "holdings_open_utc": raw.get("holdings_open_utc", "") or raw.get("holdings_utc", ""),
+                "holdings_mid_utc": raw.get("holdings_mid_utc", ""),
                 "universe_utc": raw.get("universe_utc", ""),
                 "holdings_after_open_min": raw.get("holdings_after_open_min", 10),
+                "holdings_after_mid_min": raw.get("holdings_after_mid_min", raw.get("holdings_after_open_min", 10)),
                 "universe_after_close_min": raw.get("universe_after_close_min", 120),
             }
             # Attach parsed instants (internal use)
             out["_dt_open"] = _parse_iso_utc(out["open_utc"])
             out["_dt_mid"] = _parse_iso_utc(out["mid_utc"])
             out["_dt_close"] = _parse_iso_utc(out["close_utc"])
+            # Legacy alias + new parsed keys
             out["_dt_hold"] = _parse_iso_utc(out["holdings_utc"])
+            out["_dt_hold_open"] = _parse_iso_utc(out["holdings_open_utc"])
+            out["_dt_hold_mid"] = _parse_iso_utc(out["holdings_mid_utc"])
             out["_dt_univ"] = _parse_iso_utc(out["universe_utc"])
             return out
         except Exception:
@@ -131,14 +140,19 @@ def _read_schedule():
         "mid_utc": _mk(mid_hhmm),
         "close_utc": _mk(close_hhmm),
         "holdings_utc": "",  # computed by supervisor; leave empty in fallback
+        "holdings_open_utc": "",
+        "holdings_mid_utc": "",
         "universe_utc": "",
         "holdings_after_open_min": 10,
+        "holdings_after_mid_min": 10,
         "universe_after_close_min": 120,
     }
     fallback["_dt_open"] = _parse_iso_utc(fallback["open_utc"])
     fallback["_dt_mid"] = _parse_iso_utc(fallback["mid_utc"])
     fallback["_dt_close"] = _parse_iso_utc(fallback["close_utc"])
     fallback["_dt_hold"] = None
+    fallback["_dt_hold_open"] = None
+    fallback["_dt_hold_mid"] = None
     fallback["_dt_univ"] = None
     return fallback
 
@@ -481,16 +495,17 @@ def _enrich_status(base_status: dict) -> dict:
         # Remap schedule keys for API contract aliases (non-breaking)
         "schedule_contract": {
             "open_utc": enriched["schedule"].get("open_utc") or "",
-            "holdings_after_open_utc": enriched["schedule"].get("holdings_utc") or "",
+            "holdings_after_open_utc": enriched["schedule"].get("holdings_open_utc") or enriched["schedule"].get("holdings_utc") or "",
+            "holdings_after_mid_utc": enriched["schedule"].get("holdings_mid_utc") or "",
             "mid_utc": enriched["schedule"].get("mid_utc") or "",
             "close_utc": enriched["schedule"].get("close_utc") or "",
             "universe_after_close_utc": enriched["schedule"].get("universe_utc") or "",
         },
     })
     # For compatibility, also expose the contract-shaped "schedule" without internal _dt_* keys.
-    # Keep existing 'schedule' untouched; add/overwrite with the aliased keys above if front-end expects them.
     enriched["schedule"].update({
-        "holdings_after_open_utc": enriched["schedule"].get("holdings_utc") or "",
+        "holdings_after_open_utc": enriched["schedule"].get("holdings_open_utc") or enriched["schedule"].get("holdings_utc") or "",
+        "holdings_after_mid_utc": enriched["schedule"].get("holdings_mid_utc") or "",
         "universe_after_close_utc": enriched["schedule"].get("universe_utc") or "",
     })
 

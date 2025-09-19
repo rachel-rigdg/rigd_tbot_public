@@ -3,6 +3,14 @@
 # writes schedule.json, runs phases sequentially, honors control flags between phases,
 # routes stdout/stderr to per-phase logs, updates bot_state, and exits. No daemon loop.
 
+# --- PATH BOOTSTRAP (must be first) ---
+import sys as _sys, pathlib as _pathlib
+_THIS_FILE = _pathlib.Path(__file__).resolve()
+_REPO_ROOT = _THIS_FILE.parents[2]
+if str(_REPO_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_REPO_ROOT))
+# --- END PATH BOOTSTRAP ---
+
 import os
 import sys
 import json
@@ -112,17 +120,31 @@ def _write_schedule_json(payload: Dict) -> None:
     with open(_schedule_path(), "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
 
+# --- NEW: ensure child procs also have repo on PYTHONPATH (first-bootstrap safe) ---
+def _ensure_child_has_repo_on_path(env: dict) -> None:
+    try:
+        repo = str(ROOT_DIR)
+        cur = env.get("PYTHONPATH", "")
+        if not cur:
+            env["PYTHONPATH"] = repo
+        elif repo not in cur.split(os.pathsep):
+            env["PYTHONPATH"] = repo + os.pathsep + cur
+    except Exception:
+        pass
+
 def _run_worker(cmd: str, log_path: Path) -> int:
     _write_log(f"Exec: {cmd}")
     import subprocess
     with open(log_path, "ab", buffering=0) as lf:
         try:
+            child_env = os.environ.copy()
+            _ensure_child_has_repo_on_path(child_env)   # <- surgical: set PYTHONPATH for child
             p = subprocess.Popen(
                 shlex.split(cmd),
                 cwd=str(ROOT_DIR),
                 stdout=lf,
                 stderr=lf,
-                env=os.environ.copy()
+                env=child_env
             )
             rc = p.wait()
             _write_log(f"Exit {rc}: {cmd}")
@@ -171,7 +193,9 @@ def _compute_schedule() -> Dict:
     mid_at = _today_utc_at(mh, mm)
     close_at = _today_utc_at(ch, cm)
 
-    holdings_at = open_at + datetime.timedelta(minutes=int(sup_open_delay_min))
+    # DELAYS ARE FROM STRATEGY START TIMES (explicit choice; avoids ambiguity)
+    holdings_open_at = open_at + datetime.timedelta(minutes=int(sup_open_delay_min))
+    holdings_mid_at = mid_at + datetime.timedelta(minutes=int(sup_open_delay_min))
     universe_at = close_at + datetime.timedelta(minutes=int(sup_uni_after_close_min))
 
     sched = {
@@ -181,8 +205,15 @@ def _compute_schedule() -> Dict:
         "mid_utc": mid_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "close_utc": close_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "market_close_utc_hint": market_close_hhmm,  # for UI reference
+
+        # BACK-COMPAT + NEW, EXPLICIT HOLDINGS WINDOWS
         "holdings_after_open_min": int(sup_open_delay_min),
-        "holdings_utc": holdings_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "holdings_open_utc": holdings_open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "holdings_after_mid_min": int(sup_open_delay_min),
+        "holdings_mid_utc": holdings_mid_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        # Back-compat alias (legacy consumers): same as holdings_open_utc
+        "holdings_utc": holdings_open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+
         "universe_after_close_min": int(sup_uni_after_close_min),
         "universe_utc": universe_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -235,10 +266,6 @@ def main() -> int:
     rc_nonzero = False
     _status_update("running", "Supervisor running.", {"trading_date": trading_date})
 
-
-
-
-
     # ---- OPEN ----
     try:
         open_at = datetime.datetime.fromisoformat(schedule["open_utc"].replace("Z", "+00:00"))
@@ -264,25 +291,27 @@ def main() -> int:
 
     # ---- HOLDINGS (after open) ----
     try:
-        hold_at = datetime.datetime.fromisoformat(schedule["holdings_utc"].replace("Z", "+00:00"))
+        # Prefer new key; fall back to legacy 'holdings_utc'
+        hold_open_str = schedule.get("holdings_open_utc") or schedule["holdings_utc"]
+        hold_open_at = datetime.datetime.fromisoformat(hold_open_str.replace("Z", "+00:00"))
         now = datetime.datetime.now(datetime.timezone.utc)
-        if now < hold_at:
-            _write_log(f"Sleeping until HOLDINGS {schedule['holdings_utc']}")
-            _sleep_until(hold_at)
+        if now < hold_open_at:
+            _write_log(f"Sleeping until HOLDINGS (open) {hold_open_str}")
+            _sleep_until(hold_open_at)
 
         if _phase_boundary_check():
             return 0
 
         _write_state("updating")
-        rc_hold = _run_worker(
-            f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance",
-            _phase_log_path("holdings"),
+        rc_hold_open = _run_worker(
+            f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=open",
+            _phase_log_path("holdings_open"),
         )
-        rc_nonzero |= (rc_hold != 0)
+        rc_nonzero |= (rc_hold_open != 0)
     except Exception as e:
-        _write_log(f"[holdings] ERROR {e}")
+        _write_log(f"[holdings-open] ERROR {e}")
         _write_state("error")
-        _status_update("failed", f"Supervisor failed during HOLDINGS: {e}")
+        _status_update("failed", f"Supervisor failed during HOLDINGS (open): {e}")
         return 1
 
     # ---- MID ----
@@ -306,6 +335,31 @@ def main() -> int:
         _write_log(f"[mid] ERROR {e}")
         _write_state("error")
         _status_update("failed", f"Supervisor failed during MID: {e}")
+        return 1
+
+    # ---- HOLDINGS (after mid) ----
+    try:
+        hold_mid_str = schedule.get("holdings_mid_utc")
+        if hold_mid_str:
+            hold_mid_at = datetime.datetime.fromisoformat(hold_mid_str.replace("Z", "+00:00"))
+            now = datetime.datetime.now(datetime.timezone.utc)
+            if now < hold_mid_at:
+                _write_log(f"Sleeping until HOLDINGS (mid) {hold_mid_str}")
+                _sleep_until(hold_mid_at)
+
+            if _phase_boundary_check():
+                return 0
+
+            _write_state("updating")
+            rc_hold_mid = _run_worker(
+                f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=mid",
+                _phase_log_path("holdings_mid"),
+            )
+            rc_nonzero |= (rc_hold_mid != 0)
+    except Exception as e:
+        _write_log(f"[holdings-mid] ERROR {e}")
+        _write_state("error")
+        _status_update("failed", f"Supervisor failed during HOLDINGS (mid): {e}")
         return 1
 
     # ---- CLOSE ----

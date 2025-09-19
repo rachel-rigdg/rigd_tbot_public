@@ -7,8 +7,15 @@
 # - No .timer / @instance units required.
 # - Clean shutdown: propagate SIGTERM/SIGINT to children.
 
+# --- PATH BOOTSTRAP (must be first) ---
+import sys, pathlib
+_THIS_FILE = pathlib.Path(__file__).resolve()
+_REPO_ROOT = _THIS_FILE.parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+# --- END PATH BOOTSTRAP ---
+
 import os
-import sys
 import subprocess
 from pathlib import Path
 import datetime as dt
@@ -116,6 +123,23 @@ def _run_build_checks_and_env_decrypt() -> None:
     except Exception as ex:
         write_system_log(f"_run_build_checks_and_env_decrypt: unexpected error: {ex}")
 
+# --- NEW: ensure child procs can import repo modules without changing call style ---
+def _ensure_child_has_repo_on_path(env: dict) -> None:
+    """
+    Prepend the repo root to PYTHONPATH for child processes only.
+    Avoids modifying parent sys.path or switching to -m.
+    """
+    try:
+        repo = str(ROOT_DIR)
+        cur = env.get("PYTHONPATH", "")
+        if not cur:
+            env["PYTHONPATH"] = repo
+        elif repo not in cur.split(os.pathsep):
+            env["PYTHONPATH"] = repo + os.pathsep + cur
+    except Exception:
+        # Never block launch on path-set issues
+        pass
+
 def _launch_flask():
     if _port_occupied(WEB_HOST, WEB_PORT):
         msg = f"Web already running on {WEB_HOST}:{WEB_PORT}; skipping UI launch."
@@ -127,6 +151,7 @@ def _launch_flask():
     env = os.environ.copy()
     env.setdefault("TBOT_WEB_HOST", WEB_HOST)  # ensure portal binds as requested
     env.setdefault("TBOT_WEB_PORT", str(WEB_PORT))
+    _ensure_child_has_repo_on_path(env)  # <-- surgical addition
     proc = subprocess.Popen(
         ["python3", str(WEB_MAIN_PATH)],
         stdout=None, stderr=None, env=env
@@ -139,6 +164,7 @@ def _launch_supervisor():
     write_system_log("Launching tbot_supervisor.py (daily run).")
     print("[main.py] Launching tbot_supervisor.py…", flush=True)
     env = os.environ.copy()
+    _ensure_child_has_repo_on_path(env)  # <-- surgical addition
     # If your supervisor supports args like --once, keep it simple; otherwise just run.
     try:
         proc = subprocess.Popen(["python3", str(TBOT_SUPERVISOR_PATH)], stdout=None, stderr=None, env=env)

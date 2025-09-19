@@ -198,7 +198,7 @@ def get_close_time_local() -> str:
 
 def get_sup_open_delay_min() -> int:
     """
-    Minutes to wait AFTER open strategy finishes before running holdings maintenance.
+    Minutes to wait AFTER the OPEN strategy **start** before running holdings maintenance.
     Default: 10.
     """
     v = load_env_var("SUP_OPEN_DELAY_MIN", 10)
@@ -207,9 +207,24 @@ def get_sup_open_delay_min() -> int:
     except Exception:
         return 10
 
+def get_sup_mid_delay_min() -> int:
+    """
+    Minutes to wait AFTER the MID strategy **start** before running holdings maintenance.
+    Default: fall back to SUP_OPEN_DELAY_MIN (or 60 if unset).
+    """
+    fallback = load_env_var("SUP_OPEN_DELAY_MIN", 60)
+    v = load_env_var("SUP_MID_DELAY_MIN", fallback)
+    try:
+        return int(v)
+    except Exception:
+        try:
+            return int(fallback)
+        except Exception:
+            return 60
+
 def get_sup_universe_after_close_min() -> int:
     """
-    Minutes to wait AFTER close strategy finishes before running the universe build.
+    Minutes to wait AFTER the CLOSE strategy **start** before running the universe build.
     Default: 120.
     """
     v = load_env_var("SUP_UNIVERSE_AFTER_CLOSE_MIN", 120)
