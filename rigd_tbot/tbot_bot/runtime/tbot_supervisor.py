@@ -44,7 +44,6 @@ def _write_log(line: str) -> None:
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(f"{_iso_utc_now()} [tbot_supervisor] {line}\n")
     except Exception:
-        # last-ditch
         print(f"{_iso_utc_now()} [tbot_supervisor] {line}", flush=True)
 
 # ---- Status helpers (status.json in tbot_bot/output/logs) ----
@@ -138,7 +137,7 @@ def _run_worker(cmd: str, log_path: Path) -> int:
     with open(log_path, "ab", buffering=0) as lf:
         try:
             child_env = os.environ.copy()
-            _ensure_child_has_repo_on_path(child_env)   # <- surgical: set PYTHONPATH for child
+            _ensure_child_has_repo_on_path(child_env)
             p = subprocess.Popen(
                 shlex.split(cmd),
                 cwd=str(ROOT_DIR),
@@ -172,18 +171,23 @@ def _phase_boundary_check() -> Optional[str]:
 
 # --- Env getters (use existing env_bot; no local/DST math here) ---
 
-def _get_times_and_delays() -> Tuple[str, str, str, str, int, int]:
+def _get_times_and_delays() -> Tuple[str, str, str, str, int, int, int]:
     from tbot_bot.config import env_bot
     open_utc = env_bot.get_open_time_utc()
     mid_utc = env_bot.get_mid_time_utc()
     close_utc = env_bot.get_close_time_utc()
     market_close_utc = env_bot.get_market_close_utc()
-    sup_open_delay_min = env_bot.get_sup_open_delay_min()      # default 10
-    sup_uni_after_close_min = env_bot.get_sup_universe_after_close_min()  # default 120
-    return open_utc, mid_utc, close_utc, market_close_utc, sup_open_delay_min, sup_uni_after_close_min
+    sup_open_delay_min = env_bot.get_sup_open_delay_min()
+    sup_mid_delay_min = env_bot.get_sup_mid_delay_min()     # NEW
+    sup_uni_after_close_min = env_bot.get_sup_universe_after_close_min()
+    return (open_utc, mid_utc, close_utc, market_close_utc,
+            sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min)
+
 
 def _compute_schedule() -> Dict:
-    open_hhmm, mid_hhmm, close_hhmm, market_close_hhmm, sup_open_delay_min, sup_uni_after_close_min = _get_times_and_delays()
+    # FIX: unpack mid delay too
+    (open_hhmm, mid_hhmm, close_hhmm, market_close_hhmm,
+     sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min) = _get_times_and_delays()
 
     oh, om = _parse_hhmm_utc(open_hhmm)
     mh, mm = _parse_hhmm_utc(mid_hhmm)
@@ -193,10 +197,10 @@ def _compute_schedule() -> Dict:
     mid_at = _today_utc_at(mh, mm)
     close_at = _today_utc_at(ch, cm)
 
-    # DELAYS ARE FROM STRATEGY START TIMES (explicit choice; avoids ambiguity)
+    # Delays are from strategy START times (explicit, avoids ambiguity)
     holdings_open_at = open_at + datetime.timedelta(minutes=int(sup_open_delay_min))
-    holdings_mid_at = mid_at + datetime.timedelta(minutes=int(sup_open_delay_min))
-    universe_at = close_at + datetime.timedelta(minutes=int(sup_uni_after_close_min))
+    holdings_mid_at  = mid_at  + datetime.timedelta(minutes=int(sup_mid_delay_min))   # FIX: use mid delay
+    universe_at      = close_at + datetime.timedelta(minutes=int(sup_uni_after_close_min))
 
     sched = {
         "trading_date": open_at.date().isoformat(),
@@ -204,15 +208,14 @@ def _compute_schedule() -> Dict:
         "open_utc": open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "mid_utc": mid_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "close_utc": close_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "market_close_utc_hint": market_close_hhmm,  # for UI reference
+        "market_close_utc_hint": market_close_hhmm,
 
-        # BACK-COMPAT + NEW, EXPLICIT HOLDINGS WINDOWS
+        # Explicit holdings windows (both), plus back-compat alias
         "holdings_after_open_min": int(sup_open_delay_min),
         "holdings_open_utc": holdings_open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "holdings_after_mid_min": int(sup_open_delay_min),
+        "holdings_after_mid_min": int(sup_mid_delay_min),
         "holdings_mid_utc": holdings_mid_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        # Back-compat alias (legacy consumers): same as holdings_open_utc
-        "holdings_utc": holdings_open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "holdings_utc": holdings_open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),  # back-compat alias
 
         "universe_after_close_min": int(sup_uni_after_close_min),
         "universe_utc": universe_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -236,7 +239,6 @@ def _guard_double_run(trading_date: str) -> bool:
 # --- Main (one-shot) ---
 
 def main() -> int:
-    # Accept but do not rely on --date (template passes %Y-%m-%d) – schedule uses UTC today.
     provided_date = None
     for arg in sys.argv[1:]:
         if arg.startswith("--date="):
@@ -261,7 +263,7 @@ def main() -> int:
     trading_date = provided_date or schedule["trading_date"]
     if not _guard_double_run(trading_date):
         _status_update("scheduled", "Supervisor already executed today; lock present.", {"trading_date": trading_date})
-        return 0  # consider already-run as success (idempotent behavior)
+        return 0
 
     rc_nonzero = False
     _status_update("running", "Supervisor running.", {"trading_date": trading_date})
@@ -292,10 +294,10 @@ def main() -> int:
     # ---- HOLDINGS (after open) ----
     try:
         # Prefer new key; fall back to legacy 'holdings_utc'
-        hold_open_str = schedule.get("holdings_open_utc") or schedule["holdings_utc"]
-        hold_open_at = datetime.datetime.fromisoformat(hold_open_str.replace("Z", "+00:00"))
+        hold_open_str = schedule.get("holdings_open_utc") or schedule.get("holdings_utc")
+        hold_open_at = datetime.datetime.fromisoformat(hold_open_str.replace("Z", "+00:00")) if hold_open_str else None
         now = datetime.datetime.now(datetime.timezone.utc)
-        if now < hold_open_at:
+        if hold_open_at and now < hold_open_at:
             _write_log(f"Sleeping until HOLDINGS (open) {hold_open_str}")
             _sleep_until(hold_open_at)
 
@@ -340,26 +342,25 @@ def main() -> int:
     # ---- HOLDINGS (after mid) ----
     try:
         hold_mid_str = schedule.get("holdings_mid_utc")
-        if hold_mid_str:
-            hold_mid_at = datetime.datetime.fromisoformat(hold_mid_str.replace("Z", "+00:00"))
-            now = datetime.datetime.now(datetime.timezone.utc)
-            if now < hold_mid_at:
-                _write_log(f"Sleeping until HOLDINGS (mid) {hold_mid_str}")
-                _sleep_until(hold_mid_at)
+        hold_mid_at = datetime.datetime.fromisoformat(hold_mid_str.replace("Z", "+00:00")) if hold_mid_str else None
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if hold_mid_at and now < hold_mid_at:
+            _write_log(f"Sleeping until HOLDINGS (mid) {hold_mid_str}")
+            _sleep_until(hold_mid_at)
 
-            if _phase_boundary_check():
-                return 0
+        if _phase_boundary_check():
+            return 0
 
-            _write_state("updating")
-            rc_hold_mid = _run_worker(
-                f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=mid",
-                _phase_log_path("holdings_mid"),
-            )
-            rc_nonzero |= (rc_hold_mid != 0)
+        _write_state("updating")
+        rc_hold_mid = _run_worker(
+            f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=mid",
+            _phase_log_path("holdings_mid"),
+        )
+        rc_nonzero |= (rc_hold_mid != 0)
     except Exception as e:
-        _write_log(f"[holdings-mid] ERROR {e}")
+        _write_log(f"[holdings_mid] ERROR {e}")
         _write_state("error")
-        _status_update("failed", f"Supervisor failed during HOLDINGS (mid): {e}")
+        _status_update("failed", f"Supervisor failed during HOLDINGS(mid): {e}")
         return 1
 
     # ---- CLOSE ----

@@ -92,7 +92,7 @@ def main() -> int:
         # Still update the stamp to reflect "last seen" OK state since a prior run exists.
         try:
             Path(get_stamp_path("holdings_manager_last.txt")).write_text(
-                f"{datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} OK\n", encoding="utf-8"
+                f"{datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} OK ({session})\n", encoding="utf-8"
             )
         except Exception:
             pass
@@ -105,7 +105,7 @@ def main() -> int:
         # Stamp as a benign skip (not a failure)
         try:
             Path(get_stamp_path("holdings_manager_last.txt")).write_text(
-                f"{datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} OK\n", encoding="utf-8"
+                f"{datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} OK ({session})\n", encoding="utf-8"
             )
         except Exception:
             pass
@@ -128,7 +128,7 @@ def main() -> int:
         # Status-page stamp
         try:
             Path(get_stamp_path("holdings_manager_last.txt")).write_text(
-                f"{datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} OK\n", encoding="utf-8"
+                f"{datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} OK ({session})\n", encoding="utf-8"
             )
         except Exception:
             pass
@@ -141,7 +141,7 @@ def main() -> int:
         # Status-page stamp
         try:
             Path(get_stamp_path("holdings_manager_last.txt")).write_text(
-                f"{datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} Failed\n", encoding="utf-8"
+                f"{datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')} Failed ({session})\n", encoding="utf-8"
             )
         except Exception:
             pass

@@ -93,13 +93,15 @@ def _compliance_preview_or_abort(holdings, etf_targets, account_value):
     return True
 
 def _write_job_stamp(status_text: str) -> None:
-    """Write a one-line stamp: 'YYYY-MM-DDTHH:MM:SSZ OK|Failed' (best-effort)."""
+    """Write a one-line stamp: 'YYYY-MM-DDTHH:MM:SSZ OK|Failed[ (session)]' (best-effort)."""
     try:
         stamp_path = os.path.join(get_output_path("stamps", "holdings_manager_last.txt"))
         os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        session = os.environ.get("TBOT_HOLDINGS_SESSION")  # optional context set by caller
+        status = f"{status_text} ({session})" if session else status_text
         with open(stamp_path, "w", encoding="utf-8") as f:
-            f.write(f"{ts} {status_text}")
+            f.write(f"{ts} {status}")
     except Exception:
         pass
 
@@ -264,15 +266,17 @@ def manual_holdings_action(action, user="manual"):
 
 def main():
     _warn_or_info("Holdings manager started as persistent service.")
+    # Optional session context for stamps when running persistently
+    session_env = os.environ.get("TBOT_HOLDINGS_SESSION")
     while True:
         try:
             perform_holdings_cycle()
-            _write_job_stamp("OK")
+            _write_job_stamp("OK" if not session_env else f"OK ({session_env})")
         except Exception as e:
             _warn_or_info(f"Exception in holdings cycle: {e}")
             log_event("holdings_manager_error", f"Exception: {e}", level="error", extra={"error": str(e)})
             audit_log_event("holdings_manager_error", actor="holdings_manager", reference=None, details={"error": str(e)})
-            _write_job_stamp("Failed")
+            _write_job_stamp("Failed" if not session_env else f"Failed ({session_env})")
         time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":

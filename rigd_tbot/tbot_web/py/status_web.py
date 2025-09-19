@@ -100,8 +100,6 @@ def _read_schedule():
                 "open_utc": raw.get("open_utc", ""),
                 "mid_utc": raw.get("mid_utc", ""),
                 "close_utc": raw.get("close_utc", ""),
-                # Legacy single holdings time (kept for back-compat)
-                "holdings_utc": raw.get("holdings_utc", ""),
                 # NEW: explicit holdings windows
                 "holdings_open_utc": raw.get("holdings_open_utc", "") or raw.get("holdings_utc", ""),
                 "holdings_mid_utc": raw.get("holdings_mid_utc", ""),
@@ -114,8 +112,6 @@ def _read_schedule():
             out["_dt_open"] = _parse_iso_utc(out["open_utc"])
             out["_dt_mid"] = _parse_iso_utc(out["mid_utc"])
             out["_dt_close"] = _parse_iso_utc(out["close_utc"])
-            # Legacy alias + new parsed keys
-            out["_dt_hold"] = _parse_iso_utc(out["holdings_utc"])
             out["_dt_hold_open"] = _parse_iso_utc(out["holdings_open_utc"])
             out["_dt_hold_mid"] = _parse_iso_utc(out["holdings_mid_utc"])
             out["_dt_univ"] = _parse_iso_utc(out["universe_utc"])
@@ -275,7 +271,8 @@ def _read_strategy_error(kind: str) -> str | None:
             return None
         # If first token is ISO timestamp, enforce today's date (UTC)
         first = txt.split()[0]
-        today_utc = date.today()
+        # FIX: ensure "today" is computed in UTC, not local time
+        today_utc = datetime.now(timezone.utc).date()
         try:
             when = _parse_iso_utc(first)
             if when and when.date() != today_utc:
@@ -381,7 +378,7 @@ def _enrich_status(base_status: dict) -> dict:
         "close_hhmm": (get_close_time_utc() or "19:45").strip(),
         "market_close_hhmm": (get_market_close_utc() or "21:00").strip(),
     }
-   # schedule + current_phase (existing)
+    # schedule + current_phase (existing)
     schedule = _read_schedule()
     enriched["schedule"] = {k: v for k, v in (schedule or {}).items() if not k.startswith("_dt_")}
     enriched["current_phase"] = _determine_current_phase(schedule)
@@ -413,6 +410,7 @@ def _enrich_status(base_status: dict) -> dict:
     enriched["supervisor"] = sup
 
     # --- FIX: source strategy enabled flags from encrypted config (not stale status.json defaults) ---
+    cfg = {}  # ensure defined even if get_bot_config() raises
     try:
         cfg = get_bot_config() or {}
         enabled_flags = {
@@ -468,6 +466,10 @@ def _enrich_status(base_status: dict) -> dict:
     except Exception:
         pass
 
+    # Expose top-level aliases expected by the template (back-compat)
+    enriched["max_risk_per_trade"] = max_risk
+    enriched["daily_loss_limit"] = daily_loss_limit
+
     # Counters from existing fields (non-breaking)
     counters = {
         "trade_count": int(enriched.get("trade_count") or 0),
@@ -508,6 +510,9 @@ def _enrich_status(base_status: dict) -> dict:
         "holdings_after_mid_utc": enriched["schedule"].get("holdings_mid_utc") or "",
         "universe_after_close_utc": enriched["schedule"].get("universe_utc") or "",
     })
+    # FIX: ensure legacy template key shows holdings time if only holdings_open_utc exists
+    if not enriched["schedule"].get("holdings_utc"):
+        enriched["schedule"]["holdings_utc"] = enriched["schedule"].get("holdings_open_utc") or ""
 
     return enriched
 
