@@ -266,38 +266,42 @@ def resolve_coa_db_path(entity: str, jurisdiction: str, broker: str, bot_id: str
     return str(Path(get_output_path(category="ledgers", bot_identity=bot_identity, output_subdir=True)) / f"{bot_identity}_BOT_COA.db")
 
 def resolve_universe_cache_path(bot_identity: str = None) -> str:
-    return get_output_path(category="screeners", filename="symbol_universe.json", bot_identity=bot_identity)
+    # Force global (identity-agnostic) screener cache location
+    return resolve_output_path("screeners/symbol_universe.json")
 
 def resolve_universe_raw_path():
-    # legacy raw dump path; keep under screeners category
-    return get_output_path(category="screeners", filename="symbol_universe.symbols_raw.json", bot_identity=None)
+    # legacy raw dump path; keep under global screeners category
+    return resolve_output_path("screeners/symbol_universe.symbols_raw.json")
 
 def resolve_universe_unfiltered_path() -> str:
-    return get_output_path(category="screeners", filename="symbol_universe.unfiltered.json", bot_identity=None)
+    # global (identity-agnostic) unfiltered universe
+    return resolve_output_path("screeners/symbol_universe.unfiltered.json")
 
 def resolve_universe_partial_path() -> str:
-    return get_output_path(category="screeners", filename="symbol_universe.partial.json", bot_identity=None)
+    # global (identity-agnostic) partial universe
+    return resolve_output_path("screeners/symbol_universe.partial.json")
 
 def resolve_universe_log_path() -> str:
-    # === Reporting logger refactor: reporting/universe_logger.py ===
-    return get_output_path(category="screeners", filename="universe_ops.log", bot_identity=None)
+    # universe ops log under global screeners
+    return resolve_output_path("screeners/universe_ops.log")
 
 def resolve_universe_logger_path() -> str:
     # Path for reporting/universe_logger.py (for backward compatibility)
     return str(PROJECT_ROOT / "tbot_bot" / "reporting" / "universe_logger.py")
 
 def resolve_screener_blocklist_path() -> str:
-    return get_output_path(category="screeners", filename="screener_blocklist.txt", bot_identity=None)
+    # global (identity-agnostic) blocklist
+    return resolve_output_path("screeners/screener_blocklist.txt")
 
 def resolve_blocklist_archive_path(archive_date: str = None) -> str:
     if not archive_date:
         archive_date = datetime.utcnow().strftime("%Y%m%d")
-    return get_output_path(category="screeners", filename=f"blocklist_archive_{archive_date}.txt", bot_identity=None)
+    return resolve_output_path(f"screeners/blocklist_archive_{archive_date}.txt")
 
 def resolve_universe_archive_path(archive_date: str = None) -> str:
     if not archive_date:
         archive_date = datetime.utcnow().strftime("%Y%m%d")
-    return get_output_path(category="screeners", filename=f"symbol_universe_{archive_date}.json", bot_identity=None)
+    return resolve_output_path(f"screeners/symbol_universe_{archive_date}.json")
 
 def resolve_status_log_path(bot_identity: str = None) -> str:
     return get_output_path(category="logs", filename="status.json", bot_identity=bot_identity)
@@ -363,7 +367,8 @@ def resolve_integration_test_runner_path() -> str:
     return resolve_test_script_path("integration_test_runner.py")
 
 def resolve_nasdaqlisted_txt_path() -> str:
-    return get_output_path(category="screeners", filename="nasdaqlisted.txt", bot_identity=None)
+    # global (identity-agnostic) source file
+    return resolve_output_path("screeners/nasdaqlisted.txt")
 
 def resolve_holdings_audit_log_path(bot_identity: str = None) -> str:
     identity = get_bot_identity(bot_identity)
