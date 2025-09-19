@@ -64,6 +64,28 @@ def load_raw_symbols():
                 continue
     return syms
 
+def _atomic_write_json(path: str, payload) -> None:
+    """
+    Atomically write a single JSON payload (array or object) to disk.
+    Ensures one valid JSON document (not NDJSON), compatible with orchestrator.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".staged.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+    # Best-effort directory fsync
+    try:
+        dfd = os.open(os.path.dirname(path), os.O_DIRECTORY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except Exception:
+        pass
+
 def main():
     env = load_env_bot_config()
     try:
@@ -105,6 +127,10 @@ def main():
     enriched_count = 0
     blocklisted_count = 0
     skipped_missing_financials = 0
+
+    # Accumulate into memory and write ONE JSON per file (not NDJSON)
+    unfiltered_records = []
+    partial_records = []
 
     for sym in symbol_ids:
         if sym in blocklist:
@@ -157,7 +183,8 @@ def main():
             if k not in record:
                 record[k] = q[k]
 
-        atomic_append_json(UNFILTERED_PATH, record)
+        # Accumulate (do not append line-by-line NDJSON)
+        unfiltered_records.append(record)
 
         filter_result, skip_reason = passes_filter(
             record,
@@ -169,11 +196,15 @@ def main():
         if not filter_result:
             log_progress("Skipped symbol during filtering", {"symbol": sym, "reason": skip_reason, "record": record})
         if filter_result:
-            atomic_append_json(PARTIAL_PATH, record)
+            partial_records.append(record)
             enriched_count += 1
 
         if enriched_count >= max_size:
             break
+
+    # Write a SINGLE JSON array per file (compatible with orchestrator reader)
+    _atomic_write_json(UNFILTERED_PATH, unfiltered_records)
+    _atomic_write_json(PARTIAL_PATH, partial_records)
 
     # Do not touch/copy partial to final here: that must be orchestrated externally.
 

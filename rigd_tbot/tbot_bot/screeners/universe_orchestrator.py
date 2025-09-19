@@ -150,12 +150,44 @@ def _atomic_publish_text(text: str, out_path: str) -> None:
 def _stage_with_timestamp(partial_path: str) -> dict:
     """
     Read partial JSON and inject build_timestamp_utc, returning updated data (no write here).
+    Accepts either:
+      - JSON array of symbol dicts → wraps as {"symbols":[...]}
+      - JSON object (already structured) → preserved
+      - NDJSON (one JSON per line) → aggregated and wrapped as {"symbols":[...]}
     """
     with open(partial_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        text = f.read().strip()
+
+    payload: dict
+    if not text:
+        payload = {"symbols": []}
+    else:
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                payload = {"symbols": parsed}
+            elif isinstance(parsed, dict):
+                payload = dict(parsed)
+            else:
+                payload = {"symbols": []}
+        except json.JSONDecodeError:
+            # Fallback: NDJSON
+            symbols: List[Any] = []
+            for line in text.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                    symbols.append(item)
+                except Exception:
+                    continue
+            payload = {"symbols": symbols}
+
     ts = datetime.utcnow().isoformat() + "Z"
-    data["build_timestamp_utc"] = ts
-    return data
+    # Do not overwrite existing fields except the timestamp we always set
+    payload["build_timestamp_utc"] = ts
+    return payload
 
 
 def _write_waiting_status(final_path: str):
