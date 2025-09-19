@@ -1,3 +1,6 @@
+/* tbot_web/static/css/pages/status.css */
+
+/* ---- Layout scaffolding (existing) ---- */
 .dashboard-footer {
     min-height: 80px;
     padding: 2.5em 0 2.5em 0;
@@ -22,4 +25,97 @@
     color: #b00;
     font-weight: bold;
     margin: 1.5em 0;
+}
+
+/* ---- Schedule grid (used by status.html) ---- */
+.schedule-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5em 1.25em;
+    margin: 0.5em 0 1em 0;
+}
+@media (max-width: 700px) {
+    .schedule-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ---- Chips for strategy states ---- */
+.chip {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 600;
+    border: 1px solid transparent;
+    user-select: none;
+    white-space: nowrap;
+}
+.chip.enabled {
+    color: #14532d;                 /* dark green */
+    background: #dcfce7;            /* green-100 */
+    border-color: #86efac;          /* green-300 */
+}
+.chip.scheduled {
+    color: #3f3f46;                 /* zinc-700 */
+    background: #e4e4e7;            /* zinc-200 */
+    border-color: #d4d4d8;          /* zinc-300 */
+}
+.chip.running {
+    color: #065f46;                 /* emerald-800 */
+    background: #d1fae5;            /* emerald-100 */
+    border-color: #6ee7b7;          /* emerald-300 */
+}
+.chip.failed {
+    color: #7f1d1d;                 /* red-900 */
+    background: #fee2e2;            /* red-100 */
+    border-color: #fecaca;          /* red-200 */
+}
+.chip.disabled {
+    color: #6b7280;                 /* gray-500 */
+    background: #f3f4f6;            /* gray-100 */
+    border-color: #e5e7eb;          /* gray-200 */
+}
+.chip.unknown {
+    color: #1f2937;                 /* gray-800 */
+    background: #e5e7eb;            /* gray-200 */
+    border-color: #d1d5db;          /* gray-300 */
+}
+
+/* ---- Cards (Strategy Details) ---- */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+}
+.card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+}
+.card h3 {
+    font-size: 1.05rem;
+    margin: 0;
+}
+
+/* ---- Compact lists inside cards ---- */
+.card ul {
+    margin: 6px 0 0 18px;
+    padding: 0;
+}
+.card li {
+    margin: 2px 0;
+    line-height: 1.25em;
+    list-style: disc;
+}
+.card small {
+    font-size: 0.85em;
+}
+
+/* ---- Utility ---- */
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }

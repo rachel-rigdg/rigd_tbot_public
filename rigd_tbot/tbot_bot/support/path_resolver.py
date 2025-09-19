@@ -1,3 +1,4 @@
+from __future__ import annotations
 # tbot_bot/support/path_resolver.py
 # Resolves dynamic paths for TradeBot modules based on identity and file category.
 # Fully supports staged universe/blocklist build, archival, and validation/diff ops per specification.
@@ -30,6 +31,9 @@ CATEGORIES = {
     "screeners": "screeners",
     "enhancements": "enhancements",
     "locks": "locks",  # NEW: for per-day/per-task lockfiles
+    # NEW (status page & stamps):
+    "status": "status",   # schedule.json, strategy_*_last.json, etc.
+    "stamps": "stamps",   # opening_equity.json, strategy_*_error.txt, job stamps
 }
 
 SYSTEM_LOG_FILES = [
@@ -421,6 +425,35 @@ def get_enhancements_path(bot_identity: str = None, output_subdir: bool = True) 
     """
     return get_output_path(category="enhancements", bot_identity=bot_identity, output_subdir=output_subdir)
 
+# ----------------------------------------------------------------------
+# NEW minimal helpers for Status Page contract (status/stamps folders)
+# ----------------------------------------------------------------------
+
+def get_status_path(name: str, bot_identity: str = None) -> str:
+    """
+    .../output/{BOT_IDENTITY}/status/{name}
+    Examples:
+      get_status_path("schedule.json")
+      get_status_path("strategy_open_last.json")
+    """
+    return get_output_path(category="status", filename=name, bot_identity=bot_identity)
+
+def get_snapshot_path(name: str, bot_identity: str = None) -> str:
+    """
+    Alias for status snapshots to keep call-sites descriptive.
+    """
+    return get_status_path(name, bot_identity=bot_identity)
+
+def get_stamp_path(name: str, bot_identity: str = None) -> str:
+    """
+    .../output/{BOT_IDENTITY}/stamps/{name}
+    Examples:
+      get_stamp_path("opening_equity.json")
+      get_stamp_path("strategy_open_error.txt")
+      get_stamp_path("holdings_manager_last.txt")
+    """
+    return get_output_path(category="stamps", filename=name, bot_identity=bot_identity)
+
 __all__ = [
     "is_test_mode_active",
     "get_bot_identity",
@@ -484,4 +517,8 @@ __all__ = [
     "get_supervisor_lock_path",
     "get_holdings_lock_path",
     "get_phase_log_path",
+    # NEW (status & stamps):
+    "get_status_path",
+    "get_snapshot_path",
+    "get_stamp_path",
 ]

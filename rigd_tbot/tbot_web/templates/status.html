@@ -81,6 +81,29 @@
                     <p><strong>Next run:</strong> tomorrow <code>00:01 UTC</code> (timer)</p>
                 {% endif %}
 
+                <!-- ======================== NEW: Overview (Balances + Daily P/L) ======================== -->
+                <hr>
+                <h2>Overview</h2>
+                {% set bal = status.account_balances if status and status.account_balances is defined else None %}
+                {% set dgl = status.daily_gain_loss if status and status.daily_gain_loss is defined else None %}
+                <div class="status-grid">
+                    <div><strong>Account Equity ($):</strong> {{ bal.equity if bal and bal.equity is not none else "—" }}</div>
+                    <div><strong>Cash Balance ($):</strong> {{ bal.cash if bal and bal.cash is not none else "—" }}</div>
+                    <div><strong>Daily Gain/Loss ($):</strong> {{ dgl.delta if dgl and dgl.delta is not none else "—" }}</div>
+                    <div><strong>Balances As Of (UTC):</strong> {{ bal.as_of_utc if bal and bal.as_of_utc else "—" }}</div>
+                </div>
+
+                <!-- ======================== NEW: Strategy States Chips ======================== -->
+                <hr>
+                <h2>Strategy States</h2>
+                {% set ss = status.strategy_states if status and status.strategy_states is defined else {} %}
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    {% for label in ["open","mid","close"] %}
+                        {% set st = ss[label].state if ss and ss[label] is defined else "unknown" %}
+                        <span class="chip {{ st|lower }}">{{ label|capitalize }}: {{ st|capitalize }}</span>
+                    {% endfor %}
+                </div>
+
                 <hr>
 
                 <div class="status-grid">
@@ -133,6 +156,78 @@
                     <div><strong>Open:</strong> <span id="status-strat-open">{{ status.enabled_strategies.open }}</span></div>
                     <div><strong>Mid:</strong> <span id="status-strat-mid">{{ status.enabled_strategies.mid }}</span></div>
                     <div><strong>Close:</strong> <span id="status-strat-close">{{ status.enabled_strategies.close }}</span></div>
+                </div>
+
+                <!-- ======================== NEW: Strategy Detail Cards ======================== -->
+                <hr>
+                {% set slr = status.strategy_last_run if status and status.strategy_last_run is defined else {} %}
+                <h2>Strategy Details</h2>
+                <div class="cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
+                    {% for label in ["open","mid","close"] %}
+                        {% set st = ss[label] if ss and ss[label] is defined else {} %}
+                        {% set card = slr[label] if slr and slr[label] is defined else {} %}
+                        <div class="card" style="border:1px solid #e2e2e2;border-radius:8px;padding:12px;background:#fff;">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                                <h3 style="margin:0;">{{ label|capitalize }}</h3>
+                                {% set state_txt = (st.state if st and st.state else "unknown")|lower %}
+                                <span class="chip {{ state_txt }}">{{ state_txt|capitalize }}</span>
+                            </div>
+                            <div style="font-size:0.95em;color:#333;margin-bottom:8px;">
+                                {% if label == "open" %}
+                                    {% set next_sched = schedule.open_utc if schedule else None %}
+                                {% elif label == "mid" %}
+                                    {% set next_sched = schedule.mid_utc if schedule else None %}
+                                {% else %}
+                                    {% set next_sched = schedule.close_utc if schedule else None %}
+                                {% endif %}
+                                <div><strong>Next Scheduled (UTC):</strong> {{ next_sched if next_sched else "—" }}</div>
+                                <div><strong>Last Run UTC:</strong> {{ card.ts_utc if card and card.ts_utc else "—" }}</div>
+                                {% if st and st.last_error %}
+                                    <div style="color:#b00;margin-top:6px;"><strong>Last Error:</strong> {{ st.last_error }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div style="margin-top:8px;">
+                                <strong>Last Candidates</strong>
+                                {% set cand = card.candidates if card and card.candidates else [] %}
+                                {% if cand and cand|length > 0 %}
+                                    <ul style="margin:6px 0 0 18px;">
+                                        {% for c in cand %}
+                                            <li>
+                                                {{ c.symbol or c.get("symbol") }}
+                                                {% if c.score is defined %}<small style="color:#666;">(score {{ c.score }})</small>{% endif %}
+                                                {% if c.signal is defined and c.signal %}<small style="color:#666;">– {{ c.signal }}</small>{% endif %}
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                {% else %}
+                                    <div style="color:#666;"><em>No snapshot.</em></div>
+                                {% endif %}
+                            </div>
+
+                            <div style="margin-top:8px;">
+                                <strong>Last Trades</strong>
+                                {% set tr = card.trades if card and card.trades else {} %}
+                                <div style="display:grid;grid-template-columns:repeat(2,minmax(80px,1fr));gap:6px;margin-top:4px;">
+                                    <div>Count: {{ tr.count if tr and tr.count is defined else 0 }}</div>
+                                    <div>Wins: {{ tr.wins if tr and tr.wins is defined else 0 }}</div>
+                                    <div>Losses: {{ tr.losses if tr and tr.losses is defined else 0 }}</div>
+                                    <div>Realized PnL: {{ tr.realized_pnl if tr and tr.realized_pnl is defined else 0.0 }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <!-- ======================== NEW: Jobs Row ======================== -->
+                <hr>
+                <h2>Jobs</h2>
+                {% set jobs = status.jobs if status and status.jobs is defined else {} %}
+                <div class="status-grid">
+                    {% set hm = jobs.holdings_manager if jobs and jobs.holdings_manager is defined else {} %}
+                    <div><strong>Holdings Manager:</strong> {{ hm.last_run_utc if hm and hm.last_run_utc else "—" }} <span style="color:#666;">({{ hm.status if hm and hm.status else "—" }})</span></div>
+                    {% set ur = jobs.universe_rebuild if jobs and jobs.universe_rebuild is defined else {} %}
+                    <div><strong>Universe Rebuild:</strong> {{ ur.last_run_utc if ur and ur.last_run_utc else "—" }} <span style="color:#666;">({{ ur.status if ur and ur.status else "—" }})</span></div>
                 </div>
 
                 <hr>
