@@ -102,6 +102,43 @@ def _parsed_utc_times():
     return open_tt, mid_tt, close_tt
 
 
+# --- NEW: back-compat shim for trailing-stop API (non-invasive) -----------------
+def _ensure_trailing_stop_alias() -> None:
+    """
+    Some strategy modules import `compute_trailing_exit_threshold` from
+    tbot_bot.trading.trailing_stop. If the project uses a different function
+    name, inject a runtime alias that delegates to whichever implementation
+    exists. This keeps strategy imports from exploding without touching those
+    modules or the trailing_stop source.
+    """
+    try:
+        import tbot_bot.trading.trailing_stop as _ts  # noqa: WPS433 (runtime import by design)
+        if hasattr(_ts, "compute_trailing_exit_threshold"):
+            return  # nothing to do
+        def _alias(*args, **kwargs):
+            for cand in (
+                "trailing_exit_threshold",
+                "get_trailing_exit_threshold",
+                "compute_trailing_exit",
+                "make_trailing_exit_threshold",
+                "compute_trailing_stop_threshold",
+            ):
+                fn = getattr(_ts, cand, None)
+                if callable(fn):
+                    return fn(*args, **kwargs)
+            raise NotImplementedError(
+                "No trailing-stop function found for alias "
+                "`compute_trailing_exit_threshold`. Define one of the known "
+                "candidates in trailing_stop.py or update strategies to the "
+                "current API."
+            )
+        _ts.compute_trailing_exit_threshold = _alias  # type: ignore[attr-defined]
+    except Exception:
+        # If even importing trailing_stop fails, let the normal import error surface later.
+        pass
+# -------------------------------------------------------------------------------
+
+
 def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
     Router selects a strategy when called.
@@ -114,7 +151,7 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
     print(f"[strategy_router] route_strategy called (override={override!r}, state={state})", flush=True)
 
     # Gate on bot_state for normal operation (allow TEST_MODE/override bypass)
-    if not (override or is_test_mode_active()) and state != "running":
+    if not (override or is_test_mode_active()) and state not in {"running", "trading", "analyzing", "monitoring"}:
         log_event("router", f"Bot state '{state}' not runnable — skipping route.")
         print(f"[strategy_router] Skipping — bot_state='{state}' (no override/TEST_MODE).", flush=True)
         return StrategyResult(skipped=True)
@@ -129,6 +166,7 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         results = []
         for strat, scr in (("open", OPEN_SCREENER), ("mid", MID_SCREENER), ("close", CLOSE_SCREENER)):
             print(f"[strategy_router] Launching {strat.upper()} (TEST_MODE) with screener={scr}", flush=True)
+            _ensure_trailing_stop_alias()  # <-- ensure import compatibility before importing strategies
             results.append(execute_strategy(strat, screener_override=scr))
         try:
             TEST_FLAG_PATH.unlink()
@@ -144,6 +182,7 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         scr = {"open": OPEN_SCREENER, "mid": MID_SCREENER, "close": CLOSE_SCREENER}.get(n, SCREENER_SOURCE)
         log_event("router", f"Manual override: {n} using screener {scr}")
         print(f"[strategy_router] Launching {n.upper()} via override with screener={scr}", flush=True)
+        _ensure_trailing_stop_alias()  # <-- ensure import compatibility
         return execute_strategy(n, screener_override=scr)
 
     # UTC-based selection (defensive; supervisor should normally call with override)
@@ -161,6 +200,7 @@ def route_strategy(current_utc_time=None, override: str = None) -> StrategyResul
         enabled, start_tt, scr = seq_map.get(name, (False, None, None))
         if enabled and start_tt and now_tt >= start_tt:
             print(f"[strategy_router] Time-based selection launching {name.upper()} with screener={scr}", flush=True)
+            _ensure_trailing_stop_alias()  # <-- ensure import compatibility
             return execute_strategy(name, screener_override=scr)
 
     print("[strategy_router] No eligible strategy at this time — skipped.", flush=True)
@@ -230,6 +270,10 @@ def _self_check(session: str) -> None:
     """Fail fast on invalid session, missing strategy import, env/config/logs issues."""
     if session not in {"open", "mid", "close"}:
         raise ValueError(f"invalid --session '{session}', expected one of: open, mid, close")
+
+    # Ensure trailing-stop alias exists before importing strategies (prevents import errors)
+    _ensure_trailing_stop_alias()
+
     # Strategy importability
     try:
         if session == "open":

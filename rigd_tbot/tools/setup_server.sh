@@ -18,6 +18,7 @@ mkdir -p tbot_bot/tests
 echo "Creating placeholder files..."
 touch gnu_live.gnucash
 touch gnu_paper.gnucash
-touch .env_bot.enc
+mkdir -p "$ROOT_DIR/tbot_bot/storage/secrets"
+ touch "$ROOT_DIR/tbot_bot/storage/secrets/.env_bot.enc"
 
 echo "Done. Please populate .env and .env_bot before first use."

@@ -4,6 +4,7 @@
 # console: adds stdout prints for launch/debug visibility (flush=True)
 
 import time
+import os  # (surgical) for TBOT_STRATEGY_FORCE override
 from datetime import timedelta, datetime, timezone
 from pathlib import Path
 import importlib
@@ -279,20 +280,24 @@ def detect_breakouts(start_time, screener_class):
 
 def run_open_strategy(screener_class):
     print("[strategy_open] run_open_strategy() called", flush=True)
-    # Pre-run gate: bot must be in 'running'
+    # (surgical) Relaxed pre-run gate: allow supervisor-driven states or env override
     try:
         state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
     except Exception:
         state = ""
     print(f"[strategy_open] bot_state='{state}'", flush=True)
-    if state != "running":
-        print("[strategy_open] exiting: bot_state != 'running'", flush=True)
-        log_event("strategy_open", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
+
+    # --- SURGICAL CHANGE: include 'analyzing' in allowed states ---
+    allowed_states = {"running", "trading", "monitoring", "analyzing"}
+    force = os.environ.get("TBOT_STRATEGY_FORCE", "0") == "1"
+    if (state not in allowed_states) and not force:
+        print("[strategy_open] exiting: bot_state not in {'running','trading','monitoring','analyzing'} (set TBOT_STRATEGY_FORCE=1 to override)", flush=True)
+        log_event("strategy_open", f"Pre-run check: bot_state='{state}' — not runnable; exiting.")
         return StrategyResult(skipped=True)
 
     # Idempotency: if already launched today, exit quietly
     now = utc_now()
-    if _has_open_run_today(now):
+    if _has_open_run_today(now) and not force:
         print("[strategy_open] exiting: already stamped for today (idempotent guard)", flush=True)
         log_event("strategy_open", "Detected existing daily stamp — strategy_open already launched today; exiting.")
         return StrategyResult(skipped=True)

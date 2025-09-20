@@ -3,6 +3,7 @@
 # additions: pre-run bot_state gate, idempotent daily stamp, write start stamp on launch
 # console: adds stdout prints for launch/debug visibility (flush=True)
 
+import os  # (surgical) allow TBOT_STRATEGY_FORCE override
 from datetime import timedelta, datetime, timezone
 from pathlib import Path
 import importlib
@@ -21,7 +22,7 @@ from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
 # --- NEW (surgical): centralized trailing-stop helper ---
-from tbot_bot.trading.trailing_stop import build_trailing_spec
+from tbot_bot.trading.trailing_stop import compute_trailing_exit_threshold, should_exit_by_trailing  # noqa: F401
 
 print("[strategy_close] module loaded", flush=True)
 
@@ -115,7 +116,7 @@ def analyze_closing_signals(start_time, screener_class):
 
         allocations = []
         for i in range(MAX_TRADES):
-            alloc = ACCOUNT_BALANCE * (WEIGHTS[i] if i < len(WEIGHTS) else MAX_RISK_PER_TRADE)
+            alloc = ACCOUNT_BALANCE * (WEIGHTS[i] if i < len(WEIGHTS] else MAX_RISK_PER_TRADE)
             allocations.append(alloc)
 
         eligible_signals = []
@@ -208,13 +209,14 @@ def monitor_closing_trades(signals, start_time):
                 valid, alloc_amt = validate_trade(symbol, "buy", ACCOUNT_BALANCE, 0, 0, 1)
                 if valid:
                     result = create_order(
-                        ticker=symbol,
+                        symbol=symbol,
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        # --- CHANGED (surgical): use centralized helper for trailing spec ---
-                        trailing_stop_spec=build_trailing_spec(mode="long", percent=0.02),  # peak × 0.98
-                        strategy_name="close"
+                        # --- CHANGED (surgical): broker-native trailing if available; else runtime-managed ---
+                        stop_loss_pct=0.02,
+                        strategy="close",
+                        use_trailing_stop=True,
                     )
                     if result:
                         trades.append(result)
@@ -254,13 +256,14 @@ def monitor_closing_trades(signals, start_time):
                             continue
 
                         result = create_order(
-                            ticker=instrument,
+                            symbol=instrument,
                             side=side_exec,
                             capital=alloc_amt,
                             price=price,
-                            # --- CHANGED (surgical): use centralized helper for trailing spec ---
-                            trailing_stop_spec=build_trailing_spec(mode="short", percent=0.02),  # trough × 1.02
-                            strategy_name="close"
+                            # --- CHANGED (surgical): standardized trailing spec like other strategies ---
+                            stop_loss_pct=0.02,
+                            strategy="close",
+                            use_trailing_stop=True,
                         )
                         if result:
                             trades.append(result)
@@ -272,20 +275,24 @@ def monitor_closing_trades(signals, start_time):
 
 def run_close_strategy(screener_class):
     print("[strategy_close] run_close_strategy() called", flush=True)
-    # Pre-run gate: bot must be in 'running'
+    # (surgical) Relaxed pre-run gate to match supervisor states and allow override
     try:
         state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
     except Exception:
         state = ""
     print(f"[strategy_close] bot_state='{state}'", flush=True)
-    if state != "running":
-        print("[strategy_close] exiting: bot_state != 'running'", flush=True)
-        log_event("strategy_close", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
+
+    # --- SURGICAL CHANGE: include broader allowed states + env override ---
+    allowed_states = {"running", "trading", "monitoring", "analyzing"}
+    force = os.environ.get("TBOT_STRATEGY_FORCE", "0") == "1"
+    if (state not in allowed_states) and not force:
+        print("[strategy_close] exiting: bot_state not in {'running','trading','monitoring','analyzing'} (set TBOT_STRATEGY_FORCE=1 to override)", flush=True)
+        log_event("strategy_close", f"Pre-run check: bot_state='{state}' — not runnable; exiting.")
         return StrategyResult(skipped=True)
 
     # Idempotency: if already launched today, exit quietly
     now = utc_now()
-    if _has_close_run_today(now):
+    if _has_close_run_today(now) and not force:
         print("[strategy_close] exiting: already stamped for today (idempotent guard)", flush=True)
         log_event("strategy_close", "Detected existing daily stamp — strategy_close already launched today; exiting.")
         return StrategyResult(skipped=True)
@@ -313,6 +320,6 @@ def run_close_strategy(screener_class):
 
 def simulate_close(*args, **kwargs):
     """
-    Stub for backtest/CI/test: returns empty list (no simulated trades).
+    Stub for backtest/CI/test: returns empty list.
     """
     return []

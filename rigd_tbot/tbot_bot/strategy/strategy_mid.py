@@ -3,6 +3,7 @@
 # additions: pre-run bot_state gate, idempotent daily stamp, write start stamp on launch
 # console: adds stdout prints for launch/debug visibility (flush=True)
 
+import os  # (surgical) allow TBOT_STRATEGY_FORCE override
 from datetime import timedelta, datetime, timezone
 from pathlib import Path
 import importlib
@@ -19,8 +20,8 @@ from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
-# --- NEW (surgical): centralized trailing stop helper ---
-from tbot_bot.trading.trailing_stop import trailing_spec_for_long, trailing_spec_for_short
+# --- NEW (surgical): central trailing stop helpers (align with strategy_open usage) ---
+from tbot_bot.trading.trailing_stop import compute_trailing_exit_threshold, should_exit_by_trailing  # noqa: F401
 
 print("[strategy_mid] module loaded", flush=True)
 
@@ -193,13 +194,15 @@ def execute_mid_trades(signals, start_time):
             if side == "buy":
                 valid, alloc_amt = validate_trade(symbol, "buy", ACCOUNT_BALANCE, 0, 0, 1)
                 if valid:
+                    # (surgical) align create_order signature with strategy_open and broker impl
                     result = create_order(
-                        ticker=symbol,
+                        symbol=symbol,
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        trailing_stop_spec=trailing_spec_for_long(0.02),  # (surgical) centralized helper
-                        strategy_name="mid"
+                        stop_loss_pct=0.02,      # 2% trailing; broker-native preferred, else runtime helper
+                        strategy="mid",
+                        use_trailing_stop=True,
                     )
                     if result:
                         trades.append(result)
@@ -239,12 +242,13 @@ def execute_mid_trades(signals, start_time):
                             continue
 
                         result = create_order(
-                            ticker=instrument,
+                            symbol=instrument,
                             side=side_exec,
                             capital=alloc_amt,
                             price=price,
-                            trailing_stop_spec=trailing_spec_for_short(0.02),  # (surgical) centralized helper
-                            strategy_name="mid"
+                            stop_loss_pct=0.02,   # 2% trailing
+                            strategy="mid",
+                            use_trailing_stop=True,
                         )
                         if result:
                             trades.append(result)
@@ -256,20 +260,24 @@ def execute_mid_trades(signals, start_time):
 
 def run_mid_strategy(screener_class):
     print("[strategy_mid] run_mid_strategy() called", flush=True)
-    # Pre-run gate: bot must be in 'running'
+    # (surgical) Relaxed pre-run gate to match supervisor states and allow override
     try:
         state = (BOT_STATE_PATH.read_text(encoding="utf-8").strip() if BOT_STATE_PATH.exists() else "")
     except Exception:
         state = ""
     print(f"[strategy_mid] bot_state='{state}'", flush=True)
-    if state != "running":
-        print("[strategy_mid] exiting: bot_state != 'running'", flush=True)
-        log_event("strategy_mid", f"Pre-run check: bot_state='{state}' — not 'running'; exiting without action.")
+
+    # --- SURGICAL CHANGE: include 'analyzing' in allowed states (to mirror open) ---
+    allowed_states = {"running", "trading", "monitoring", "analyzing"}
+    force = os.environ.get("TBOT_STRATEGY_FORCE", "0") == "1"
+    if (state not in allowed_states) and not force:
+        print("[strategy_mid] exiting: bot_state not in {'running','trading','monitoring','analyzing'} (set TBOT_STRATEGY_FORCE=1 to override)", flush=True)
+        log_event("strategy_mid", f"Pre-run check: bot_state='{state}' — not runnable; exiting.")
         return StrategyResult(skipped=True)
 
-    # Idempotency: if already launched today, exit quietly
+    # Idempotency: if already launched today, exit quietly (unless forced)
     now = utc_now()
-    if _has_mid_run_today(now):
+    if _has_mid_run_today(now) and not force:
         print("[strategy_mid] exiting: already stamped for today (idempotent guard)", flush=True)
         log_event("strategy_mid", "Detected existing daily stamp — strategy_mid already launched today; exiting.")
         return StrategyResult(skipped=True)

@@ -131,6 +131,14 @@ def _ensure_child_has_repo_on_path(env: dict) -> None:
     except Exception:
         pass
 
+# --- NEW: select python binary for child workers (allow override) ---
+def _py_bin() -> str:
+    """
+    Use TBOT_PY if set (e.g., /opt/homebrew/bin/python3.11 or venv/bin/python),
+    otherwise fall back to the current interpreter.
+    """
+    return shlex.quote(os.environ.get("TBOT_PY", sys.executable))
+
 def _run_worker(cmd: str, log_path: Path) -> int:
     _write_log(f"Exec: {cmd}")
     import subprocess
@@ -169,70 +177,17 @@ def _phase_boundary_check() -> Optional[str]:
         return "stop"
     return None
 
-# --- Env getters (use utils_time first; fallback to env_bot; no local/DST math here) ---
+# --- Env getters (use existing env_bot; no local/DST math here) ---
 
 def _get_times_and_delays() -> Tuple[str, str, str, str, int, int, int]:
-    """
-    Returns (open_hhmm_utc, mid_hhmm_utc, close_hhmm_utc, market_close_hhmm_utc,
-             sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min)
-    """
-    from tbot_bot.config import env_bot  # delays live here
-    open_utc = mid_utc = close_utc = market_close_utc = None
-
-    # Prefer utils_time (daily DST-aware computation)
-    try:
-        from tbot_bot.support import utils_time  # existing module that computes NY DST offsets daily
-        today = datetime.datetime.utcnow().date()
-
-        # Try a few likely APIs to stay compatible with existing utils_time implementations.
-        sess = None
-        candidate_funcs = (
-            "get_today_sessions_utc",           # -> dict with 'open','mid','close','market_close' as 'HH:MM'
-            "get_sessions_utc_for_date",        # (date) -> dict as above
-            "get_market_sessions_utc",          # (date) -> dict as above
-            "session_windows_utc_for_date",     # (date) -> dict as above
-        )
-        for fn_name in candidate_funcs:
-            if hasattr(utils_time, fn_name):
-                fn = getattr(utils_time, fn_name)
-                try:
-                    try:
-                        sess = fn(today)
-                    except TypeError:
-                        sess = fn(date=today)
-                except Exception:
-                    sess = None
-                if isinstance(sess, dict):
-                    break
-
-        if isinstance(sess, dict):
-            # accept several key styles
-            def pick(d, *keys):
-                for k in keys:
-                    if k in d and d[k]:
-                        return str(d[k]).strip()
-                return None
-
-            open_utc = pick(sess, "open_hhmm", "open_utc_hhmm", "open")
-            mid_utc = pick(sess, "mid_hhmm", "mid_utc_hhmm", "mid")
-            close_utc = pick(sess, "close_hhmm", "close_utc_hhmm", "close")
-            market_close_utc = pick(sess, "market_close_hhmm", "market_close_utc_hhmm", "market_close")
-    except Exception:
-        # utils_time not available or failed — fall back below
-        pass
-
-    # Fallback to env_bot if any are missing
-    if not (open_utc and mid_utc and close_utc):
-        open_utc = open_utc or env_bot.get_open_time_utc()
-        mid_utc = mid_utc or env_bot.get_mid_time_utc()
-        close_utc = close_utc or env_bot.get_close_time_utc()
-    if not market_close_utc:
-        market_close_utc = env_bot.get_market_close_utc()
-
+    from tbot_bot.config import env_bot
+    open_utc = env_bot.get_open_time_utc()
+    mid_utc = env_bot.get_mid_time_utc()
+    close_utc = env_bot.get_close_time_utc()
+    market_close_utc = env_bot.get_market_close_utc()
     sup_open_delay_min = env_bot.get_sup_open_delay_min()
-    sup_mid_delay_min = env_bot.get_sup_mid_delay_min()
+    sup_mid_delay_min = env_bot.get_sup_mid_delay_min()     # NEW
     sup_uni_after_close_min = env_bot.get_sup_universe_after_close_min()
-
     return (open_utc, mid_utc, close_utc, market_close_utc,
             sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min)
 
@@ -362,7 +317,7 @@ def main() -> int:
         if _should_run_or_skip(open_at, "OPEN"):
             _write_state("trading")
             rc_open = _run_worker(
-                f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=open",
+                f"{_py_bin()} -m tbot_bot.strategy.strategy_router --session=open",
                 _phase_log_path("open"),
             )
             rc_nonzero |= (rc_open != 0)
@@ -383,7 +338,7 @@ def main() -> int:
         if not hold_open_at or _should_run_or_skip(hold_open_at, "HOLDINGS (open)"):
             _write_state("updating")
             rc_hold_open = _run_worker(
-                f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=open",
+                f"{_py_bin()} -m tbot_bot.runtime.holdings_maintenance --session=open",
                 _phase_log_path("holdings_open"),
             )
             rc_nonzero |= (rc_hold_open != 0)
@@ -401,7 +356,7 @@ def main() -> int:
         if _should_run_or_skip(mid_at, "MID"):
             _write_state("trading")
             rc_mid = _run_worker(
-                f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=mid",
+                f"{_py_bin()} -m tbot_bot.strategy.strategy_router --session=mid",
                 _phase_log_path("mid"),
             )
             rc_nonzero |= (rc_mid != 0)
@@ -420,7 +375,7 @@ def main() -> int:
         if not hold_mid_at or _should_run_or_skip(hold_mid_at, "HOLDINGS (mid)"):
             _write_state("updating")
             rc_hold_mid = _run_worker(
-                f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=mid",
+                f"{_py_bin()} -m tbot_bot.runtime.holdings_maintenance --session=mid",
                 _phase_log_path("holdings_mid"),
             )
             rc_nonzero |= (rc_hold_mid != 0)
@@ -438,7 +393,7 @@ def main() -> int:
         if _should_run_or_skip(close_at, "CLOSE"):
             _write_state("trading")
             rc_close = _run_worker(
-                f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=close",
+                f"{_py_bin()} -m tbot_bot.strategy.strategy_router --session=close",
                 _phase_log_path("close"),
             )
             rc_nonzero |= (rc_close != 0)
@@ -456,7 +411,7 @@ def main() -> int:
         if _should_run_or_skip(uni_at, "UNIVERSE"):
             _write_state("updating")
             rc_universe = _run_worker(
-                f"{shlex.quote(sys.executable)} -m tbot_bot.screeners.universe_orchestrator",
+                f"{_py_bin()} -m tbot_bot.screeners.universe_orchestrator",
                 _phase_log_path("universe"),
             )
             rc_nonzero |= (rc_universe != 0)

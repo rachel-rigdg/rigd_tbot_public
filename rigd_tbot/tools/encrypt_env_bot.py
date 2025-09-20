@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # tools/encrypt_env_bot.py
-# Encrypts .env_bot into tbot_bot/support/.env_bot.enc using Fernet key stored in tbot_bot/storage/keys/env_bot.key
+# Encrypts .env_bot into tbot_bot/storage/secrets/.env_bot.enc using Fernet key stored in tbot_bot/storage/keys/env_bot.key
 
 import json
 import os

@@ -21,6 +21,7 @@ requests==2.31.0                  # HTTP requests (used by Finnhub, others)
 # === Time & Configuration ===
 pytz==2024.1                      # Timezone handling
 python-dotenv==1.0.1              # Load .env variables
+python-dateutil>=2.8.2,<3	  #Date Utilities
 
 # === Security & Encryption ===
 bcrypt==4.1.2                     # Password hashing (optional use)

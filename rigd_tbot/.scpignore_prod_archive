@@ -10,7 +10,7 @@ docs/
 # === Secrets & Config Files ===
 .env
 tbot_bot/.env_bot
-tbot_bot/.env_bot.enc
+tbot_bot/storage/secrets/.env_bot.enc
 
 # === Virtual Environment ===
 venv/

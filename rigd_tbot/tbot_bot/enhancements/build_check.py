@@ -11,7 +11,7 @@ from tbot_bot.support.path_resolver import get_bot_identity, get_output_path
 
 REQUIRED_FILES = [
     ".env",
-    "tbot_bot/support/.env_bot.enc",
+    "tbot_bot/storage/secrets/.env_bot.enc",
     "tbot_bot/config/env_bot.py",
     "tbot_bot/accounting/account_transaction.py",
     "tbot_bot/accounting/accounting_config.py"

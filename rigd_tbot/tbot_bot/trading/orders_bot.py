@@ -61,7 +61,13 @@ def _calc_qty(capital: float, price: float, fractional: bool) -> float:
     return (capital / price) if fractional else int(capital / price)
 
 
-def _validate_price_bounds(symbol: str, price: float) -> bool:
+def _validate_price_bounds(symbol: str, price) -> bool:
+    """
+    Allow market orders with price=None by skipping hard bounds.
+    Keep bounds for explicit-limit style calls that pass a price.
+    """
+    if price is None:
+        return True
     if price < MIN_PRICE or price > MAX_PRICE:
         log_event("orders_bot", f"Price out of bounds for {symbol}: {price}")
         return False
@@ -145,10 +151,53 @@ def _place_native_trailing_stop(symbol: str, side_open: str, qty: float, trail_p
         return {"ok": False, "reason": f"exception: {e}"}
 
 
+# ---- NEW: tiny helpers to support price=None paths (surgical) ------------------
+
+def _get_reference_price(symbol: str) -> float | None:
+    """
+    Ask broker adapter for a last/nbbo price if available.
+    Used only when we must compute a whole-share qty (no fractional)
+    and caller didn't pass a price. Returns None if unavailable.
+    """
+    try:
+        api = _get_broker_api()
+        fn = getattr(api, "get_last_price", None)
+        if callable(fn):
+            p = fn(symbol)
+            return float(p) if p and float(p) > 0 else None
+    except Exception:
+        pass
+    return None
+
+
+def _qty_price_notional_for(capital: float, price, fractional: bool, symbol: str):
+    """
+    Decide how to form the order:
+      - If explicit price: compute qty normally.
+      - If price is None and fractional: send notional.
+      - If price is None and NOT fractional: try reference price for whole-share qty.
+    Returns tuple: (qty_or_None, price_or_None, notional_or_None)
+    """
+    if price is not None:
+        return _calc_qty(capital, float(price), fractional), float(price), None
+
+    if fractional:
+        return None, None, float(capital)
+
+    ref = _get_reference_price(symbol)
+    if ref:
+        qty = _calc_qty(capital, ref, False)
+        return (qty if qty >= 1 else 0), ref, None
+
+    return 0, None, None  # unable to compute a valid whole-share qty
+
+# ----------------------------------------------------------------------------
+
+
 def create_order(symbol: str,
                  side: str,
                  capital: float,
-                 price: float,
+                 price,
                  stop_loss_pct: float = 0.02,
                  strategy: str | None = None,
                  use_trailing_stop: bool = True) -> dict | None:
@@ -158,34 +207,34 @@ def create_order(symbol: str,
     :param symbol: str, stock ticker
     :param side: str, 'buy' or 'sell'
     :param capital: float, allocated capital (USD)
-    :param price: float, current market price
+    :param price: float or None, current market price (None -> market/marketable)
     :param stop_loss_pct: float, trailing stop loss as fraction (e.g., 0.02 for 2%)
     :param strategy: str, strategy name
     :param use_trailing_stop: bool, request broker/native trailing if available
     :return: dict with order metadata or None if failed
-
-    Trailing stop semantics (spec-compliant and centralized via trailing_stop.py):
-      - LONG (side='buy'): exit when price falls 2% below the highest since entry (peak * (1 - pct)).
-      - SHORT-like (side='sell'): exit when price rises 2% above the lowest since entry (trough * (1 + pct)).
-        (When strategies use inverse ETFs but call side='buy', they should still pass use_trailing_stop=True;
-         runtime monitoring should treat those as LONG positions on the ETF price stream.)
     """
     # TEST_MODE stub: simulate success, NO live API calls
     if _is_test_mode_active():
         if not _validate_price_bounds(symbol, price):
             return None
-        qty = _calc_qty(capital, price, FRACTIONAL)
-        if qty <= 0:
-            log_event("orders_bot", f"TEST_MODE simulated order rejected: Invalid quantity for {symbol} at {price}")
+        qty, px, notional = _qty_price_notional_for(capital, price, FRACTIONAL, symbol)
+
+        # Reject if we cannot create a sensible simulation (non-fractional, no ref price → qty==0)
+        if (notional is None) and (qty is None or qty <= 0):
+            log_event("orders_bot", f"TEST_MODE simulated order rejected: Invalid quantity for {symbol} (price={px})")
             return None
+
+        total_value = (qty * px) if (qty and px) else (notional if notional is not None else 0.0)
+
         order = {
             "symbol": symbol,
-            "qty": round(qty, 6),
+            "qty": (round(qty, 6) if qty else None),
+            "notional": (round(notional, 2) if notional is not None else None),
             "side": side,
             "type": "market",
             "strategy": strategy,
-            "price": float(price),
-            "total_value": round(qty * price, 2),
+            "price": (float(px) if px is not None else None),
+            "total_value": round(float(total_value), 2),
             "timestamp": utc_now().isoformat(),
             "broker": BROKER_NAME,
             "account": "test_mode",
@@ -194,9 +243,6 @@ def create_order(symbol: str,
                 "requested": bool(use_trailing_stop and stop_loss_pct > 0),
                 "native": False,  # simulated; runtime must enforce using peaks/troughs
                 "stop_loss_pct": float(stop_loss_pct),
-                # Directional rule for runtime enforcement:
-                #   long: exit below peak*(1 - pct)
-                #   short-like: exit above trough*(1 + pct)
                 "rule": "long_drop_from_peak" if side == "buy" else "short_rise_from_trough",
             },
         }
@@ -207,26 +253,38 @@ def create_order(symbol: str,
     if not _validate_price_bounds(symbol, price):
         return None
 
-    qty = _calc_qty(capital, price, FRACTIONAL)
-    if qty <= 0:
-        log_event("orders_bot", f"Invalid quantity computed for {symbol} at {price}")
-        return None
-    if not FRACTIONAL and qty < 1:
-        log_event("orders_bot", f"Insufficient capital for full share of {symbol} at {price}")
-        return None
+    qty, px, notional = _qty_price_notional_for(capital, price, FRACTIONAL, symbol)
+
+    # Validate quantity/notional feasibility
+    if notional is None:
+        # whole-share path
+        if qty is None or qty <= 0:
+            log_event("orders_bot", f"Invalid quantity computed for {symbol} (price={px})")
+            return None
+        if not FRACTIONAL and qty < 1:
+            log_event("orders_bot", f"Insufficient capital for full share of {symbol} at {px}")
+            return None
 
     base_order = {
         "symbol": symbol,
-        "qty": round(qty, 6),
         "side": side,
         "type": "market",
         "strategy": strategy,
-        "price": float(price),
-        "total_value": round(qty * price, 2),
         "timestamp": utc_now().isoformat(),
         "broker": BROKER_NAME,
         "account": "live",
     }
+    if px is not None:
+        base_order["price"] = float(px)
+    if notional is not None:
+        base_order["notional"] = round(float(notional), 2)
+    if qty is not None:
+        base_order["qty"] = round(float(qty), 6)
+    # total_value is best-effort metadata
+    if (qty is not None and px is not None):
+        base_order["total_value"] = round(float(qty) * float(px), 2)
+    elif notional is not None:
+        base_order["total_value"] = round(float(notional), 2)
 
     placed = _place_market_order_live(base_order)
     if not placed:
@@ -240,8 +298,8 @@ def create_order(symbol: str,
         "result": None,
     }
 
-    # Try native trailing stop if requested and supported
-    if trailing_meta["requested"] and _supports_native_trailing():
+    # Try native trailing stop only if we actually know the filled quantity up front
+    if trailing_meta["requested"] and (qty is not None) and _supports_native_trailing():
         result = _place_native_trailing_stop(
             symbol=symbol,
             side_open=side,
