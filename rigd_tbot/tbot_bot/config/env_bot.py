@@ -1,4 +1,4 @@
-# tbot_bot/config/env_bot.py
+# /config/env_bot.py
 # summary: Validates and parses .env_bot configuration (encrypted only, never auto-loads at module level).
 # All config access must be explicit and deferred—no module-level loading permitted.
 # NOTE: Holdings-related variables have been moved to the holdings secrets file and are NOT loaded here.
@@ -9,7 +9,8 @@ from cryptography.fernet import Fernet
 from pathlib import Path
 from typing import Any, Dict
 
-ENCRYPTED_CONFIG_PATH = Path(__file__).resolve().parent.parent / "support" / ".env_bot.enc"
+# Correct secret locations (do not touch)
+ENCRYPTED_CONFIG_PATH = Path(__file__).resolve().parent.parent / "storage" / "secrets" / ".env_bot.enc"
 KEY_PATH = Path(__file__).resolve().parent.parent / "storage" / "keys" / "env_bot.key"
 
 REQUIRED_KEYS = [
@@ -32,7 +33,7 @@ REQUIRED_KEYS = [
     # Failover Broker Routing
     "FAILOVER_ENABLED", "FAILOVER_LOG_TAG",
     # Global Time & Polling
-    "MARKET_OPEN_UTC", "MARKET_CLOSE_UTC", "TRADING_DAYS", 
+    "MARKET_OPEN_UTC", "MARKET_CLOSE_UTC", "TRADING_DAYS",
     # NEW: Sleep times for universe and strategy API polling
     "UNIVERSE_SLEEP_TIME", "STRATEGY_SLEEP_TIME",
     # OPEN Strategy Configuration
@@ -162,10 +163,23 @@ def get_close_time_utc() -> str:
     v = load_env_var("START_TIME_CLOSE", "")
     return str(v or "").strip()
 
+def get_market_open_utc() -> str:
+    """Return MARKET_OPEN_UTC as 'HH:MM' (UTC)."""
+    v = load_env_var("MARKET_OPEN_UTC", "")
+    return str(v or "").strip()
+
 def get_market_close_utc() -> str:
     """Return MARKET_CLOSE_UTC as 'HH:MM' (UTC)."""
     v = load_env_var("MARKET_CLOSE_UTC", "")
     return str(v or "").strip()
+
+def get_supervisor_time_utc() -> str:
+    """
+    Daily supervisor trigger time in UTC as 'HH:MM'.
+    Optional; defaults to '06:00' if not present.
+    """
+    v = load_env_var("TBOT_SUPERVISOR_UTC_HHMM", "06:00")
+    return str(v or "06:00").strip()
 
 def get_timezone() -> str:
     """

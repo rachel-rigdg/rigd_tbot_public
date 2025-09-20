@@ -35,7 +35,7 @@ WEB_HOST = os.environ.get("TBOT_WEB_HOST", "0.0.0.0")  # default: listen on all 
 WAIT_OPS_SECS = int(os.environ.get("TBOT_WAIT_OPS_SECS", "90"))
 WAIT_BOOTSTRAP_SECS = int(os.environ.get("TBOT_WAIT_BOOTSTRAP_SECS", "120"))
 SUP_ENABLE = os.environ.get("TBOT_SUPERVISOR_ENABLE", "1") != "0"
-SUP_TRIGGER_HHMM = os.environ.get("TBOT_SUPERVISOR_UTC_HHMM", "0600")  # "HHMM" in UTC
+SUP_TRIGGER_HHMM = os.environ.get("TBOT_SUPERVISOR_UTC_HHMM", "0001")  # "HHMM" in UTC (default 00:01)
 POLL_SECS = int(os.environ.get("TBOT_MAIN_POLL_SECS", "5"))
 
 child_procs = {"flask": None, "supervisor": None, "test_runner": None}

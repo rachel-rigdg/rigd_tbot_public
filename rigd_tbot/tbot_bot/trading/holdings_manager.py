@@ -7,6 +7,7 @@ import os
 import sys
 import time
 from dateutil.relativedelta import relativedelta
+from datetime import datetime, timezone, timedelta
 
 # Enforce supervised launch
 if __name__ == "__main__" and not os.environ.get("TBOT_LAUNCHED_BY_SUPERVISOR"):
@@ -28,19 +29,22 @@ from tbot_bot.support.path_resolver import get_bot_state_path, get_output_path
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from tbot_bot.reporting.audit_logger import audit_log_event
 from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
-from datetime import datetime, timezone, timedelta
 
 print(f"[LAUNCH] holdings_manager.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 log = get_logger(__name__)
 
 def _warn_or_info(msg):
-    if hasattr(log, "warn"):
-        log.warn(msg)
+    if hasattr(log, "warning"):
+        log.warning(msg)
     else:
         log.info(msg)
 
-POLL_INTERVAL = 60  # seconds between checks, can be made configurable
+# Allow supervisor to override poll interval
+try:
+    POLL_INTERVAL = int(os.environ.get("TBOT_HOLDINGS_POLL_SEC", "60"))
+except Exception:
+    POLL_INTERVAL = 60  # seconds
 
 def _is_bot_initialized():
     if is_first_bootstrap(quiet_mode=True):
@@ -72,7 +76,7 @@ def _should_rebalance(holdings_cfg):
     try:
         if next_rebalance_due:
             rebalance_due_date = datetime.fromisoformat(next_rebalance_due).date()
-            if datetime.utcnow().date() >= rebalance_due_date:
+            if datetime.now(timezone.utc).date() >= rebalance_due_date:
                 return True
     except Exception as e:
         _warn_or_info(f"Rebalance date check failed: {e}")
@@ -80,7 +84,7 @@ def _should_rebalance(holdings_cfg):
 
 def _mark_rebalance_complete(holdings_cfg):
     rebalance_interval = int(holdings_cfg.get("HOLDINGS_REBALANCE_INTERVAL", 3))
-    next_due = datetime.utcnow().date() + relativedelta(months=rebalance_interval)
+    next_due = datetime.now(timezone.utc).date() + relativedelta(months=rebalance_interval)
     save_holdings_secrets({**holdings_cfg, "NEXT_REBALANCE_DUE": next_due.isoformat()}, user="holdings_manager", reason="rebalance_complete")
 
 def _compliance_preview_or_abort(holdings, etf_targets, account_value):
@@ -95,8 +99,9 @@ def _compliance_preview_or_abort(holdings, etf_targets, account_value):
 def _write_job_stamp(status_text: str) -> None:
     """Write a one-line stamp: 'YYYY-MM-DDTHH:MM:SSZ OK|Failed[ (session)]' (best-effort)."""
     try:
-        stamp_path = os.path.join(get_output_path("stamps", "holdings_manager_last.txt"))
-        os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
+        stamp_dir = get_output_path("stamps")
+        os.makedirs(stamp_dir, exist_ok=True)
+        stamp_path = os.path.join(stamp_dir, "holdings_manager_last.txt")
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         session = os.environ.get("TBOT_HOLDINGS_SESSION")  # optional context set by caller
         status = f"{status_text} ({session})" if session else status_text
@@ -264,20 +269,58 @@ def manual_holdings_action(action, user="manual"):
         return {"result": "rebalance triggered"}
     return {"error": "invalid action"}
 
+def _after_close_exit_if_requested():
+    """
+    If supervisor provided a market close UTC (HH:MM) via env TBOT_MARKET_CLOSE_UTC
+    and TBOT_HOLDINGS_EXIT_AFTER_CLOSE=true, exit after the first cycle that runs
+    at or after close time.
+    """
+    if os.environ.get("TBOT_HOLDINGS_EXIT_AFTER_CLOSE", "").lower() != "true":
+        return False
+    close_hhmm = os.environ.get("TBOT_MARKET_CLOSE_UTC")
+    if not close_hhmm:
+        return False
+    try:
+        hh, mm = [int(x) for x in close_hhmm.split(":")]
+        now = datetime.now(timezone.utc)
+        close_dt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if now >= close_dt:
+            _warn_or_info("Holdings manager exiting after market close per supervisor directive.")
+            return True
+    except Exception:
+        pass
+    return False
+
 def main():
     _warn_or_info("Holdings manager started as persistent service.")
     # Optional session context for stamps when running persistently
     session_env = os.environ.get("TBOT_HOLDINGS_SESSION")
+    one_shot = os.environ.get("TBOT_HOLDINGS_ONE_SHOT", "").lower() == "true"
+
+    try:
+        perform_holdings_cycle()
+        _write_job_stamp("OK" if not session_env else f"OK ({session_env})")
+    except Exception as e:
+        _warn_or_info(f"Exception in holdings cycle: {e}")
+        log_event("holdings_manager_error", f"Exception: {e}", level="error", extra={"error": str(e)})
+        audit_log_event("holdings_manager_error", actor="holdings_manager", reference=None, details={"error": str(e)})
+        _write_job_stamp("Failed" if not session_env else f"Failed ({session_env})")
+
+    if one_shot or _after_close_exit_if_requested():
+        return
+
     while True:
+        time.sleep(POLL_INTERVAL)
         try:
             perform_holdings_cycle()
             _write_job_stamp("OK" if not session_env else f"OK ({session_env})")
+            if _after_close_exit_if_requested():
+                return
         except Exception as e:
             _warn_or_info(f"Exception in holdings cycle: {e}")
             log_event("holdings_manager_error", f"Exception: {e}", level="error", extra={"error": str(e)})
             audit_log_event("holdings_manager_error", actor="holdings_manager", reference=None, details={"error": str(e)})
             _write_job_stamp("Failed" if not session_env else f"Failed ({session_env})")
-        time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":
     main()

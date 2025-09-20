@@ -169,17 +169,70 @@ def _phase_boundary_check() -> Optional[str]:
         return "stop"
     return None
 
-# --- Env getters (use existing env_bot; no local/DST math here) ---
+# --- Env getters (use utils_time first; fallback to env_bot; no local/DST math here) ---
 
 def _get_times_and_delays() -> Tuple[str, str, str, str, int, int, int]:
-    from tbot_bot.config import env_bot
-    open_utc = env_bot.get_open_time_utc()
-    mid_utc = env_bot.get_mid_time_utc()
-    close_utc = env_bot.get_close_time_utc()
-    market_close_utc = env_bot.get_market_close_utc()
+    """
+    Returns (open_hhmm_utc, mid_hhmm_utc, close_hhmm_utc, market_close_hhmm_utc,
+             sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min)
+    """
+    from tbot_bot.config import env_bot  # delays live here
+    open_utc = mid_utc = close_utc = market_close_utc = None
+
+    # Prefer utils_time (daily DST-aware computation)
+    try:
+        from tbot_bot.support import utils_time  # existing module that computes NY DST offsets daily
+        today = datetime.datetime.utcnow().date()
+
+        # Try a few likely APIs to stay compatible with existing utils_time implementations.
+        sess = None
+        candidate_funcs = (
+            "get_today_sessions_utc",           # -> dict with 'open','mid','close','market_close' as 'HH:MM'
+            "get_sessions_utc_for_date",        # (date) -> dict as above
+            "get_market_sessions_utc",          # (date) -> dict as above
+            "session_windows_utc_for_date",     # (date) -> dict as above
+        )
+        for fn_name in candidate_funcs:
+            if hasattr(utils_time, fn_name):
+                fn = getattr(utils_time, fn_name)
+                try:
+                    try:
+                        sess = fn(today)
+                    except TypeError:
+                        sess = fn(date=today)
+                except Exception:
+                    sess = None
+                if isinstance(sess, dict):
+                    break
+
+        if isinstance(sess, dict):
+            # accept several key styles
+            def pick(d, *keys):
+                for k in keys:
+                    if k in d and d[k]:
+                        return str(d[k]).strip()
+                return None
+
+            open_utc = pick(sess, "open_hhmm", "open_utc_hhmm", "open")
+            mid_utc = pick(sess, "mid_hhmm", "mid_utc_hhmm", "mid")
+            close_utc = pick(sess, "close_hhmm", "close_utc_hhmm", "close")
+            market_close_utc = pick(sess, "market_close_hhmm", "market_close_utc_hhmm", "market_close")
+    except Exception:
+        # utils_time not available or failed — fall back below
+        pass
+
+    # Fallback to env_bot if any are missing
+    if not (open_utc and mid_utc and close_utc):
+        open_utc = open_utc or env_bot.get_open_time_utc()
+        mid_utc = mid_utc or env_bot.get_mid_time_utc()
+        close_utc = close_utc or env_bot.get_close_time_utc()
+    if not market_close_utc:
+        market_close_utc = env_bot.get_market_close_utc()
+
     sup_open_delay_min = env_bot.get_sup_open_delay_min()
-    sup_mid_delay_min = env_bot.get_sup_mid_delay_min()     # NEW
+    sup_mid_delay_min = env_bot.get_sup_mid_delay_min()
     sup_uni_after_close_min = env_bot.get_sup_universe_after_close_min()
+
     return (open_utc, mid_utc, close_utc, market_close_utc,
             sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min)
 
@@ -236,6 +289,39 @@ def _guard_double_run(trading_date: str) -> bool:
         _status_update("failed", f"Supervisor failed creating lock: {e}")
         return False
 
+# --- NEW: Grace handling (global, default 2 minutes) ---
+
+def _grace_minutes() -> int:
+    try:
+        return int(os.environ.get("TBOT_SUP_PHASE_GRACE_MIN", "2"))
+    except Exception:
+        return 2
+
+def _should_run_or_skip(target_dt: datetime.datetime, phase_name: str) -> bool:
+    """
+    Return True to run the phase, False to skip.
+    Sleeps if we're early; runs immediately if within grace; skips if beyond grace.
+    """
+    grace_min = _grace_minutes()
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    if now < target_dt:
+        _write_log(f"Sleeping until {phase_name} {target_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+        _sleep_until(target_dt)
+        return True
+
+    # late or on time
+    late_sec = (now - target_dt).total_seconds()
+    if late_sec <= max(0, grace_min) * 60:
+        if late_sec > 0:
+            _write_log(f"{phase_name} within grace ({grace_min}m). Late by {int(late_sec)}s → running now.")
+        return True
+
+    # too late -> skip
+    mins_late = int(late_sec // 60)
+    _write_log(f"{phase_name} missed by {mins_late}m {int(late_sec % 60)}s (> {grace_min}m). Skipping.")
+    return False
+
 # --- Main (one-shot) ---
 
 def main() -> int:
@@ -271,20 +357,15 @@ def main() -> int:
     # ---- OPEN ----
     try:
         open_at = datetime.datetime.fromisoformat(schedule["open_utc"].replace("Z", "+00:00"))
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if now < open_at:
-            _write_log(f"Sleeping until OPEN {schedule['open_utc']}")
-            _sleep_until(open_at)
-
         if _phase_boundary_check():
             return 0
-
-        _write_state("trading")
-        rc_open = _run_worker(
-            f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=open",
-            _phase_log_path("open"),
-        )
-        rc_nonzero |= (rc_open != 0)
+        if _should_run_or_skip(open_at, "OPEN"):
+            _write_state("trading")
+            rc_open = _run_worker(
+                f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=open",
+                _phase_log_path("open"),
+            )
+            rc_nonzero |= (rc_open != 0)
     except Exception as e:
         _write_log(f"[open] ERROR {e}")
         _write_state("error")
@@ -296,20 +377,16 @@ def main() -> int:
         # Prefer new key; fall back to legacy 'holdings_utc'
         hold_open_str = schedule.get("holdings_open_utc") or schedule.get("holdings_utc")
         hold_open_at = datetime.datetime.fromisoformat(hold_open_str.replace("Z", "+00:00")) if hold_open_str else None
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if hold_open_at and now < hold_open_at:
-            _write_log(f"Sleeping until HOLDINGS (open) {hold_open_str}")
-            _sleep_until(hold_open_at)
-
         if _phase_boundary_check():
             return 0
-
-        _write_state("updating")
-        rc_hold_open = _run_worker(
-            f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=open",
-            _phase_log_path("holdings_open"),
-        )
-        rc_nonzero |= (rc_hold_open != 0)
+        # If no scheduled time provided, preserve existing behavior: run immediately.
+        if not hold_open_at or _should_run_or_skip(hold_open_at, "HOLDINGS (open)"):
+            _write_state("updating")
+            rc_hold_open = _run_worker(
+                f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=open",
+                _phase_log_path("holdings_open"),
+            )
+            rc_nonzero |= (rc_hold_open != 0)
     except Exception as e:
         _write_log(f"[holdings-open] ERROR {e}")
         _write_state("error")
@@ -319,20 +396,15 @@ def main() -> int:
     # ---- MID ----
     try:
         mid_at = datetime.datetime.fromisoformat(schedule["mid_utc"].replace("Z", "+00:00"))
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if now < mid_at:
-            _write_log(f"Sleeping until MID {schedule['mid_utc']}")
-            _sleep_until(mid_at)
-
         if _phase_boundary_check():
             return 0
-
-        _write_state("trading")
-        rc_mid = _run_worker(
-            f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=mid",
-            _phase_log_path("mid"),
-        )
-        rc_nonzero |= (rc_mid != 0)
+        if _should_run_or_skip(mid_at, "MID"):
+            _write_state("trading")
+            rc_mid = _run_worker(
+                f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=mid",
+                _phase_log_path("mid"),
+            )
+            rc_nonzero |= (rc_mid != 0)
     except Exception as e:
         _write_log(f"[mid] ERROR {e}")
         _write_state("error")
@@ -343,20 +415,15 @@ def main() -> int:
     try:
         hold_mid_str = schedule.get("holdings_mid_utc")
         hold_mid_at = datetime.datetime.fromisoformat(hold_mid_str.replace("Z", "+00:00")) if hold_mid_str else None
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if hold_mid_at and now < hold_mid_at:
-            _write_log(f"Sleeping until HOLDINGS (mid) {hold_mid_str}")
-            _sleep_until(hold_mid_at)
-
         if _phase_boundary_check():
             return 0
-
-        _write_state("updating")
-        rc_hold_mid = _run_worker(
-            f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=mid",
-            _phase_log_path("holdings_mid"),
-        )
-        rc_nonzero |= (rc_hold_mid != 0)
+        if not hold_mid_at or _should_run_or_skip(hold_mid_at, "HOLDINGS (mid)"):
+            _write_state("updating")
+            rc_hold_mid = _run_worker(
+                f"{shlex.quote(sys.executable)} -m tbot_bot.runtime.holdings_maintenance --session=mid",
+                _phase_log_path("holdings_mid"),
+            )
+            rc_nonzero |= (rc_hold_mid != 0)
     except Exception as e:
         _write_log(f"[holdings_mid] ERROR {e}")
         _write_state("error")
@@ -366,20 +433,15 @@ def main() -> int:
     # ---- CLOSE ----
     try:
         close_at = datetime.datetime.fromisoformat(schedule["close_utc"].replace("Z", "+00:00"))
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if now < close_at:
-            _write_log(f"Sleeping until CLOSE {schedule['close_utc']}")
-            _sleep_until(close_at)
-
         if _phase_boundary_check():
             return 0
-
-        _write_state("trading")
-        rc_close = _run_worker(
-            f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=close",
-            _phase_log_path("close"),
-        )
-        rc_nonzero |= (rc_close != 0)
+        if _should_run_or_skip(close_at, "CLOSE"):
+            _write_state("trading")
+            rc_close = _run_worker(
+                f"{shlex.quote(sys.executable)} -m tbot_bot.strategy.strategy_router --session=close",
+                _phase_log_path("close"),
+            )
+            rc_nonzero |= (rc_close != 0)
     except Exception as e:
         _write_log(f"[close] ERROR {e}")
         _write_state("error")
@@ -389,20 +451,15 @@ def main() -> int:
     # ---- UNIVERSE (after close) ----
     try:
         uni_at = datetime.datetime.fromisoformat(schedule["universe_utc"].replace("Z", "+00:00"))
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if now < uni_at:
-            _write_log(f"Sleeping until UNIVERSE {schedule['universe_utc']}")
-            _sleep_until(uni_at)
-
         if _phase_boundary_check():
             return 0
-
-        _write_state("updating")
-        rc_universe = _run_worker(
-            f"{shlex.quote(sys.executable)} -m tbot_bot.screeners.universe_orchestrator",
-            _phase_log_path("universe"),
-        )
-        rc_nonzero |= (rc_universe != 0)
+        if _should_run_or_skip(uni_at, "UNIVERSE"):
+            _write_state("updating")
+            rc_universe = _run_worker(
+                f"{shlex.quote(sys.executable)} -m tbot_bot.screeners.universe_orchestrator",
+                _phase_log_path("universe"),
+            )
+            rc_nonzero |= (rc_universe != 0)
     except Exception as e:
         _write_log(f"[universe] ERROR {e}")
         _write_state("error")
