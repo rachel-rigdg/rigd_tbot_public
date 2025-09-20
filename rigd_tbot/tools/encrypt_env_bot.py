@@ -16,7 +16,7 @@ NO_PROMPT = "--no-prompt" in sys.argv
 # === Paths (corrected to rigd_tbot structure) ===
 BASE_DIR = Path(__file__).resolve().parents[1]
 PLAIN_ENV_BOT_PATH = BASE_DIR / ".env_bot"
-ENC_OUTPUT_PATH = BASE_DIR / "tbot_bot" / "support" / ".env_bot.enc"
+ENC_OUTPUT_PATH = BASE_DIR / "tbot_bot" / "storage" / "secrets" / ".env_bot.enc"
 BACKUP_DIR = BASE_DIR / "tbot_bot" / "storage" / "backups"
 KEY_PATH = BASE_DIR / "tbot_bot" / "storage" / "keys" / "env_bot.key"  # ✅ Correct filename
 
