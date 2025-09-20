@@ -1,4 +1,4 @@
-# /config/env_bot.py
+# tbot_bot/config/env_bot.py
 # summary: Validates and parses .env_bot configuration (encrypted only, never auto-loads at module level).
 # All config access must be explicit and deferred—no module-level loading permitted.
 # NOTE: Holdings-related variables have been moved to the holdings secrets file and are NOT loaded here.
@@ -7,11 +7,78 @@ import json
 import logging
 from cryptography.fernet import Fernet
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
-# Correct secret locations (do not touch)
-ENCRYPTED_CONFIG_PATH = Path(__file__).resolve().parent.parent / "storage" / "secrets" / ".env_bot.enc"
-KEY_PATH = Path(__file__).resolve().parent.parent / "storage" / "keys" / "env_bot.key"
+logger = logging.getLogger(__name__)
+
+# ----------------------------------------------------------------------
+# PATH RESOLUTION (fix): robust lookup + env overrides + clear errors
+# ----------------------------------------------------------------------
+
+def _resolve_first_existing(candidates: List[Path]) -> Optional[Path]:
+    for p in candidates:
+        try:
+            if p.exists():
+                return p
+        except Exception:
+            # ignore permission/odd FS errors; try next
+            pass
+    return None
+
+def _env_override_path(env_key: str) -> Optional[Path]:
+    import os
+    v = os.environ.get(env_key)
+    if v:
+        p = Path(v).expanduser().resolve()
+        return p
+    return None
+
+# Base anchors
+_THIS_FILE = Path(__file__).resolve()
+_CONFIG_DIR = _THIS_FILE.parent              # .../tbot_bot/config
+_TBOT_ROOT = _CONFIG_DIR.parent             # .../tbot_bot
+
+# Candidate locations (in priority order, after env overrides)
+_ENC_CANDIDATES = [
+    _TBOT_ROOT / "support" / ".env_bot.enc",                 # original default
+    _TBOT_ROOT / "storage" / "secrets" / ".env_bot.enc",     # alt layout seen in error
+    _TBOT_ROOT / "storage" / ".env_bot.enc",                 # simple storage root
+    _CONFIG_DIR / "support" / ".env_bot.enc",                # if someone nested under config
+]
+
+_KEY_CANDIDATES = [
+    _TBOT_ROOT / "storage" / "keys" / "env_bot.key",         # original default
+    _TBOT_ROOT / "support" / "env_bot.key",                  # alt under support
+    _CONFIG_DIR / "support" / "env_bot.key",                 # if nested under config
+]
+
+def _resolve_encrypted_paths() -> (Path, Path, List[Path], List[Path]):
+    """Return (enc_path, key_path, tried_enc, tried_key) with env overrides applied."""
+    tried_enc: List[Path] = []
+    tried_key: List[Path] = []
+
+    enc_override = _env_override_path("TBOT_ENV_BOT_ENC_PATH")
+    key_override = _env_override_path("TBOT_ENV_BOT_KEY_PATH")
+
+    if enc_override:
+        tried_enc.append(enc_override)
+        enc_path = enc_override if enc_override.exists() else None
+    else:
+        tried_enc.extend(_ENC_CANDIDATES)
+        enc_path = _resolve_first_existing(_ENC_CANDIDATES)
+
+    if key_override:
+        tried_key.append(key_override)
+        key_path = key_override if key_override.exists() else None
+    else:
+        tried_key.extend(_KEY_CANDIDATES)
+        key_path = _resolve_first_existing(_KEY_CANDIDATES)
+
+    return enc_path, key_path, tried_enc, tried_key
+
+# ----------------------------------------------------------------------
+# REQUIRED KEYS (unchanged except prior note)
+# ----------------------------------------------------------------------
 
 REQUIRED_KEYS = [
     # General & Debugging
@@ -62,32 +129,45 @@ REQUIRED_KEYS = [
     # DO NOT REQUIRE "TIMEZONE" HERE
 ]
 
-logger = logging.getLogger(__name__)
+# ----------------------------------------------------------------------
+# Core decrypt/load/validate (patched to use the resolver)
+# ----------------------------------------------------------------------
 
-def decrypt_env_bot(encryption_key: str) -> Dict[str, Any]:
+def _decrypt_env_bot(enc_path: Path, encryption_key: str) -> Dict[str, Any]:
     try:
-        logger.debug(f"Decrypting .env_bot.enc at {ENCRYPTED_CONFIG_PATH}")
-        with open(ENCRYPTED_CONFIG_PATH, "rb") as file:
+        logger.debug(f"Decrypting .env_bot.enc at {enc_path}")
+        with open(enc_path, "rb") as file:
             encrypted_data = file.read()
         fernet = Fernet(encryption_key.encode())
         decrypted_data = fernet.decrypt(encrypted_data).decode()
         logger.debug(".env_bot.enc decrypted successfully")
         return json.loads(decrypted_data)
     except Exception as e:
-        logger.error(f"Failed to decrypt .env_bot.enc: {e}")
-        raise RuntimeError(f"Failed to decrypt .env_bot.enc: {e}")
+        logger.error(f"Failed to decrypt .env_bot.enc at {enc_path}: {e}")
+        raise RuntimeError(f"Failed to decrypt .env_bot.enc at {enc_path}: {e}")
 
 def load_env_bot() -> Dict[str, Any]:
-    if not KEY_PATH.exists():
-        logger.error(f"ENV_BOT_KEY missing at expected path: {KEY_PATH}")
-        raise RuntimeError(f"ENV_BOT_KEY missing at expected path: {KEY_PATH}")
-    encryption_key = KEY_PATH.read_text(encoding="utf-8").strip()
-    logger.debug(f"Read encryption key from {KEY_PATH}")
-    config = decrypt_env_bot(encryption_key)
+    enc_path, key_path, tried_enc, tried_key = _resolve_encrypted_paths()
+
+    if key_path is None:
+        tried_str = ", ".join(str(p) for p in tried_key)
+        logger.error(f"ENV_BOT_KEY not found. Tried: {tried_str}")
+        raise RuntimeError(f"ENV_BOT_KEY not found. Tried: {tried_str}")
+
+    if enc_path is None:
+        tried_str = ", ".join(str(p) for p in tried_enc)
+        logger.error(f".env_bot.enc not found. Tried: {tried_str}")
+        raise RuntimeError(f".env_bot.enc not found. Tried: {tried_str}")
+
+    encryption_key = key_path.read_text(encoding="utf-8").strip()
+    logger.debug(f"Read encryption key from {key_path}")
+    config = _decrypt_env_bot(enc_path, encryption_key)
+
     missing = [key for key in REQUIRED_KEYS if key not in config]
     if missing:
         logger.error(f"Missing required keys in .env_bot: {missing}")
         raise KeyError(f"Missing required keys in .env_bot: {missing}")
+
     logger.debug(f".env_bot keys present: {list(config.keys())}")
     for key, val in list(config.items()):
         if isinstance(val, str):
@@ -130,14 +210,17 @@ def load_env_var(key: str, fallback: Any = None) -> Any:
         return fallback
 
 def update_env_var(key: str, value: Any) -> None:
-    encryption_key = KEY_PATH.read_text(encoding="utf-8").strip()
-    with open(ENCRYPTED_CONFIG_PATH, "rb") as f:
+    enc_path, key_path, _, _ = _resolve_encrypted_paths()
+    if enc_path is None or key_path is None:
+        raise RuntimeError("Cannot update: encrypted file or key not found (check TBOT_ENV_BOT_ENC_PATH/TBOT_ENV_BOT_KEY_PATH or default locations).")
+    encryption_key = key_path.read_text(encoding="utf-8").strip()
+    with open(enc_path, "rb") as f:
         encrypted_data = f.read()
     decrypted = Fernet(encryption_key.encode()).decrypt(encrypted_data).decode()
     config = json.loads(decrypted)
     config[key] = value
     updated_encrypted = Fernet(encryption_key.encode()).encrypt(json.dumps(config).encode())
-    with open(ENCRYPTED_CONFIG_PATH, "wb") as f:
+    with open(enc_path, "wb") as f:
         f.write(updated_encrypted)
 
 load_env_bot_config = get_bot_config
@@ -163,23 +246,10 @@ def get_close_time_utc() -> str:
     v = load_env_var("START_TIME_CLOSE", "")
     return str(v or "").strip()
 
-def get_market_open_utc() -> str:
-    """Return MARKET_OPEN_UTC as 'HH:MM' (UTC)."""
-    v = load_env_var("MARKET_OPEN_UTC", "")
-    return str(v or "").strip()
-
 def get_market_close_utc() -> str:
     """Return MARKET_CLOSE_UTC as 'HH:MM' (UTC)."""
     v = load_env_var("MARKET_CLOSE_UTC", "")
     return str(v or "").strip()
-
-def get_supervisor_time_utc() -> str:
-    """
-    Daily supervisor trigger time in UTC as 'HH:MM'.
-    Optional; defaults to '06:00' if not present.
-    """
-    v = load_env_var("TBOT_SUPERVISOR_UTC_HHMM", "06:00")
-    return str(v or "06:00").strip()
 
 def get_timezone() -> str:
     """
