@@ -172,6 +172,12 @@ def _collect_index_view(creds: Dict, index: str) -> Dict[str, str]:
         view[base_key] = creds.get(f"{base_key}_{index}", "")
     for flag in USAGE_FLAGS:
         view[flag] = creds.get(f"{flag}_{index}", "false")
+    # Include any additional keys that exist for this index (not just schema-defined)
+    for k, v in creds.items():
+        if k.endswith(f"_{index}") and not _PROVIDER_KEY_RE.match(k):
+            base_key = k.rsplit("_", 1)[0]
+            if base_key != "PROVIDER":
+                view.setdefault(base_key, v)
     return view
 
 def _normalize_flag(v) -> str:
@@ -211,13 +217,15 @@ def update_provider_credentials(provider: str, new_values: Dict) -> None:
         for k in [k for k in list(creds.keys()) if k.endswith(f"_{index}")]:
             del creds[k]
 
-        # Write per-provider fields
-        for base_key in schema_keys:
+        # Write per-provider fields: union of schema keys and incoming keys
+        write_keys = set(schema_keys) | set(new_values.keys())
+        write_keys.discard("PROVIDER")
+        for base_key in write_keys:
             creds[f"{base_key}_{index}"] = new_values.get(base_key, "")
 
         # Normalize and persist usage flags
         for flag in USAGE_FLAGS:
-            raw = new_values.get(flag, "false")
+            raw = new_values.get(flag, creds.get(f"{flag}_{index}", "false"))
             creds[f"{flag}_{index}"] = _normalize_flag(raw)
 
         # Mapping key: PROVIDER_XX
@@ -255,8 +263,8 @@ def delete_provider_credentials(provider: str) -> None:
         for k in [k for k in list(creds.keys()) if k.endswith(f"_{idx}")]:
             del creds[k]
 
-        # Remove provider mapping
-        del creds[f"PROVIDER_{idx}"]
+        # Remove provider mapping (safe pop to avoid KeyError)
+        creds.pop(f"PROVIDER_{idx}", None)
 
         # Persist
         save_screener_credentials(creds)

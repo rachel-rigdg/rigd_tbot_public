@@ -116,7 +116,7 @@ def analyze_closing_signals(start_time, screener_class):
 
         allocations = []
         for i in range(MAX_TRADES):
-            alloc = ACCOUNT_BALANCE * (WEIGHTS[i] if i < len(WEIGHTS] else MAX_RISK_PER_TRADE)
+            alloc = ACCOUNT_BALANCE * (WEIGHTS[i] if i < len(WEIGHTS) else MAX_RISK_PER_TRADE)
             allocations.append(alloc)
 
         eligible_signals = []
