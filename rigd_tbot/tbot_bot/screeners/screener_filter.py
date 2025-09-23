@@ -8,6 +8,7 @@
 import re
 from decimal import Decimal
 from typing import List, Dict, Optional, Tuple
+from copy import deepcopy  # (surgical) for auto-ranging rescale retries
 
 SYMBOL_KEYS         = ("symbol", "ticker", "displaySymbol")
 LASTCLOSE_KEYS      = ("lastClose", "close", "last_price", "price", "c", "pc")
@@ -165,6 +166,24 @@ def passes_filter(
             return False, "not_tradable"
     return True, ""
 
+# --- (surgical) helper for auto-ranging price rescaling ---
+def _rescale_prices(records: List[Dict], factor: float) -> List[Dict]:
+    """Return a deep-copied list with obvious price-like fields multiplied by factor.
+    Market cap is intentionally NOT rescaled (already normalized)."""
+    price_like = ("lastClose", "price", "c", "pc", "close", "last_price", "open", "o", "vwap")
+    out = []
+    for r in records:
+        rr = deepcopy(r)
+        for k in price_like:
+            if k in rr and rr[k] not in (None, "", "None"):
+                try:
+                    rr[k] = tofloat(rr[k]) * factor
+                except Exception:
+                    # keep original if conversion fails
+                    pass
+        out.append(rr)
+    return out
+
 def filter_symbols(
     symbols: List[Dict],
     min_price: float,
@@ -176,21 +195,53 @@ def filter_symbols(
     broker_obj=None
 ) -> List[Dict]:
     normalized = normalize_symbols(symbols)
-    filtered = []
-    for s in normalized:
-        passed, reason = passes_filter(
-            s,
-            min_price,
-            max_price,
-            min_market_cap,
-            max_market_cap,
-            allowed_exchanges,
-            broker_obj
-        )
-        if not passed:
-            print(f"[DEBUG] filter_symbols: symbol {s.get('symbol', '')} skipped, reason: {reason}")
-        if passed:
-            filtered.append(s)
+
+    def _run(records: List[Dict]) -> List[Dict]:
+        acc = []
+        for s in records:
+            passed, reason = passes_filter(
+                s,
+                min_price,
+                max_price,
+                min_market_cap,
+                max_market_cap,
+                allowed_exchanges,
+                broker_obj
+            )
+            if not passed:
+                print(f"[DEBUG] filter_symbols: symbol {s.get('symbol', '')} skipped, reason: {reason}")
+            if passed:
+                acc.append(s)
+        return acc
+
+    # First pass (original behavior)
+    filtered = _run(normalized)
+
+    # --- (surgical) AUTO-RANGING if too few symbols (classic cents/$ or 100x feed issues) ---
+    MIN_OK = 5 if max_size is None else min(max_size, 5)
+    if len(filtered) < MIN_OK:
+        # Try cents->dollars
+        attempt = _run(_rescale_prices(normalized, 0.01))
+        if len(attempt) > len(filtered):
+            print("[AUTO-SCALE] Recovered with price_scale=0.01 (cents->dollars).")
+            filtered = attempt
+
+        # Try dollars->cents
+        if len(filtered) < MIN_OK:
+            attempt = _run(_rescale_prices(normalized, 100.0))
+            if len(attempt) > len(filtered):
+                print("[AUTO-SCALE] Recovered with price_scale=100.0 (dollars->cents).")
+                filtered = attempt
+
+        # Try off-by-10 errors (rare but seen)
+        if len(filtered) < MIN_OK:
+            for factor in (0.1, 10.0):
+                attempt = _run(_rescale_prices(normalized, factor))
+                if len(attempt) > len(filtered):
+                    print(f"[AUTO-SCALE] Recovered with price_scale={factor}.")
+                    filtered = attempt
+                    break
+
     if max_size is not None and len(filtered) > max_size:
         filtered.sort(key=lambda x: x.get("marketCap", 0.0) or 0.0, reverse=True)
         filtered = filtered[:max_size]
