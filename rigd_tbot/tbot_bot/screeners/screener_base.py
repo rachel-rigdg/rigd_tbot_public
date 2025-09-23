@@ -25,6 +25,8 @@ class ScreenerBase:
     """
     Abstract base class defining the core screener interface and behavior.
     Enforces universe cache loading, indirect credential/config usage, and audit-level logging.
+
+    NOTE: Symbol universe files live at: tbot_bot/output/screeners/
     """
 
     def __init__(self, bot_identity: Optional[str] = None, creds: Optional[Dict] = None, config: Optional[Dict] = None):
@@ -42,15 +44,24 @@ class ScreenerBase:
     def _load_universe_cache(self) -> List[Dict]:
         """
         Loads the cached universe from disk, enforcing strict validation.
-        Raises UniverseCacheError if the cache is missing, invalid, or corrupted.
+
+        Surgical change:
+        - Do NOT raise on missing/invalid cache. Instead, log the error and return an empty list
+          so concrete screeners (e.g., FinnhubScreener) can perform their own rebuild/fallback.
+        - Symbol universe directory is standardized at tbot_bot/output/screeners/.
         """
         try:
             universe = load_universe_cache(self.bot_identity)
             LOG.info(f"[{self.__class__.__name__}] Universe cache loaded with {len(universe)} symbols.")
             return universe
         except UniverseCacheError as e:
-            LOG.error(f"[{self.__class__.__name__}] Universe cache loading failed: {e}")
-            raise
+            LOG.error(
+                f"[{self.__class__.__name__}] Universe cache loading failed: {e}. "
+                "Proceeding with empty universe to allow screener-level fallback. "
+                "Expected universe location: tbot_bot/output/screeners/"
+            )
+            # Allow subclass to auto-heal (rebuild/fallback) instead of crashing here.
+            return []
 
     def get_universe(self) -> List[Dict]:
         """
