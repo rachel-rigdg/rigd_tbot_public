@@ -30,6 +30,10 @@ from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from tbot_bot.reporting.audit_logger import audit_log_event
 from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
 
+# --- (surgical) imports for configurable native trailing stops on holdings buys
+from tbot_bot.config.env_bot import get_bot_config  # read HOLDINGS_TRAILING_STOP_PCT
+from tbot_bot import broker as broker_api  # use broker_api helpers for price + trailing stop
+
 print(f"[LAUNCH] holdings_manager.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
 log = get_logger(__name__)
@@ -109,6 +113,62 @@ def _write_job_stamp(status_text: str) -> None:
             f.write(f"{ts} {status}")
     except Exception:
         pass
+
+# --- (surgical) helper to optionally attach native trailing stop after a BUY ---
+def _maybe_attach_trailing_after_buy(symbol: str, notional: float) -> None:
+    """
+    If HOLDINGS_TRAILING_STOP_PCT > 0 and broker supports native trailing stops,
+    place a protective trailing stop sized off the notional just purchased.
+    """
+    try:
+        cfg = get_bot_config()
+        pct_fraction = float(cfg.get("HOLDINGS_TRAILING_STOP_PCT", 0) or 0.0)
+    except Exception:
+        pct_fraction = 0.0
+
+    if pct_fraction <= 0:
+        return
+    try:
+        if not broker_api.supports_trailing_stops():
+            return
+    except Exception:
+        return
+
+    # Estimate qty using last price; skip if price missing
+    try:
+        price = broker_api.get_last_price(symbol) or 0.0
+        if price <= 0:
+            return
+        qty = max(notional / float(price), 0.0)
+        if qty <= 0:
+            return
+    except Exception:
+        return
+
+    payload = {
+        "symbol": symbol,
+        "qty": qty,
+        "side": "sell",  # protective stop for a long ETF
+        "trail_pct_fraction": pct_fraction,  # e.g., 0.02 for 2%
+        "time_in_force": "day",
+        "extended_hours": False,
+    }
+    try:
+        broker_api.place_trailing_stop(payload)
+        log_event(
+            "holdings_trailing_stop",
+            f"Placed native trailing stop for {symbol} at {pct_fraction*100:.2f}%",
+            level="info",
+            extra={"symbol": symbol, "trail_pct": pct_fraction},
+        )
+        audit_log_event(
+            "holdings_trailing_stop",
+            actor="holdings_manager",
+            reference=symbol,
+            details={"trail_pct_fraction": pct_fraction, "qty_est": qty},
+        )
+    except Exception as e:
+        _warn_or_info(f"Failed to place trailing stop for {symbol}: {e}")
 
 def get_holdings_status():
     broker = get_active_broker()
@@ -213,6 +273,8 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
             buy_order = {"symbol": symbol, "action": "buy", "amount": alloc_amt}
             if compliance_filter_ledger_entry(buy_order):
                 broker.place_order(symbol, "buy", alloc_amt)
+                # (surgical) Attach native trailing stop for long-term ETFs if configured
+                _maybe_attach_trailing_after_buy(symbol, alloc_amt)
                 _warn_or_info(f"Reinvested {alloc_amt} into {symbol}")
                 log_event("holdings_reinvest", f"Reinvested {alloc_amt} into {symbol}", level="info", extra={
                     "symbol": symbol, "amount": alloc_amt, "reason": "reinvest"
@@ -229,6 +291,8 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
             float_order = {"symbol": symbol, "action": "buy", "amount": alloc_amt}
             if compliance_filter_ledger_entry(float_order):
                 broker.place_order(symbol, "buy", alloc_amt)
+                # (surgical) Attach native trailing stop for float auto-buys if configured
+                _maybe_attach_trailing_after_buy(symbol, alloc_amt)
                 _warn_or_info(f"Invested float excess: {alloc_amt} into {symbol}")
                 log_event("holdings_float_excess_invest", f"Invested float excess: {alloc_amt} into {symbol}", level="info", extra={
                     "symbol": symbol, "amount": alloc_amt, "reason": "float_excess"

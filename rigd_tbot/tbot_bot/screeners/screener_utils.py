@@ -225,6 +225,34 @@ def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None)
         raise
     LOG.info(f"[screener_utils] Universe cache saved with {len(symbols)} symbols at {path}")
 
+# -----------------------------
+# NEW: safe loader + stale check
+# -----------------------------
+def safe_load_universe_cache(bot_identity: Optional[str] = None) -> Optional[List[Dict]]:
+    """
+    Best-effort loader that quarantines corrupt/invalid cache files.
+    Returns None when cache is missing/invalid so callers can rebuild.
+    """
+    try:
+        return load_universe_cache(bot_identity)
+    except UniverseCacheError as e:
+        msg = str(e)
+        path = resolve_universe_cache_path(bot_identity)
+        # Treat parse/shape/placeholder issues as corruption → quarantine
+        if any(key in msg for key in (
+            "Failed to parse line",
+            "placeholder/too small",
+            "missing required fields",
+        )):
+            try:
+                if os.path.exists(path):
+                    bad_path = f"{path}.bad"
+                    os.replace(path, bad_path)
+                    LOG.warning(f"[screener_utils] Quarantined corrupt universe cache to {bad_path}")
+            except Exception as qe:
+                LOG.error(f"[screener_utils] Failed to quarantine corrupt cache '{path}': {qe}")
+        return None
+
 def load_blocklist(path: Optional[str] = None) -> List[str]:
     if not path:
         blockset = load_blocklist_full()
@@ -249,9 +277,10 @@ def load_blocklist(path: Optional[str] = None) -> List[str]:
 
 def is_cache_stale(bot_identity: Optional[str] = None) -> bool:
     try:
-        _ = load_universe_cache(bot_identity)
-        return False
-    except UniverseCacheError:
+        # Use safe loader so corrupted-but-present files are treated as stale
+        symbols = safe_load_universe_cache(bot_identity)
+        return symbols is None
+    except Exception:
         return True
 
 def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetime]:

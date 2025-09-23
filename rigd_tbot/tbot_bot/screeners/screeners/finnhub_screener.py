@@ -12,6 +12,11 @@ from tbot_bot.screeners.screener_utils import load_universe_cache
 from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.support.utils_log import log_event
 
+# --- NEW (surgical): safe cache helpers for auto-heal + stale handling ---
+from tbot_bot.screeners.screener_utils import (
+    safe_load_universe_cache,  # returns None on parse/shape errors and quarantines bad cache
+)
+
 def get_trading_screener_creds():
     # Only use providers with TRADING_ENABLED == "true" and PROVIDER == "FINNHUB"
     all_creds = load_screener_credentials()
@@ -68,6 +73,41 @@ def _normalize_price_fields(c, o, vwap):
     if max(c or 0, o or 0, vwap or 0) > 10000:
         return (c / 100 if c else 0, o / 100 if o else 0, vwap / 100 if vwap else 0)
     return (c, o, vwap)
+
+# --- NEW (surgical): helper to load universe symbols with auto-rebuild + fallback ---
+def _get_universe_symbols(max_pool: int) -> list[str]:
+    """
+    Returns up to max_pool*4 symbols for screening.
+    - Test mode honors SCREENER_TEST_MODE_UNIVERSE override when provided.
+    - If cache is corrupt/missing, quarantine & trigger a one-shot rebuild, then retry once.
+    - Final fallback: DEFAULT_SYMBOLS env (comma/space) or a small safe set.
+    """
+    test_mode = is_test_mode_active()
+    if test_mode:
+        override = _parse_test_universe()
+        if override:
+            return override[: max_pool * 4]
+
+    # Try safe loader first (handles corruption and quarantines .bad)
+    symbols_rec = safe_load_universe_cache()
+    if symbols_rec is None:
+        # Attempt an idempotent rebuild
+        try:
+            from tbot_bot.screeners.universe_orchestrator import main as rebuild_universe
+            log_event("finnhub_screener", "Universe cache invalid — attempting rebuild")
+            rebuild_universe()
+            symbols_rec = safe_load_universe_cache()
+        except Exception as e:
+            log_event("finnhub_screener", f"Universe rebuild attempt failed: {e}")
+
+    if symbols_rec:
+        return [s["symbol"] for s in symbols_rec][: max_pool * 4]
+
+    # Fallback: use DEFAULT_SYMBOLS or a tiny safe set to keep strategy alive
+    fallback_raw = str(config.get("DEFAULT_SYMBOLS", "AAPL MSFT SPY QQQ")).strip()
+    fallback = [t.strip().upper() for t in fallback_raw.replace(",", " ").split() if t.strip()]
+    log_event("finnhub_screener", f"Using fallback symbol set ({len(fallback)}): {fallback}")
+    return fallback[: max_pool * 4]
 
 class FinnhubScreener(ScreenerBase):
     """
@@ -131,11 +171,8 @@ class FinnhubScreener(ScreenerBase):
 
     def run_screen(self, pool_size=15):
         test_mode = is_test_mode_active()
-        if test_mode:
-            override = _parse_test_universe()
-            all_symbols = override[: pool_size * 4] if override else [s["symbol"] for s in load_universe_cache()][: pool_size * 4]
-        else:
-            all_symbols = [s["symbol"] for s in load_universe_cache()][: pool_size * 4]
+        # --- CHANGED (surgical): use resilient universe symbol loader
+        all_symbols = _get_universe_symbols(pool_size)
 
         quotes = self.fetch_live_quotes(all_symbols)
         candidates = self._build_price_candidates(quotes)

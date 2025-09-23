@@ -24,6 +24,12 @@ from tbot_bot.support import path_resolver  # ensure control path consistency
 # --- NEW (surgical): centralized trailing-stop helper ---
 from tbot_bot.trading.trailing_stop import compute_trailing_exit_threshold, should_exit_by_trailing  # noqa: F401
 
+# NEW: central trailing-stop helper import (used for any runtime-managed trailing logic)
+from tbot_bot.trading.trailing_stop import (
+    compute_trailing_exit_threshold,
+    should_exit_by_trailing,
+)
+
 print("[strategy_close] module loaded", flush=True)
 
 config = get_bot_config()
@@ -42,6 +48,8 @@ MAX_TRADES            = int(config["MAX_TRADES"])
 CANDIDATE_MULTIPLIER  = int(config["CANDIDATE_MULTIPLIER"])
 FRACTIONAL            = str(config.get("FRACTIONAL", "false")).lower() == "true"
 WEIGHTS               = [float(w) for w in config["WEIGHTS"].split(",")]
+# SURGICAL: read trading trailing stop from env (defaults to 2%)
+TRADING_TRAILING_STOP_PCT = float(config.get("TRADING_TRAILING_STOP_PCT", 0.02))
 
 # --- Control/stamps (use tbot_bot/control via resolver) ---
 CONTROL_DIR        = path_resolver.get_project_root() / "tbot_bot" / "control"
@@ -213,8 +221,7 @@ def monitor_closing_trades(signals, start_time):
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        # --- CHANGED (surgical): broker-native trailing if available; else runtime-managed ---
-                        stop_loss_pct=0.02,
+                        stop_loss_pct=TRADING_TRAILING_STOP_PCT,  # SURGICAL: use env-configured trailing stop
                         strategy="close",
                         use_trailing_stop=True,
                     )
@@ -260,8 +267,7 @@ def monitor_closing_trades(signals, start_time):
                             side=side_exec,
                             capital=alloc_amt,
                             price=price,
-                            # --- CHANGED (surgical): standardized trailing spec like other strategies ---
-                            stop_loss_pct=0.02,
+                            stop_loss_pct=TRADING_TRAILING_STOP_PCT,  # SURGICAL: use env-configured trailing stop
                             strategy="close",
                             use_trailing_stop=True,
                         )

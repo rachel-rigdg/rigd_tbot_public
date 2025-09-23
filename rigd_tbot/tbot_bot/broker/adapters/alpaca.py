@@ -374,6 +374,65 @@ class AlpacaBroker:
         """
         return True
 
+    # --- Added for broker_api passthrough compatibility (plural form) ---
+    def supports_trailing_stops(self) -> bool:
+        """
+        Plural alias used by broker_api.supports_trailing_stops().
+        """
+        return self.supports_trailing_stop()
+
+    def place_trailing_stop(self, payload: dict):
+        """
+        Adapter-level entrypoint used by broker_api.place_trailing_stop(payload).
+
+        Expected payload:
+          {
+            "symbol": "...", "qty": 1.23, "side": "sell",
+            "trail_percent": 2.0,                  # preferred (2.0 == 2%)
+            "trail_pct_fraction": 0.02,            # optional (mutually exclusive with trail_percent)
+            # optional extras passed through when present:
+            "time_in_force": "day", "extended_hours": False, "client_order_id": "..."
+          }
+        """
+        symbol = payload.get("symbol")
+        qty = payload.get("qty")
+        side = payload.get("side")
+        tip = payload.get("trail_percent", None)
+        tpf = payload.get("trail_pct_fraction", None)
+        tif = payload.get("time_in_force", "day")
+        ext = bool(payload.get("extended_hours", False))
+        coid = payload.get("client_order_id")
+
+        # Normalize percent: prefer explicit percent; else convert fraction -> percent
+        trail_percent = None
+        if tip is not None:
+            try:
+                trail_percent = float(tip)
+            except Exception:
+                trail_percent = None
+        if trail_percent is None and tpf is not None:
+            try:
+                trail_percent = float(tpf) * 100.0
+            except Exception:
+                trail_percent = None
+
+        return self.submit_trailing_stop(
+            symbol=symbol,
+            qty=qty,
+            side=side,
+            trail_percent=trail_percent,
+            trail_price=None,
+            time_in_force=tif,
+            extended_hours=ext,
+            client_order_id=coid
+        )
+
+    # Lightweight reference price for qty estimation (used when FRACTIONAL=false)
+    def get_last_price(self, symbol: str):
+        # Reuse existing quote logic; Alpaca’s “latest quote” bid/ask midpoint isn’t guaranteed.
+        # Using best bid/ask as a proxy is fine for sizing.
+        return self.get_price(symbol)
+
     # ======================================================================
     # NEW: First-sync Opening Balance helpers (non-breaking additions)
     # ======================================================================

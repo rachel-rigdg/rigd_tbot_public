@@ -186,6 +186,49 @@ def get_price(symbol: str) -> float:
     return get_realtime_price(symbol)
 
 
+# --- NEW: trailing-stop & reference-price helpers (adapter passthroughs) ---
+
+def supports_trailing_stops() -> bool:
+    """Return True if the active adapter can place native trailing stops."""
+    broker = get_active_broker()
+    fn = getattr(broker, "supports_trailing_stops", None)
+    return bool(fn() if callable(fn) else False)
+
+
+def place_trailing_stop(payload: Dict[str, Any]):
+    """
+    Forward a trailing stop request to the active adapter.
+
+    Expected payload fields (orders_bot supplies these):
+      symbol, qty, side, trail_percent (2.0), trail_pct_fraction (0.02), strategy, time
+    """
+    broker = get_active_broker()
+    fn = getattr(broker, "place_trailing_stop", None)
+    if not callable(fn):
+        return {"error": "unsupported"}
+    return fn(payload)
+
+
+def get_last_price(symbol: str) -> float | None:
+    """
+    Lightweight reference price for qty estimation when FRACTIONAL is false.
+    Defaults to screener-backed realtime price.
+    Adapters may override with a venue-native quote if desired.
+    """
+    broker = get_active_broker()
+    fn = getattr(broker, "get_last_price", None)
+    if callable(fn):
+        try:
+            p = fn(symbol)
+            return float(p) if p is not None else None
+        except Exception:
+            pass
+    try:
+        return float(get_price(symbol))
+    except Exception:
+        return None
+
+
 __all__ = [
     "get_active_broker",
     "place_order",
@@ -198,5 +241,9 @@ __all__ = [
     "get_min_order_size",
     "fetch_all_trades",
     "fetch_cash_activity",
-    "get_price",  # added
+    "get_price",
+    # new exports
+    "supports_trailing_stops",
+    "place_trailing_stop",
+    "get_last_price",
 ]

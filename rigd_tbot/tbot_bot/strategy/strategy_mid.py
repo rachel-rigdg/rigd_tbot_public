@@ -23,6 +23,7 @@ from tbot_bot.support import path_resolver  # ensure control path consistency
 # --- NEW (surgical): central trailing stop helpers (align with strategy_open usage) ---
 from tbot_bot.trading.trailing_stop import compute_trailing_exit_threshold, should_exit_by_trailing  # noqa: F401
 
+
 print("[strategy_mid] module loaded", flush=True)
 
 config = get_bot_config()
@@ -41,6 +42,8 @@ MAX_TRADES = int(config["MAX_TRADES"])
 CANDIDATE_MULTIPLIER = int(config["CANDIDATE_MULTIPLIER"])
 FRACTIONAL = str(config.get("FRACTIONAL", "false")).lower() == "true"
 WEIGHTS = [float(w) for w in config["WEIGHTS"].split(",")]
+# SURGICAL: read trading trailing stop from env (defaults to 2%)
+TRADING_TRAILING_STOP_PCT = float(config.get("TRADING_TRAILING_STOP_PCT", 0.02))
 
 # --- Control/stamps (use tbot_bot/control via resolver) ---
 CONTROL_DIR        = path_resolver.get_project_root() / "tbot_bot" / "control"
@@ -200,7 +203,7 @@ def execute_mid_trades(signals, start_time):
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        stop_loss_pct=0.02,      # 2% trailing; broker-native preferred, else runtime helper
+                        stop_loss_pct=TRADING_TRAILING_STOP_PCT,  # SURGICAL: use env-configured trailing stop
                         strategy="mid",
                         use_trailing_stop=True,
                     )
@@ -246,7 +249,7 @@ def execute_mid_trades(signals, start_time):
                             side=side_exec,
                             capital=alloc_amt,
                             price=price,
-                            stop_loss_pct=0.02,   # 2% trailing
+                            stop_loss_pct=TRADING_TRAILING_STOP_PCT,  # SURGICAL: use env-configured trailing stop
                             strategy="mid",
                             use_trailing_stop=True,
                         )
