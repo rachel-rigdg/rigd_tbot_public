@@ -3,7 +3,7 @@
 # Calls always use current secrets/config for all supported brokers. All other code must use these functions only.
 
 import importlib
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional  # (surgical) add Optional for 3.9-compatible type hints
 
 from tbot_bot.support.decrypt_secrets import (
     decrypt_json,
@@ -209,7 +209,7 @@ def place_trailing_stop(payload: Dict[str, Any]):
     return fn(payload)
 
 
-def get_last_price(symbol: str) -> float | None:
+def get_last_price(symbol: str) -> Optional[float]:  # (surgical) use Optional[float] for Python 3.9 compatibility
     """
     Lightweight reference price for qty estimation when FRACTIONAL is false.
     Defaults to screener-backed realtime price.

@@ -10,7 +10,9 @@ import os
 import re
 from pathlib import Path
 from datetime import datetime
+from typing import Optional  # (surgical) PEP 604 compatibility for Python 3.9
 from tbot_bot.support.decrypt_secrets import load_bot_identity
+
 
 
 
@@ -92,7 +94,7 @@ def get_bot_identity_string_regex():
     return re.compile(IDENTITY_PATTERN)
 
 # --- Base output root (TEST-MODE aware) ---
-def _base_output_root(identity: str | None) -> Path:
+def _base_output_root(identity: Optional[str]) -> Path:
     """
     Returns the base output directory:
       - Live:  .../output/{IDENTITY}  (or generic .../output when identity is None for bootstrap/generic categories)

@@ -21,8 +21,13 @@ from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
 # --- NEW (surgical): central trailing stop helpers (align with strategy_open usage) ---
-from tbot_bot.trading.trailing_stop import compute_trailing_exit_threshold, should_exit_by_trailing  # noqa: F401
-
+from tbot_bot.trading.trailing_stop import (
+    compute_trailing_exit_threshold,  # noqa: F401
+    should_exit_by_trailing,          # noqa: F401
+    # --- SURGICAL: add helpers for per-strategy trail pct + pre-close tightening
+    get_strategy_trail_pct,
+    get_tightened_trailing_pct,
+)
 
 print("[strategy_mid] module loaded", flush=True)
 
@@ -44,6 +49,8 @@ FRACTIONAL = str(config.get("FRACTIONAL", "false")).lower() == "true"
 WEIGHTS = [float(w) for w in config["WEIGHTS"].split(",")]
 # SURGICAL: read trading trailing stop from env (defaults to 2%)
 TRADING_TRAILING_STOP_PCT = float(config.get("TRADING_TRAILING_STOP_PCT", 0.02))
+# SURGICAL: hard-close buffer (seconds) used by tightening helper (default ~2.5 min)
+HARD_CLOSE_BUFFER_SEC = int(float(config.get("HARD_CLOSE_BUFFER_SEC", 150)))
 
 # --- Control/stamps (use tbot_bot/control via resolver) ---
 CONTROL_DIR        = path_resolver.get_project_root() / "tbot_bot" / "control"
@@ -184,6 +191,17 @@ def execute_mid_trades(signals, start_time):
     deadline = start_time + timedelta(minutes=monitoring_minutes)
     print(f"[strategy_mid] execute_mid_trades start; deadline={deadline.isoformat()}", flush=True)
 
+    # --- SURGICAL: compute effective (tightened) trailing % for 'mid' strategy ---
+    base_trail_pct = get_strategy_trail_pct("mid", config, default_pct=TRADING_TRAILING_STOP_PCT)
+    effective_trail_pct = get_tightened_trailing_pct(
+        base_pct=base_trail_pct,
+        now_utc=utc_now(),
+        market_close_utc=str(config.get("MARKET_CLOSE_UTC", "20:00")),
+        hard_close_buffer_s=HARD_CLOSE_BUFFER_SEC,
+        tighten_factor=float(config.get("TRAIL_TIGHTEN_FACTOR", 0.5)),
+    )
+    log_event("strategy_mid", f"Trailing stop pct (base → effective): {base_trail_pct:.6f} → {effective_trail_pct:.6f}")
+
     for signal in signals:
         if now_local() >= deadline:
             break
@@ -203,7 +221,7 @@ def execute_mid_trades(signals, start_time):
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        stop_loss_pct=TRADING_TRAILING_STOP_PCT,  # SURGICAL: use env-configured trailing stop
+                        stop_loss_pct=effective_trail_pct,  # SURGICAL: tightened trailing %
                         strategy="mid",
                         use_trailing_stop=True,
                     )
@@ -249,7 +267,7 @@ def execute_mid_trades(signals, start_time):
                             side=side_exec,
                             capital=alloc_amt,
                             price=price,
-                            stop_loss_pct=TRADING_TRAILING_STOP_PCT,  # SURGICAL: use env-configured trailing stop
+                            stop_loss_pct=effective_trail_pct,  # SURGICAL: tightened trailing %
                             strategy="mid",
                             use_trailing_stop=True,
                         )

@@ -23,10 +23,12 @@ NOTE:
 """
 
 from pathlib import Path
+from typing import Optional  # (surgical) avoid PEP604 | for Python <3.10
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_bot.support.utils_time import utc_now
 from tbot_bot.support.utils_log import log_event
 from tbot_bot.support.decrypt_secrets import decrypt_json
+from tbot_bot.support import path_resolver  # (surgical) ensure control path consistency
 
 # --- Centralized trailing-stop helpers (re-exported here for backward compatibility) ---
 from tbot_bot.trading.trailing_stop import (
@@ -41,11 +43,13 @@ def _get_broker_api():
 
 config = get_bot_config()
 MAX_RISK_PER_TRADE = float(config.get("MAX_RISK_PER_TRADE", 0.025))
-FRACTIONAL = bool(config.get("FRACTIONAL", True))
+# (surgical) robust boolean parsing (env may store strings)
+FRACTIONAL = str(config.get("FRACTIONAL", "true")).strip().lower() == "true"
 MIN_PRICE = float(config.get("MIN_PRICE", 5))
 MAX_PRICE = float(config.get("MAX_PRICE", 100))
 
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "control"
+# --- (surgical) Use tbot_bot/control via resolver to match the rest of the codebase ---
+CONTROL_DIR = path_resolver.get_project_root() / "tbot_bot" / "control"
 TEST_MODE_FLAG = CONTROL_DIR / "test_mode.flag"
 
 # Retrieve BROKER_CODE (BROKER_NAME) from broker_credentials.json.enc (not .env_bot)
@@ -83,7 +87,7 @@ def _supports_native_trailing() -> bool:
         return False
 
 
-def _place_market_order_live(order: dict) -> dict | None:
+def _place_market_order_live(order: dict) -> Optional[dict]:
     try:
         api = _get_broker_api()
         place_order = getattr(api, "place_order", None)
@@ -100,7 +104,7 @@ def _place_market_order_live(order: dict) -> dict | None:
         return None
 
 
-def _place_exit_order_live(order: dict) -> dict | None:
+def _place_exit_order_live(order: dict) -> Optional[dict]:
     try:
         api = _get_broker_api()
         close_position = getattr(api, "close_position", None)
@@ -117,7 +121,7 @@ def _place_exit_order_live(order: dict) -> dict | None:
         return None
 
 
-def _place_native_trailing_stop(symbol: str, side_open: str, qty: float, trail_pct: float, strategy: str | None):
+def _place_native_trailing_stop(symbol: str, side_open: str, qty: float, trail_pct: float, strategy: Optional[str]):
     """
     Places a native trailing stop if the broker supports it.
 
@@ -151,9 +155,35 @@ def _place_native_trailing_stop(symbol: str, side_open: str, qty: float, trail_p
         return {"ok": False, "reason": f"exception: {e}"}
 
 
+# ---- NEW: per-strategy trailing % resolver (surgical) ------------------------
+
+def _resolve_trailing_pct(strategy: Optional[str], explicit_pct: Optional[float]) -> float:
+    """
+    Determine which trailing percent (fraction) to use:
+      1) If a per-strategy key exists in config (TRAIL_PCT_OPEN/MID/CLOSE), prefer it.
+      2) Else fall back to global TRADING_TRAILING_STOP_PCT.
+      3) Else fall back to the explicit pct provided by the caller (if any).
+    """
+    try:
+        # Prefer per-strategy if strategy is provided
+        if strategy:
+            key = f"TRAIL_PCT_{str(strategy).strip().upper()}"
+            if key in config:
+                return float(config.get(key) or 0.0)
+        # Fallback to global default
+        if "TRADING_TRAILING_STOP_PCT" in config:
+            return float(config.get("TRADING_TRAILING_STOP_PCT") or 0.0)
+    except Exception:
+        pass
+    # Final fallback: whatever the caller provided (keeps existing behavior intact)
+    try:
+        return float(explicit_pct) if explicit_pct is not None else 0.0
+    except Exception:
+        return 0.0
+
 # ---- NEW: tiny helpers to support price=None paths (surgical) ------------------
 
-def _get_reference_price(symbol: str) -> float | None:
+def _get_reference_price(symbol: str) -> Optional[float]:
     """
     Ask broker adapter for a last/nbbo price if available.
     Used only when we must compute a whole-share qty (no fractional)
@@ -199,8 +229,8 @@ def create_order(symbol: str,
                  capital: float,
                  price,
                  stop_loss_pct: float = 0.02,
-                 strategy: str | None = None,
-                 use_trailing_stop: bool = True) -> dict | None:
+                 strategy: Optional[str] = None,
+                 use_trailing_stop: bool = True) -> Optional[dict]:
     """
     Create and submit a new order.
 
@@ -208,11 +238,16 @@ def create_order(symbol: str,
     :param side: str, 'buy' or 'sell'
     :param capital: float, allocated capital (USD)
     :param price: float or None, current market price (None -> market/marketable)
-    :param stop_loss_pct: float, trailing stop loss as fraction (e.g., 0.02 for 2%)
-    :param strategy: str, strategy name
+    :param stop_loss_pct: float, trailing stop loss as fraction (e.g., 0.02 for 2%).
+                          NOTE: If a per-strategy key is present in config (TRAIL_PCT_OPEN/MID/CLOSE),
+                                that value will take precedence over this explicit argument.
+    :param strategy: str, strategy name ("open", "mid", "close", ...)
     :param use_trailing_stop: bool, request broker/native trailing if available
     :return: dict with order metadata or None if failed
     """
+    # Resolve the effective trailing percent up front (per-strategy overrides)
+    trail_pct_eff = _resolve_trailing_pct(strategy, stop_loss_pct)
+
     # TEST_MODE stub: simulate success, NO live API calls
     if _is_test_mode_active():
         if not _validate_price_bounds(symbol, price):
@@ -240,9 +275,9 @@ def create_order(symbol: str,
             "account": "test_mode",
             "test_mode": True,
             "trailing": {
-                "requested": bool(use_trailing_stop and stop_loss_pct > 0),
+                "requested": bool(use_trailing_stop and trail_pct_eff > 0),
                 "native": False,  # simulated; runtime must enforce using peaks/troughs
-                "stop_loss_pct": float(stop_loss_pct),
+                "stop_loss_pct": float(trail_pct_eff),
                 "rule": "long_drop_from_peak" if side == "buy" else "short_rise_from_trough",
             },
         }
@@ -291,9 +326,9 @@ def create_order(symbol: str,
         return None
 
     trailing_meta = {
-        "requested": bool(use_trailing_stop and stop_loss_pct > 0),
+        "requested": bool(use_trailing_stop and trail_pct_eff > 0),
         "native": False,
-        "stop_loss_pct": float(stop_loss_pct),
+        "stop_loss_pct": float(trail_pct_eff),
         "rule": "long_drop_from_peak" if side == "buy" else "short_rise_from_trough",
         "result": None,
     }
@@ -304,7 +339,7 @@ def create_order(symbol: str,
             symbol=symbol,
             side_open=side,
             qty=qty,
-            trail_pct=stop_loss_pct,
+            trail_pct=trail_pct_eff,
             strategy=strategy
         )
         trailing_meta["native"] = bool(result.get("ok"))
@@ -319,7 +354,7 @@ def create_order(symbol: str,
 def exit_order(symbol: str,
                side: str,
                qty: float,
-               strategy: str | None = None) -> dict | None:
+               strategy: Optional[str] = None) -> Optional[dict]:
     """
     Exit an open position (market close).
 
@@ -377,7 +412,7 @@ def compute_trailing_exit_threshold(entry_price: float, current_extreme: float, 
 
 
 def should_exit_by_trailing(current_price: float, entry_price: float, side_open: str,
-                            running_peak: float | None, running_trough: float | None,
+                            running_peak: Optional[float], running_trough: Optional[float],
                             stop_loss_pct: float) -> bool:
     """
     Thin wrapper that delegates to tbot_bot.trading.trailing_stop.should_exit_by_trailing.

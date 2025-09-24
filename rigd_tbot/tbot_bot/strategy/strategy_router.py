@@ -16,6 +16,8 @@ from tbot_bot.config.env_bot import (
 )
 from tbot_bot.support.utils_time import utc_now  # removed parse_time_utc (not present)
 from tbot_bot.support.utils_log import log_event
+# --- SURGICAL: use path_resolver for consistent control path resolution ---
+from tbot_bot.support import path_resolver
 
 config = get_bot_config()
 
@@ -32,7 +34,8 @@ OPEN_SCREENER = str(config.get("OPEN_SCREENER", SCREENER_SOURCE)).strip().upper(
 MID_SCREENER = str(config.get("MID_SCREENER", SCREENER_SOURCE)).strip().upper()
 CLOSE_SCREENER = str(config.get("CLOSE_SCREENER", SCREENER_SOURCE)).strip().upper()
 
-CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
+# --- SURGICAL: resolve control dir via path_resolver to avoid double 'tbot_bot' ---
+CONTROL_DIR = path_resolver.get_project_root() / "tbot_bot" / "control"
 TEST_FLAG_PATH = CONTROL_DIR / "test_mode.flag"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
@@ -83,22 +86,28 @@ def get_screener_class(source_name: str):
 
 
 def _parse_time_utc(hhmm: str) -> dt_time:
-    """Parse 'HH:MM' into a timezone-aware UTC time object."""
+    """Parse 'HH:MM' or 'HH:MM:SS' into a timezone-aware UTC time object (seconds optional)."""
     try:
-        hh, mm = map(int, (hhmm or "00:00").strip().split(":"))
-        # clamp to valid ranges to be defensive
+        parts = [int(p) for p in (hhmm or "00:00").strip().split(":")]
+        # pad missing seconds
+        if len(parts) == 2:
+            parts.append(0)
+        hh, mm, ss = parts[:3]
+        # clamp defensively
         hh = max(0, min(23, hh))
         mm = max(0, min(59, mm))
-        return dt_time(hour=hh, minute=mm, tzinfo=timezone.utc)
+        ss = max(0, min(59, ss))
+        return dt_time(hour=hh, minute=mm, second=ss, tzinfo=timezone.utc)
     except Exception:
-        return dt_time(0, 0, tzinfo=timezone.utc)
+        return dt_time(0, 0, 0, tzinfo=timezone.utc)
 
 
 def _parsed_utc_times():
     """Read UTC execution times from env getters and return as datetime.time objects (tz-aware UTC)."""
     open_tt = _parse_time_utc(get_open_time_utc() or "13:30")
     mid_tt = _parse_time_utc(get_mid_time_utc() or "16:00")
-    close_tt = _parse_time_utc(get_close_time_utc() or "19:45")
+    # --- SURGICAL: default close time to env's seconds precision (was 19:45) ---
+    close_tt = _parse_time_utc(get_close_time_utc() or "19:34:30")
     return open_tt, mid_tt, close_tt
 
 

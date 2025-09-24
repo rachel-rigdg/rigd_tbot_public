@@ -26,6 +26,9 @@ from tbot_bot.support import path_resolver  # ensure control path consistency
 from tbot_bot.trading.trailing_stop import (
     compute_trailing_exit_threshold,
     should_exit_by_trailing,
+    # --- SURGICAL: add helpers for per-strategy trail pct + pre-close tightening
+    get_strategy_trail_pct,
+    get_tightened_trailing_pct,
 )
 
 print("[strategy_open] module loaded", flush=True)
@@ -49,6 +52,8 @@ FRACTIONAL             = str(config.get("FRACTIONAL", "false")).lower() == "true
 WEIGHTS                = [float(w) for w in config["WEIGHTS"].split(",")]
 # SURGICAL: read trading trailing stop from env (defaults to 2%)
 TRADING_TRAILING_STOP_PCT = float(config.get("TRADING_TRAILING_STOP_PCT", 0.02))
+# SURGICAL: hard-close buffer (seconds) used by tightening helper (default ~2.5 min)
+HARD_CLOSE_BUFFER_SEC = int(float(config.get("HARD_CLOSE_BUFFER_SEC", 150)))
 
 # --- Control/stamps (ensure we use tbot_bot/control, not project root/control) ---
 CONTROL_DIR     = path_resolver.get_project_root() / "tbot_bot" / "control"
@@ -190,6 +195,18 @@ def detect_breakouts(start_time, screener_class):
     SESSION_LOGS.clear()
     SESSION_LOGS.extend(candidate_status)
 
+    # --- SURGICAL: compute effective (tightened) trailing % for 'open' strategy ---
+    base_trail_pct = get_strategy_trail_pct("open", config, default_pct=TRADING_TRAILING_STOP_PCT)
+    effective_trail_pct = get_tightened_trailing_pct(
+        base_pct=base_trail_pct,
+        now_utc=utc_now(),
+        market_close_utc=str(config.get("MARKET_CLOSE_UTC", "20:00")),
+        hard_close_buffer_s=HARD_CLOSE_BUFFER_SEC,
+        tighten_factor=float(config.get("TRAIL_TIGHTEN_FACTOR", 0.5)),  # optional; defaults inside helper if missing
+    )
+    # DEBUG: log base vs effective to verify wiring at runtime
+    log_event("strategy_open", f"Trailing stop pct (base → effective): {base_trail_pct:.6f} → {effective_trail_pct:.6f}")
+
     # Only proceed with eligible
     for entry in eligible_symbols:
         symbol = entry["symbol"]
@@ -211,7 +228,7 @@ def detect_breakouts(start_time, screener_class):
                         side="buy",
                         capital=alloc_amt,
                         price=price,
-                        stop_loss_pct=TRADING_TRAILING_STOP_PCT,  # SURGICAL: use env-configured trailing stop
+                        stop_loss_pct=effective_trail_pct,  # SURGICAL: tightened trailing %
                         strategy="open",
                         use_trailing_stop=True,
                     )
@@ -267,7 +284,7 @@ def detect_breakouts(start_time, screener_class):
                             side=side,
                             capital=alloc_amt,
                             price=price,
-                            stop_loss_pct=TRADING_TRAILING_STOP_PCT,  # SURGICAL: use env-configured trailing stop
+                            stop_loss_pct=effective_trail_pct,  # SURGICAL: tightened trailing %
                             strategy="open",
                             use_trailing_stop=True,
                         )

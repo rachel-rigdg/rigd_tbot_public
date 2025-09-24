@@ -18,7 +18,9 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path,
     resolve_universe_cache_path,
     resolve_universe_log_path,
+    get_output_path as _resolver_get_output_path,  # (surgical) expose passthrough for tests
 )
+
 from tbot_bot.screeners.screener_utils import get_universe_screener_secrets
 
 print(f"[LAUNCH] universe_orchestrator.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
@@ -35,6 +37,16 @@ BLOCKLIST_PATH = os.path.join(os.path.dirname(UNFILTERED_PATH), "screener_blockl
 
 # Special meaning: raw-builder uses 2 to indicate "no provider enabled"
 NO_PROVIDER_EXIT = 2
+
+
+# --- (surgical) Back-compat shim for tests: allow monkeypatching universe_orchestrator.get_output_path ---
+def get_output_path(*args, **kwargs) -> str:
+    """
+    Thin passthrough to path_resolver.get_output_path so tests can monkeypatch
+    universe_orchestrator.get_output_path directly (as they expect).
+    """
+    return _resolver_get_output_path(*args, **kwargs)
+# --------------------------------------------------------------------------------------------------------
 
 
 def _append_log(msg: str) -> None:

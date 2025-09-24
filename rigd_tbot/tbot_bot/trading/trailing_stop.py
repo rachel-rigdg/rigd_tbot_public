@@ -2,7 +2,8 @@
 # Single source of truth for bot-enforced trailing stop math & state.
 
 from dataclasses import dataclass
-from typing import Optional, Callable  # (added for canonical API below)
+from typing import Optional, Callable, Union  # (added Union for 3.7–3.9 compatibility)
+from datetime import datetime, timezone  # (surgical) for pre-close tightening helpers
 
 @dataclass
 class TrailingStopState:
@@ -70,7 +71,7 @@ def _resolve_legacy_threshold_fn() -> Optional[Callable]:
     return None
 
 
-def compute_trailing_exit_threshold(
+def _compute_trailing_exit_threshold_kw(
     *,
     side: str,
     current_price: Optional[float] = None,
@@ -84,19 +85,7 @@ def compute_trailing_exit_threshold(
     max_stop_pct: Optional[float] = None       # clamp: not looser than this (vs entry)
 ) -> float:
     """
-    Return the trailing stop price threshold for the given position `side`.
-      LONG  -> exit if price <= threshold
-      SHORT -> exit if price >= threshold
-
-    Combination rules:
-      - If both percent and ATR are given, choose the *more conservative* threshold:
-          LONG: max(candidates), SHORT: min(candidates)
-      - If neither provided but peak/trough is known with pct (from state), use that.
-      - If still insufficient and entry is known, default to 10% band vs entry.
-
-    Clamps (if entry provided):
-      - min_stop_pct prevents a too-tight stop (protects from micro whip).
-      - max_stop_pct prevents a too-loose stop (caps risk).
+    Keyword-only core implementation (new API).
     """
     # Legacy delegation if present
     _legacy = _resolve_legacy_threshold_fn()
@@ -166,22 +155,95 @@ def compute_trailing_exit_threshold(
     return float(threshold)
 
 
-def should_exit_by_trailing(
-    current_price: float,
-    **kwargs
-) -> bool:
+def compute_trailing_exit_threshold(*args, **kwargs) -> float:
     """
-    True if current_price has crossed the trailing stop threshold.
-    kwargs must include `side` and any other params required by compute_trailing_exit_threshold.
-      LONG  -> exit when current_price <= threshold
-      SHORT -> exit when current_price >= threshold
+    Backward-compatible public function.
+
+    Supports TWO call styles:
+
+      1) New keyword-only style:
+         compute_trailing_exit_threshold(
+             side="long"|"short",
+             current_price=..., entry_price=..., peak_price=..., trough_price=...,
+             trail_pct=..., atr=..., atr_mult=..., min_stop_pct=..., max_stop_pct=...
+         )
+
+      2) Legacy positional style (used by older code paths, e.g. orders_bot wrappers):
+         compute_trailing_exit_threshold(entry_price, current_extreme, side_open, stop_loss_pct)
+
+         where:
+           - side_open is "buy"/"sell" or "long"/"short"
+           - current_extreme is peak (long) or trough (short)
+           - stop_loss_pct is a fraction (e.g., 0.02)
     """
-    if "side" not in kwargs:
-        raise ValueError("should_exit_by_trailing requires 'side' in kwargs.")
-    thr = compute_trailing_exit_threshold(current_price=current_price, **kwargs)
-    side = str(kwargs["side"]).lower()
-    cp = float(current_price)
-    return (cp <= thr) if side == "long" else (cp >= thr)
+    if kwargs:
+        return _compute_trailing_exit_threshold_kw(**kwargs)
+
+    # Legacy positional mapping
+    if len(args) == 4:
+        entry_price, current_extreme, side_open, stop_loss_pct = args
+        side_open = str(side_open).lower()
+        side = "long" if side_open in {"buy", "long"} else "short"
+        peak_price = float(current_extreme) if side == "long" else None
+        trough_price = float(current_extreme) if side == "short" else None
+        return _compute_trailing_exit_threshold_kw(
+            side=side,
+            entry_price=float(entry_price) if entry_price is not None else None,
+            peak_price=peak_price,
+            trough_price=trough_price,
+            trail_pct=float(stop_loss_pct) if stop_loss_pct is not None else None,
+        )
+
+    raise TypeError("compute_trailing_exit_threshold expects either keyword arguments or 4 legacy positional arguments.")
+
+
+def should_exit_by_trailing(*args, **kwargs) -> bool:
+    """
+    Backward-compatible public function.
+
+    Supports TWO call styles:
+
+      1) New style:
+         should_exit_by_trailing(
+             current_price=..., side="long"|"short",
+             entry_price=..., peak_price=..., trough_price=...,
+             trail_pct=..., atr=..., atr_mult=..., min_stop_pct=..., max_stop_pct=...
+         )
+
+      2) Legacy positional style (used by older code paths, e.g. orders_bot wrappers):
+         should_exit_by_trailing(current_price, entry_price, side_open, running_peak, running_trough, stop_loss_pct)
+    """
+    # New style (kwargs)
+    if kwargs:
+        if "side" not in kwargs:
+            raise ValueError("should_exit_by_trailing requires 'side' in kwargs.")
+        if "current_price" not in kwargs:
+            raise ValueError("should_exit_by_trailing requires 'current_price' in kwargs.")
+        thr = _compute_trailing_exit_threshold_kw(**kwargs)
+        side = str(kwargs["side"]).lower()
+        cp = float(kwargs["current_price"])
+        return (cp <= thr) if side == "long" else (cp >= thr)
+
+    # Legacy positional
+    if len(args) == 6:
+        current_price, entry_price, side_open, running_peak, running_trough, stop_loss_pct = args
+        side_open = str(side_open).lower()
+        side = "long" if side_open in {"buy", "long"} else "short"
+        peak_price = float(running_peak) if running_peak is not None else None
+        # (surgical) fix variable name typo: running_trrough -> running_trough
+        trough_price = float(running_trough) if running_trough is not None else None
+        thr = _compute_trailing_exit_threshold_kw(
+            side=side,
+            current_price=float(current_price),
+            entry_price=float(entry_price) if entry_price is not None else None,
+            peak_price=peak_price,
+            trough_price=trough_price,
+            trail_pct=float(stop_loss_pct) if stop_loss_pct is not None else None,
+        )
+        cp = float(current_price)
+        return (cp <= thr) if side == "long" else (cp >= thr)
+
+    raise TypeError("should_exit_by_trailing expects either keyword arguments or 6 legacy positional arguments.")
 
 
 # Back-compat aliases (only if older code imports these names)
@@ -213,7 +275,7 @@ def place_or_prepare_trailing_stop(
     broker,
     symbol: str,
     side: str,                     # "long" or "short" (use "short" for inverse-ETF buys)
-    quantity: float | int | None = None,
+    quantity: Optional[Union[float, int]] = None,
     trail_pct: Optional[float] = None,      # prefer pct; adapters may convert to amount
     trail_amount: Optional[float] = None,   # optional alternative
     time_in_force: str = "day",
@@ -257,3 +319,69 @@ def place_or_prepare_trailing_stop(
         else:
             state.trough = float(entry_price)
     return {"placed": False, "state": state}
+
+
+# === Per-strategy trailing % helpers (append-only; used by strategies) =========
+
+def get_strategy_trail_pct(strategy: str, config: dict, default_pct: float = 0.02) -> float:
+    """
+    Read a per-strategy trailing stop percent from config, with sensible fallbacks.
+    strategy: "open" | "mid" | "close"
+    """
+    key_map = {
+        "open": "TRAIL_PCT_OPEN",
+        "mid": "TRAIL_PCT_MID",
+        "close": "TRAIL_PCT_CLOSE",
+    }
+    key = key_map.get(str(strategy).lower())
+    if key and (key in config):
+        try:
+            return float(config.get(key))
+        except Exception:
+            pass
+    # global fallback
+    try:
+        return float(config.get("TRADING_TRAILING_STOP_PCT", default_pct))
+    except Exception:
+        return float(default_pct)
+
+
+def _parse_hhmmss_utc(hhmmss: str, ref_date: datetime) -> datetime:
+    """
+    Parse 'HH:MM' or 'HH:MM:SS' (UTC) into a timezone-aware datetime on ref_date.
+    """
+    parts = str(hhmmss).strip().split(":")
+    h = int(parts[0])
+    m = int(parts[1]) if len(parts) > 1 else 0
+    s = int(parts[2]) if len(parts) > 2 else 0
+    return ref_date.replace(hour=h, minute=m, second=s, microsecond=0)
+
+
+def get_tightened_trailing_pct(
+    *,
+    base_pct: float,
+    now_utc: datetime,
+    market_close_utc: str,
+    hard_close_buffer_s: int = 150,
+    tighten_factor: float = 0.5
+) -> float:
+    """
+    If we're within `hard_close_buffer_s` seconds of MARKET_CLOSE_UTC, tighten the trailing stop
+    by `tighten_factor` (e.g., 0.5 -> half as loose). Otherwise return base_pct unchanged.
+
+    All times should be UTC; `now_utc` must be timezone-aware.
+    """
+    try:
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+        close_dt = _parse_hhmmss_utc(market_close_utc, now_utc.astimezone(timezone.utc))
+        # if already past close time today, don't tighten (no negative-day rollover here)
+        delta = (close_dt - now_utc).total_seconds()
+        if 0 <= delta <= int(hard_close_buffer_s):
+            # tighten, but keep a sane floor (don’t go to 0)
+            tightened = max(0.0005, float(base_pct) * float(tighten_factor))
+            return tightened
+        return float(base_pct)
+    except Exception:
+        # On any parsing/logic error, fail safe to base pct
+        return float(base_pct)
