@@ -24,63 +24,73 @@ All screener modules must source their eligible symbol list exclusively from the
 # ===========================
 1. **Single atomic universe file** (`symbol_universe.json`) is built per trading day and is the exclusive source for all screeners and strategies.
 2. **Universe is built nightly** (post-market close, pre-market open), strictly from exchange-approved symbols (e.g., NYSE, NASDAQ, NYSE Arca), with full API-based validation, filtering, and no dependency on TXT/CSV lists.
-3. **Provider selection is manual—no defaults:**  
-   - Providers for **Universe Build**, **Enrichment**, and **Trading** are selected explicitly via checkboxes in `/screener_credentials` (credentials control panel).  
-   - The system assumes **no default provider**. If no provider is enabled for a given role, that role’s operation **fails fast** with a clear, sanitized error and audit entry.
-4. **API quota minimization:**  
-   - All symbol fetching, enrichment, and filtering uses provider adapters selected in the credentials UI (e.g., Finnhub, IBKR, Yahoo/yfinance, etc.).  
-   - Operators may enable free/delayed APIs and/or paid feeds; the system does not assume preference unless an explicit priority order is set in the UI.
-5. **Blocklist-first, staged eligibility workflow:**  
+3. **Provider selection is manual—no defaults:**
+   - Providers for **Universe Build**, **Enrichment**, and **Trading** are selected explicitly via checkboxes in `/screener_credentials` (credentials control panel).
+   - The system assumes **no default provider**.
+   - **If zero providers are enabled for “Universe Build”, the orchestrator does _not_ fail.** It writes a minimal **waiting status** payload to `symbol_universe.json` and exits successfully:
+     ```json
+     {
+       "status": "waiting_for_credentials",
+       "counts": { "raw": 0, "unfiltered": 0, "partial": 0, "final": 0 },
+       "build_timestamp_utc": "YYYY-MM-DDTHH:MM:SSZ"
+     }
+     ```
+     Screeners must treat this as an **empty universe** and continue safely (no runtime symbol fetching). A sanitized audit entry is written.
+4. **API quota minimization:**
+   - All symbol fetching, enrichment, and filtering uses provider adapters selected in the credentials UI (e.g., Finnhub, IBKR, Yahoo/yfinance, etc.).
+   - Operators may enable free/delayed APIs and/or paid feeds; priority is only as explicitly set in the UI.
+5. **Blocklist-first, staged eligibility workflow:**
    - Blocklist checked before every fetch; if a symbol is blocklisted it is never fetched or enriched.
    - Symbols failing API lookups, pricing, or validation are atomically written to the blocklist file (`screener_blocklist.txt`) with UTC timestamp, provider, and failure reason.
    - All blocklist, unfiltered, partial, and final universe files are written atomically and support resumability after crash/interruption.
-6. **No real-time symbol fetching at runtime:**  
+6. **No real-time symbol fetching at runtime:**
    - All screeners use the atomic, validated universe file for every session.
-7. **Web UI actions ("Force Rebuild", "Re-filter", "Update Blocklist") can be triggered any time, and log progress/audit events.
-8. **Crash-resilient, disk-first design:**  
+7. **Web UI actions ("Force Rebuild", "Re-filter", "Update Blocklist")** can be triggered any time and log progress/audit events.
+8. **Crash-resilient, disk-first design:**
    - All in-progress files are atomically updated. Universe build resumes from partial/unfiltered file as needed.
 9. **Credential usage and all mutations are fully audit-logged and require admin rights.**
 10. **All filesystem paths are resolved via `tbot_bot/support/path_resolver.py`**—no hardcoded paths.
 
+
 # ================================================
 # Section 2: Universe Construction & Blocklist Workflow
 # ================================================
-1. **Universe Build:**  
+1. **Universe Build (nightly or forced):**
    - Load all candidate symbols from the provider(s) **explicitly enabled for “Universe Build”** in the credentials UI into `symbol_universe.symbols_raw.json` (NDJSON).
    - For each symbol in `symbol_universe.symbols_raw.json`:
      a. If symbol is present in `screener_blocklist.txt`, skip all processing for that symbol (no API call, no write).  
      b. Attempt to fetch all required and up-to-date data for the symbol via the enabled provider API(s).  
      c. If fetch fails or required data is missing or invalid:
         - Write symbol, with failure reason, UTC timestamp, and provider, to `screener_blocklist.txt`.
-        - Do NOT write this symbol to any universe file.
+        - Do **not** write this symbol to any universe file.
         - Continue to next symbol.
      d. If all required data present:
-        - Write symbol (with all fields, including passthrough such as exchange, sector, volume, etc.) to `symbol_universe.unfiltered.json` (NDJSON).
-        - Immediately apply all filter criteria using ONLY the centralized helpers in `screener_filter.py`:
+        - Write symbol (with all fields, including passthrough such as exchange, sector, volume, etc.) to `symbol_universe.unfiltered.json`.
+        - Immediately apply all filter criteria using **only** the centralized helpers in `screener_filter.py`:
            - If the symbol passes the filter: write to `symbol_universe.partial.json`.
-           - If the symbol fails the filter: do NOT write to `partial.json` (but always write to `unfiltered.json`).
-   - After all symbols processed, atomically copy `symbol_universe.partial.json` to `symbol_universe.json`.
-   - At all steps, use atomic file writes to prevent corruption; never overwrite previous files until new file is valid.
-   - **Fail-fast:** If zero providers are enabled for “Universe Build”, abort immediately with a sanitized error and audit entry.
+           - If the symbol fails the filter: do **not** write to `partial.json` (but always write to `unfiltered.json`).
+   - **Intermediate file format support:** `unfiltered.json` and `partial.json` may be written as **NDJSON (one JSON object per line)** _or_ as a **single JSON array**. Both formats are fully supported by the re-filter step and publisher.
+   - **Final publish:** The orchestrator reads the filtered set, injects `build_timestamp_utc`, and **atomically publishes** `symbol_universe.json` using temp → flush/fsync → `os.replace` (best-effort directory fsync).
 
-2. **Blocklist Maintenance:**  
-   - Blocklist (`screener_blocklist.txt`) is updated ONLY during the above nightly build step, and ONLY when a symbol is missing required data or fetch fails.
-   - Blocklist is not used or updated in the manual re-filter step.
-   - Scheduled recovery polling (e.g., weekends) may re-check blocklisted symbols; recovered symbols may be unblocked for the next build.
+2. **Zero providers enabled for “Universe Build” (waiting state):**
+   - The orchestrator **writes the waiting status payload** shown in Section 1 and exits successfully; screeners treat this as an empty universe. An audit entry is written.
 
-3. **Atomic file policy:**  
-   - All writes to universe and blocklist files are atomic.
-   - At the end of each build, `symbol_universe.partial.json` is atomically copied or renamed to `symbol_universe.json`.
-   - No failed, partial, or incomplete universe or blocklist build ever overwrites an existing valid file.
+3. **Blocklist Maintenance:**
+   - Blocklist (`screener_blocklist.txt`) is updated **only** during the nightly build step when a symbol fails data/validation.
+   - Blocklist is **not** used or updated by the manual **re-filter** step.
+   - Scheduled recovery polling (e.g., weekends) may re-check blocklisted symbols; recovered symbols may be unblocked for the next build (audit-logged).
+
+4. **Atomic file policy (enforced):**
+   - All writes to universe and blocklist files are atomic (temp write → fsync → atomic replace). No partial build overwrites a valid file.
+
 
 --------------------------------------------------------------------------------
 Section 3: File/Script Layout & Responsibilities
 --------------------------------------------------------------------------------
 
-- `symbol_universe.unfiltered.json`:  
-  All fetched symbols with full metadata from the enabled provider(s); includes every processed symbol with *valid, non-missing data*, whether passing or failing filters, written as newline-delimited JSON objects. No placeholders; each entry represents one successful fetch attempt.  
-  **Never contains symbols with missing/invalid data.**  
-  **Always written before filtering; blocklist is checked before fetch and excluded symbols are NOT present.**
+- `symbol_universe.unfiltered.json`  
+  **Format:** NDJSON **or** JSON array.  
+  Contains all successfully fetched symbols with full metadata from enabled provider(s). Never includes entries with missing/invalid required fields. Written before filtering; blocklisted symbols are excluded up front.
 
 - `symbol_universe.partial.json`:  
   The filtered universe file.  
@@ -92,6 +102,21 @@ Section 3: File/Script Layout & Responsibilities
   Upon build/re-filter completion, `symbol_universe.partial.json` is atomically copied or renamed to `symbol_universe.json`.  
   This file is the *only* source for all screeners, strategies, and runtime operations for the trading day.  
   Only contains fully eligible, validated symbols.
+  **When symbols exist:**
+    ```json
+    {
+      "symbols": [ /* filtered symbol objects */ ],
+      "build_timestamp_utc": "YYYY-MM-DDTHH:MM:SSZ"
+    }
+    ```
+  - **Waiting state (no providers enabled):**
+    ```json
+    {
+      "status": "waiting_for_credentials",
+      "counts": { "raw": 0, "unfiltered": 0, "partial": 0, "final": 0 },
+      "build_timestamp_utc": "YYYY-MM-DDTHH:MM:SSZ"
+    }
+    ```
 
 - `screener_blocklist.txt`:  
   Master blocklist file (TXT, one line per entry, pipe-delimited):  
@@ -111,6 +136,8 @@ Section 3: File/Script Layout & Responsibilities
   **Main entry-point orchestration script.**  
   Runs and coordinates the full symbol universe build process, including initialization, provider adapter setup based on UI flags, build progress tracking, and triggering `symbol_enrichment.py`.  
   Ensures correct execution order and crash-safe orchestration.
+  Publishes `symbol_universe.json` atomically with `build_timestamp_utc`. If zero providers are enabled for **Universe Build**, publishes the **waiting state** payload and exits successfully (audit-logged).
+
 
 - `tbot_bot/screeners/symbol_source_loader.py`:  
   **Symbol candidate loader and source selector.**  
@@ -211,6 +238,7 @@ Section 4: Web UI and User Actions
 --------------------------------------------------------------------------------
 
 1. **Web UI `/universe` displays:**
+   - The `/universe` page must detect and display the **waiting state** of `symbol_universe.json` (i.e., `status == "waiting_for_credentials"`) with clear guidance to enable at least one provider for **Universe Build** in `/screener_credentials`. Screeners must treat this as an empty universe without triggering any runtime fetches.
    - Live, real-time counts and build status for all universe and blocklist files:  
      - `symbol_universe.unfiltered.json`
      - `symbol_universe.partial.json`
@@ -284,6 +312,11 @@ Section 5: Validation & Maintenance
    - Once trading has begun for the day, all runtime systems and strategies use only the fixed, validated `symbol_universe.json` for the session; **no runtime fetching or universe rebuilding is allowed** until the next scheduled overnight update or manual action.
    - Any attempt to update or rebuild the universe during active trading hours is blocked, logged, and raises an explicit alert in the Web UI.
    - All universe and blocklist file update events, including manual or automated triggers, are recorded in the audit log with timestamp, user/action, and before/after file stats.
+
+   - **Final file schema check:** `symbol_universe.json` must be one of:
+  - An object with a `symbols` array and `build_timestamp_utc` string (normal case), or
+  - An object with `status:"waiting_for_credentials"`, `counts` object, and `build_timestamp_utc` string (waiting state).
+- **Intermediate format tolerance:** Validators must accept **NDJSON or JSON array** for `unfiltered.json` and `partial.json`. Deduplication and required-field checks still apply.
 
 --------------------------------------------------------------------------------
 Section 6: API, Quota, and Performance Considerations
@@ -439,3 +472,8 @@ Section 10: Credential Usage Best Practices, Security, and Maintenance
    - API keys, secrets, passwords, and other sensitive data are never stored, transmitted, or logged in plaintext at any stage of the system, including during backups, exports, or validation.
    - All credential management processes and workflows strictly comply with organizational security policy, industry best practices, and all relevant regulatory requirements (such as GDPR, SOC2, etc.).
    - No credential may be committed to source control or exported unencrypted; all deployments require secure credential onboarding and validation before operation.
+----------------------------------------------------------------------
+Appendix A (xref): Trailing Stops (for clarity only, no screener change)
+----------------------------------------------------------------------
+Trailing stop logic is centralized in the trading layer (see **Document 030 – “Centralized Trailing Stop Logic (v2)”**).  
+Screeners and the symbol-universe pipeline **do not implement or influence** trailing stops. No changes required here beyond this clarification.

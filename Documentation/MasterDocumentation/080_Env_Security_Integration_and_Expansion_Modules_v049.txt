@@ -122,6 +122,7 @@ SESSION_TIMEOUT_MINUTES=120
 ============================================================
 .env_bot – TradeBot Configuration 
 ============================================================
+# .env_bot – TradeBot Configuration 
 # All strategy logic, broker routing, and runtime behavior are driven by this file.
 # Time values are specified in UTC. Comments indicate usage and system impact.
 
@@ -149,11 +150,31 @@ ENABLE_LOGGING=true
 # json (structured) or csv (flat) log output format
 LOG_FORMAT=json
 
+# -----------------------------------------
+# Universe and Holdings Scheduling
+# -----------------------------------------
+
+# --- Supervisor post-strategy delays (minutes, all UTC-relative) ---
+# Run Holdings after OPEN starts + this many minutes
+SUP_OPEN_DELAY_MIN=60
+
+# Run Holdings after MID starts + this many minutes
+SUP_MID_DELAY_MIN=60
+
+# Run Universe rebuild after CLOSE finishes + this many minutes
+SUP_UNIVERSE_AFTER_CLOSE_MIN=120
+
+# Trailing stop percentage for all holdings (0 to disable)
+HOLDINGS_TRAILING_STOP_PCT=0.00
+
 
 
 # -----------------------------------------
 # Trade Execution & Risk Controls
 # -----------------------------------------
+
+#Trailing stop percentage for all trades (0 to disable)
+TRADING_TRAILING_STOP_PCT=0.02   # Global default (fraction). Per-strategy TRAIL_PCT_* override when set.
 
 # If true, bot will wait for manual confirmation before sending trades
 TRADE_CONFIRMATION_REQUIRED=false
@@ -193,6 +214,7 @@ MAX_OPEN_POSITIONS=5
 # Screeners Configuration
 # -----------------------------------------
 
+
 # Universe cache file max age in days (max allowable staleness)
 SCREENER_UNIVERSE_MAX_AGE_DAYS=3
 
@@ -200,10 +222,10 @@ SCREENER_UNIVERSE_MAX_AGE_DAYS=3
 SCREENER_UNIVERSE_EXCHANGES=NYSE,NASDAQ
 
 # Universe filters: Minimum price (last close)
-SCREENER_UNIVERSE_MIN_PRICE=5
+SCREENER_UNIVERSE_MIN_PRICE=2.00
 
 # Universe filters: Maximum price (last close)
-SCREENER_UNIVERSE_MAX_PRICE=100
+SCREENER_UNIVERSE_MAX_PRICE=300.00
 
 # Universe filters: Minimum market cap (USD)
 SCREENER_UNIVERSE_MIN_MARKET_CAP=300000000
@@ -226,18 +248,19 @@ SCREENER_TEST_MODE_UNIVERSE=AAPL,MSFT,GOOG,AMZN,FB,TSLA,NFLX,BABA,JPM,BRK.B,JNJ,
 # -----------------------------------------
 
 # Minimum price allowed per trade
-MIN_PRICE=2
+MIN_PRICE=2.00
 
 # Maximum price allowed per trade
-MAX_PRICE=1000
+MAX_PRICE=300.00
 
 # Minimum volume filter 
 MIN_VOLUME_THRESHOLD=500000       
 
 # Finnhub Guard filter 
-ENABLE_FINNHUB_FUNDAMENTALS_FILTER=true
+ENABLE_FUNNHUB_FUNDAMENTALS_FILTER=true
 
 MAX_PE_RATIO=60
+
 MAX_DEBT_EQUITY=3.5
 
 
@@ -246,12 +269,12 @@ MAX_DEBT_EQUITY=3.5
 # Strategy Routing & Broker Mode
 # -----------------------------------------
 
+
 # Strategy run order; values: open, mid, close
 STRATEGY_SEQUENCE=open,mid,close
 
 # Optional: override normal order and run only one strategy
 STRATEGY_OVERRIDE=
-
 
 # -----------------------------------------
 # Automated Rebalance Triggers
@@ -281,15 +304,17 @@ FAILOVER_ENABLED=true
 FAILOVER_LOG_TAG=FAILOVER_ACTIVE         
 
 
+
 # -----------------------------------------
 # Global Time & Polling
 # -----------------------------------------
 
-# e.g. 9:30 AM New York (US/Eastern) is 14:30 UTC
-MARKET_OPEN_UTC=14:30     
 
-# e.g. 4:00 PM New York (US/Eastern) is 21:00 UTC
-MARKET_CLOSE_UTC=21:00    
+ # e.g. 9:30 AM New York (US/Eastern) is 14:30 UTC
+MARKET_OPEN_UTC=13:30     
+
+ # e.g. 4:00 PM New York (US/Eastern) is 21:00 UTC
+MARKET_CLOSE_UTC=20:00    
 
 # Days allowed for trading (UTC-based control logic)
 TRADING_DAYS=mon,tue,wed,thu,fri
@@ -298,10 +323,20 @@ TRADING_DAYS=mon,tue,wed,thu,fri
 UNIVERSE_SLEEP_TIME=.5
 STRATEGY_SLEEP_TIME=0.03
 
+# --- Local Time Inputs (UI-only; backend derives and persists UTC keys) ---
+TIMEZONE=America/New_York
+SCHEDULE_INPUT_TZ=UTC
+START_TIME_OPEN_LOCAL=09:30:00
+START_TIME_MID_LOCAL=12:00:00
+START_TIME_CLOSE_LOCAL=15:34:30
+
 
 # -----------------------------------------
 # OPEN Strategy Configuration (20 min trading)
 # -----------------------------------------
+
+# trailing stop percentage for OPEN trades (0 to disable)
+TRAIL_PCT_OPEN=0.02
 
 # Maximum gap allowed from open to current price (used in screener)
 MAX_GAP_PCT_OPEN=0.1
@@ -313,8 +348,8 @@ MAX_MARKET_CAP_OPEN=10000000000
 # Enable or disable OPEN strategy
 STRAT_OPEN_ENABLED=true
 
-# UTC start time (market open = 9:30 AM EST)
-START_TIME_OPEN=14:30
+# UTC start time (market open = 9:30 AM EST/EDT, derived and persisted by UI)
+START_TIME_OPEN=13:30
 
 # Minutes to track high/low range before breakout
 OPEN_ANALYSIS_TIME=20
@@ -329,12 +364,14 @@ OPEN_MONITORING_TIME=30
 STRAT_OPEN_BUFFER=0.02
 
 # Shorting method: InverseETF, disabled, ShortSell, LongPut,
-SHORT_TYPE_OPEN=InverseETF               
-
+SHORT_TYPE_OPEN= InverseETF               
 
 # -----------------------------------------
 # MID Strategy Configuration (VWAP Reversion)
 # -----------------------------------------
+
+# trailing stop percentage for MID trades (0 to disable)
+TRAIL_PCT_MID=0.0225
 
 # Maximum gap allowed from open to current price (used in screener)
 MAX_GAP_PCT_MID=0.1
@@ -343,11 +380,12 @@ MAX_GAP_PCT_MID=0.1
 MIN_MARKET_CAP_MID=300000000
 MAX_MARKET_CAP_MID=10000000000
 
+
 # Enable or disable MID strategy
 STRAT_MID_ENABLED=true
 
-# UTC start time (10:30 AM EST)
-START_TIME_MID=15:30
+# UTC start time (derived and persisted by UI)
+START_TIME_MID=16:00
 
 # Minutes before trade signal is evaluated
 MID_ANALYSIS_TIME=15
@@ -361,13 +399,15 @@ MID_MONITORING_TIME=30
 # VWAP deviation required to enter trade
 STRAT_MID_VWAP_THRESHOLD=0.02
 
-# Shorting method: InverseETF, ShortSell, LongPut, or disabled
-SHORT_TYPE_MID=InverseETF              
-
+# Shorting method: InverseETF, ShortSell, LongPut,  or disabled
+SHORT_TYPE_MID= InverseETF              
 
 # -----------------------------------------
 # CLOSE Strategy Configuration (EOD Momentum/Fade)
 # -----------------------------------------
+
+# trailing stop percentage for CLOSE trades (0 to disable)
+TRAIL_PCT_CLOSE=0.019
 
 # Maximum gap allowed from open to current price (used in screener)
 MAX_GAP_PCT_CLOSE=0.1
@@ -376,43 +416,37 @@ MAX_GAP_PCT_CLOSE=0.1
 MIN_MARKET_CAP_CLOSE=300000000
 MAX_MARKET_CAP_CLOSE=10000000000
 
+
 # Enable or disable CLOSE strategy
 STRAT_CLOSE_ENABLED=true
 
-# UTC start time (2:30 PM EST)
-START_TIME_CLOSE=19:30
+# UTC start time (derived and persisted by UI)
+START_TIME_CLOSE=19:34:30
 
 # Minutes to detect signal
 CLOSE_ANALYSIS_TIME=5
 
 # Minutes to for breakout to happen
-CLOSE_BREAKOUT_TIME=5
+CLOSE_BREAKOUT_TIME=3
 
 # Duration to manage position after entry
-CLOSE_MONITORING_TIME=25
+CLOSE_MONITORING_TIME=15
 
 # Min VIX level required to allow entry
 STRAT_CLOSE_VIX_THRESHOLD=15
 
 # Shorting method: InverseETF, ShortSell, LongPut, or disabled
-SHORT_TYPE_CLOSE=InverseETF               
-
+SHORT_TYPE_CLOSE= InverseETF               
 
 # -----------------------------------------
-# Notifications (incl. Real-Time Alerts)
+# Notifications
 # -----------------------------------------
 
 # Send email alert on trade entry
 NOTIFY_ON_FILL=true
-# Send email alert on trade exit
-NOTIFY_ON_EXIT=true
-# Send alert on critical failures
-NOTIFY_ON_FAILURE=true
-# Options: email, slack, sms, pagerduty
-CRITICAL_ALERT_CHANNEL=pagerduty
-# Options: email, slack
-ROUTINE_ALERT_CHANNEL=email
 
+# Send email alert on trade exit
+NOTIFY_ON_EXIT=true                    
 
 # -----------------------------------------
 # Reporting & Ledger Export
@@ -435,7 +469,6 @@ DEFENSE_MODE_TRADE_LIMIT_PCT=66
 # Maximum session allocation allowed during Defense Mode (e.g., 1%)
 DEFENSE_MODE_TOTAL_ALLOCATION=0.01
 
-
 # -----------------------------------------
 # ENHANCEMENT MODULE TOGGLES 
 # -----------------------------------------
@@ -448,7 +481,7 @@ REBALANCE_TRIGGER_PCT=10
 # --- Role-Based Web Access ---
 # Enable multi-user roles in web dashboard
 RBAC_ENABLED=true             
-# Default role for new users                   
+ # Default role for new users                   
 DEFAULT_USER_ROLE=viewer                        
 
 # --- Strategy Optimizer ---
@@ -459,15 +492,24 @@ OPTIMIZER_BACKTEST_LOOKBACK_DAYS=30
 OPTIMIZER_ALGORITHM=grid_search                  
 OPTIMIZER_OUTPUT_DIR=backtest_results/strategy_tuning/
 
+# --- Real-Time Alerts ---
+NOTIFY_ON_FILL=true
+NOTIFY_ON_EXIT=true
+NOTIFY_ON_FAILURE=true
+# Options: email, slack, sms, pagerduty
+CRITICAL_ALERT_CHANNEL=pagerduty    
+# Options: email, slack             
+ROUTINE_ALERT_CHANNEL=email                      
+
 # --- Backtest Slippage Modeling ---
 ENABLE_SLIPPAGE_MODEL=true
 # Options: none, rule_based, randomized
 SLIPPAGE_SIMULATION_TYPE=randomized              
 # Average slippage %
 SLIPPAGE_MEAN_PCT=0.15                          
-# Standard deviation 
+ # Standard deviation 
 SLIPPAGE_STDDEV_PCT=0.10                        
-# Artificial delay (in milliseconds) per order
+ # Artificial delay (in milliseconds) per order
 SIMULATED_LATENCY_MS=500                        
 
 
@@ -476,7 +518,7 @@ SIMULATED_LATENCY_MS=500
 ENABLE_BSM_FILTER=true
 # Reject if >15% over/under priced
 MAX_BSM_DEVIATION=0.15             
-# Used in BSM if not supplied dynamically 
+ # Used in BSM if not supplied dynamically 
 RISK_FREE_RATE=0.045               
 # Options: static, dynamic — dynamic adjusts by JURISDICTION_CODE via bot_identity
 RISK_FREE_RATE_SOURCE=dynamic       
@@ -646,13 +688,20 @@ Tradier (`broker/adapters/tradier.py`):
 - Screener operations fully utilize cached symbol universe.
 
 Modular Broker Interface Requirements (`broker/core/broker_interface.py`):
-All broker adapters must implement:
-- `connect()`
-- `submit_order()`
-- `cancel_order()`
-- `get_positions()`
-- `get_account_info()`
-- `.self_check()`
+  All broker adapters must implement:
+    - `connect()`
+    - `submit_order()`            # MUST accept qty-based and notional-based market orders when supported
+    - `cancel_order()`
+    - `get_positions()`
+    - `get_account_info()`
+    - `.self_check()`
+  
+  Recommended/optional capabilities (used when present):
+    - `supports_fractional(symbol) -> bool`
+    - `get_min_order_size(symbol) -> float|dict`    # whole-share or broker-specific min notional
+    - `get_last_price(symbol) -> float`             # used for non-fractional market sizing when price is None
+    - `supports_trailing_stops() -> bool`
+    - `place_trailing_stop(payload: dict) -> dict`  # payload contains both `trail_percent` (e.g., 2.0) and `trail_pct_fraction` (e.g., 0.02)
 
 - Adapters strictly reside in `tbot_bot/broker/adapters/`.
 - Broker selection toggled via `.env_bot`: e.g., `ALPACA_ENABLED=true`.
@@ -663,6 +712,7 @@ Error Handling & Logging:
 - Fatal broker connection failures invoke `kill_switch.py`.
 - Retries systematically enforced per `.env_bot` (`API_RETRY_LIMIT`).
 - Order rejections consistently recorded to `unresolved_orders.log`.
+- If native trailing stops are supported, adapters receive a follow-up `place_trailing_stop(...)` call immediately after entry; failures fall back to local trailing enforcement with identical thresholds.
 
 Audit & Compliance:
 - Structured, immutable logging of all broker API requests and responses, with sensitive credentials, PII, and API keys fully redacted.
@@ -686,8 +736,12 @@ Core Principles:
 - Secure HTTPS / broker-secure channels only; UTC logging for all adapter events.
 - Retries capped by `API_RETRY_LIMIT` in `.env_bot`.
 - Each adapter implements `.self_check()` (connectivity, credentials, quota).
-- Screeners operate from a **pre-filtered cached universe**; no full-market pulls during trading.
 - **Ledger writes are forbidden** in adapters/normalizers; only `ledger_modules/` may write ledgers.
+- Screeners operate from a **pre-filtered cached universe**; no full-market pulls during trading.
+   
+   Order sizing (fractional & missing price):
+   - If `FRACTIONAL=true` and an entry price is not provided, the bot submits a **notional** market order using the capital slice (broker sizes the fill).
+   - If `FRACTIONAL=false` and price is not provided, the bot requests a reference price via `broker_api.get_last_price(symbol)` to compute a whole-share `qty=floor(capital/ref_price)`. If `qty<1` or no valid ref price is available, the order is rejected and the router falls back to the next ranked candidate.
 
 Broker-Specific Adapter Details:
 
