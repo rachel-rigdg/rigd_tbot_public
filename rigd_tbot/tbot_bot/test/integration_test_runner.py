@@ -256,15 +256,52 @@ def _force_test_timing_env():
     os.environ["MID_MONITORING_TIME"] = "1"
     os.environ["CLOSE_ANALYSIS_TIME"] = "1"
     os.environ["CLOSE_MONITORING_TIME"] = "1"
+    # Allow after-hours behavior explicitly for tests
+    os.environ["ALLOW_AFTER_HOURS"] = "1"
 
 def _clear_test_timing_env():
     for var in [
         "OPEN_ANALYSIS_TIME", "OPEN_BREAKOUT_TIME", "OPEN_MONITORING_TIME",
         "MID_ANALYSIS_TIME", "MID_MONITORING_TIME",
-        "CLOSE_ANALYSIS_TIME", "CLOSE_MONITORING_TIME"
+        "CLOSE_ANALYSIS_TIME", "CLOSE_MONITORING_TIME",
+        "ALLOW_AFTER_HOURS"
     ]:
         if var in os.environ:
             del os.environ[var]
+
+def _cleanup_test_positions():
+    """
+    Best-effort cleanup of any open test positions/orders so TEST_MODE never leaks state.
+    Uses optional helpers on broker_api if present; otherwise attempts a generic close.
+    """
+    try:
+        from tbot_bot.broker import broker_api
+    except Exception:
+        return
+    try:
+        if hasattr(broker_api, "close_all_test_positions"):
+            broker_api.close_all_test_positions(reason="TEST_CLEANUP")
+            log_event("integration_test", "close_all_test_positions invoked.")
+            return
+    except Exception:
+        pass
+    # Fallback: attempt position-by-position close if helpers exist
+    try:
+        fetch_positions = getattr(broker_api, "fetch_positions", None)
+        close_position = getattr(broker_api, "close_position", None)
+        if fetch_positions and close_position:
+            positions = fetch_positions() or []
+            for p in positions:
+                sym = p.get("symbol") or p.get("ticker")
+                qty = p.get("qty") or p.get("quantity") or 0
+                if sym and qty:
+                    try:
+                        close_position(sym, qty=qty, reason="TEST_CLEANUP")
+                    except Exception:
+                        pass
+            log_event("integration_test", f"Closed {len(positions)} positions via fallback.")
+    except Exception:
+        pass
 
 def _run_strategies_sequentially():
     """
@@ -347,19 +384,37 @@ def run_integration_test():
         # Force short windows, ensure cleanup afterwards
         try:
             _force_test_timing_env()
+            update_test_status("integration_test_runner", "RUNNING")
             results = _run_strategies_sequentially()
             with open(get_output_path("logs", "integration_test_results.json"), "w", encoding="utf-8") as f:
                 json.dump(results, f, indent=2)
+            update_test_status("integration_test_runner", "PASSED" if all(v in ("PASSED", "NO_TRADES") for v in results.values()) else "ERRORS")
+        except Exception:
+            update_test_status("integration_test_runner", "ERRORS")
+            tb = traceback.format_exc()
+            with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+                logf.write(f"[integration_test_runner] Global sequential test crashed:\n{tb}\n")
         finally:
+            # Always clean up positions and flags regardless of success/failure
+            try:
+                _cleanup_test_positions()
+                log_event("integration_test", "TEST_CLEANUP completed (positions/orders).")
+            except Exception:
+                with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
+                    logf.write(f"[integration_test_runner] TEST_CLEANUP encountered errors:\n{traceback.format_exc()}\n")
             _clear_flag(global_flag)
             _clear_test_timing_env()
-        # Exit clean (hand control back to main process)
+        # Exit clean (hand control back to main process/supervisor)
         return
 
     # Otherwise, retain original behavior: orchestrate individual or full test suite.
     flag = detect_individual_test_flag()
     if flag and flag.name != "test_mode.flag":
-        run_single_test_module(flag)
+        try:
+            run_single_test_module(flag)
+        finally:
+            # Best-effort cleanup between individual tests
+            _cleanup_test_positions()
         return
 
     log_event("integration_test", "Starting integration test runner...")
@@ -413,8 +468,11 @@ def run_integration_test():
                     test_results[test_name] = "TIMEOUT"
                     with open(TEST_LOG_PATH, "a", encoding="utf-8") as logf:
                         logf.write(f"[integration_test_runner] Test {test_name} timed out after {MAX_TEST_TIME} seconds.\n")
-                if flag_path.exists():
-                    flag_path.unlink()
+                finally:
+                    if flag_path.exists():
+                        flag_path.unlink()
+                    # Cleanup between tests so no state leaks forward
+                    _cleanup_test_positions()
                 time.sleep(1)
             except Exception:
                 update_test_status(test_name, "ERRORS")
@@ -456,12 +514,16 @@ def run_integration_test():
             logf.write("Integration test failed with error:\n" + tb + "\n")
         sys.exit(1)
     finally:
-        # Final cleanup: remove any lingering flags (global or individual)
+        # Final cleanup: remove any lingering flags (global or individual) and close any test positions
         try:
             gflag = Path(CONTROL_DIR) / "test_mode.flag"
             _clear_flag(gflag)
             for f in Path(CONTROL_DIR).glob("test_mode_*.flag"):
                 _clear_flag(f)
+        except Exception:
+            pass
+        try:
+            _cleanup_test_positions()
         except Exception:
             pass
 

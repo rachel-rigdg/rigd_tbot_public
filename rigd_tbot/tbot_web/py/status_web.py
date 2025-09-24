@@ -1,5 +1,6 @@
-from __future__ import annotations
 # tbot_web/py/status_web.py
+from __future__ import annotations
+
 
 import json
 from datetime import datetime, timezone, date
@@ -18,6 +19,8 @@ from tbot_bot.support.path_resolver import (
     get_snapshot_path,
     get_stamp_path,
     get_bot_identity,
+    # (surgical) needed for universe size warning
+    resolve_universe_cache_path,
 )
 from tbot_bot.config.env_bot import (
     get_open_time_utc,
@@ -26,6 +29,8 @@ from tbot_bot.config.env_bot import (
     get_market_close_utc,
 )
 from tbot_bot.config.env_bot import get_bot_config  # <-- ensure enabled flags come from encrypted config
+# (surgical) provider state
+from tbot_bot.support.secrets_manager import load_screener_credentials
 
 status_blueprint = Blueprint("status_web", __name__)
 
@@ -361,6 +366,75 @@ def _resolve_strategy_states(schedule: dict, cfg_enabled: dict, active_strategy:
     return states
 
 # ---------------------------
+# (surgical) test-mode + provider + universe helpers
+# ---------------------------
+def _is_test_mode_active() -> bool:
+    """
+    TEST MODE is active if a global test_mode.flag or any test_mode_*.flag exists under tbot_bot/control.
+    """
+    try:
+        control = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
+        if (control / "test_mode.flag").exists():
+            return True
+        for p in control.glob("test_mode_*.flag"):
+            return True
+    except Exception:
+        pass
+    return False
+
+def _read_universe_final_size() -> int | None:
+    """
+    Count symbols in the final universe cache. Supports JSON array or NDJSON.
+    """
+    try:
+        final_path = Path(resolve_universe_cache_path())
+        if not final_path.exists():
+            return None
+        with final_path.open("r", encoding="utf-8") as f:
+            txt = f.read().strip()
+        if not txt:
+            return 0
+        # Try JSON array
+        try:
+            data = json.loads(txt)
+            if isinstance(data, list):
+                return len(data)
+        except Exception:
+            pass
+        # Fallback NDJSON
+        return sum(1 for _ in txt.splitlines() if _.strip())
+    except Exception:
+        return None
+
+def _resolve_provider_state() -> dict:
+    """
+    Return {"name": <PROVIDER>, "enabled": True/False}
+    Based on decrypted screener credentials (ENRICHMENT_ENABLED_* true and SCREENER_NAME_* not *_TXT).
+    """
+    try:
+        creds = load_screener_credentials() or {}
+        chosen = None
+        for k, v in creds.items():
+            if k.startswith("PROVIDER_"):
+                idx = k.split("_")[-1]
+                enabled = (creds.get(f"ENRICHMENT_ENABLED_{idx}", "false") or "false").strip().lower() == "true"
+                name = (creds.get(f"SCREENER_NAME_{idx}", "") or "").strip().upper()
+                if enabled and name and not name.endswith("_TXT"):
+                    chosen = {"name": name, "enabled": True}
+                    break
+        if chosen:
+            return chosen
+        # If any SCREENER_NAME present but disabled
+        for k, v in creds.items():
+            if k.startswith("SCREENER_NAME_"):
+                name = (v or "").strip().upper()
+                if name:
+                    return {"name": name, "enabled": False}
+        return {"name": "NONE", "enabled": False}
+    except Exception:
+        return {"name": "UNKNOWN", "enabled": False}
+
+# ---------------------------
 # Enrichment + API payload assembly
 # ---------------------------
 def _enrich_status(base_status: dict) -> dict:
@@ -477,6 +551,24 @@ def _enrich_status(base_status: dict) -> dict:
         "losses": int(enriched.get("loss_trades") or 0),
         "error_count": int(enriched.get("error_count") or 0),
     }
+
+    # (surgical) TEST MODE badge + universe size warning + provider state
+    enriched["test_mode_active"] = _is_test_mode_active()
+    if enriched["test_mode_active"]:
+        enriched["test_mode_banner"] = "TEST MODE"
+
+    universe_size = _read_universe_final_size()
+    enriched["universe_size"] = universe_size
+    try:
+        warn_threshold = int(cfg.get("UNIVERSE_MIN_DISPLAY_WARN", 100))
+    except Exception:
+        warn_threshold = 100
+    if isinstance(universe_size, int) and universe_size < warn_threshold:
+        enriched["universe_warning"] = f"Universe size low: {universe_size} (< {warn_threshold})"
+    else:
+        enriched["universe_warning"] = ""
+
+    enriched["screener_provider"] = _resolve_provider_state()
 
     # Attach new contract fields
     enriched.update({

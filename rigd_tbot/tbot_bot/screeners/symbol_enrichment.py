@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from tbot_bot.screeners.screener_utils import (
     atomic_append_json, load_blocklist, atomic_append_text
 )
-from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter, tofloat
+from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter, tofloat, normalize_market_cap
 from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path, resolve_universe_cache_path, resolve_screener_blocklist_path,
     resolve_universe_log_path, resolve_universe_unfiltered_path, resolve_universe_raw_path
@@ -120,6 +120,10 @@ def main():
     max_cap = float(env.get("SCREENER_UNIVERSE_MAX_MARKET_CAP", 10_000_000_000))
     max_size = int(env.get("SCREENER_UNIVERSE_MAX_SIZE", 2000))
 
+    # Parse allowed exchanges from env (optional)
+    exchanges_env = (env.get("SCREENER_UNIVERSE_EXCHANGES", "") or "").strip()
+    allowed_exchanges = [e.strip().upper() for e in exchanges_env.split(",") if e.strip()] or None
+
     blocklist = set(load_blocklist(BLOCKLIST_PATH))
     all_symbols = normalize_symbols(raw_symbols)
     symbol_ids = [s["symbol"] for s in all_symbols if "symbol" in s]
@@ -161,22 +165,29 @@ def main():
             continue
 
         # Only use previous close (c) and previous close volume if available; never real-time
-        price = q.get("pc") or q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
-        cap = q.get("marketCap") or q.get("market_cap")
+        price_raw = q.get("pc") or q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
+        cap_raw = q.get("marketCap") or q.get("market_cap")
         volume = q.get("volume") or q.get("v")
 
-        price = tofloat(price)
-        cap = tofloat(cap)
+        price = tofloat(price_raw)
+        cap_val = tofloat(cap_raw)
+        cap_norm = normalize_market_cap(cap_val) if cap_val is not None else None
+
         # Log if values could not be parsed
-        if price is None or cap is None or price <= 0 or cap <= 0:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|missing_financials|{datetime.utcnow().isoformat()}Z|{name}|raw_price={q.get('c')},{q.get('pc')},{q.get('close')},{q.get('lastClose')},{q.get('price')}|raw_cap={q.get('marketCap')},{q.get('market_cap')}\n")
+        if price is None or cap_norm is None or price <= 0 or cap_norm <= 0:
+            atomic_append_text(
+                BLOCKLIST_PATH,
+                f"{sym}|missing_financials|"
+                f"{datetime.utcnow().isoformat()}Z|{name}"
+                f"|raw_price={q.get('c')},{q.get('pc')},{q.get('close')},{q.get('lastClose')},{q.get('price')}"
+                f"|raw_cap={q.get('marketCap')},{q.get('market_cap')}\n"
+            )
             skipped_missing_financials += 1
             continue
 
         record = dict(s)
         record["lastClose"] = price
-        if cap is not None:
-            record["marketCap"] = cap
+        record["marketCap"] = cap_norm
         if volume is not None:
             record["volume"] = volume
         for k in q:
@@ -192,6 +203,7 @@ def main():
             max_price,
             min_cap,
             max_cap,
+            allowed_exchanges
         )
         if not filter_result:
             log_progress("Skipped symbol during filtering", {"symbol": sym, "reason": skip_reason, "record": record})

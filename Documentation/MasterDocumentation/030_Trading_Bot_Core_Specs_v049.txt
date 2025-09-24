@@ -1,8 +1,8 @@
 ================================================================================
 Document: 030
 Trading_Bot_Core_Specs
-Version: v048
-Date: UTC:2025-09-06 00:00:00
+Version: v049
+Date: UTC:2025-09-24 00:00:00
 ================================================================================
 
 This module details the core infrastructure, risk controls, trading strategy logic, and instrument integrations for the RIGD Trading Bot system.

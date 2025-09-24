@@ -317,14 +317,13 @@ def main():
     # If test mode is active at startup, do NOT launch supervisor. Run tests instead.
     if _is_test_mode_active():
         _write_bot_state("analyzing")
-        _ensure_no_supervisor_when_test()
+        # (surgical) do NOT terminate/disable supervisor; allow schedule to run regardless
         if child_procs.get("test_runner") is None or child_procs["test_runner"].poll() is not None:
             child_procs["test_runner"] = _launch_integration_test_runner()
-        # Fall through to main loop; scheduling logic below will remain suspended until flags clear.
 
-    # Self-schedule supervisor (live mode only)
+    # Self-schedule supervisor (always; TEST_MODE no longer blocks scheduling)
     next_fire = None
-    if SUP_ENABLE and not _is_test_mode_active():
+    if SUP_ENABLE:
         now = _utc_now()
         target = _next_utc_trigger(now)
         if now >= target:
@@ -337,10 +336,7 @@ def main():
             next_fire = target
         write_system_log(f"Next supervisor trigger set for {next_fire.isoformat() if next_fire else 'disabled'}")
     else:
-        if SUP_ENABLE:
-            write_system_log("Supervisor launch deferred due to TEST_MODE at startup.")
-        else:
-            write_system_log("Supervisor disabled by TBOT_SUPERVISOR_ENABLE=0")
+        write_system_log("Supervisor disabled by TBOT_SUPERVISOR_ENABLE=0")
         next_fire = None
 
     # Main loop: tick, (re)launch supervisor at window, keep main alive, watch children
@@ -357,33 +353,29 @@ def main():
 
         # -------- TEST MODE SUPERVISION -----------------------------------
         if _is_test_mode_active():
-            # Ensure no supervisor runs while in TEST_MODE
-            _ensure_no_supervisor_when_test()
-            # Start test runner if not already running
+            # (surgical) no supervisor termination; just ensure test runner is active
             tr = child_procs.get("test_runner")
             if tr is None or tr.poll() is not None:
                 child_procs["test_runner"] = _launch_integration_test_runner()
-            # While tests run, do not schedule supervisor (keep next_fire None)
-            next_fire = None
         else:
-            # Not in TEST_MODE. If test runner had been running and finished, just ensure it is cleared.
+            # Not in TEST_MODE. If test runner had been running and finished, ensure it is cleared.
             tr = child_procs.get("test_runner")
             if tr and tr.poll() is None:
-                # Runner still alive but flags cleared unexpectedly — let it finish, still do NOT launch supervisor yet.
-                write_system_log("Test runner still active; postponing live scheduling until it exits.")
-            elif SUP_ENABLE:
-                # Handle supervisor schedule normally
-                sup = child_procs["supervisor"]
-                sup_dead = (sup is not None and sup.poll() is not None)
-                # If we have no next_fire (e.g., resuming after tests), set next trigger
-                if next_fire is None:
-                    next_fire = _next_utc_trigger(_utc_now())
-                    write_system_log(f"Resumed live scheduling. Next supervisor trigger {next_fire.isoformat()}")
-                if next_fire and now >= next_fire and (sup is None or sup_dead):
-                    child_procs["supervisor"] = _launch_supervisor()
-                    # Set next window to tomorrow at configured time
-                    next_fire = _next_utc_trigger(_utc_now())
-                    write_system_log(f"Supervisor launched; next trigger {next_fire.isoformat()}")
+                # Runner still alive but flags cleared unexpectedly — let it finish; scheduling continues regardless.
+                write_system_log("Test runner still active; live scheduling continues.")
+
+        # Handle supervisor schedule normally
+        if SUP_ENABLE:
+            sup = child_procs["supervisor"]
+            sup_dead = (sup is not None and sup.poll() is not None)
+            if next_fire is None:
+                next_fire = _next_utc_trigger(_utc_now())
+                write_system_log(f"Resumed/ensured live scheduling. Next supervisor trigger {next_fire.isoformat()}")
+            if next_fire and now >= next_fire and (sup is None or sup_dead):
+                child_procs["supervisor"] = _launch_supervisor()
+                # Set next window to tomorrow at configured time
+                next_fire = _next_utc_trigger(_utc_now())
+                write_system_log(f"Supervisor launched; next trigger {next_fire.isoformat()}")
 
         time.sleep(POLL_SECS)
 

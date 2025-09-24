@@ -49,7 +49,14 @@ document.addEventListener("DOMContentLoaded", function () {
             scheduled_at: null,      // ISO string
             launched_at: null        // ISO string
         },
-        schedule: null              // object from logs/schedule.json (optional)
+        schedule: null,             // object from logs/schedule.json (optional)
+
+        // (surgical) new fields surfaced by backend for UI clarity
+        test_mode_active: false,
+        test_mode_banner: "",
+        universe_size: null,
+        universe_warning: "",
+        screener_provider: { name: "NONE", enabled: false }
     };
 
     let lastData = null;
@@ -121,12 +128,60 @@ document.addEventListener("DOMContentLoaded", function () {
         // setText("banner-launched-at", sup.launched_at || "—");
     }
 
+    // (surgical) new UI: test mode badge, universe size warning, provider state
+    function updateClarityBadges(d) {
+        // TEST MODE badge
+        const testEl = document.getElementById("badge-testmode");
+        if (testEl) {
+            if (d.test_mode_active) {
+                testEl.textContent = d.test_mode_banner || "TEST MODE";
+                testEl.style.display = "inline-block";
+                testEl.style.padding = "2px 6px";
+                testEl.style.borderRadius = "4px";
+                testEl.style.background = "#8b0000";
+                testEl.style.color = "#fff";
+                testEl.title = "Global test flag detected";
+            } else {
+                testEl.textContent = "";
+                testEl.style.display = "none";
+            }
+        }
+
+        // Universe size + warning
+        const uniEl = document.getElementById("universe-size");
+        if (uniEl) {
+            const size = (typeof d.universe_size === "number") ? d.universe_size : "—";
+            uniEl.textContent = `Universe: ${size}`;
+            if (d.universe_warning && typeof d.universe_size === "number") {
+                uniEl.style.color = "red";
+                uniEl.title = d.universe_warning;
+            } else {
+                uniEl.style.color = "";
+                uniEl.title = "";
+            }
+        }
+
+        // Provider state
+        const provEl = document.getElementById("provider-state");
+        if (provEl) {
+            const prov = d.screener_provider || DEFAULTS.screener_provider;
+            const name = prov.name || "NONE";
+            const status = prov.enabled ? "enabled" : "disabled";
+            provEl.textContent = `Provider: ${name} (${status})`;
+            provEl.style.color = prov.enabled ? "green" : "#666";
+            provEl.title = prov.enabled ? "Active data provider" : "Provider disabled or not configured";
+        }
+    }
+
     function updateUI(payload) {
         const d = normalizePayload(payload);
         const grids = document.querySelectorAll('.status-grid');
 
         // --- Supervisor banners (new) ---
         updateSupervisorBanners(d);
+
+        // --- Clarity badges (new) ---
+        updateClarityBadges(d);
 
         // --- Primary status grid ---
         if (grids[0]) {

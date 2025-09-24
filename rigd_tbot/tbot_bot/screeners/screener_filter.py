@@ -184,6 +184,28 @@ def _rescale_prices(records: List[Dict], factor: float) -> List[Dict]:
         out.append(rr)
     return out
 
+# --- (surgical) helper for auto-ranging market cap rescaling ---
+def _rescale_caps(records: List[Dict], factor: float) -> List[Dict]:
+    """Return a deep-copied list with market-cap-like fields multiplied by factor."""
+    out = []
+    for r in records:
+        rr = deepcopy(r)
+        # Work on normalized key primarily; fall back to known aliases if present
+        if "marketCap" in rr and rr["marketCap"] not in (None, "", "None"):
+            try:
+                rr["marketCap"] = tofloat(rr["marketCap"]) * factor
+            except Exception:
+                pass
+        else:
+            for k in MKTCAP_KEYS:
+                if k in rr and rr[k] not in (None, "", "None"):
+                    try:
+                        rr[k] = tofloat(rr[k]) * factor
+                    except Exception:
+                        pass
+        out.append(rr)
+    return out
+
 def filter_symbols(
     symbols: List[Dict],
     min_price: float,
@@ -239,6 +261,15 @@ def filter_symbols(
                 attempt = _run(_rescale_prices(normalized, factor))
                 if len(attempt) > len(filtered):
                     print(f"[AUTO-SCALE] Recovered with price_scale={factor}.")
+                    filtered = attempt
+                    break
+
+        # Try market cap scaling (millions vs units) if still too few
+        if len(filtered) < MIN_OK:
+            for factor in (1_000_000.0, 1.0 / 1_000_000.0):
+                attempt = _run(_rescale_caps(normalized, factor))
+                if len(attempt) > len(filtered):
+                    print(f"[AUTO-SCALE] Recovered with marketCap_scale={factor}.")
                     filtered = attempt
                     break
 

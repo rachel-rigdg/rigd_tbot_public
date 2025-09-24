@@ -20,6 +20,13 @@
                 Orchestration: <strong>daily one-shot supervisor</strong> (systemd timer @ <code>00:01 UTC</code>).
             </p>
 
+            <!-- NEW: Top-line clarity row (TEST MODE badge, Provider state, Universe size) -->
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0 6px 0;">
+                <span id="badge-testmode" style="display:none;"></span>
+                <span id="provider-state" style="color:#666;"></span>
+                <span id="universe-size" style="color:#666;"></span>
+            </div>
+
             <!-- Supervisor banner (pure-template logic; no backend change required) -->
             <div style="margin:14px 0;padding:10px 12px;border-radius:6px;background:#f7f7f7;border:1px solid #e2e2e2;">
                 {% set sup_from_status = status.supervisor_state if status and status.supervisor_state is defined else None %}
