@@ -17,8 +17,9 @@ Contents:
 - TradeBot Strategy Logic Spec v1.1 (Self-Contained)
 - InverseETF Integration Specification (Final v1.0)
 - Ranked Symbol Fallback and Fractional Trading Logic (v1.0)
+- Centralized Trailing Stop Logic (v2)
 
-All risk, allocation, and execution logic is governed *exclusively* by the deployed environment and `.env_bot` configuration.
+ All risk, allocation, and execution logic is governed *exclusively* by the deployed environment and `.env_bot` configuration.
 
 {BOT_IDENTITY} = {ENTITY_CODE}_{JURISDICTION_CODE}_{BROKER_CODE}_{BOT_ID}
 
@@ -36,7 +37,7 @@ RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATE
   - UFW configured
   - Auto-updates enabled
   - System timezone set to UTC
-  - Python 3.11+ (required)
+ - (Codebase is compatible with Python 3.9+; recommended runtime is Python 3.11+.)
   - pip, venv, sqlite3, rsync, curl, git installed
   - All working directories and virtual environments set up
 - **PHASE 3:** Systemd Integration (single entrypoint; supervisor **mandatory**):
@@ -47,7 +48,7 @@ RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATE
   - All services run as `tbot` user
   - **`tbot_supervisor.py` is mandatory and always launched by `tbot_bot.runtime.main` to orchestrate strategy windows and workers.**
   - **No other systemd units or timers launch strategies directly.** (Open/Mid/Close windows are managed inside supervisor/main.)
-  - Some Logs routed to journald and to `/tbot_bot/output/` and some logs routed to `output/{BOT_IDENTITY}/logs/` (resolved via `tbot_bot/support/path_resolver.py`).”
+  - Some Logs routed to journald and to `/tbot_bot/output/`, and some logs routed to `output/{BOT_IDENTITY}/logs/` (resolved via `tbot_bot/support/path_resolver.py`).
   - **initial user/credential/system bootstrap is Web UI only**  via `configuration.html` → `configuration_web.py`; CLI bootstrap is forbidden.
 
 - **PHASE 4:** Logging/Backups:
@@ -61,6 +62,8 @@ RIGD Trading Bot – Infrastructure and Deployment Overhaul Instructions (UPDATE
   - All clocks/logs/ledgers use UTC.
   - All file paths resolved via `tbot_bot/support/path_resolver.py` only.
   - OFX-aligned fields; immutable append-only audit logs; double-entry; entity/jurisdiction-scoped ledgers.
+  - **Broker-native trailing stops supported:** when available, the bot places native trailing-stop orders; otherwise, local runtime enforcement is used with identical thresholds (see **Centralized Trailing Stop Logic (v2)**).
+   
 
 ================================================================================
 Unified Capital Risk Controls and Dynamic Broker Float Allocation
@@ -267,7 +270,7 @@ Strategy: strategy_open.py – Opening Range Breakout
   - On rejection, automatically select the next-ranked eligible symbol; log rejected symbol, reason, and fallback level.
 - **Fractional/Min-Order Enforcement:**
   - If `FRACTIONAL=true`, require `supports_fractional(symbol)`; otherwise enforce broker `get_min_order_size(symbol)`.
-- **Exit Logic:** 2% trailing stop or monitoring timeout
+- **Exit Logic:** **Per-strategy trailing stop** (see `TRAIL_PCT_OPEN`) or monitoring timeout. The trailing percent comes from config (global or per-strategy) and tightens automatically near market close.
 - **Shorting:** Controlled by `SHORT_TYPE_OPEN`: InverseETF, LongPut, ShortSell, or disabled
 - **Logging & Ledger:**
   - Logs: `output/{BOT_IDENTITY}/logs/open.log` (resolved via `tbot_bot/support/path_resolver.py`)
@@ -292,7 +295,7 @@ Strategy: strategy_mid.py – VWAP Mean Reversion
   - Same ranked-pool flow as OPEN (see above); log all rejections and fallback selections.
 - **Fractional/Min-Order Enforcement:**
   - Enforce `FRACTIONAL` and broker minimums as in OPEN.
-- **Exit Logic:** VWAP touch, 1.5% stop loss, or timeout
+- **Exit Logic:** VWAP touch, **per-strategy trailing stop** (see `TRAIL_PCT_MID`), or timeout. (VWAP touch remains primary; trailing is a protective backstop and may tighten pre-close.)
 - **Shorting:** Controlled by `SHORT_TYPE_MID`: InverseETF, LongPut, ShortSell, or disabled
 - **Enhancements:** `adx_filter.py`, `bollinger_confluence.py`
 - **Logging & Ledger:**
@@ -318,7 +321,7 @@ Strategy: strategy_close.py – End-of-Day Momentum / Fade
   - Same ranked-pool flow as OPEN; log rejections and fallback level for each order attempt.
 - **Fractional/Min-Order Enforcement:**
   - Enforce `FRACTIONAL` and broker minimums as in OPEN.
-- **Exit Logic:** 2% stop loss or hard exit at session end
+- **Exit Logic:** **Per-strategy trailing stop** (see `TRAIL_PCT_CLOSE`) or hard exit at session end. (Trailing percent is configurable and auto-tightens in the pre-close buffer.)
 - **Shorting:** Controlled by `SHORT_TYPE_CLOSE`: InverseETF, LongPut, ShortSell, or disabled
 - **Enhancements:** `vix_gatekeeper.py`, `imbalance_scanner_ibkr.py`, `ticker_blocklist.py`
 - **Logging & Ledger:**
@@ -412,6 +415,7 @@ Ranked Candidate Pool and Fallback Logic (ALL STRATEGIES)
 - **Broker Module Requirements:**
   - Must implement `supports_fractional(symbol)` and `get_min_order_size(symbol)`.
   - Must return definitive true/false eligibility per symbol and surface the **reason** for ineligibility (e.g., `insufficient_notional`, `fractional_not_supported`, `symbol_not_tradable`).
+  - **(NEW)** If supported, brokers should expose native trailing-stop capabilities; the bot will call `broker_api.supports_trailing_stops()` and `broker_api.place_trailing_stop(...)`. If unsupported, the bot enforces trailing exits locally with identical math.
 
 - **Order Handling:**
   - Orders are submitted only for candidates that pass eligibility. Any broker-side rejection triggers immediate fallback to the next-ranked candidate, with full logging.
@@ -423,6 +427,16 @@ Parameters and Config (All in `.env_bot` Only)
 - `MAX_TRADES`: Number of trades per strategy session
 - `CANDIDATE_MULTIPLIER`: Pool size multiplier (pool = `MAX_TRADES × CANDIDATE_MULTIPLIER`)
 - `FRACTIONAL`: Enable/disable fractional trade logic (if true, enforce per-symbol support)
+- **(NEW) Trailing-stop config (global & per-strategy)** — *all as fractions, not percents*:
+    - `TRADING_TRAILING_STOP_PCT`  — global default (e.g., `0.02` = 2%).
+    - `TRAIL_PCT_OPEN`             — override for OPEN.
+    - `TRAIL_PCT_MID`              — override for MID.
+    - `TRAIL_PCT_CLOSE`            — override for CLOSE.
+    - `MARKET_CLOSE_UTC`           — close time in UTC (`"20:00"` or `"20:00:00"`) for auto-tightening.
+    - `TRAIL_TIGHTENING_BUFFER_S`  — seconds before close to tighten (default 150s if unset).
+    - `TRAIL_TIGHTENING_FACTOR`    — multiplier when tightened (e.g., `0.5` halves the band; min floor 0.0005 applies).
+    - *(Optional, advanced)* ATR-based trailing is available by passing ATR inputs to the canonical API (see **Centralized Trailing Stop Logic (v2)**); no env keys required.
+ 
 - All other trade, capital, and eligibility limits as documented elsewhere in this spec.
 
 --------------------------------------------------------------------------------
@@ -444,3 +458,86 @@ NO EXCEPTIONS:
 - No broker/capital/fractional logic in screener modules.
 - No duplicate ranking, filtering, or fallback logic in multiple modules.
 - All risk and eligibility logic is single-source-of-truth as above.
+
+ 
+ =====================================================================
+ Centralized Trailing Stop Logic (v2)  ⟵ NEW
+ =====================================================================
+ 
+ **Overview**
+ - All trailing-stop math and state handling are centralized in `tbot_bot/trading/trailing_stop.py`.
+ - Orders are created by `orders_bot.py`. After entry:
+   - If the adapter supports native trailing stops, `orders_bot` immediately places a native trailing order
+     using the effective percent (global or per-strategy).
+   - Otherwise, `orders_bot` returns metadata and the runtime enforces trailing exits locally using the same math.
+ - This guarantees identical exit behavior regardless of broker support.
+ 
+ **Config (fractions, not percents):**
+ - `TRADING_TRAILING_STOP_PCT` — global default (e.g., `0.02` = 2%).
+ - `TRAIL_PCT_OPEN`, `TRAIL_PCT_MID`, `TRAIL_PCT_CLOSE` — per-strategy overrides (fractions).
+ - `MARKET_CLOSE_UTC`, `TRAIL_TIGHTENING_BUFFER_S`, `TRAIL_TIGHTENING_FACTOR` — automatic pre-close tightening.
+ 
+ **Pre-close auto-tightening**
+ - Within `TRAIL_TIGHTENING_BUFFER_S` seconds of `MARKET_CLOSE_UTC`, the effective trailing percent is multiplied by
+   `TRAIL_TIGHTENING_FACTOR` (e.g., `0.5` halves the band). A minimum floor of `0.0005` (0.05%) is enforced.
+ 
+ **Canonical API (strategy/runtime use)**
+ - `compute_trailing_exit_threshold(...)`  
+   - Keyword-only mode supports:
+     - `side` (`"long"`/`"short"`), `current_price`, `entry_price`, `peak_price`, `trough_price`
+     - `trail_pct` (fraction), optional ATR-based inputs: `atr`, `atr_mult`
+     - Optional clamps: `min_stop_pct`, `max_stop_pct` (vs. entry)
+   - Legacy positional mode preserved for older call-sites:
+     `compute_trailing_exit_threshold(entry_price, current_extreme, side_open, stop_loss_pct)`
+ - `should_exit_by_trailing(...)`  
+   - Keyword-only or legacy positional; returns boolean based on current price vs. computed threshold.
+ - `TrailingStopState` (long/short)  
+   - Tracks `peak`/`trough`, computes current trigger, and answers `should_exit(price)`.
+ 
+ **Combination rules**
+ - When both percent trailing and ATR inputs are provided, multiple candidate thresholds are computed; the
+   **conservative** one is chosen (max for longs, min for shorts). Entry-based clamps can bound the stop.
+ 
+ **Broker/native integration**
+ - `broker_api.supports_trailing_stops()` — capability probe.
+ - `broker_api.place_trailing_stop(payload)` — adapter-specific passthrough; payload includes both whole-percent
++  (`trail_percent`) and fraction (`trail_pct_fraction`) fields for maximum interoperability.
+
+**Fractional & price handling (order sizing)**
+
+Inputs that matter
+- price (may be None for market/marketable orders)
+- FRACTIONAL (global flag)
+- Broker capabilities: supports_fractional(symbol), get_last_price(symbol)
+
+When price is provided
+- Compute quantity from the session’s capital slice:
+  - FRACTIONAL=true  → qty = capital / price
+  - FRACTIONAL=false → qty = floor(capital / price)
+- Enforce bounds on the provided price: MIN_PRICE ≤ price ≤ MAX_PRICE.
+
+When price is NOT provided
+- FRACTIONAL=true:
+  - Submit a NOTIONAL market order: notional = capital_slice.
+  - No price needed; the broker sizes the fill (metadata rounds notional to 2 decimals).
+- FRACTIONAL=false:
+  - Obtain a reference price via broker_api.get_last_price(symbol).
+  - If ref_price > 0 → qty = floor(capital / ref_price); proceed only if qty ≥ 1.
+  - If no/invalid ref_price or qty < 1 → reject the order and immediately fall back to the next ranked candidate.
+- Note: MIN_PRICE/MAX_PRICE apply only to an explicit price; when sizing from a reference price, rely on broker-side validations.
+
+Rounding & metadata
+- Whole-share qty: integer.
+- Fractional qty (when used): rounded to 6 decimals in metadata.
+- notional (when used): rounded to 2 decimals in metadata.
+
+Test vs Live
+- Test mode mirrors the same logic (including fallbacks) without contacting the broker.
+
+ **Backwards compatibility**
+ - `orders_bot` re-exports `compute_trailing_exit_threshold` and `should_exit_by_trailing` for legacy imports,
+   but new code should import from `tbot_bot.trading.trailing_stop` directly.
+ 
+ **Logging/metadata**
+ - For native trailing, the attached metadata includes: requested/native flags, effective percent (fraction and %),
+   and adapter result. For local trailing, runtime logs exit triggers with the computed threshold and side.
