@@ -39,7 +39,7 @@
                 <table class="settings-table" style="width:100%;border-collapse:collapse;">
                     <thead>
                         <tr>
-                            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Key</th>
+                            <th style="text-align:right;border-bottom:1px solid #ddd;padding:8px;">Key</th>
                             <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Value</th>
                             <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Status</th>
                         </tr>
@@ -47,7 +47,7 @@
                     <tbody>
                         {% for k, v in cfg.items()|sort %}
                         <tr>
-                            <td style="padding:6px 8px;vertical-align:top;"><code>{{ k }}</code></td>
+                            <td style="text-align:right;padding:8px 8px;vertical-align:top;"><code>{{ k }}</code></td>
                             <td style="padding:6px 8px;vertical-align:top;">
                                 <input name="{{ k }}" value="{{ v }}" style="width:100%;" autocomplete="off">
                             </td>
