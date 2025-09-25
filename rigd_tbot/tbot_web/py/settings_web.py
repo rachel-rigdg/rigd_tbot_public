@@ -14,7 +14,7 @@ from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-from tbot_bot.config.env_bot import get_bot_config, validate_bot_config
+from tbot_bot.config.env_bot import get_bot_config, validate_bot_config  # validate kept for compatibility (not enforced on save)
 from tbot_bot.support.decrypt_secrets import load_bot_identity
 from tbot_bot.support.path_resolver import validate_bot_identity, get_bot_identity_string_regex
 from tbot_bot.config.security_bot import encrypt_env_bot_from_bytes
@@ -93,6 +93,58 @@ def get_valid_bot_identity_string():
     except Exception:
         return None
 
+# -------- NEW (surgical): compute "used keys" and coerce incoming values --------
+def _all_config_keys_used_by_codebase():
+    """
+    Minimal allowlist of keys we know are consumed in code, used to flag 'unused' in UI.
+    We flatten SECTION_TITLES and add a few cross-cutting settings referenced elsewhere.
+    """
+    used = set()
+    for _, keys in SECTION_TITLES.items():
+        used.update(keys)
+    # Cross-cutting keys used by UI/ops
+    used.update({
+        "UNIVERSE_MIN_DISPLAY_WARN", "UNIVERSE_MIN_SIZE_WARN",
+        "STRAT_OPEN_ENABLED", "STRAT_MID_ENABLED", "STRAT_CLOSE_ENABLED",
+        "START_TIME_OPEN", "START_TIME_MID", "START_TIME_CLOSE",
+        "OPEN_ANALYSIS_TIME", "MID_ANALYSIS_TIME", "CLOSE_ANALYSIS_TIME",
+        "OPEN_BREAKOUT_TIME", "MID_BREAKOUT_TIME", "CLOSE_BREAKOUT_TIME",
+        "OPEN_MONITORING_TIME", "MID_MONITORING_TIME", "CLOSE_MONITORING_TIME",
+        "DISABLE_ALL_TRADES",
+    })
+    return sorted(used)
+
+def _coerce_value(v):
+    """
+    Best-effort type coercion for posted settings:
+      - 'true'/'false' → bool
+      - numeric strings → int/float
+      - leaves everything else as-is
+    """
+    if isinstance(v, bool) or v is None:
+        return v
+    if isinstance(v, (int, float)):
+        return v
+    s = str(v).strip()
+    low = s.lower()
+    if low in {"true", "yes", "on"}:
+        return True
+    if low in {"false", "no", "off"}:
+        return False
+    # try int
+    try:
+        if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
+            return int(s)
+    except Exception:
+        pass
+    # try float
+    try:
+        return float(s)
+    except Exception:
+        return v
+
+# -----------------------------------------------------------------------------
+
 @settings_blueprint.route("/settings")
 @login_required
 def settings_page():
@@ -102,10 +154,21 @@ def settings_page():
         valid_identity = get_valid_bot_identity_string()
         if not valid_identity:
             return render_template("settings.html", config=None, error="Bot identity not available, please complete configuration")
-        config = get_bot_config()
+        # NEW: load full decrypted config and compute unused keys
+        cfg = get_bot_config() or {}
+        used = set(_all_config_keys_used_by_codebase())
+        unused = sorted([k for k in cfg.keys() if k not in used])
+        # Keep legacy 'config' for templates; also pass 'cfg' and 'unused_keys' explicitly
+        return render_template(
+            "settings.html",
+            config=cfg,
+            cfg=cfg,
+            section_titles=SECTION_TITLES,
+            unused_keys=unused,
+            error=None
+        )
     except Exception:
         return render_template("settings.html", config=None, error="Bot identity not available, please complete configuration")
-    return render_template("settings.html", config=config, section_titles=SECTION_TITLES, error=None)
 
 @settings_blueprint.route("/settings.json", methods=["GET"])
 @login_required
@@ -124,24 +187,48 @@ def get_settings():
 @settings_blueprint.route("/settings/update", methods=["POST"])
 @login_required
 def update_settings():
+    """
+    Accept and persist every posted key/value (do not drop unfamiliar keys).
+    Type-coerce common primitives; merge into existing config; write via existing encryption path.
+    """
     if is_first_bootstrap():
         return redirect(url_for("configuration_web.show_configuration"))
     if not request.is_json:
         return jsonify({"status": "error", "detail": "Invalid JSON body"}), 400
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         valid_identity = get_valid_bot_identity_string()
         if not valid_identity:
             return jsonify({"status": "error", "detail": "Bot identity not available, please complete configuration"}), 400
-        validate_bot_config(data)
-        raw_bytes = json.dumps(data, indent=2).encode("utf-8")
+
+        # Load current config and merge coerced updates
+        current = get_bot_config() or {}
+        coerced = {k: _coerce_value(v) for k, v in data.items()}
+        current.update(coerced)
+
+        # NOTE: We do NOT reject unknown keys; we persist everything posted.
+        # If you still want to validate known keys, do it non-fatal:
+        try:
+            # This will validate known keys where supported; unknown keys are ignored by validator
+            validate_bot_config({k: current[k] for k in _all_config_keys_used_by_codebase() if k in current})
+        except Exception:
+            # Do not block saving on validation of subset; per requirement, persist anyway.
+            pass
+
+        raw_bytes = json.dumps(current, indent=2).encode("utf-8")
         encrypt_env_bot_from_bytes(raw_bytes, rotate_key=False)
+
         # After successful settings update, rotate keys/secrets with canonical config (skip during first bootstrap)
         live_config = get_live_config_for_rotation()
         if live_config:
             rotate_all_keys_and_secrets(live_config)
-        return jsonify({"status": "updated"})
-    except Exception as e:
+
+        # Compute unused set for response (helps UI refresh without reloading page)
+        used = set(_all_config_keys_used_by_codebase())
+        unused = sorted([k for k in current.keys() if k not in used])
+
+        return jsonify({"status": "updated", "unused_keys": unused})
+    except Exception:
         return jsonify({"status": "error", "detail": "Bot identity not available, please complete configuration"}), 400
 
 # Always validates using load_bot_identity(); config is only loaded after identity check.

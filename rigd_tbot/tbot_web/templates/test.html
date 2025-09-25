@@ -15,7 +15,15 @@
     <div class="main-container">
         <div class="left-panel">
             <div class="test-header">TEST_MODE — End-to-End Bot System Test</div>
-            <button id="trigger-btn" class="trigger-btn test-btn" onclick="clearLogs(); runAllTests()" {% if test_active %}disabled{% endif %}>Run All Tests</button>
+
+            <!-- Replaced JS-only button with POSTing form to /test/start (scope=all) -->
+            <form method="post" action="/test/start" style="display:inline;">
+              <input type="hidden" name="scope" value="all">
+              <button type="submit" id="trigger-btn" class="trigger-btn test-btn" {% if test_active %}disabled{% endif %}>
+                Run All Tests
+              </button>
+            </form>
+
             <div style="margin-bottom: 0.8em;"></div>
             <div class="test-list">
                 <div><button class="test-btn" id="btn-integration_test_runner" onclick="clearLogs(); runIndividualTest('integration_test_runner')" {% if test_active %}disabled{% endif %}>Run Integration Test Runner</button><span class="test-status-indicator" id="status-integration_test_runner"></span></div>

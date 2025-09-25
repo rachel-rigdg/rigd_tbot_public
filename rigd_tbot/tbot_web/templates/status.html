@@ -16,6 +16,14 @@
     <div class="main-container">
         <div style="width:70%; margin-left:auto; margin-right:auto;">
             <h1>TradeBot Status</h1>
+            {% if status.test_mode_active %}
+              <div style="margin:8px 0; padding:6px 10px; background:#ffecec; border:1px solid #e99; color:#900; border-radius:6px;">
+                <strong>TEST MODE ACTIVE</strong>
+                <form method="post" action="/test/clear" style="display:inline;">
+                  <button type="submit" style="margin-left:10px;">Clear Test Mode</button>
+                </form>
+              </div>
+            {% endif %}
             <p style="margin-top:-6px;color:#666;">
                 Orchestration: <strong>daily one-shot supervisor</strong> (systemd timer @ <code>00:01 UTC</code>).
             </p>
@@ -121,6 +129,12 @@
                 {% set bal = status.account_balances if status and status.account_balances is defined else None %}
                 {% set dgl = status.daily_gain_loss if status and status.daily_gain_loss is defined else None %}
                 <div class="status-grid">
+                    <div><strong>Universe:</strong>
+                        {{ status.universe_provider }}
+                        — Size: <span style="color:{{ '#b00' if status.universe_size_warn else '#333' }};">
+                          {{ status.universe_size }}
+                        </span>
+                    </div>
                     <div><strong>Account Equity ($):</strong> {{ bal.equity if bal and bal.equity is not none else "—" }}</div>
                     <div><strong>Cash Balance ($):</strong> {{ bal.cash if bal and bal.cash is not none else "—" }}</div>
                     <div><strong>Daily Gain/Loss ($):</strong> {{ dgl.delta if dgl and dgl.delta is not none else "—" }}</div>

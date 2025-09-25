@@ -72,6 +72,13 @@ def backtest(strategy: str, data_path: str, start_date: str, end_date: str):
 
     plot_equity_curve(trades, title=f"{strategy.capitalize()} Strategy")
 
+# ---- surgical: provide the expected public API name used by tests ----
+def run_backtest(strategy: str, data_path: str, start_date: str, end_date: str):
+    """
+    Thin wrapper kept for test compatibility.
+    """
+    return backtest(strategy=strategy, data_path=data_path, start_date=start_date, end_date=end_date)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="TradeBot Backtest Engine")
     parser.add_argument("--strategy", required=True, choices=["open", "mid", "close"], help="Which strategy to test")

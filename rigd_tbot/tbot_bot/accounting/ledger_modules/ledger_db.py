@@ -5,6 +5,7 @@ import sqlite3
 import json
 from cryptography.fernet import Fernet
 from pathlib import Path
+from typing import Optional  # <-- surgical: for Python 3.8/3.9 compatibility
 from tbot_bot.support.path_resolver import resolve_ledger_db_path, resolve_ledger_schema_path
 from tbot_bot.support.utils_identity import get_bot_identity
 from tbot_bot.accounting.ledger_modules.ledger_fields import TRADES_FIELDS
@@ -79,7 +80,7 @@ def validate_ledger_schema(db_path=None, schema_path=None):
     return True
 
 
-def _map_action(action: str | None) -> str:
+def _map_action(action: Optional[str]) -> str:  # <-- surgical: replace PEP 604 union for 3.8/3.9
     if not action or not isinstance(action, str):
         return "other"
     a = action.lower()

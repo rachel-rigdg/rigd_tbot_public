@@ -29,62 +29,43 @@
             <div class="error-message">{{ error }}</div>
         {% endif %}
 
-        {% if config and section_titles %}
-        <form id="settings-form" action="{{ url_for('settings_web.update_settings') }}" method="POST" novalidate>
-            <h2>Update .env_bot Parameters</h2>
-            {% for section, keys in section_titles.items() %}
-                <h3 style="margin-top:2em;">{{ section }}</h3>
-                {% for key in keys %}
-                    {% if key in config and key != "TEST_MODE" %}
-                    <div class="form-group">
-                        <label for="{{ key }}">
-                            {{ key }}
-                            {% if key in ["START_TIME_OPEN_LOCAL","START_TIME_MID_LOCAL","START_TIME_CLOSE_LOCAL"] %}
-                                <span style="color:#888;font-weight:normal;">(local time; converted to UTC on save)</span>
-                            {% endif %}
-                        </label>
-                        <input 
-                            type="text" 
-                            id="{{ key }}" 
-                            name="{{ key }}" 
-                            value="{{ config[key] }}" 
-                            autocomplete="off" 
-                            required
-                        />
-                    </div>
-                    {% endif %}
-                {% endfor %}
-            {% endfor %}
-            {# Render any config keys not in a section under "Other" #}
-            {% set all_section_keys = section_titles.values()|sum(start=[]) %}
-            {% set other_keys = [] %}
-            {% for key in config.keys() %}
-                {% if key not in all_section_keys and key != "TEST_MODE" %}
-                    {% set _ = other_keys.append(key) %}
-                {% endif %}
-            {% endfor %}
-            {% if other_keys %}
-                <h3 style="margin-top:2em;">Other</h3>
-                {% for key in other_keys %}
-                <div class="form-group">
-                    <label for="{{ key }}">
-                        {{ key }}
-                        {% if key in ["START_TIME_OPEN_LOCAL","START_TIME_MID_LOCAL","START_TIME_CLOSE_LOCAL"] %}
-                            <span style="color:#888;font-weight:normal;">(local time; converted to UTC on save)</span>
-                        {% endif %}
-                    </label>
-                    <input 
-                        type="text" 
-                        id="{{ key }}" 
-                        name="{{ key }}" 
-                        value="{{ config[key] }}" 
-                        autocomplete="off" 
-                        required
-                    />
-                </div>
-                {% endfor %}
-            {% endif %}
-            <button type="submit">Save Changes</button>
+        {% if config %}
+        <!-- Render ALL keys from .env_bot/.env_bot.enc with unused marker -->
+        <form id="settings-form" action="{{ url_for('settings_web.update_settings') }}" method="POST" onsubmit="return submitSettings(event)" novalidate>
+            <h2>All Configuration Keys</h2>
+            <p style="color:#666;margin-top:-6px;">Every key/value from your decrypted config is visible and editable. Entries marked <em>unused</em> are present in the file but not referenced by the current runtime.</p>
+
+            <div style="overflow:auto;">
+                <table class="settings-table" style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Key</th>
+                            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Value</th>
+                            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for k, v in cfg.items()|sort %}
+                        <tr>
+                            <td style="padding:6px 8px;vertical-align:top;"><code>{{ k }}</code></td>
+                            <td style="padding:6px 8px;vertical-align:top;">
+                                <input name="{{ k }}" value="{{ v }}" style="width:100%;" autocomplete="off">
+                            </td>
+                            <td style="padding:6px 8px;vertical-align:top;">
+                                {% if k in unused_keys %}
+                                  <span title="Present in config but not used by runtime">unused</span>
+                                {% else %} — {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:14px;">
+                <button type="submit" class="btn primary">Save Changes</button>
+                <span id="save-status" style="margin-left:10px;color:#666;"></span>
+            </div>
         </form>
         {% endif %}
 
@@ -94,8 +75,37 @@
     </main>
 
     <script>
-        // Optional: Enhance UX with client-side validation or AJAX submit in future
-        // Current form uses standard POST submit
+      // Submit as JSON (backend expects application/json)
+      async function submitSettings(ev) {
+        ev.preventDefault();
+        const form = document.getElementById('settings-form');
+        const fd = new FormData(form);
+        const payload = {};
+        for (const [k, v] of fd.entries()) {
+          payload[k] = v;
+        }
+        const statusEl = document.getElementById('save-status');
+        statusEl.textContent = 'Saving...';
+        try {
+          const res = await fetch(form.action, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.status === 'updated') {
+            statusEl.textContent = 'Saved.';
+            statusEl.style.color = '#2a7';
+          } else {
+            statusEl.textContent = (data && data.detail) ? ('Error: ' + data.detail) : 'Save failed.';
+            statusEl.style.color = '#b00';
+          }
+        } catch (e) {
+          statusEl.textContent = 'Network error.';
+          statusEl.style.color = '#b00';
+        }
+        return false;
+      }
     </script>
 </body>
 </html>

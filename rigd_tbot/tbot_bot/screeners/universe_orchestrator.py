@@ -224,12 +224,13 @@ def screener_creds_exist() -> bool:
     Return True if universe screener credentials/config indicate a provider is set.
     Tests patch get_universe_screener_secrets(); we simply check returned keys.
     """
+    # --- Fix 4.2.1: use utils and require normalized keys ---
+    from tbot_bot.screeners import screener_utils  # local import to ease test monkeypatching
     try:
-        cfg = get_universe_screener_secrets() or {}
-        name = (cfg.get("SCREENER_NAME") or "").strip()
-        api_key = (cfg.get("SCREENER_API_KEY") or cfg.get("API_KEY") or "").strip()
-        # Presence of a provider name is the primary signal; API key optional in tests.
-        return bool(name or api_key)
+        c = screener_utils.get_universe_screener_secrets() or {}
+        name_ok = bool((c.get("SCREENER_NAME") or "").strip())
+        key_ok = bool((c.get("SCREENER_API_KEY") or "").strip())
+        return bool(name_ok and key_ok)
     except Exception:
         return False
 
@@ -249,13 +250,12 @@ def fetch_broker_symbol_metadata_crash_resilient(
     Dispatch to provider-specific staged fetcher based on SCREENER_NAME in env/secrets.
     Tests may patch provider fetchers on this module; attributes must exist.
     """
+    # --- Fix 4.2.2: provider name fallback via utils ---
     name = (env.get("SCREENER_NAME") or "").upper().strip()
     if not name:
-        try:
-            cfg = get_universe_screener_secrets() or {}
-            name = (cfg.get("SCREENER_NAME") or "").upper().strip()
-        except Exception:
-            name = ""
+        from tbot_bot.screeners import screener_utils
+        cfg = screener_utils.get_universe_screener_secrets() or {}
+        name = (cfg.get("SCREENER_NAME") or "").upper().strip()
 
     # Map provider name → function attribute on this module
     provider_map = {
@@ -307,27 +307,40 @@ def write_partial(symbols: List[Dict[str, Any]]) -> None:
     _atomic_publish_json(safe_syms, UNFILTERED_PATH)
 
 
+# --- Fix 4.2.3: add explicit write_unfiltered helper expected by tests ---
+def write_unfiltered(symbols: List[Dict[str, Any]]):
+    """
+    Persist raw/unfiltered universe snapshot for diagnostics.
+    """
+    data = list(symbols or [])
+    _atomic_publish_json(data, UNFILTERED_PATH)
+    return str(UNFILTERED_PATH)
+
+
 def append_to_blocklist(symbol: str, path: Optional[str] = None, reason: Optional[str] = None) -> None:
     """
-    Append a symbol to blocklist file with optional reason as comment.
+    Append a symbol to blocklist file with optional reason.
     """
+    # --- Fix 4.2.4: CSV format "SYMBOL,REASON" (no '#') ---
     sym = (symbol or "").strip().upper()
     if not sym:
         return
     bl_path = path or BLOCKLIST_PATH
     os.makedirs(os.path.dirname(bl_path), exist_ok=True)
-    line = sym
-    if reason:
-        line += f"  # {reason}"
-    # Append atomically (read-append-write)
-    existing = ""
+    line = f"{sym},{reason}\n" if reason else f"{sym}\n"
     try:
-        with open(bl_path, "r", encoding="utf-8") as f:
-            existing = f.read()
+        with open(bl_path, "a", encoding="utf-8") as f:
+            f.write(line)
     except Exception:
+        # fall back to atomic rewrite if append fails
         existing = ""
-    new_text = (existing.rstrip("\n") + ("\n" if existing else "")) + line + "\n"
-    _atomic_publish_text(new_text, bl_path)
+        try:
+            with open(bl_path, "r", encoding="utf-8") as f:
+                existing = f.read()
+        except Exception:
+            existing = ""
+        new_text = (existing.rstrip("\n") + ("\n" if existing else "")) + line
+        _atomic_publish_text(new_text, bl_path)
 
 
 # =========================
@@ -346,6 +359,16 @@ def main():
     # Step 2: Enrich, filter, blocklist, and build universe files from API adapters
     rc = run_module("tbot_bot.screeners.symbol_enrichment")
     if rc != 0:
+        # ---- Fix 5.1: failure marker + preserve last good (do NOT publish) ----
+        try:
+            uni_dir = Path(FINAL_PATH).parent
+            uni_dir.mkdir(parents=True, exist_ok=True)
+            (uni_dir / "universe_build.failed").write_text(
+                f"{datetime.utcnow().isoformat()}Z\n", encoding="utf-8"
+            )
+            log("CRITICAL: Universe build enrichment failed; keeping last known good.")
+        finally:
+            pass
         sys.exit(rc)
 
     # Step 3: Finalize — inject timestamp and atomically publish staged -> final

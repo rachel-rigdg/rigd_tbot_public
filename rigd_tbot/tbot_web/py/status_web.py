@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 import json
+import glob, os  # (surgical) for test-mode flag scan and universe warn env
 from datetime import datetime, timezone, date
 from pathlib import Path
 
@@ -483,6 +484,14 @@ def _enrich_status(base_status: dict) -> dict:
 
     enriched["supervisor"] = sup
 
+    # --- (surgical 6.1) TEST MODE flag via control path/glob ---
+    try:
+        from tbot_bot.support.path_resolver import get_control_path
+        flags = glob.glob(os.path.join(get_control_path(""), "test_mode*.flag"))
+        enriched["test_mode_active"] = bool(flags)
+    except Exception:
+        enriched["test_mode_active"] = False
+
     # --- FIX: source strategy enabled flags from encrypted config (not stale status.json defaults) ---
     cfg = {}  # ensure defined even if get_bot_config() raises
     try:
@@ -553,7 +562,7 @@ def _enrich_status(base_status: dict) -> dict:
     }
 
     # (surgical) TEST MODE badge + universe size warning + provider state
-    enriched["test_mode_active"] = _is_test_mode_active()
+    enriched.setdefault("test_mode_active", _is_test_mode_active())  # honor 6.1 value if already set
     if enriched["test_mode_active"]:
         enriched["test_mode_banner"] = "TEST MODE"
 
@@ -569,6 +578,35 @@ def _enrich_status(base_status: dict) -> dict:
         enriched["universe_warning"] = ""
 
     enriched["screener_provider"] = _resolve_provider_state()
+
+    # --- (surgical 8.1) Provider info + universe size warn fields requested ---
+    try:
+        from tbot_bot.screeners import screener_utils
+        sc = screener_utils.get_universe_screener_secrets() or {}
+        enriched["universe_provider"] = f'{(sc.get("SCREENER_NAME") or "NONE").upper()} ' \
+                                        f'({"enabled" if sc.get("UNIVERSE_ENABLED") else "disabled"})'
+    except Exception:
+        enriched["universe_provider"] = "NONE (disabled)"
+
+    try:
+        # Prefer get_universe_path if available; else fall back to resolver used above
+        try:
+            from tbot_bot.support.path_resolver import get_universe_path
+            uni_path = Path(get_universe_path("symbol_universe.json"))
+        except Exception:
+            uni_path = Path(resolve_universe_cache_path())
+        if uni_path.exists():
+            try:
+                size = len(json.loads(uni_path.read_text(encoding="utf-8")))
+            except Exception:
+                size = 0
+        else:
+            size = 0
+    except Exception:
+        size = 0
+    enriched["universe_size"] = size  # keep existing field in sync if present
+    warn_threshold_env = int(os.environ.get("UNIVERSE_MIN_SIZE_WARN", "100"))
+    enriched["universe_size_warn"] = (size < warn_threshold_env)
 
     # Attach new contract fields
     enriched.update({

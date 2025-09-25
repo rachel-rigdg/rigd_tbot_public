@@ -4,15 +4,17 @@ import os
 import threading
 import time
 import json
+import glob
 from pathlib import Path
 import subprocess
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for
 
 from tbot_web.support.utils_web import admin_required
 from tbot_bot.support.path_resolver import (
     resolve_control_path,
     get_output_path,
     get_project_root,
+    get_bot_state_path,  # fallback for clear route
 )
 
 CONTROL_DIR = resolve_control_path()
@@ -178,6 +180,28 @@ def wait_and_update_status(test_name: str, proc: subprocess.Popen, start_size: i
     update_test_status(test_name, status)
     remove_test_flag(test_name)
 
+def _launch_integration_runner():
+    """Start the integration test runner subprocess (shared by /trigger and /start)."""
+    patch_env_from_dotenv()
+    _ensure_logs_dir()
+    # If no status preset, default to all queued
+    st = get_test_status() or {t: "QUEUED" for t in ALL_TESTS}
+    set_test_status(st)
+    create_test_flag()
+    log_path = get_test_log_path()
+    logf = open(log_path, "a", encoding="utf-8")
+    proc = subprocess.Popen(
+        ["python3", "-u", "-m", "tbot_bot.test.integration_test_runner"],
+        stdout=logf,
+        stderr=logf,
+        bufsize=1,
+        close_fds=True,
+        cwd=str(PROJECT_ROOT),
+        env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
+    )
+    threading.Thread(target=_wait_and_finalize_generic, args=(proc,), daemon=True).start()
+    return proc
+
 # ---------- routes ----------
 @test_web.route("/", methods=["GET"])
 @admin_required
@@ -231,23 +255,9 @@ def trigger_test_mode():
     with LOCK:
         if any_test_active():
             return jsonify({"result": "already_running"})
-        patch_env_from_dotenv()
-        _ensure_logs_dir()
+        # initialize all to QUEUED explicitly for UI
         set_test_status({t: "QUEUED" for t in ALL_TESTS})
-        create_test_flag()
-        log_path = get_test_log_path()
-        logf = open(log_path, "a", encoding="utf-8")  # will be closed by the OS after proc exit
-        proc = subprocess.Popen(
-            ["python3", "-u", "-m", "tbot_bot.test.integration_test_runner"],
-            stdout=logf,
-            stderr=logf,
-            bufsize=1,
-            close_fds=True,
-            cwd=str(PROJECT_ROOT),
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(PROJECT_ROOT)},
-        )
-        # Watcher to clean the generic flag and finalize statuses when runner ends
-        threading.Thread(target=_wait_and_finalize_generic, args=(proc,), daemon=True).start()
+        _launch_integration_runner()
     return jsonify({"result": "started"})
 
 @test_web.route("/run/<test_name>", methods=["POST"])
@@ -328,6 +338,56 @@ def get_test_logs():
 @admin_required
 def get_test_status_endpoint():
     return jsonify(get_test_status())
+
+# ---------- NEW: Clear & Start routes ----------
+@test_web.route("/clear", methods=["POST"])
+@admin_required
+def clear_test_mode():
+    """Remove all test_mode*.flag files and reset bot_state to 'idle' so strategies can run."""
+    # Remove flags
+    for fp in glob.glob(str(CONTROL_DIR / "test_mode*.flag")):
+        try:
+            os.remove(fp)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+    # Reset bot_state to 'idle'
+    try:
+        from tbot_bot.runtime.supervisor_common import write_bot_state  # preferred helper
+        write_bot_state("idle")
+    except Exception:
+        # Fallback: write directly to bot_state.txt
+        try:
+            Path(get_bot_state_path()).write_text("idle\n", encoding="utf-8")
+        except Exception:
+            pass
+    return redirect(url_for("status_web.status_page"))
+
+@test_web.route("/start", methods=["POST"])
+@admin_required
+def start_tests():
+    """Write the appropriate test flag and kick the integration test runner immediately."""
+    scope = (request.form.get("scope") or "").strip().lower()
+    with LOCK:
+        if any_test_active():
+            # Tests already running; just bounce back to tests page
+            return redirect(url_for("test_web.test_page"))
+        # Write flag per scope
+        if scope in {"", "all"}:
+            create_test_flag(None)
+            # Set all tests to QUEUED for UI clarity
+            set_test_status({t: "QUEUED" for t in ALL_TESTS})
+        else:
+            create_test_flag(scope)
+            # Mark a single test RUNNING, others QUEUED (best-effort if scope matches)
+            st = {t: "QUEUED" for t in ALL_TESTS}
+            if scope in st:
+                st[scope] = "RUNNING"
+            set_test_status(st)
+        # Launch the runner (handles end-of-run cleanup)
+        _launch_integration_runner()
+    return redirect(url_for("test_web.test_page"))
 
 # Optional safety: clears stale flags if someone leaves UI open forever
 def auto_reset_test_flag():

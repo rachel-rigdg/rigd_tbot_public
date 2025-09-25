@@ -75,47 +75,65 @@ def get_screener_secrets() -> dict:
         LOG.error(f"[screener_utils] Failed to load screener secrets: {e}")
         return {}
 
-def get_universe_screener_secrets() -> Dict[str, Dict]:
+def get_universe_screener_secrets() -> dict:
     """
-    Returns a dict of provider configs keyed by provider name (e.g., 'FINNHUB'),
-    including only providers with UNIVERSE_ENABLED='true'. Provider-scoped fields
-    have their index suffix stripped, e.g., 'SCREENER_API_KEY_01' -> 'SCREENER_API_KEY'.
+    Return a single, normalized provider config (flat dict) selected for universe operations.
+    Fields guaranteed:
+      - SCREENER_NAME (uppercase provider name, e.g., 'FINNHUB')
+      - SCREENER_API_KEY
+      - SCREENER_URL
+      - UNIVERSE_ENABLED (bool)
+      - TRADING_ENABLED (bool)
+
+    Selection rules:
+      - Choose among providers with UNIVERSE_ENABLED=true
+      - Prefer FINNHUB if present; otherwise first enabled provider.
 
     Raises:
-        UniverseCacheError: if no enabled providers are found after parsing.
+        UniverseCacheError if no enabled providers are found.
     """
     def _truthy(v) -> bool:
         return str(v).strip().lower() in ("1", "true", "yes", "y", "on")
 
     secrets = get_screener_secrets()
-    result: Dict[str, Dict] = {}
+    if not secrets:
+        raise UniverseCacheError("No screener credentials found.")
 
-    # Identify provider indices from keys like 'PROVIDER_01' -> 'FINNHUB'
+    # Discover indexed providers
+    providers = []  # list of (name:str, idx:str)
     for k, v in secrets.items():
         if not k.startswith("PROVIDER_"):
             continue
         idx = k.split("_")[-1]
-        provider_name = str(v).strip().upper() if v else ""
-        if not provider_name:
+        name = (str(v).strip().upper() if v else "")
+        if not name:
             continue
+        if _truthy(secrets.get(f"UNIVERSE_ENABLED_{idx}", "false")):
+            providers.append((name, idx))
 
-        enabled = secrets.get(f"UNIVERSE_ENABLED_{idx}", "false")
-        if not _truthy(enabled):
-            continue
-
-        # Collect all fields for this index, removing the "_{idx}" suffix
-        provider_cfg: Dict[str, str] = {"SCREENER_NAME": provider_name, "PROVIDER": provider_name}
-        suffix = f"_{idx}"
-        for kk, vv in secrets.items():
-            if kk.endswith(suffix):
-                base = kk[: -len(suffix)]
-                provider_cfg[base] = vv
-        result[provider_name] = provider_cfg
-
-    if not result:
+    if not providers:
         raise UniverseCacheError("No screener providers enabled for universe operations. Enable at least one provider (UNIVERSE_ENABLED=true).")
 
-    return result
+    # Prefer FINNHUB if enabled
+    selected_name, selected_idx = next(((n, i) for (n, i) in providers if n == "FINNHUB"), providers[0])
+
+    # Build flat config from selected index (strip suffix)
+    suffix = f"_{selected_idx}"
+    raw = {}
+    for kk, vv in secrets.items():
+        if kk.endswith(suffix):
+            base = kk[: -len(suffix)]
+            raw[base] = vv
+
+    # Normalize expected keys
+    out = {
+        "SCREENER_NAME": selected_name,
+        "SCREENER_API_KEY": raw.get("SCREENER_API_KEY"),
+        "SCREENER_URL": raw.get("SCREENER_URL"),
+        "UNIVERSE_ENABLED": _truthy(raw.get("UNIVERSE_ENABLED", True)),
+        "TRADING_ENABLED": _truthy(raw.get("TRADING_ENABLED", False)),
+    }
+    return out
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 # ADDED: single-source realtime price helper using Screener Credentials
@@ -124,15 +142,8 @@ def get_realtime_price(symbol: str, timeout: int = 4) -> float:
     Single source of truth for market prices.
     Uses the currently enabled Screener Credentials (prefers FINNHUB).
     """
-    providers = get_universe_screener_secrets()  # uses the same credentials store/UI
-    # Prefer FINNHUB if multiple providers are enabled
-    if "FINNHUB" in providers:
-        provider = "FINNHUB"
-    else:
-        # take the first enabled provider if any
-        provider = next(iter(providers.keys()))
-
-    cfg = providers[provider]
+    cfg = get_universe_screener_secrets()
+    provider = (cfg.get("SCREENER_NAME") or "").upper()
 
     if provider == "FINNHUB":
         token = (
@@ -155,7 +166,7 @@ def get_realtime_price(symbol: str, timeout: int = 4) -> float:
             raise UniverseCacheError(f"FINNHUB returned no price for {symbol}: {data}")
         return float(px)
 
-    raise UniverseCacheError(f"Market-data provider '{provider}' not supported for quotes.")
+    raise UniverseCacheError(f"Market-data provider '{provider or '<NONE>'}' not supported for quotes.")
 # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 def utc_now() -> datetime:

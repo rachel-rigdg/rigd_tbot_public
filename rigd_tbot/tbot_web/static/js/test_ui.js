@@ -113,11 +113,18 @@ function runAllTests() {
     if (lbl) lbl.textContent = "Running: ALL TESTS";
     allTests.forEach(test => setIndicator(test, ""));
     clearLogs();
-    fetch("/test/trigger", { method: "POST" })
-        .then(() => {
-            startLogPolling();
-            startStatusPolling();
-        });
+
+    // Post to /test/start (scope=all) to trigger the integration runner immediately
+    const formData = new URLSearchParams();
+    formData.set("scope", "all");
+    fetch("/test/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData.toString()
+    }).then(() => {
+        startLogPolling();
+        startStatusPolling();
+    });
 }
 
 function runIndividualTest(testName) {
