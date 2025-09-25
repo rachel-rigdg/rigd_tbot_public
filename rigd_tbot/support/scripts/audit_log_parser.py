@@ -1,6 +1,7 @@
 # scripts/audit_log_parser.py
 # CLI utility to review logs and summarize behavior
 
+from __future__ import annotations
 import argparse
 import json
 import os

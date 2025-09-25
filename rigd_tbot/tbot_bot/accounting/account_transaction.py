@@ -1,6 +1,7 @@
 # tbot_bot/accounting/account_transaction.py
 # Builds accounting journal entries for trade export to accounting (never manages/provisions secrets/keys)
 
+from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4

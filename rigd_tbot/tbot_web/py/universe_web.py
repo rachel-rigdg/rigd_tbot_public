@@ -1,6 +1,7 @@
 # tbot_web/py/universe_web.py
 # Flask blueprint for universe cache and blocklist management per staged symbol universe spec.
 
+from __future__ import annotations
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, Response, send_from_directory, current_app, jsonify
 import subprocess
 from tbot_bot.screeners.screener_utils import load_universe_cache, load_blocklist, UniverseCacheError

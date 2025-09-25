@@ -3,6 +3,7 @@
 # Loads config from holdings_secrets, routes all trades via broker_api.
 # Writes to audit log and ledger. No business logic lives in the supervisor.
 
+from __future__ import annotations
 import os
 import sys
 import time

@@ -4,6 +4,7 @@
 # unprovisioned workdirs by falling back to the DB (coa_accounts) or a tiny
 # built-in COA so the UI dropdowns never come up empty.
 
+from __future__ import annotations
 import json
 import os
 import sqlite3

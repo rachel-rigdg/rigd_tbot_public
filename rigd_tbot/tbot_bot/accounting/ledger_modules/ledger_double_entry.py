@@ -1,5 +1,6 @@
 # tbot_bot/accounting/ledger_modules/ledger_double_entry.py
 
+from __future__ import annotations
 from typing import Optional, Tuple, List, Dict, Any, Callable
 from tbot_bot.accounting.ledger_modules.ledger_account_map import get_account_path  # kept for downstream imports
 from tbot_bot.accounting.coa_mapping_table import load_mapping_table, apply_mapping_rule

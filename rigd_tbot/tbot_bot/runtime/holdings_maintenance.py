@@ -5,6 +5,7 @@
 # - Posts ledger entries and writes audit via the ledger modules (delegated to holdings_manager).
 # - Uses path_resolver for logs/locks. No hardcoded paths. Exits 0/≠0.
 
+from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import sys

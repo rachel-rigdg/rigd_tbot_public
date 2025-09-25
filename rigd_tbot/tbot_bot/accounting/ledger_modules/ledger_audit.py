@@ -20,6 +20,7 @@ This version:
 Notes:
 - We intentionally do not auto-create the audit_trail table; schema.sql should do that.
 """
+from __future__ import annotations
 
 import json
 import sqlite3

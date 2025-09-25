@@ -1,6 +1,7 @@
 # tbot_bot/trading/trailing_stop.py
 # Single source of truth for bot-enforced trailing stop math & state.
 
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Callable, Union  # (added Union for 3.7–3.9 compatibility)
 from datetime import datetime, timezone  # (surgical) for pre-close tightening helpers

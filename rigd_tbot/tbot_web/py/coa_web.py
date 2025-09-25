@@ -1,6 +1,7 @@
 # tbot_web/py/coa_web.py
 # Dedicated page and API endpoints for human-readable COA viewing/editing via Web UI
 
+from __future__ import annotations
 from flask import Blueprint, render_template, request, redirect, url_for, jsonify, session, send_file, flash
 from datetime import datetime, timezone
 import json

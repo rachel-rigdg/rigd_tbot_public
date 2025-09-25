@@ -2,6 +2,7 @@
 # Encrypts/decrypts .env_bot to .env_bot.enc using ONLY env_bot.key (never env.key).
 # Supports atomic Fernet key rotation, robust backup, and best practice hardening.
 
+from __future__ import annotations
 import sys
 from pathlib import Path
 from datetime import datetime

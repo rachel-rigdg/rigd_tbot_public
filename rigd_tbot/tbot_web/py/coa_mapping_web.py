@@ -2,6 +2,7 @@
 # Flask blueprint for COA mapping table management (no flask_login dependency).
 # Provides CRUD, versioning, assignment, audit/rollback, and export/import endpoints.
 
+from __future__ import annotations
 import json
 from functools import wraps
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app

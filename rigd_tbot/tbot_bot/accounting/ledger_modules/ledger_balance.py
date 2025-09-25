@@ -14,6 +14,7 @@ Requirements addressed (v048+):
 - Treat account 4010 as P&L (exclude from cash/positions breakdown).
 - Preserve legacy calculate_account_balances() return shape for backward compatibility.
 """
+from __future__ import annotations
 
 from pathlib import Path
 import sqlite3

@@ -1,6 +1,7 @@
 # tbot_web/py/logs_web.py
 # Displays latest bot log output to the web UI with multi-directory fallback and hour filtering
 
+from __future__ import annotations
 from flask import Blueprint, render_template, request
 from pathlib import Path
 from datetime import datetime, timedelta

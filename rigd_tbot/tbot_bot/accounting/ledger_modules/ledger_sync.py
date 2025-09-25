@@ -1,5 +1,6 @@
 # tbot_bot/accounting/ledger_modules/ledger_sync.py
 
+from __future__ import annotations
 from tbot_bot.broker.broker_api import fetch_all_trades, fetch_cash_activity
 # Try to import positions/cash snapshot helpers if available
 try:

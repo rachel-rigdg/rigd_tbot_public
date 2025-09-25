@@ -2,6 +2,7 @@
 # Enhancement: Blocks trades if company fundamentals fail configured thresholds (e.g. P/E, debt/equity)
 # Requires: SCREENER_API_KEY loaded via secrets, cache path: data/cache/fundamentals_{date}.json
 
+from __future__ import annotations
 import os
 import json
 import datetime

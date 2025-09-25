@@ -2,6 +2,7 @@
 # Centralized blocklist management for atomic symbol universe builds and daily maintenance.
 # Handles dynamic append of blocklisted symbols (per enrichment/filter step) with reason, timestamp, and provider.
 
+from __future__ import annotations
 import os
 import json
 from datetime import datetime, timezone

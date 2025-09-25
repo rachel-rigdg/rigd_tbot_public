@@ -4,6 +4,7 @@
 # Delegates all logic to accounting/ledger/ helpers.
 # No business logic; just high-level API and imports.
 
+from __future__ import annotations
 from typing import Any, Dict, List, Tuple, Union
 
 from tbot_bot.accounting.ledger_modules.ledger_account_map import (

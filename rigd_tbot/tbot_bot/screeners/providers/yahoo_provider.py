@@ -1,6 +1,7 @@
 # tbot_bot/screeners/providers/yahoo_provider.py
 # Yahoo provider adapter: fetches US equity symbols/prices via yfinance, no CSV or user list required.
 
+from __future__ import annotations
 from typing import List, Dict, Optional
 import yfinance as yf
 from tbot_bot.screeners.provider_base import ProviderBase
