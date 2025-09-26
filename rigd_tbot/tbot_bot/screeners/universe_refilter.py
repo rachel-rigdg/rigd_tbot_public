@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+from datetime import datetime
 from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter, filter_symbols
 from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path, resolve_universe_cache_path, resolve_universe_unfiltered_path
@@ -70,6 +71,37 @@ def _atomic_write_json(path: str, payload) -> None:
     except Exception:
         pass
 
+def _stage_with_timestamp(symbols):
+    """
+    Build final payload with build_timestamp_utc, preserving schema.
+    """
+    return {
+        "symbols": list(symbols or []),
+        "build_timestamp_utc": datetime.utcnow().isoformat() + "Z",
+    }
+
+def _atomic_publish_final_from_partial(partial_path: str, final_path: str) -> None:
+    """
+    Read PARTIAL (array or object), inject timestamp, and atomically publish FINAL.
+    Preserve last-good on any failure (i.e., do not modify FINAL unless replace succeeds).
+    """
+    with open(partial_path, "r", encoding="utf-8") as f:
+        content = f.read().strip() or "[]"
+    try:
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            symbols = parsed.get("symbols", [])
+        elif isinstance(parsed, list):
+            symbols = parsed
+        else:
+            symbols = []
+    except Exception:
+        # If partial is malformed, refuse to publish
+        raise RuntimeError("Partial universe is not valid JSON; refusing to publish.")
+
+    payload = _stage_with_timestamp(symbols)
+    _atomic_write_json(final_path, payload)
+
 def main():
     env = load_env_bot_config()
     min_price = float(env.get("SCREENER_UNIVERSE_MIN_PRICE", 1))
@@ -99,13 +131,17 @@ def main():
         broker_obj=None
     )
 
-    # Write a SINGLE JSON array (no NDJSON)
-    _atomic_write_json(PARTIAL_PATH, filtered)
+    try:
+        # Write a SINGLE JSON array (no NDJSON)
+        _atomic_write_json(PARTIAL_PATH, filtered)
 
-    # Finalize with atomic copy
-    from tbot_bot.screeners.screener_utils import atomic_copy_file
-    atomic_copy_file(PARTIAL_PATH, FINAL_PATH)
-    print(f"Filtered {len(filtered)} symbols to {PARTIAL_PATH}")
+        # Finalize with atomic publish (inject timestamp); preserve last-good on failure
+        _atomic_publish_final_from_partial(PARTIAL_PATH, FINAL_PATH)
+        print(f"Filtered {len(filtered)} symbols to {PARTIAL_PATH} and published final.")
+    except Exception as e:
+        # Do NOT touch FINAL_PATH on failure
+        print(f"ERROR during re-filter publish: {e}")
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()

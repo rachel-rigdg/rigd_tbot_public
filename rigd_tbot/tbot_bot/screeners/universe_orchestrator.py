@@ -216,6 +216,21 @@ def _write_waiting_status(final_path: str):
     log(f"Wrote waiting-for-credentials status to {final_path}")
 
 
+def _final_payload_is_valid(data: dict) -> bool:
+    """
+    Minimal pre-publish validation:
+      - dict required
+      - either 'symbols' is a list OR 'status'=='waiting_for_credentials'
+    """
+    if not isinstance(data, dict):
+        return False
+    if "symbols" in data:
+        return isinstance(data["symbols"], list)
+    if data.get("status") == "waiting_for_credentials":
+        return True
+    return False
+
+
 # =========================
 # TEST-EXPECTED PUBLIC API
 # =========================
@@ -351,15 +366,19 @@ def main():
     rc = run_module("tbot_bot.screeners.symbol_universe_raw_builder", tolerate_rcs=(NO_PROVIDER_EXIT,))
     if rc == NO_PROVIDER_EXIT:
         log("No universe provider enabled; deferring until credentials are added.")
-        _write_waiting_status(FINAL_PATH)
+        # Emit waiting state ONLY if final is missing; otherwise preserve last-good.
+        if not os.path.exists(FINAL_PATH):
+            _write_waiting_status(FINAL_PATH)
         sys.exit(0)
     if rc != 0:
+        # Preserve last-good by exiting without touching FINAL_PATH
+        log("Raw builder failed; preserving last known good universe.")
         sys.exit(rc)
 
     # Step 2: Enrich, filter, blocklist, and build universe files from API adapters
     rc = run_module("tbot_bot.screeners.symbol_enrichment")
     if rc != 0:
-        # ---- Fix 5.1: failure marker + preserve last good (do NOT publish) ----
+        # ---- Failure marker + preserve last good (do NOT publish) ----
         try:
             uni_dir = Path(FINAL_PATH).parent
             uni_dir.mkdir(parents=True, exist_ok=True)
@@ -378,6 +397,9 @@ def main():
 
     try:
         data = _stage_with_timestamp(PARTIAL_PATH)
+        if not _final_payload_is_valid(data):
+            log("ERROR: Final payload validation failed; refusing to publish.")
+            sys.exit(4)
         _atomic_publish_json(data, FINAL_PATH)
         log(f"Universe orchestration completed successfully. Published {FINAL_PATH}")
     except Exception as e:

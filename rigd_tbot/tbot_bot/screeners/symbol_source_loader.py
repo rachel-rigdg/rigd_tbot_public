@@ -5,20 +5,37 @@
 from typing import List, Dict
 
 from tbot_bot.screeners.screener_utils import get_universe_screener_secrets
-from tbot_bot.screeners.provider_registry import get_provider_class
+from tbot_bot.screeners.provider_registry import (
+    get_provider_class_strict,
+    is_provider_enabled,
+)
 
 def load_api_provider_symbols() -> List[Dict]:
     """
-    Loads symbols using only the enabled provider adapter with UNIVERSE_ENABLED == "true".
+    Loads symbols using only the enabled provider adapter with UNIVERSE_ENABLED == true.
     Credentials are injected from get_universe_screener_secrets.
+    No implicit fallbacks to other providers.
     """
     provider_cfg = get_universe_screener_secrets()
     provider_name = (provider_cfg.get("SCREENER_NAME") or "").strip().upper()
     if not provider_name or provider_name.endswith("_TXT"):
-        raise RuntimeError("No valid API provider enabled for universe build. Enable a provider with UNIVERSE_ENABLED via the /screener_credentials admin UI.")
-    ProviderClass = get_provider_class(provider_name)
+        raise RuntimeError(
+            "No valid API provider enabled for universe build. "
+            "Enable a provider with UNIVERSE_ENABLED via the /screener_credentials admin UI."
+        )
+
+    # Enforce single source of truth for enabled providers (no fallback)
+    if not is_provider_enabled(provider_name, flag_key="UNIVERSE_ENABLED"):
+        raise RuntimeError(
+            f"Provider '{provider_name}' is not explicitly enabled for UNIVERSE_ENABLED."
+        )
+
+    ProviderClass = get_provider_class_strict(provider_name, flag_key="UNIVERSE_ENABLED")
     if ProviderClass is None:
-        raise RuntimeError(f"No provider class found for SCREENER_NAME '{provider_name}'.")
+        raise RuntimeError(
+            f"No enabled provider class found for SCREENER_NAME '{provider_name}'."
+        )
+
     provider = ProviderClass(provider_cfg)
     # Adapter's fetch_symbols always returns normalized list with required fields.
     symbols = provider.fetch_symbols()

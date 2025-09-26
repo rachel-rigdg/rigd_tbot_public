@@ -4,8 +4,9 @@
 import json
 import logging
 import os
+import hashlib
 from datetime import datetime, timezone
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any, Tuple, Set
 import requests  # <<< ADDED
 
 from tbot_bot.support.path_resolver import (
@@ -32,6 +33,99 @@ BLOCKLIST_PATH = resolve_screener_blocklist_path()
 
 class UniverseCacheError(Exception):
     pass
+
+# --------------------------------------------------------------------
+# Centralized atomic fsync/replace & JSON helpers (single source of truth)
+# --------------------------------------------------------------------
+def atomic_replace_fsync(src_tmp_path: str, dest_path: str) -> None:
+    """
+    Atomically replace dest_path with src_tmp_path and fsync directory entry.
+    REQUIREMENT: src_tmp_path must be on the same filesystem and already fsync()'d.
+    """
+    dest_dir = os.path.dirname(dest_path)
+    os.makedirs(dest_dir, exist_ok=True)
+    os.replace(src_tmp_path, dest_path)
+    try:
+        dir_fd = os.open(dest_dir, os.O_DIRECTORY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except Exception:
+        # Best-effort on platforms without O_DIRECTORY
+        pass
+
+
+def atomic_write_json(payload: Any, dest_path: str, *, pretty: bool = False) -> None:
+    """
+    Write a SINGLE JSON document atomically (no NDJSON).
+    """
+    dest_dir = os.path.dirname(dest_path)
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp_path = dest_path + ".staged.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        if pretty:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        else:
+            json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
+        f.flush()
+        os.fsync(f.fileno())
+    atomic_replace_fsync(tmp_path, dest_path)
+
+
+def json_sha256(payload: Any) -> str:
+    """
+    Canonical JSON SHA-256 digest for integrity/audit.
+    """
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def load_json_file(path: str) -> Any:
+    """
+    Load a SINGLE JSON document (array/object). Raises on parse errors.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def validate_universe_payload(payload: Any) -> Tuple[bool, str]:
+    """
+    Minimal schema validation:
+      - dict with "symbols": list[dict] OR waiting stub with "status".
+      - If "symbols", each entry minimally has "symbol".
+    """
+    if isinstance(payload, dict) and payload.get("status") == "waiting_for_credentials":
+        return True, "waiting"
+    if not isinstance(payload, dict):
+        return False, "payload-not-dict"
+    symbols = payload.get("symbols")
+    if not isinstance(symbols, list):
+        return False, "symbols-not-list"
+    # light validation
+    bad = next((s for s in symbols if not isinstance(s, dict) or "symbol" not in s), None)
+    if bad is not None:
+        return False, "bad-symbol-row"
+    return True, "ok"
+
+
+def dedupe_records_by_symbol(records: List[Dict]) -> List[Dict]:
+    """
+    Deduplicate list of symbol records by 'symbol' key (keeps first occurrence).
+    """
+    seen: Set[str] = set()
+    out: List[Dict] = []
+    for r in records or []:
+        sym = r.get("symbol")
+        if not isinstance(sym, str):
+            continue
+        if sym in seen:
+            continue
+        seen.add(sym)
+        out.append(r)
+    return out
+# --------------------------------------------------------------------
+
 
 # <<< ADDED: ensure we default to the active bot identity when none is provided
 def _with_identity(bot_identity: Optional[str]) -> Optional[str]:
@@ -69,7 +163,7 @@ def atomic_copy_file(src_path: str, dest_path: str):
             dst.write(chunk)
         dst.flush()
         os.fsync(dst.fileno())
-    os.replace(tmp_path, dest_path)
+    atomic_replace_fsync(tmp_path, dest_path)
 
 def screener_creds_exist() -> bool:
     """
@@ -286,11 +380,14 @@ def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None)
                 f.write(json.dumps(s, ensure_ascii=False) + "\n")
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_path, path)
+        atomic_replace_fsync(tmp_path, path)
     except Exception as e:
         LOG.error(f"[screener_utils] Failed to write universe cache to disk: {e}")
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
         raise
     LOG.info(f"[screener_utils] Universe cache saved with {len(symbols)} symbols at {path}")
 

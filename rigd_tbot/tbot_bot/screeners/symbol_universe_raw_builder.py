@@ -42,6 +42,34 @@ def log_progress(msg, details=None):
         # never crash on logging
         pass
 
+def _atomic_write_ndjson(lines, out_path: str) -> None:
+    """
+    Atomically write NDJSON:
+      - write temp file
+      - fsync file
+      - os.replace
+      - fsync directory entry
+    """
+    tmp_path = out_path + ".tmp"
+    dest_dir = os.path.dirname(out_path)
+    os.makedirs(dest_dir, exist_ok=True)
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(line)
+            if not line.endswith("\n"):
+                f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, out_path)
+    try:
+        dir_fd = os.open(dest_dir, os.O_DIRECTORY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except Exception:
+        pass
+
 def get_raw_provider_creds():
     all_creds = load_screener_credentials() or {}
     provider_indices = []
@@ -107,17 +135,26 @@ def main():
         print("ERROR: provider returned no symbols.", flush=True)
         sys.exit(EMPTY_EXIT)
 
-    tmp_path = RAW_PATH + ".tmp"
-    os.makedirs(os.path.dirname(RAW_PATH), exist_ok=True)
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        for s in raw_symbols:
-            f.write(json.dumps(s, ensure_ascii=False) + "\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, RAW_PATH)
+    # Ensure symbols are serializable lines before any write
+    lines = []
+    count = 0
+    for s in raw_symbols:
+        try:
+            lines.append(json.dumps(s, ensure_ascii=False))
+            count += 1
+        except Exception as e:
+            # skip un-serializable entries (do not write partial files)
+            log_progress("Skipping non-serializable symbol entry.", {"error": str(e)})
 
-    log_progress("Raw symbol universe written", {"raw_path": RAW_PATH, "count": len(raw_symbols)})
-    print(f"Raw symbol universe build complete: {len(raw_symbols)} symbols written to {RAW_PATH}", flush=True)
+    if count == 0:
+        log_progress("All entries were non-serializable; nothing to write.", {"provider": name})
+        print("ERROR: no serializable symbols to write.", flush=True)
+        sys.exit(EMPTY_EXIT)
+
+    _atomic_write_ndjson(lines, RAW_PATH)
+
+    log_progress("Raw symbol universe written", {"raw_path": RAW_PATH, "count": count, "provider": name})
+    print(f"Raw symbol universe build complete: {count} symbols written to {RAW_PATH}", flush=True)
 
 if __name__ == "__main__":
     try:

@@ -29,9 +29,17 @@ def log_progress(msg, details=None):
     now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     record = f"[{now}] {msg}"
     if details:
-        record += " | " + json.dumps(details)
-    with open(LOG_PATH, "a", encoding="utf-8") as logf:
-        logf.write(record + "\n")
+        try:
+            record += " | " + json.dumps(details, ensure_ascii=False)
+        except Exception:
+            record += " | (details serialization failed)"
+    try:
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        with open(LOG_PATH, "a", encoding="utf-8") as logf:
+            logf.write(record + "\n")
+    except Exception:
+        # best-effort logging
+        pass
 
 def get_enrichment_provider_creds():
     all_creds = load_screener_credentials()
@@ -60,7 +68,7 @@ def load_raw_symbols():
         for line in f:
             try:
                 syms.append(json.loads(line))
-            except Exception as e:
+            except Exception:
                 continue
     return syms
 
@@ -138,6 +146,7 @@ def main():
 
     for sym in symbol_ids:
         if sym in blocklist:
+            blocklisted_count += 1
             continue
         try:
             quotes = provider.fetch_quotes([sym])
@@ -206,7 +215,7 @@ def main():
             allowed_exchanges
         )
         if not filter_result:
-            log_progress("Skipped symbol during filtering", {"symbol": sym, "reason": skip_reason, "record": record})
+            log_progress("Skipped symbol during filtering", {"symbol": sym, "reason": skip_reason})
         if filter_result:
             partial_records.append(record)
             enriched_count += 1
@@ -224,6 +233,8 @@ def main():
         "enriched_count": enriched_count,
         "blocklisted": blocklisted_count,
         "skipped_missing_financials": skipped_missing_financials,
+        "unfiltered_count": len(unfiltered_records),
+        "partial_count": len(partial_records),
         "partial_path": PARTIAL_PATH,
         "unfiltered_path": UNFILTERED_PATH
     })

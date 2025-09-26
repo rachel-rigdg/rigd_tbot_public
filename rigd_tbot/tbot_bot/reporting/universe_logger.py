@@ -6,10 +6,12 @@
 import logging
 import sys
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional, Dict, Any
 
-def get_universe_log_path():
+def get_universe_log_path() -> str:
     """
     Resolves log file path for universe operations.
     Ensures output directory exists.
@@ -26,13 +28,58 @@ class UTCFormatter(logging.Formatter):
     """
     converter = lambda *args: datetime.now(tz=timezone.utc).timetuple()
     def formatTime(self, record, datefmt=None):
-        dt = datetime.utcfromtimestamp(record.created).replace(tzinfo=timezone.utc)
+        dt = datetime.utcfromtimestamp(record.created).replace(tz=timezone.utc)
         return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-def get_universe_logger():
+class JSONAuditFileHandler(logging.Handler):
+    """
+    Append-only JSONL audit handler.
+    Each record is a single JSON object per line with fields:
+      ts, level, event, details
+    Enforces append-only by opening with O_APPEND on each emit.
+    """
+    def __init__(self, log_path: str):
+        super().__init__(level=logging.INFO)
+        self.log_path = log_path
+        # Ensure directory exists
+        Path(self.log_path).parent.mkdir(parents=True, exist_ok=True)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            ts = datetime.utcfromtimestamp(record.created).replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            # Message convention: "EVENT | {json details}" or just "EVENT"
+            event = record.getMessage()
+            details: Optional[Dict[str, Any]] = None
+            # If message contains a JSON tail after ' | ', try to parse it
+            if " | " in event:
+                evt, tail = event.split(" | ", 1)
+                event = evt
+                try:
+                    details = json.loads(tail)
+                except Exception:
+                    details = {"raw": tail}
+            audit = {
+                "ts": ts,
+                "level": record.levelname.lower(),
+                "event": event,
+                "details": details,
+            }
+            line = json.dumps(audit, ensure_ascii=False, separators=(",", ":")) + "\n"
+            # Append-only write with fsync
+            fd = os.open(self.log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            try:
+                os.write(fd, line.encode("utf-8"))
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except Exception:
+            # Never raise from logging
+            self.handleError(record)
+
+def get_universe_logger() -> logging.Logger:
     """
     Initializes and returns a singleton logger instance for universe operations.
-    Logs to file and console with UTC timestamps and audit-level info.
+    Logs to file (JSONL append-only) and console (human-readable) with UTC timestamps.
     Prevents duplicate handlers.
     """
     log_path = get_universe_log_path()
@@ -41,13 +88,14 @@ def get_universe_logger():
         return logger
 
     logger.setLevel(logging.INFO)
+    logger.propagate = False
     logger.handlers = []
 
-    fh = logging.FileHandler(log_path)
-    fh.setLevel(logging.INFO)
-    fh.setFormatter(UTCFormatter("[%(asctime)s][%(levelname)s] %(message)s"))
-    logger.addHandler(fh)
+    # Append-only JSON audit file
+    json_handler = JSONAuditFileHandler(log_path)
+    logger.addHandler(json_handler)
 
+    # Human-readable console
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     ch.setFormatter(UTCFormatter("[%(asctime)s][%(levelname)s] %(message)s"))
@@ -69,10 +117,11 @@ def log_universe_event(event: str, details: dict = None, level: str = "info"):
         try:
             msg += " | " + json.dumps(details, default=str, ensure_ascii=False)
         except Exception as e:
-            msg += f" | [Failed to serialize details: {e}]"
-    if level == "error":
+            msg += f" | " + json.dumps({"_serialize_error": str(e)}, ensure_ascii=False)
+    lvl = (level or "info").lower()
+    if lvl == "error":
         logger.error(msg)
-    elif level == "warning":
+    elif lvl == "warning":
         logger.warning(msg)
     else:
         logger.info(msg)
