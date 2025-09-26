@@ -12,7 +12,8 @@ from tbot_bot.support.path_resolver import (
     resolve_universe_cache_path,
     resolve_universe_partial_path,
     resolve_universe_unfiltered_path,
-    resolve_screener_blocklist_path
+    resolve_screener_blocklist_path,
+    get_bot_identity as _get_bot_identity,  # <<< ADDED (identity-aware defaults)
 )
 from tbot_bot.support.secrets_manager import (
     load_screener_credentials,
@@ -31,6 +32,20 @@ BLOCKLIST_PATH = resolve_screener_blocklist_path()
 
 class UniverseCacheError(Exception):
     pass
+
+# <<< ADDED: ensure we default to the active bot identity when none is provided
+def _with_identity(bot_identity: Optional[str]) -> Optional[str]:
+    """
+    Use the provided bot_identity if given; otherwise fall back to the
+    currently active bot identity from path_resolver. This keeps readers/writers
+    aligned to the same identity-specific universe files.
+    """
+    try:
+        return bot_identity or _get_bot_identity()
+    except Exception:
+        return bot_identity
+# >>>
+
 
 def atomic_append_json(path: str, obj: dict):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -175,6 +190,7 @@ def utc_now() -> datetime:
 def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
     if not screener_creds_exist():
         raise UniverseCacheError("Screener credentials not configured. Please configure screener credentials in the UI before running screener operations.")
+    bot_identity = _with_identity(bot_identity)  # <<< ADDED
     path = resolve_universe_cache_path(bot_identity)
     if not os.path.exists(path):
         LOG.error(f"[screener_utils] Universe cache missing at path: {path}")
@@ -220,6 +236,7 @@ def load_unfiltered_cache() -> List[Dict]:
         return []
 
 def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None) -> None:
+    bot_identity = _with_identity(bot_identity)  # <<< ADDED
     path = resolve_universe_cache_path(bot_identity)
     tmp_path = f"{path}.tmp"
     try:
@@ -248,6 +265,7 @@ def safe_load_universe_cache(bot_identity: Optional[str] = None) -> Optional[Lis
         return load_universe_cache(bot_identity)
     except UniverseCacheError as e:
         msg = str(e)
+        bot_identity = _with_identity(bot_identity)  # <<< ADDED
         path = resolve_universe_cache_path(bot_identity)
         # Treat parse/shape/placeholder issues as corruption → quarantine
         if any(key in msg for key in (
@@ -295,6 +313,7 @@ def is_cache_stale(bot_identity: Optional[str] = None) -> bool:
         return True
 
 def get_cache_build_time(bot_identity: Optional[str] = None) -> Optional[datetime]:
+    bot_identity = _with_identity(bot_identity)  # <<< ADDED
     path = resolve_universe_cache_path(bot_identity)
     if not os.path.exists(path):
         return None
