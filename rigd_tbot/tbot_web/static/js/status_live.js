@@ -56,7 +56,10 @@ document.addEventListener("DOMContentLoaded", function () {
         test_mode_banner: "",
         universe_size: null,
         universe_warning: "",
-        screener_provider: { name: "NONE", enabled: false }
+        screener_provider: { name: "NONE", enabled: false },
+
+        // clocks
+        market_tz: "America/New_York"
     };
 
     let lastData = null;
@@ -79,6 +82,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const status = payload.status ? payload.status : payload;
         const schedule = payload.schedule || null;
         const supervisor = payload.supervisor || {};
+        const market_tz = payload.market_tz || status.market_tz || DEFAULTS.market_tz;
 
         // Merge with DEFAULTS, keeping nested merges safe
         const merged = {
@@ -92,7 +96,8 @@ document.addEventListener("DOMContentLoaded", function () {
             supervisor: {
                 ...DEFAULTS.supervisor,
                 ...supervisor
-            }
+            },
+            market_tz
         };
 
         // If supervisor.scheduled is unknown, infer from presence of schedule for today (UTC)
@@ -173,9 +178,19 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function updateClocks(d) {
+        const utcNow = new Date().toLocaleString(undefined, { timeZone: 'UTC' });
+        const marketTz = d.market_tz || DEFAULTS.market_tz;
+        const marketNow = new Date().toLocaleString(undefined, { timeZone: marketTz });
+        const localNow = new Date().toLocaleString();
+
+        setText('clock-utc', utcNow);
+        setText('clock-market', marketNow);
+        setText('clock-local', localNow);
+    }
+
     function updateUI(payload) {
         const d = normalizePayload(payload);
-        const grids = document.querySelectorAll('.status-grid');
 
         // --- Supervisor banners (new) ---
         updateSupervisorBanners(d);
@@ -183,11 +198,15 @@ document.addEventListener("DOMContentLoaded", function () {
         // --- Clarity badges (new) ---
         updateClarityBadges(d);
 
-        // --- Primary status grid ---
-        if (grids[0]) {
+        // --- Clock bar (new) ---
+        updateClocks(d);
+
+        // --- Primary status grid (ID-based) ---
+        const runtimeGrid = document.getElementById('grid-runtime');
+        if (runtimeGrid && runtimeGrid.children && runtimeGrid.children.length >= 10) {
             setSafe(
-                grids[0].children[0],
-                `<strong>Bot State:</strong> ${
+                runtimeGrid.children[0],
+                `<strong>Running State:</strong> ${
                     d.state === "running"
                         ? `<span style="color:green;font-weight:bold;">RUNNING</span>`
                     : d.state === "idle"
@@ -214,34 +233,29 @@ document.addEventListener("DOMContentLoaded", function () {
                 }`
             );
 
-            setSafe(grids[0].children[1], `<strong>Timestamp:</strong> ${d.timestamp || "—"}`);
-            setSafe(grids[0].children[2], `<strong>Active Strategy:</strong> ${d.active_strategy || "none"}`);
-            setSafe(grids[0].children[3], `<strong>Trade Count:</strong> ${Number.isFinite(d.trade_count) ? d.trade_count : 0}`);
-            setSafe(grids[0].children[4], `<strong>Win Trades:</strong> ${Number.isFinite(d.win_trades) ? d.win_trades : 0}`);
-            setSafe(grids[0].children[5], `<strong>Loss Trades:</strong> ${Number.isFinite(d.loss_trades) ? d.loss_trades : 0}`);
-            setSafe(grids[0].children[6], `<strong>Win Rate:</strong> ${(Number.isFinite(d.win_rate) ? d.win_rate : 0)}%`);
-            setSafe(grids[0].children[7], `<strong>PnL:</strong> ${Number.isFinite(d.pnl) ? d.pnl : 0}`);
-            setSafe(grids[0].children[8], `<strong>Error Count:</strong> ${Number.isFinite(d.error_count) ? d.error_count : 0}`);
-            setSafe(grids[0].children[9], `<strong>Version:</strong> ${d.version || "n/a"}`);
+            setSafe(runtimeGrid.children[1], `<strong>Timestamp:</strong> ${d.timestamp || "—"}`);
+            setSafe(runtimeGrid.children[2], `<strong>Active Strategy:</strong> ${d.active_strategy || "none"}`);
+            setSafe(runtimeGrid.children[3], `<strong>Trade Count:</strong> ${Number.isFinite(d.trade_count) ? d.trade_count : 0}`);
+            setSafe(runtimeGrid.children[4], `<strong>Win Trades:</strong> ${Number.isFinite(d.win_trades) ? d.win_trades : 0}`);
+            setSafe(runtimeGrid.children[5], `<strong>Loss Trades:</strong> ${Number.isFinite(d.loss_trades) ? d.loss_trades : 0}`);
+            setSafe(runtimeGrid.children[6], `<strong>Win Rate:</strong> ${(Number.isFinite(d.win_rate) ? d.win_rate : 0)}%`);
+            setSafe(runtimeGrid.children[7], `<strong>PnL:</strong> ${Number.isFinite(d.pnl) ? d.pnl : 0}`);
+            setSafe(runtimeGrid.children[8], `<strong>Error Count:</strong> ${Number.isFinite(d.error_count) ? d.error_count : 0}`);
+            setSafe(runtimeGrid.children[9], `<strong>Version:</strong> ${d.version || "n/a"}`);
         }
 
-        // --- Strategy toggles grid ---
-        if (grids[1]) {
-            const es = d.enabled_strategies || DEFAULTS.enabled_strategies;
-            setSafe(grids[1].children[0], `<strong>Open:</strong> ${String(es.open)}`);
-            setSafe(grids[1].children[1], `<strong>Mid:</strong> ${String(es.mid)}`);
-            setSafe(grids[1].children[2], `<strong>Close:</strong> ${String(es.close)}`);
+        // --- Risk controls grid (ID-based) ---
+        const riskGrid = document.getElementById('grid-risk');
+        if (riskGrid && riskGrid.children && riskGrid.children.length >= 2) {
+            setSafe(riskGrid.children[0], `<strong>Max Risk per Trade:</strong> ${Number.isFinite(d.max_risk_per_trade) ? d.max_risk_per_trade : 0}`);
+            setSafe(riskGrid.children[1], `<strong>Daily Loss Limit:</strong> ${Number.isFinite(d.daily_loss_limit) ? d.daily_loss_limit : 0}`);
         }
 
-        // --- Risk controls grid ---
-        if (grids[2]) {
-            setSafe(grids[2].children[0], `<strong>Max Risk per Trade:</strong> ${Number.isFinite(d.max_risk_per_trade) ? d.max_risk_per_trade : 0}`);
-            setSafe(grids[2].children[1], `<strong>Daily Loss Limit:</strong> ${Number.isFinite(d.daily_loss_limit) ? d.daily_loss_limit : 0}`);
-        }
+        // Note: Strategy Toggles grid removed (no updates performed here).
     }
 
-    // Poll every 60s
-    setInterval(pollBotStatus, 60000);
+    // Poll every 30s
+    setInterval(pollBotStatus, 30000);
     // Initial fetch
     pollBotStatus();
 });

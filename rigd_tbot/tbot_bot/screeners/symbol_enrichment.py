@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from tbot_bot.screeners.screener_utils import (
     atomic_append_json, load_blocklist, atomic_append_text
 )
-from tbot_bot.screeners.screener_filter import normalize_symbols, passes_filter, tofloat, normalize_market_cap
+from tbot_bot.screeners.screener_filter import normalize_symbols, filter_symbols, tofloat, normalize_market_cap
 from tbot_bot.support.path_resolver import (
     resolve_universe_partial_path, resolve_universe_cache_path, resolve_screener_blocklist_path,
     resolve_universe_log_path, resolve_universe_unfiltered_path, resolve_universe_raw_path
@@ -136,41 +136,44 @@ def main():
     all_symbols = normalize_symbols(raw_symbols)
     symbol_ids = [s["symbol"] for s in all_symbols if "symbol" in s]
 
+    # Counters
     enriched_count = 0
-    blocklisted_count = 0
+    blocklisted_count = 0        # only pre-existing blocklist hits
+    missed_api_count = 0         # API/quote misses (not blocklisted)
     skipped_missing_financials = 0
 
     # Accumulate into memory and write ONE JSON per file (not NDJSON)
     unfiltered_records = []
-    partial_records = []
 
+    # --- Enrichment phase (no filtering here; centralized filter used later) ---
     for sym in symbol_ids:
         if sym in blocklist:
             blocklisted_count += 1
             continue
         try:
             quotes = provider.fetch_quotes([sym])
-        except Exception:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|fetch_failed|{datetime.utcnow().isoformat()}Z|{name}\n")
-            blocklisted_count += 1
+        except Exception as e:
+            # Do NOT mutate blocklist on API failures; just record
+            missed_api_count += 1
+            log_progress("Quote fetch failed", {"symbol": sym, "provider": name, "error": str(e)})
             continue
 
         if not quotes or not any(q.get("symbol", "") == sym for q in quotes):
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_data_from_api|{datetime.utcnow().isoformat()}Z|{name}\n")
-            blocklisted_count += 1
+            missed_api_count += 1
+            log_progress("No data from API", {"symbol": sym, "provider": name})
             continue
 
         quote_map = {q["symbol"]: q for q in quotes if "symbol" in q}
         s = next((x for x in all_symbols if x.get("symbol") == sym), None)
         if not s:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_source|{datetime.utcnow().isoformat()}Z|{name}\n")
-            blocklisted_count += 1
+            missed_api_count += 1
+            log_progress("No source record for symbol after normalization", {"symbol": sym})
             continue
 
         q = quote_map.get(sym)
         if not q:
-            atomic_append_text(BLOCKLIST_PATH, f"{sym}|no_quote|{datetime.utcnow().isoformat()}Z|{name}\n")
-            blocklisted_count += 1
+            missed_api_count += 1
+            log_progress("No quote found in provider response", {"symbol": sym})
             continue
 
         # Only use previous close (c) and previous close volume if available; never real-time
@@ -182,16 +185,18 @@ def main():
         cap_val = tofloat(cap_raw)
         cap_norm = normalize_market_cap(cap_val) if cap_val is not None else None
 
-        # Log if values could not be parsed
+        # Skip record if values could not be parsed (do NOT add to blocklist)
         if price is None or cap_norm is None or price <= 0 or cap_norm <= 0:
-            atomic_append_text(
-                BLOCKLIST_PATH,
-                f"{sym}|missing_financials|"
-                f"{datetime.utcnow().isoformat()}Z|{name}"
-                f"|raw_price={q.get('c')},{q.get('pc')},{q.get('close')},{q.get('lastClose')},{q.get('price')}"
-                f"|raw_cap={q.get('marketCap')},{q.get('market_cap')}\n"
-            )
             skipped_missing_financials += 1
+            log_progress(
+                "Missing/invalid financials during enrichment",
+                {
+                    "symbol": sym,
+                    "provider": name,
+                    "raw_price": [q.get('c'), q.get('pc'), q.get('close'), q.get('lastClose'), q.get('price')],
+                    "raw_cap": [q.get('marketCap'), q.get('market_cap')],
+                },
+            )
             continue
 
         record = dict(s)
@@ -203,25 +208,20 @@ def main():
             if k not in record:
                 record[k] = q[k]
 
-        # Accumulate (do not append line-by-line NDJSON)
         unfiltered_records.append(record)
 
-        filter_result, skip_reason = passes_filter(
-            record,
-            min_price,
-            max_price,
-            min_cap,
-            max_cap,
-            allowed_exchanges
-        )
-        if not filter_result:
-            log_progress("Skipped symbol during filtering", {"symbol": sym, "reason": skip_reason})
-        if filter_result:
-            partial_records.append(record)
-            enriched_count += 1
-
-        if enriched_count >= max_size:
-            break
+    # --- Centralized filtering step (single pass) ---
+    partial_records = filter_symbols(
+        unfiltered_records,
+        min_price,
+        max_price,
+        min_cap,
+        max_cap,
+        allowed_exchanges=allowed_exchanges,
+        max_size=max_size,
+        broker_obj=None,
+    )
+    enriched_count = len(partial_records)
 
     # Write a SINGLE JSON array per file (compatible with orchestrator reader)
     _atomic_write_json(UNFILTERED_PATH, unfiltered_records)
@@ -232,6 +232,7 @@ def main():
     log_progress("Enrichment complete", {
         "enriched_count": enriched_count,
         "blocklisted": blocklisted_count,
+        "missed_api": missed_api_count,
         "skipped_missing_financials": skipped_missing_financials,
         "unfiltered_count": len(unfiltered_records),
         "partial_count": len(partial_records),

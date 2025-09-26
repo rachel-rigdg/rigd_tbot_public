@@ -75,19 +75,30 @@
             {% if status.error %}
                 <p class="error">{{ status.error }}</p>
             {% else %}
+                <!-- ======================== NEW: CLOCK BAR ======================== -->
+                <div class="clock-bar" style="display:flex;gap:16px;align-items:center;margin:6px 0 2px 0;padding:6px 10px;border:1px solid #e2e2e2;border-radius:6px;background:#fafafa;">
+                    <div><strong>UTC:</strong> <span id="clock-utc">—</span></div>
+                    <div><strong>Market (ET):</strong> <span id="clock-market">—</span></div>
+                    <div><strong>Local:</strong> <span id="clock-local">—</span></div>
+                </div>
+
                 <!-- Daily one-shot supervisor schedule (from logs/schedule.json if present) -->
                 <hr>
                 <h2>Supervisor Schedule (UTC)</h2>
                 <p style="color:#666;margin-top:-6px;">Times below are in UTC and generated once per day by the supervisor.</p>
 
                 {% if schedule %}
+                    {% set jobs = status.jobs if status and status.jobs is defined else {} %}
+                    {% set hm_obj = jobs.holdings_manager if jobs and jobs.holdings_manager is defined else None %}
                     <!-- NOTE: class changed from 'status-grid' to 'schedule-grid' so JS status updater doesn't target this block -->
                     <div class="schedule-grid">
                         <div><strong>Trading Date:</strong> {{ schedule.trading_date }}</div>
                         <div><strong>Created:</strong> {{ schedule.created_at_utc }}</div>
+                        <!-- NEW: Holdings Launch (UTC) surfaced from jobs.holdings_manager -->
+                        <div><strong>Holdings (Launched UTC):</strong> {{ hm_obj.last_run_utc if hm_obj and hm_obj.last_run_utc else "—" }}</div>
                         <div><strong>Open:</strong> {{ schedule.open_utc }}</div>
 
-                        {# NEW: holdings after open (fallback to legacy holdings_utc) #}
+                        {# Holdings after open (fallback to legacy holdings_utc) #}
                         {% set hold_open = schedule.holdings_open_utc if schedule.holdings_open_utc else schedule.holdings_utc %}
                         {% set hold_open_min = schedule.holdings_after_open_min %}
                         <div>
@@ -100,7 +111,7 @@
 
                         <div><strong>Mid:</strong> {{ schedule.mid_utc }}</div>
 
-                        {# NEW: holdings after mid #}
+                        {# Holdings after mid #}
                         {% set hold_mid = schedule.holdings_mid_utc %}
                         {% set hold_mid_min = schedule.holdings_after_mid_min %}
                         <div>
@@ -123,7 +134,7 @@
                     <p><strong>Next run:</strong> tomorrow <code>00:01 UTC</code> (timer)</p>
                 {% endif %}
 
-                <!-- ======================== NEW: Overview (Balances + Daily P/L) ======================== -->
+                <!-- ======================== Overview (Balances + Daily P/L) ======================== -->
                 <hr>
                 <h2>Overview</h2>
                 {% set bal = status.account_balances if status and status.account_balances is defined else None %}
@@ -141,20 +152,9 @@
                     <div><strong>Balances As Of (UTC):</strong> {{ bal.as_of_utc if bal and bal.as_of_utc else "—" }}</div>
                 </div>
 
-                <!-- ======================== NEW: Strategy States Chips ======================== -->
+                <!-- ======================== RUNTIME GRID ======================== -->
                 <hr>
-                <h2>Strategy States</h2>
-                {% set ss = status.strategy_states if status and status.strategy_states is defined else {} %}
-                <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    {% for label in ["open","mid","close"] %}
-                        {% set st = ss[label].state if ss and ss[label] is defined else "unknown" %}
-                        <span class="chip {{ st|lower }}">{{ label|capitalize }}: {{ st|capitalize }}</span>
-                    {% endfor %}
-                </div>
-
-                <hr>
-
-                <div class="status-grid">
+                <div class="status-grid" id="grid-runtime">
                     <div><strong>Running State:</strong> 
                         <span id="status-running-state">
                         {% if status.state == "running" %}
@@ -197,18 +197,11 @@
                     <div><strong>Version:</strong> <span id="status-version">{{ status.version }}</span></div>
                 </div>
 
-                <hr>
-
-                <h2>Strategy Toggles</h2>
-                <div class="status-grid">
-                    <div><strong>Open:</strong> <span id="status-strat-open">{{ status.enabled_strategies.open }}</span></div>
-                    <div><strong>Mid:</strong> <span id="status-strat-mid">{{ status.enabled_strategies.mid }}</span></div>
-                    <div><strong>Close:</strong> <span id="status-strat-close">{{ status.enabled_strategies.close }}</span></div>
-                </div>
-
-                <!-- ======================== NEW: Strategy Detail Cards ======================== -->
-                <hr>
+                <!-- ======================== CONSOLIDATED STRATEGY DETAILS ======================== -->
+                {% set ss = status.strategy_states if status and status.strategy_states is defined else {} %}
                 {% set slr = status.strategy_last_run if status and status.strategy_last_run is defined else {} %}
+                {% set enabled_map = status.enabled_strategies if status and status.enabled_strategies is defined else {} %}
+                <hr>
                 <h2>Strategy Details</h2>
                 <div class="cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
                     {% for label in ["open","mid","close"] %}
@@ -221,6 +214,7 @@
                                 <span class="chip {{ state_txt }}">{{ state_txt|capitalize }}</span>
                             </div>
                             <div style="font-size:0.95em;color:#333;margin-bottom:8px;">
+                                <div><strong>Enabled:</strong> {{ enabled_map[label] if enabled_map and enabled_map[label] is defined else "—" }}</div>
                                 {% if label == "open" %}
                                     {% set next_sched = schedule.open_utc if schedule else None %}
                                 {% elif label == "mid" %}
@@ -267,28 +261,28 @@
                     {% endfor %}
                 </div>
 
-                <!-- ======================== NEW: Jobs Row ======================== -->
+                <!-- ======================== JOBS ======================== -->
                 <hr>
                 <h2>Jobs</h2>
-                {% set jobs = status.jobs if status and status.jobs is defined else {} %}
+                {% set jobs2 = status.jobs if status and status.jobs is defined else {} %}
                 <div class="status-grid">
-                    {% set hm = jobs.holdings_manager if jobs and jobs.holdings_manager is defined else {} %}
-                    <div><strong>Holdings Manager:</strong> {{ hm.last_run_utc if hm and hm.last_run_utc else "—" }} <span style="color:#666;">({{ hm.status if hm and hm.status else "—" }})</span></div>
-                    {% set ur = jobs.universe_rebuild if jobs and jobs.universe_rebuild is defined else {} %}
+                    {% set hm2 = jobs2.holdings_manager if jobs2 and jobs2.holdings_manager is defined else {} %}
+                    <div><strong>Holdings Manager:</strong> {{ hm2.last_run_utc if hm2 and hm2.last_run_utc else "—" }} <span style="color:#666;">({{ hm2.status if hm2 and hm2.status else "—" }})</span></div>
+                    {% set ur = jobs2.universe_rebuild if jobs2 and jobs2.universe_rebuild is defined else {} %}
                     <div><strong>Universe Rebuild:</strong> {{ ur.last_run_utc if ur and ur.last_run_utc else "—" }} <span style="color:#666;">({{ ur.status if ur and ur.status else "—" }})</span></div>
                 </div>
 
+                <!-- ======================== RISK CONTROLS ======================== -->
                 <hr>
-
                 <h2>Risk Controls</h2>
                 {% set rc = status.risk_controls if status and status.risk_controls is defined else {} %}
-                <div class="status-grid">
+                <div class="status-grid" id="grid-risk">
                     <div><strong>Max Risk per Trade:</strong> <span id="status-max-risk">{{ rc.max_risk_per_trade if rc and rc.max_risk_per_trade is not none else "—" }}</span></div>
                     <div><strong>Daily Loss Limit:</strong> <span id="status-daily-loss">{{ rc.daily_loss_limit if rc and rc.daily_loss_limit is not none else "—" }}</span></div>
                 </div>
 
+                <!-- ======================== CANDIDATE/ELIGIBILITY TABLE ======================== -->
                 <hr>
-
                 <h2>Candidate Selection & Fallback Status</h2>
                 {% if candidate_status %}
                     <table class="status-table">

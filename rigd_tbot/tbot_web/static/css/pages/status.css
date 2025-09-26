@@ -9,7 +9,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1em 2em;
-    margin-bottom: 1em;
+    margin-bottom: 1.25em; /* tidy spacing after section removals */
 }
 @media (max-width: 700px) {
     .status-grid {
@@ -38,6 +38,23 @@
     .schedule-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* ---- Clock bar (inline, subtle, monospace digits) ---- */
+.clock-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 10px;
+    margin: 6px 0 2px 0;
+    border: 1px solid #e2e2e2;
+    border-radius: 6px;
+    background: #fafafa;
+}
+.clock-bar span {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 /* ---- Chips for strategy states ---- */
@@ -88,6 +105,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 14px;
+    margin-bottom: 1.25em; /* tidy spacing after section removals */
 }
 .card {
     background: #fff;
@@ -118,4 +136,5 @@
 /* ---- Utility ---- */
 .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
 }

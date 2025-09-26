@@ -150,6 +150,23 @@ def _run(cmd: str, phase: str) -> int:
 def _lock_path(trading_date: str) -> Path:
     return _out_path("locks", f"dispatcher_{trading_date}.lock")
 
+def _stamp_holdings_launch(session_label: str):
+    """
+    Append a launch stamp for holdings phases to stamps/holdings_launch_last.txt
+    Format: "<UTC_ISO> Launched <session_label>"
+    """
+    try:
+        from tbot_bot.support.path_resolver import get_stamp_path
+        stamp_path = Path(get_stamp_path("holdings_launch_last.txt"))
+        stamp_path.parent.mkdir(parents=True, exist_ok=True)
+        ts = _iso()
+        with open(stamp_path, "a", encoding="utf-8") as f:
+            f.write(f"{ts} Launched {session_label}\n")
+        # Also reflect in status.json immediately
+        _write_status({"holdings_launched_utc": ts, "holdings_session": session_label})
+    except Exception as e:
+        _log(f"WARN cannot write holdings launch stamp ({session_label}): {e}")
+
 def main() -> int:
     try:
         sched = _read_schedule()
@@ -186,6 +203,8 @@ def main() -> int:
     hold_open_dt = _dt(hold_open_str) if hold_open_str else None
     if _should_run_or_skip(hold_open_dt, "HOLDINGS(open)"):
         _write_state("updating")
+        # ---- precise launch stamp (open) ----
+        _stamp_holdings_launch("open")
         rc = _run(f"{shlex.quote(_py())} -m tbot_bot.runtime.holdings_maintenance --session=open", "holdings_open")
         rc_nonzero |= (rc != 0)
 
@@ -202,6 +221,8 @@ def main() -> int:
     hold_mid_dt = _dt(hold_mid_str) if hold_mid_str else None
     if _should_run_or_skip(hold_mid_dt, "HOLDINGS(mid)"):
         _write_state("updating")
+        # ---- precise launch stamp (mid) ----
+        _stamp_holdings_launch("mid")
         rc = _run(f"{shlex.quote(_py())} -m tbot_bot.runtime.holdings_maintenance --session=mid", "holdings_mid")
         rc_nonzero |= (rc != 0)
 

@@ -302,7 +302,7 @@ def _ledger_balances() -> dict:
             "as_of_utc": bal.get("as_of_utc") or None,
             "equity": float(bal.get("equity")) if bal.get("equity") is not None else None,
             "cash": float(bal.get("cash")) if bal.get("cash") is not None else None,
-            "liabilities": float(bal.get("liabilities")) if bal.get("liabilities") is not None else None,
+            "liabilities": float(bal.get("liabilities") if bal.get("liabilities") is not None else 0) if bal.get("liabilities") is not None else None,
             "nav": float(bal.get("nav")) if bal.get("nav") is not None else None,
         }
         return out
@@ -436,6 +436,24 @@ def _resolve_provider_state() -> dict:
         return {"name": "UNKNOWN", "enabled": False}
 
 # ---------------------------
+# Market timezone resolver (read-only; derived from identity/jurisdiction)
+# ---------------------------
+def _market_tz_for_identity(identity: str) -> str:
+    """
+    Resolve a display timezone for the market clock based on {JURISDICTION_CODE} in BOT_IDENTITY.
+    Expected identity format: ENTITY_JURISDICTION_BROKER_BOTID. Defaults to America/New_York for US.
+    """
+    try:
+        parts = (identity or "").split("_")
+        juris = parts[1].upper() if len(parts) >= 2 else ""
+    except Exception:
+        juris = ""
+    if juris == "US":
+        return "America/New_York"
+    # Fallbacks for other jurisdictions can be added as needed
+    return "UTC"
+
+# ---------------------------
 # Enrichment + API payload assembly
 # ---------------------------
 def _enrich_status(base_status: dict) -> dict:
@@ -508,6 +526,8 @@ def _enrich_status(base_status: dict) -> dict:
     # ======== NEW: Contract fields ========
     identity = get_bot_identity() or ""
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Inject market timezone derived from identity/jurisdiction (display-only)
+    enriched["market_tz"] = _market_tz_for_identity(identity)
 
     # Account balances + PnL
     balances = _ledger_balances()
@@ -534,8 +554,9 @@ def _enrich_status(base_status: dict) -> dict:
         "close": _read_strategy_snapshot("close"),
     }
 
-    # Jobs (holdings manager, universe rebuild)
+    # Jobs (holdings launch/manager, universe rebuild)
     jobs = {
+        "holdings_launch": _read_job_stamp("holdings_launch_last.txt"),
         "holdings_manager": _read_job_stamp("holdings_manager_last.txt"),
         "universe_rebuild": _read_job_stamp("universe_rebuild_last.txt"),
     }
