@@ -198,20 +198,20 @@ def universe_rebuild():
         flash("Screener credentials not configured. Please configure screener credentials before building the universe.", "error")
         return redirect(url_for("universe.universe_status"))
     try:
-        current_app.logger.info("Running universe_orchestrator via -m")
-        proc = subprocess.run(
+        current_app.logger.info("Spawning universe_orchestrator in background via -m")
+        proc = subprocess.Popen(
             [sys.executable, "-u", "-m", "tbot_bot.screeners.universe_orchestrator"],
-            capture_output=True,
-            text=True
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
         )
-        current_app.logger.info(f"[universe_rebuild] universe_orchestrator exit={proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
-        if proc.returncode != 0:
-            flash(f"Universe cache rebuild failed: {proc.stderr or proc.stdout}", "error")
-        else:
-            flash("Universe cache rebuild complete.", "success")
+        current_app.logger.info(f"[universe_rebuild] spawned pid={proc.pid}")
+        flash("Universe rebuild started.", "info")
     except Exception as e:
-        flash(f"Universe cache rebuild failed: {e}", "error")
-    return redirect(url_for("universe.universe_status"))
+        current_app.logger.exception("Failed to start universe rebuild")
+        flash(f"Universe cache rebuild failed to start: {e}", "error")
+    # Always redirect immediately; build progress is reflected in log/status
+    return redirect(url_for("universe.universe_status"), code=303)
 
 
 @universe_bp.route("/log")
@@ -298,12 +298,20 @@ def universe_refilter():
         flash("Screener credentials not configured. Please configure screener credentials before filtering the universe.", "error")
         return redirect(url_for("universe.universe_status"))
     try:
-        from tbot_bot.screeners.universe_refilter import main as refilter_main
-        refilter_main()
-        flash("Universe re-filtered (partial and final cache updated).", "success")
+        current_app.logger.info("Spawning universe_refilter in background via -m")
+        proc = subprocess.Popen(
+            [sys.executable, "-u", "-m", "tbot_bot.screeners.universe_refilter"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+        current_app.logger.info(f"[universe_refilter] spawned pid={proc.pid}")
+        flash("Universe re-filter started.", "info")
     except Exception as e:
-        flash(f"Refilter failed: {e}", "error")
-    return redirect(url_for("universe.universe_status"))
+        current_app.logger.exception("Failed to start universe refilter")
+        flash(f"Refilter failed to start: {e}", "error")
+    # Always redirect immediately; progress will be reflected in log/status
+    return redirect(url_for("universe.universe_status"), code=303)
 
 
 @universe_bp.route("/blocklist", methods=["GET", "POST"])

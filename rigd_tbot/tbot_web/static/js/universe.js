@@ -67,7 +67,7 @@ function fetchCounts() {
     fetch("/universe/counts").then(r => r.json()).then(obj => {
         if (document.getElementById("unfiltered-count")) document.getElementById("unfiltered-count").textContent = obj.unfiltered;
         if (document.getElementById("partial-count")) document.getElementById("partial-count").textContent = obj.partial;
-        if (document.getElementById("final-count")) document.getElementById("final-count").textContent = obj.final; // <-- fixed (was obj.filtered)
+        if (document.getElementById("final-count")) document.getElementById("final-count").textContent = (obj.filtered ?? 0);
     });
 }
 
