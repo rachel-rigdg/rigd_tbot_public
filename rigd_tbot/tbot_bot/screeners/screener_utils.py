@@ -187,6 +187,24 @@ def get_realtime_price(symbol: str, timeout: int = 4) -> float:
 def utc_now() -> datetime:
     return datetime.utcnow().replace(tzinfo=timezone.utc)
 
+def _validate_symbol_record(s: dict) -> bool:
+    # minimal schema the rest of the code expects
+    return all(k in s for k in ("symbol", "exchange", "lastClose", "marketCap"))
+
+def _load_ndjson_lines(fp) -> List[Dict]:
+    out = []
+    for line in fp:
+        line = line.strip()
+        if not line:
+            continue
+        obj = json.loads(line)
+        if isinstance(obj, list):
+            # Defensive: if a whole array somehow sneaks onto one "line"
+            out.extend(obj)
+        else:
+            out.append(obj)
+    return out
+
 def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
     if not screener_creds_exist():
         raise UniverseCacheError("Screener credentials not configured. Please configure screener credentials in the UI before running screener operations.")
@@ -196,24 +214,46 @@ def load_universe_cache(bot_identity: Optional[str] = None) -> List[Dict]:
         LOG.error(f"[screener_utils] Universe cache missing at path: {path}")
         raise UniverseCacheError(f"Universe cache file not found: {path}")
 
+    # --- NEW: accept either NDJSON or JSON array ---
     with open(path, "r", encoding="utf-8") as f:
-        symbols = []
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
+        # Peek first non-whitespace char
+        pos = f.tell()
+        head = f.read(256)
+        f.seek(pos)
+        first = next((ch for ch in head if not ch.isspace()), "")
+        if first == "[":
+            # JSON array file
             try:
-                record = json.loads(line)
-                symbols.append(record)
+                symbols = json.load(f)
+            except Exception as e:
+                raise UniverseCacheError(f"Failed to parse universe cache (array): {e}")
+            if not isinstance(symbols, list):
+                raise UniverseCacheError("Universe cache top-level JSON must be a list.")
+        else:
+            # NDJSON
+            try:
+                symbols = _load_ndjson_lines(f)
             except Exception as e:
                 raise UniverseCacheError(f"Failed to parse line in universe cache: {e}")
-    if len(symbols) < 10:
-        raise UniverseCacheError("Universe cache is a placeholder/too small; trigger rebuild.")
+
+    if not isinstance(symbols, list):
+        raise UniverseCacheError("Universe cache did not decode to a list of records.")
+
+    # Validate and filter to dicts
+    cleaned: List[Dict] = []
     for s in symbols:
-        if not all(k in s for k in ("symbol", "exchange", "lastClose", "marketCap")):
-            raise UniverseCacheError(f"Symbol entry missing required fields: {s}")
-    LOG.info(f"[screener_utils] Loaded universe cache with {len(symbols)} symbols from {path}")
-    return symbols
+        if not isinstance(s, dict):
+            continue
+        if _validate_symbol_record(s):
+            cleaned.append(s)
+        else:
+            LOG.warning("[screener_utils] Bad row missing required keys (symbol/exchange/lastClose/marketCap); skipping")
+
+    if len(cleaned) < 10:
+        raise UniverseCacheError("Universe cache is a placeholder/too small; trigger rebuild.")
+
+    LOG.info(f"[screener_utils] Loaded universe cache with {len(cleaned)} symbols from {path}")
+    return cleaned
 
 def load_partial_cache() -> List[Dict]:
     path = resolve_universe_partial_path()
@@ -241,6 +281,7 @@ def save_universe_cache(symbols: List[Dict], bot_identity: Optional[str] = None)
     tmp_path = f"{path}.tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
+            # Always write NDJSON for consistency
             for s in symbols:
                 f.write(json.dumps(s, ensure_ascii=False) + "\n")
             f.flush()
@@ -267,11 +308,13 @@ def safe_load_universe_cache(bot_identity: Optional[str] = None) -> Optional[Lis
         msg = str(e)
         bot_identity = _with_identity(bot_identity)  # <<< ADDED
         path = resolve_universe_cache_path(bot_identity)
-        # Treat parse/shape/placeholder issues as corruption → quarantine
+        # Treat genuinely corrupt/invalid files as corruption → quarantine.
+        # But do NOT quarantine just because it's a JSON array or "too small".
         if any(key in msg for key in (
             "Failed to parse line",
-            "placeholder/too small",
-            "missing required fields",
+            "Failed to parse universe cache (array)",
+            "top-level JSON must be a list",
+            "did not decode to a list",
         )):
             try:
                 if os.path.exists(path):
