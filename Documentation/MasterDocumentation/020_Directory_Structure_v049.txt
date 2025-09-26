@@ -321,12 +321,12 @@ rigd_tbot/
 │   │   │                                           #  - If started after the trigger, runs supervisor immediately for “today,” then schedules next day.
 │   │   │                                           #  - main.py itself does not trade; it only orchestrates UI + supervisor scheduling.
 │   │   ├── ledger_snapshot.py                      # Utility to create on-demand ledger DB snapshots (used by sync/audit)
+│   │   ├── schedule_dispatcher.py                  # Single source of truth for executing the daily schedule produced by tbot_supervisor.
 │   │   ├── start_bot.py                            # CLI helper only. Writes control_start.flag; does NOT launch processes directly.
 │   │   ├── status_bot.py                           # WATCHER. Tracks bot health/state, writes status.json, session logs. Only launched by supervisor.
 │   │   ├── stop_bot.py                             # CLI helper only. Writes control_stop.flag; does NOT launch processes directly.
 │   │   ├── sync_broker_ledger.py                   # WORKER. On-demand or scheduled broker→ledger sync task. Triggered via Web UI or supervisor; never runs persistently.
-│   │   ├── tbot_supervisor.py                      # DAILY ONE-SHOT SUPERVISOR. Executes all phases (open → holdings → mid → close → universe),
-│   │   │                                           #  writes bot_state.txt, logs, and exits. Never a systemd unit, never persistent. Launched only by main.py.
+│   │   ├── tbot_supervisor.py                      # Thin supervisor: computes today's UTC schedule from env_bot (already UTC),
 │   │   └── watchdog_bot.py                         # WATCHER. Connection/process monitor. Launched by supervisor when needed.
 │   │
 │   ├── screeners/			            	# Screener & Symbol Selection: direct provider-API universe build (no txt), atomic per-symbol writes, blocklist-first, quota-efficient, modular providers, resumable
