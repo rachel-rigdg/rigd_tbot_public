@@ -18,6 +18,13 @@ import datetime
 from pathlib import Path
 from typing import Dict, Tuple
 
+# (surgical) strict UTC-time helpers (no DST on UTC)
+from tbot_bot.support.utils_time import (
+    now_utc,
+    fmt_iso_utc,
+    scheduled_run_utc,
+)
+
 # --- Paths & constants ---
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
@@ -33,7 +40,8 @@ STATUS_PATH = _get_output_path("logs", "status.json")
 SCHEDULE_PATH = _get_output_path("logs", "schedule.json")
 
 def _iso_utc_now() -> str:
-    return datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    # absolute UTC, never DST-shifted
+    return fmt_iso_utc(now_utc())
 
 def _write_log(line: str) -> None:
     log_path = _get_output_path("logs", "supervisor.log")
@@ -59,14 +67,6 @@ def _write_bot_state(state: str) -> None:
     (CONTROL_DIR).mkdir(parents=True, exist_ok=True)
     (CONTROL_DIR / "bot_state.txt").write_text(state.strip() + "\n", encoding="utf-8")
 
-def _parse_hhmm_utc(hhmm: str) -> Tuple[int, int]:
-    hh, mm = str(hhmm).strip().split(":")
-    return int(hh), int(mm)
-
-def _today_utc_at(hour: int, minute: int) -> datetime.datetime:
-    d = datetime.datetime.utcnow().date()
-    return datetime.datetime(d.year, d.month, d.day, hour, minute, tzinfo=datetime.timezone.utc)
-
 def _get_times_and_delays():
     from tbot_bot.config import env_bot
     open_utc = env_bot.get_open_time_utc()
@@ -80,17 +80,19 @@ def _get_times_and_delays():
             sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min)
 
 def _compute_schedule() -> Dict:
+    """
+    Build absolute UTC instants for today using UTC HH:MM baselines only.
+    No local/DST math anywhere—UTC is authoritative.
+    """
     (open_hhmm, mid_hhmm, close_hhmm, market_close_hhmm,
      d_open, d_mid, d_univ) = _get_times_and_delays()
 
-    oh, om = _parse_hhmm_utc(open_hhmm)
-    mh, mm = _parse_hhmm_utc(mid_hhmm)
-    ch, cm = _parse_hhmm_utc(close_hhmm)
+    # Absolute UTC datetimes for 'today'
+    open_at = scheduled_run_utc(open_hhmm)
+    mid_at = scheduled_run_utc(mid_hhmm)
+    close_at = scheduled_run_utc(close_hhmm)
 
-    open_at = _today_utc_at(oh, om)
-    mid_at  = _today_utc_at(mh, mm)
-    close_at = _today_utc_at(ch, cm)
-
+    # Offsets are simple UTC minute deltas
     holdings_open_at = open_at + datetime.timedelta(minutes=int(d_open))
     holdings_mid_at  = mid_at  + datetime.timedelta(minutes=int(d_mid))
     universe_at      = close_at + datetime.timedelta(minutes=int(d_univ))
@@ -98,17 +100,17 @@ def _compute_schedule() -> Dict:
     return {
         "trading_date": open_at.date().isoformat(),
         "created_at_utc": _iso_utc_now(),
-        "open_utc": open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "mid_utc": mid_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "close_utc": close_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "market_close_utc_hint": market_close_hhmm,
+        "open_utc": fmt_iso_utc(open_at),
+        "mid_utc": fmt_iso_utc(mid_at),
+        "close_utc": fmt_iso_utc(close_at),
+        "market_close_utc_hint": market_close_hhmm,  # informational only
         "holdings_after_open_min": int(d_open),
-        "holdings_open_utc": holdings_open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "holdings_open_utc": fmt_iso_utc(holdings_open_at),
         "holdings_after_mid_min": int(d_mid),
-        "holdings_mid_utc": holdings_mid_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "holdings_utc": holdings_open_at.strftime("%Y-%m-%dT%H:%M:%SZ"),  # back-compat
+        "holdings_mid_utc": fmt_iso_utc(holdings_mid_at),
+        "holdings_utc": fmt_iso_utc(holdings_open_at),  # back-compat
         "universe_after_close_min": int(d_univ),
-        "universe_utc": universe_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "universe_utc": fmt_iso_utc(universe_at),
     }
 
 def _supervisor_lock(trading_date: str) -> Path:

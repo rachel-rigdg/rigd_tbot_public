@@ -6,6 +6,7 @@ import json
 import glob, os  # (surgical) for test-mode flag scan and universe warn env
 from datetime import datetime, timezone, date
 from pathlib import Path
+from zoneinfo import ZoneInfo  # (surgical) tz label resolution
 
 from flask import Blueprint, render_template, jsonify
 
@@ -32,6 +33,8 @@ from tbot_bot.config.env_bot import (
 from tbot_bot.config.env_bot import get_bot_config  # <-- ensure enabled flags come from encrypted config
 # (surgical) provider state
 from tbot_bot.support.secrets_manager import load_screener_credentials
+# (surgical) clock payload helper (read-only)
+from tbot_bot.support.utils_time import clock_payload as _clock_payload
 
 status_blueprint = Blueprint("status_web", __name__)
 
@@ -436,7 +439,7 @@ def _resolve_provider_state() -> dict:
         return {"name": "UNKNOWN", "enabled": False}
 
 # ---------------------------
-# Market timezone resolver (read-only; derived from identity/jurisdiction)
+# Market timezone label (read-only; derived from zoneinfo)
 # ---------------------------
 def _market_tz_for_identity(identity: str) -> str:
     """
@@ -452,6 +455,21 @@ def _market_tz_for_identity(identity: str) -> str:
         return "America/New_York"
     # Fallbacks for other jurisdictions can be added as needed
     return "UTC"
+
+def _market_tz_label(tz_str: str) -> str:
+    """
+    Return a short label for the market timezone.
+    - For America/New_York, map EST/EDT -> 'ET' (stable display).
+    - Otherwise return the zone's current tzname (e.g., 'GMT', 'CET').
+    """
+    try:
+        now = datetime.now(timezone.utc).astimezone(ZoneInfo(tz_str))
+        abbr = (now.tzname() or "").upper()
+        if tz_str == "America/New_York" and abbr in {"EST", "EDT"}:
+            return "ET"
+        return abbr or "UTC"
+    except Exception:
+        return "UTC"
 
 # ---------------------------
 # Enrichment + API payload assembly
@@ -527,7 +545,14 @@ def _enrich_status(base_status: dict) -> dict:
     identity = get_bot_identity() or ""
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     # Inject market timezone derived from identity/jurisdiction (display-only)
-    enriched["market_tz"] = _market_tz_for_identity(identity)
+    market_tz = _market_tz_for_identity(identity)
+    enriched["market_tz"] = market_tz
+    enriched["market_tz_label"] = _market_tz_label(market_tz)
+    # Optional: server-side clock snapshot to aid clients (read-only)
+    try:
+        enriched["server_clock"] = _clock_payload(market_tz)
+    except Exception:
+        enriched["server_clock"] = {}
 
     # Account balances + PnL
     balances = _ledger_balances()

@@ -65,7 +65,16 @@ def _read_schedule() -> Dict:
         return json.load(f)
 
 def _dt(s: str) -> datetime.datetime:
-    return datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+    """
+    Parse ISO with 'Z' or '+00:00' into an AWARE UTC datetime.
+    No DST adjustments; normalized to timezone.utc.
+    """
+    dt = datetime.datetime.fromisoformat(str(s).strip().replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    else:
+        dt = dt.astimezone(datetime.timezone.utc)
+    return dt
 
 def _sleep_until(ts: datetime.datetime):
     while True:

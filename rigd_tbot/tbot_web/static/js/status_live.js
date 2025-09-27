@@ -178,15 +178,64 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function updateClocks(d) {
-        const utcNow = new Date().toLocaleString(undefined, { timeZone: 'UTC' });
-        const marketTz = d.market_tz || DEFAULTS.market_tz;
-        const marketNow = new Date().toLocaleString(undefined, { timeZone: marketTz });
-        const localNow = new Date().toLocaleString();
+    // ---- Clock formatting helpers ----
+    function _pad2(n) { return String(n).padStart(2, '0'); }
 
-        setText('clock-utc', utcNow);
-        setText('clock-market', marketNow);
-        setText('clock-local', localNow);
+    // "YYYY-MM-DD, HH:MM" in a given IANA tz
+    function fmtYMDHM(dateObj, tz) {
+        const parts = new Intl.DateTimeFormat(undefined, {
+            timeZone: tz,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        }).formatToParts(dateObj);
+        const get = (t) => parts.find(p => p.type === t)?.value;
+        // Many locales output MM/DD/YYYY — assemble explicitly
+        const y = get('year');
+        const m = get('month');
+        const d = get('day');
+        const hh = get('hour');
+        const mm = get('minute');
+        return `${y}-${m}-${d}, ${hh}:${mm}`;
+    }
+
+    // "h:mm A" in a given tz (or local if tz undefined)
+    function fmtHMAm(dateObj, tz) {
+        const parts = new Intl.DateTimeFormat(undefined, {
+            timeZone: tz,
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        }).formatToParts(dateObj);
+        const h = parts.find(p => p.type === 'hour')?.value || '';
+        const m = parts.find(p => p.type === 'minute')?.value || '';
+        let dayPeriod = parts.find(p => p.type === 'dayPeriod')?.value || '';
+        dayPeriod = dayPeriod.toUpperCase();
+        return `${h}:${m} ${dayPeriod}`;
+    }
+
+    function updateClocks(d) {
+        const now = new Date();
+        const marketTz = d.market_tz || DEFAULTS.market_tz;
+
+        // #clock-utc: absolute UTC, no DST adjustment on UTC
+        const utcStr = fmtYMDHM(now, 'UTC');
+        setText('clock-utc', utcStr);
+
+        // #clock-market: "YYYY-MM-DD, HH:MM UTC, h:mm A"
+        // First part: the same instant expressed in UTC (market time converted to UTC)
+        const marketUtcStr = fmtYMDHM(now, 'UTC');
+        const marketLocalStr = fmtHMAm(now, marketTz);
+        setText('clock-market', `${marketUtcStr} UTC, ${marketLocalStr}`);
+
+        // #clock-local: "YYYY-MM-DD, HH:MM UTC, h:mm A"
+        // First part: local-now converted to UTC; Second: pure local
+        const localUtcStr = fmtYMDHM(now, 'UTC');
+        const localLocalStr = fmtHMAm(now, undefined);
+        setText('clock-local', `${localUtcStr} UTC, ${localLocalStr}`);
     }
 
     function updateUI(payload) {

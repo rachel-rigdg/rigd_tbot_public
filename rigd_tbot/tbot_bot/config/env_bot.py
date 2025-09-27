@@ -9,6 +9,9 @@ from cryptography.fernet import Fernet
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# (surgical) strict UTC HH:MM enforcement helpers
+from tbot_bot.support.utils_time import validate_hhmm, local_hhmm_to_utc_hhmm
+
 logger = logging.getLogger(__name__)
 
 # ----------------------------------------------------------------------
@@ -231,25 +234,40 @@ load_env_bot_config = get_bot_config
 # *_LOCAL getters are provided for UI/display; do not use them in scheduling logic.
 # ----------------------------------------------------------------------
 
+def _ensure_utc_hhmm(utc_key: str, local_key: Optional[str] = None) -> str:
+    """
+    Ensure a strict 'HH:MM' UTC string is returned.
+    - If the UTC key contains a valid HH:MM, return it.
+    - Else, if a LOCAL key is provided and valid HH:MM, convert via utils_time.local_hhmm_to_utc_hhmm()
+      using configured TIMEZONE (IANA).
+    - Else, return empty string.
+    """
+    v = load_env_var(utc_key, "")
+    s = str(v or "").strip()
+    if validate_hhmm(s):
+        return s
+    if local_key:
+        local = str(load_env_var(local_key, "") or "").strip()
+        if validate_hhmm(local):
+            tz = str(load_env_var("TIMEZONE", "UTC") or "UTC").strip()
+            return local_hhmm_to_utc_hhmm(local, tz)
+    return ""
+
 def get_open_time_utc() -> str:
-    """Return START_TIME_OPEN as 'HH:MM' (UTC)."""
-    v = load_env_var("START_TIME_OPEN", "")
-    return str(v or "").strip()
+    """Return START_TIME_OPEN as 'HH:MM' (UTC, no DST applied to UTC)."""
+    return _ensure_utc_hhmm("START_TIME_OPEN", "START_TIME_OPEN_LOCAL")
 
 def get_mid_time_utc() -> str:
-    """Return START_TIME_MID as 'HH:MM' (UTC)."""
-    v = load_env_var("START_TIME_MID", "")
-    return str(v or "").strip()
+    """Return START_TIME_MID as 'HH:MM' (UTC, no DST applied to UTC)."""
+    return _ensure_utc_hhmm("START_TIME_MID", "START_TIME_MID_LOCAL")
 
 def get_close_time_utc() -> str:
-    """Return START_TIME_CLOSE as 'HH:MM' (UTC)."""
-    v = load_env_var("START_TIME_CLOSE", "")
-    return str(v or "").strip()
+    """Return START_TIME_CLOSE as 'HH:MM' (UTC, no DST applied to UTC)."""
+    return _ensure_utc_hhmm("START_TIME_CLOSE", "START_TIME_CLOSE_LOCAL")
 
 def get_market_close_utc() -> str:
-    """Return MARKET_CLOSE_UTC as 'HH:MM' (UTC)."""
-    v = load_env_var("MARKET_CLOSE_UTC", "")
-    return str(v or "").strip()
+    """Return MARKET_CLOSE_UTC as 'HH:MM' (UTC, no DST applied to UTC)."""
+    return _ensure_utc_hhmm("MARKET_CLOSE_UTC", "MARKET_CLOSE_LOCAL")
 
 def get_timezone() -> str:
     """

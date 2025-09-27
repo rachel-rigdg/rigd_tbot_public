@@ -78,7 +78,7 @@
                 <!-- ======================== NEW: CLOCK BAR ======================== -->
                 <div class="clock-bar" style="display:flex;gap:16px;align-items:center;margin:6px 0 2px 0;padding:6px 10px;border:1px solid #e2e2e2;border-radius:6px;background:#fafafa;">
                     <div><strong>UTC:</strong> <span id="clock-utc">—</span></div>
-                    <div><strong>Market (ET):</strong> <span id="clock-market">—</span></div>
+                    <div><strong>Market ({{ status.market_tz_label if status and status.market_tz_label is defined and status.market_tz_label else 'ET' }}):</strong> <span id="clock-market">—</span></div>
                     <div><strong>Local:</strong> <span id="clock-local">—</span></div>
                 </div>
 
