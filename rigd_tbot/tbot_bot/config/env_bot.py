@@ -2,15 +2,13 @@
 # summary: Validates and parses .env_bot configuration (encrypted only, never auto-loads at module level).
 # All config access must be explicit and deferred—no module-level loading permitted.
 # NOTE: Holdings-related variables have been moved to the holdings secrets file and are NOT loaded here.
+# IMPORTANT: This layer performs no time conversions. All schedule math happens in runtime/supervisor.
 
 import json
 import logging
 from cryptography.fernet import Fernet
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-# (surgical) strict UTC HH:MM enforcement helpers
-from tbot_bot.support.utils_time import validate_hhmm, local_hhmm_to_utc_hhmm
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +78,7 @@ def _resolve_encrypted_paths() -> (Path, Path, List[Path], List[Path]):
     return enc_path, key_path, tried_enc, tried_key
 
 # ----------------------------------------------------------------------
-# REQUIRED KEYS (unchanged except prior note)
+# REQUIRED KEYS
 # ----------------------------------------------------------------------
 
 REQUIRED_KEYS = [
@@ -229,45 +227,29 @@ def update_env_var(key: str, value: Any) -> None:
 load_env_bot_config = get_bot_config
 
 # ----------------------------------------------------------------------
-# NEW: Explicit getters for schedule values
-# NOTE: RUNTIME MUST USE ONLY THE *_UTC GETTERS BELOW.
-# *_LOCAL getters are provided for UI/display; do not use them in scheduling logic.
+# Explicit getters for schedule values (DUMB READERS — NO CONVERSIONS)
+# RUNTIME/SUPERVISOR must do all time math. These return strings as-is.
 # ----------------------------------------------------------------------
 
-def _ensure_utc_hhmm(utc_key: str, local_key: Optional[str] = None) -> str:
-    """
-    Ensure a strict 'HH:MM' UTC string is returned.
-    - If the UTC key contains a valid HH:MM, return it.
-    - Else, if a LOCAL key is provided and valid HH:MM, convert via utils_time.local_hhmm_to_utc_hhmm()
-      using configured TIMEZONE (IANA).
-    - Else, return empty string.
-    """
-    v = load_env_var(utc_key, "")
-    s = str(v or "").strip()
-    if validate_hhmm(s):
-        return s
-    if local_key:
-        local = str(load_env_var(local_key, "") or "").strip()
-        if validate_hhmm(local):
-            tz = str(load_env_var("TIMEZONE", "UTC") or "UTC").strip()
-            return local_hhmm_to_utc_hhmm(local, tz)
-    return ""
-
 def get_open_time_utc() -> str:
-    """Return START_TIME_OPEN as 'HH:MM' (UTC, no DST applied to UTC)."""
-    return _ensure_utc_hhmm("START_TIME_OPEN", "START_TIME_OPEN_LOCAL")
+    """Return START_TIME_OPEN as a 'HH:MM' string (UTC)."""
+    v = load_env_var("START_TIME_OPEN", "")
+    return str(v or "").strip()
 
 def get_mid_time_utc() -> str:
-    """Return START_TIME_MID as 'HH:MM' (UTC, no DST applied to UTC)."""
-    return _ensure_utc_hhmm("START_TIME_MID", "START_TIME_MID_LOCAL")
+    """Return START_TIME_MID as a 'HH:MM' string (UTC)."""
+    v = load_env_var("START_TIME_MID", "")
+    return str(v or "").strip()
 
 def get_close_time_utc() -> str:
-    """Return START_TIME_CLOSE as 'HH:MM' (UTC, no DST applied to UTC)."""
-    return _ensure_utc_hhmm("START_TIME_CLOSE", "START_TIME_CLOSE_LOCAL")
+    """Return START_TIME_CLOSE as a 'HH:MM' string (UTC)."""
+    v = load_env_var("START_TIME_CLOSE", "")
+    return str(v or "").strip()
 
 def get_market_close_utc() -> str:
-    """Return MARKET_CLOSE_UTC as 'HH:MM' (UTC, no DST applied to UTC)."""
-    return _ensure_utc_hhmm("MARKET_CLOSE_UTC", "MARKET_CLOSE_LOCAL")
+    """Return MARKET_CLOSE_UTC as a 'HH:MM' string (UTC)."""
+    v = load_env_var("MARKET_CLOSE_UTC", "")
+    return str(v or "").strip()
 
 def get_timezone() -> str:
     """
@@ -280,22 +262,22 @@ def get_timezone() -> str:
 # --- UI-only LOCAL getters (for display/forms). DO NOT use in runtime scheduling. ---
 
 def get_open_time_local() -> str:
-    """UI-only: START_TIME_OPEN_LOCAL as 'HH:MM' in configured TIMEZONE."""
+    """UI-only: START_TIME_OPEN_LOCAL as 'HH:MM' (configured TIMEZONE)."""
     v = load_env_var("START_TIME_OPEN_LOCAL", "")
     return str(v or "").strip()
 
 def get_mid_time_local() -> str:
-    """UI-only: START_TIME_MID_LOCAL as 'HH:MM' in configured TIMEZONE."""
+    """UI-only: START_TIME_MID_LOCAL as 'HH:MM' (configured TIMEZONE)."""
     v = load_env_var("START_TIME_MID_LOCAL", "")
     return str(v or "").strip()
 
 def get_close_time_local() -> str:
-    """UI-only: START_TIME_CLOSE_LOCAL as 'HH:MM' in configured TIMEZONE."""
+    """UI-only: START_TIME_CLOSE_LOCAL as 'HH:MM' (configured TIMEZONE)."""
     v = load_env_var("START_TIME_CLOSE_LOCAL", "")
     return str(v or "").strip()
 
 # ----------------------------------------------------------------------
-# NEW: Supervisor delay/after-close getters (numeric with sane defaults)
+# Supervisor delay/after-close getters (numeric with sane defaults)
 # ----------------------------------------------------------------------
 
 def get_sup_open_delay_min() -> int:

@@ -226,13 +226,13 @@ document.addEventListener("DOMContentLoaded", function () {
         setText('clock-utc', utcStr);
 
         // #clock-market: "YYYY-MM-DD, HH:MM UTC, h:mm A"
-        // First part: the same instant expressed in UTC (market time converted to UTC)
+        // First part: market time expressed in UTC (same instant formatted in UTC)
         const marketUtcStr = fmtYMDHM(now, 'UTC');
         const marketLocalStr = fmtHMAm(now, marketTz);
         setText('clock-market', `${marketUtcStr} UTC, ${marketLocalStr}`);
 
         // #clock-local: "YYYY-MM-DD, HH:MM UTC, h:mm A"
-        // First part: local-now converted to UTC; Second: pure local
+        // First part: your local machine time expressed in UTC; Second: pure local wall time
         const localUtcStr = fmtYMDHM(now, 'UTC');
         const localLocalStr = fmtHMAm(now, undefined);
         setText('clock-local', `${localUtcStr} UTC, ${localLocalStr}`);

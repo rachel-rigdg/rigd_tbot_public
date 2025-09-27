@@ -1,24 +1,26 @@
 # tbot_bot/support/utils_time.py
-# Time utilities for UTC, local timezone, timestamps, and scheduling (centralized, config-driven)
+# Time utilities for UTC, local timezone, timestamps, and scheduling (centralized)
+# Canonicalized on zoneinfo; no manual DST math is ever applied to UTC.
 
 from datetime import datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+import os
 import re
 from zoneinfo import ZoneInfo
-
-from tbot_bot.config.env_bot import get_bot_config
 
 # -----------------------------
 # HH:MM validator (strict 24h)
 # -----------------------------
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
+
 def validate_hhmm(timestr: str) -> bool:
     """Return True if timestr is 'HH:MM' 24-hour format."""
     if timestr is None:
         return False
     return bool(_HHMM_RE.match(str(timestr).strip()))
+
 
 # -----------------------------
 # Core "now" and timezone helpers
@@ -29,29 +31,42 @@ def _safe_zoneinfo(name: Optional[str]) -> ZoneInfo:
     except Exception:
         return ZoneInfo("UTC")
 
+
 def get_timezone() -> ZoneInfo:
     """
-    Returns the ZoneInfo timezone object from config['TIMEZONE'].
-    Defaults to UTC if missing or invalid.
+    Return the ZoneInfo timezone object from configuration, safely and lazily.
+    - Tries env_bot.load_env_var("TIMEZONE", "UTC") (lazy import to avoid circular deps)
+    - Falls back to OS env TBOT_TIMEZONE
+    - Defaults to UTC
     """
-    config = get_bot_config() or {}
-    tz_name = (config.get("TIMEZONE") or "UTC").strip()
+    tz_name = None
+    try:
+        # Lazy import to avoid circular dependency on module import
+        from tbot_bot.config.env_bot import load_env_var  # type: ignore
+        tz_name = str(load_env_var("TIMEZONE", "UTC") or "UTC").strip()
+    except Exception:
+        tz_name = os.environ.get("TBOT_TIMEZONE", "UTC")
     return _safe_zoneinfo(tz_name)
 
+
 def now_utc() -> datetime:
-    """Return the current UTC datetime (aware, no DST applied)."""
+    """Return the current UTC datetime (aware, tzinfo=UTC; no DST on UTC)."""
     return datetime.now(timezone.utc)
 
-# Back-compat alias if older code imports utc_now()
+
+# Back-compat alias for any older imports
 utc_now = now_utc
 
+
 def now_local() -> datetime:
-    """Return the current local datetime (aware), per config TIMEZONE."""
+    """Return the current local datetime (aware), per configured TIMEZONE."""
     return now_utc().astimezone(get_timezone())
+
 
 def time_local() -> dt_time:
     """Return the current local clock time as a dt_time (for window comparisons)."""
     return now_local().time()
+
 
 def to_local(dt_obj: datetime) -> datetime:
     """
@@ -63,77 +78,84 @@ def to_local(dt_obj: datetime) -> datetime:
         dt_obj = dt_obj.replace(tzinfo=timezone.utc)
     return dt_obj.astimezone(tz)
 
+
 def to_utc(dt_obj: datetime) -> datetime:
     """
     Convert a datetime to UTC.
     If dt_obj is naive, assume it is in the configured local timezone, then convert to UTC.
-    No DST math applied to UTC itself; conversion is tz-aware via ZoneInfo.
+    All math is tz-aware via ZoneInfo; no manual DST adjustments.
     """
     if dt_obj.tzinfo is None:
         dt_obj = dt_obj.replace(tzinfo=get_timezone())
     return dt_obj.astimezone(timezone.utc)
 
+
 # -----------------------------
-# New normalized helpers (explicit API)
+# Normalized helpers (explicit API)
 # -----------------------------
 def fmt_iso_utc(dt_obj: datetime) -> str:
     """Format a datetime as ISO-8601 UTC string with trailing 'Z'."""
     dt_u = to_utc(dt_obj)
     return dt_u.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
-def to_tz(dt_obj: datetime, tz_str: str) -> datetime:
+
+def to_tz(dt_utc: datetime, tz_str: str) -> datetime:
     """
     Convert an aware (or naive=UTC) datetime to a specific IANA timezone.
-    DST-handling is inherent in ZoneInfo; no manual offset math.
+    Assumes dt_utc represents an absolute instant; returns the zoned local time.
     """
-    if dt_obj.tzinfo is None:
-        dt_obj = dt_obj.replace(tzinfo=timezone.utc)
-    return dt_obj.astimezone(_safe_zoneinfo(tz_str))
+    if dt_utc.tzinfo is None:
+        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+    return dt_utc.astimezone(_safe_zoneinfo(tz_str))
 
-def utc_from_tz(local_dt: datetime, tz_str: str) -> datetime:
+
+def utc_from_tz(local_dt_naive_or_aware: datetime, tz_str: str) -> datetime:
     """
     Interpret a wall-clock datetime in tz_str and convert to UTC.
-    If local_dt is naive, assume it is expressed in tz_str.
+    - If input is naive, assume expressed in tz_str.
+    - If input is aware, first view it in tz_str (preserving the instant), then convert to UTC.
     """
-    if local_dt.tzinfo is None:
-        local_dt = local_dt.replace(tzinfo=_safe_zoneinfo(tz_str))
+    tz = _safe_zoneinfo(tz_str)
+    if local_dt_naive_or_aware.tzinfo is None:
+        local_dt = local_dt_naive_or_aware.replace(tzinfo=tz)
     else:
-        # Re-interpret only if it's not already in the intended tz
-        local_dt = local_dt.astimezone(_safe_zoneinfo(tz_str))
+        local_dt = local_dt_naive_or_aware.astimezone(tz)
     return local_dt.astimezone(timezone.utc)
+
 
 def _fmt_date_hhmm(dt_obj: datetime) -> str:
     """YYYY-MM-DD, HH:MM (24h)"""
     return dt_obj.strftime("%Y-%m-%d, %H:%M")
 
+
 def _fmt_ampm(dt_obj: datetime) -> str:
-    """h:mm AM/PM without leading zero on hour (portable)."""
+    """h:mm AM/PM without leading zero on hour."""
     s = dt_obj.strftime("%I:%M %p")
     return s.lstrip("0") if s.startswith("0") else s
+
 
 def clock_payload(tz_str: str) -> dict:
     """
     Build read-only clock payload for UI:
       {
-        "utc_iso": "YYYY-MM-DD, HH:MM",
-        "market_utc_iso": "YYYY-MM-DD, HH:MM",
-        "market_local": "h:mm AM/PM",
-        "local_utc_iso": "YYYY-MM-DD, HH:MM",
-        "local_local": "h:mm AM/PM"
+        "utc_iso": "YYYY-MM-DD, HH:MM",          # pure UTC now
+        "market_utc_iso": "YYYY-MM-DD, HH:MM",   # market 'now' expressed in UTC
+        "market_local": "h:mm AM/PM",            # market local wall time
+        "local_utc_iso": "YYYY-MM-DD, HH:MM",    # machine local 'now' expressed in UTC
+        "local_local": "h:mm AM/PM"              # machine local wall time
       }
     - UTC has no DST conversion.
-    - Market shows both the UTC-equivalent and local wall time for tz_str.
-    - Local shows both UTC-equivalent and the machine's local wall time.
+    - All conversions are via ZoneInfo arithmetic.
     """
-    # Ground truth
+    # Ground truth 'now' in UTC
     utc_now_dt = now_utc()
 
-    # Market
+    # Market zone view
     market_tz = _safe_zoneinfo(tz_str)
     market_local = utc_now_dt.astimezone(market_tz)
     market_utc = market_local.astimezone(timezone.utc)
 
-    # Machine local (OS zone)
+    # Machine local view (OS zone)
     machine_local = utc_now_dt.astimezone()  # system tz
     machine_utc = machine_local.astimezone(timezone.utc)
 
@@ -144,6 +166,7 @@ def clock_payload(tz_str: str) -> dict:
         "local_utc_iso": _fmt_date_hhmm(machine_utc),
         "local_local": _fmt_ampm(machine_local),
     }
+
 
 # -----------------------------
 # Small parsing helpers (local clock)
@@ -161,6 +184,7 @@ def parse_time_local(tstr) -> dt_time:
     h, m = map(int, s.split(":"))
     return dt_time(hour=h, minute=m)
 
+
 def ensure_time_obj(val) -> dt_time:
     """
     Convert a string 'HH:MM' or dt_time to dt_time.
@@ -173,6 +197,7 @@ def ensure_time_obj(val) -> dt_time:
         raise ValueError(f"Invalid HH:MM value: '{val}'")
     h, m = map(int, s.split(":"))
     return dt_time(hour=h, minute=m)
+
 
 def is_now_in_window(start: str, end: str) -> bool:
     """
@@ -187,6 +212,7 @@ def is_now_in_window(start: str, end: str) -> bool:
     # Overnight window (e.g., 23:00-02:00)
     return now_t >= s or now_t < e
 
+
 # -----------------------------
 # Aware UTC helpers + ISO stamps
 # -----------------------------
@@ -197,6 +223,7 @@ def ensure_aware_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
 
 def parse_iso_utc(s: str) -> datetime:
     """
@@ -209,9 +236,11 @@ def parse_iso_utc(s: str) -> datetime:
     dt = datetime.fromisoformat(s)
     return ensure_aware_utc(dt)
 
+
 def isoformat_utc_z(dt: datetime) -> str:
     """Format an aware datetime as ISO-8601 with trailing 'Z'."""
     return ensure_aware_utc(dt).isoformat().replace("+00:00", "Z")
+
 
 def read_utc_stamp(path: Path) -> Optional[datetime]:
     """Read ISO-8601 (including trailing Z) from file and return aware UTC dt."""
@@ -223,17 +252,20 @@ def read_utc_stamp(path: Path) -> Optional[datetime]:
     except Exception:
         return None
 
+
 def write_utc_stamp(path: Path, when: datetime) -> None:
     """Write aware UTC datetime to file as ISO-8601 with trailing 'Z'."""
     when = ensure_aware_utc(when) or now_utc()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(isoformat_utc_z(when), encoding="utf-8")
 
+
 def has_run_today(stamp_path: Path, now_utc_dt: Optional[datetime] = None) -> bool:
     """True if the stamp file records a run on the same UTC calendar day as now."""
     ts = read_utc_stamp(stamp_path)
     now = ensure_aware_utc(now_utc_dt) or now_utc()
     return bool(ts and ts.date() == now.date())
+
 
 # -----------------------------
 # Market-day aware reference date (LOCAL)
@@ -272,6 +304,7 @@ def nearest_market_day_reference(now_utc_dt: Optional[datetime] = None, tzstr: O
         return prev_weekday(d - timedelta(days=1))
     return d
 
+
 # -----------------------------
 # LOCAL 'HH:MM' -> UTC 'HH:MM' (DST-aware via ZoneInfo, anchored)
 # -----------------------------
@@ -287,6 +320,7 @@ def local_hhmm_to_utc_hhmm(timestr: str, tzstr: Optional[str] = None, reference_
 
     tz = _safe_zoneinfo(tzstr) if tzstr else get_timezone()
     if reference_date is None:
+        # Use tz.key if available (py<3.11 compatibility)
         reference_date = nearest_market_day_reference(now_utc(), getattr(tz, "key", None))
 
     hh, mm = map(int, timestr.split(":"))
@@ -294,6 +328,7 @@ def local_hhmm_to_utc_hhmm(timestr: str, tzstr: Optional[str] = None, reference_
     local_dt = datetime(reference_date.year, reference_date.month, reference_date.day, hh, mm, tzinfo=tz)
     utc_dt = local_dt.astimezone(timezone.utc)
     return utc_dt.strftime("%H:%M")
+
 
 # -----------------------------
 # UTC 'HH:MM' helpers
@@ -304,6 +339,7 @@ def parse_hhmm_utc(hhmm: str) -> dt_time:
         return dt_time(0, 0)
     hh, mm = map(int, hhmm.split(":"))
     return dt_time(hour=hh, minute=mm)
+
 
 def scheduled_run_utc(hhmm_utc: str, now_utc_dt: Optional[datetime] = None) -> datetime:
     """

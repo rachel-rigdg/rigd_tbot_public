@@ -14,8 +14,8 @@
     padding: 4px 6px;
     text-align: center;
   }
-  .ledger-table .row-top { background: #f8f8fa; }
-  .ledger-table .row-bottom { background: #f3f3f5; }
+  .ledger-table .row-top { background: #333333; }
+  .ledger-table .row-bottom { background: #333333; }
   .ledger-table .action-cell { white-space: nowrap; }
   
   /* Hidden account column used only for sort alignment */
@@ -23,7 +23,7 @@
   td.hidden-account { display: none; }
   
   /* --- Sorting affordances (ledger-only) --- */
-  .sortable:hover { cursor: pointer; background: #e6e6f3; }
+  .sortable:hover { cursor: pointer; background: #444444; }
   .sort-asc::after { content: " ▲"; }
   .sort-desc::after { content: " ▼"; }
   
