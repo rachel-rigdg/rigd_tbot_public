@@ -67,17 +67,17 @@ def _write_bot_state(state: str) -> None:
     (CONTROL_DIR).mkdir(parents=True, exist_ok=True)
     (CONTROL_DIR / "bot_state.txt").write_text(state.strip() + "\n", encoding="utf-8")
 
-def _get_times_and_delays():
+def _get_times() -> Tuple[str, str, str, str, str, str, str]:
     from tbot_bot.config import env_bot
     open_utc = env_bot.get_open_time_utc()
     mid_utc = env_bot.get_mid_time_utc()
     close_utc = env_bot.get_close_time_utc()
     market_close_utc = env_bot.get_market_close_utc()
-    sup_open_delay_min = env_bot.get_sup_open_delay_min()
-    sup_mid_delay_min = env_bot.get_sup_mid_delay_min()
-    sup_uni_after_close_min = env_bot.get_sup_universe_after_close_min()
+    holdings_open_hhmm = env_bot.get_holdings_open_utc()
+    holdings_mid_hhmm = env_bot.get_holdings_mid_utc()
+    universe_hhmm = env_bot.get_universe_rebuild_start_utc()
     return (open_utc, mid_utc, close_utc, market_close_utc,
-            sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min)
+            holdings_open_hhmm, holdings_mid_hhmm, universe_hhmm)
 
 def _compute_schedule() -> Dict:
     """
@@ -85,17 +85,17 @@ def _compute_schedule() -> Dict:
     No local/DST math anywhere—UTC is authoritative.
     """
     (open_hhmm, mid_hhmm, close_hhmm, market_close_hhmm,
-     d_open, d_mid, d_univ) = _get_times_and_delays()
+     hold_open_hhmm, hold_mid_hhmm, universe_hhmm) = _get_times()
 
     # Absolute UTC datetimes for 'today'
     open_at = scheduled_run_utc(open_hhmm)
     mid_at = scheduled_run_utc(mid_hhmm)
     close_at = scheduled_run_utc(close_hhmm)
 
-    # Offsets are simple UTC minute deltas
-    holdings_open_at = open_at + datetime.timedelta(minutes=int(d_open))
-    holdings_mid_at  = mid_at  + datetime.timedelta(minutes=int(d_mid))
-    universe_at      = close_at + datetime.timedelta(minutes=int(d_univ))
+    # Absolute UTC times from env (no offsets)
+    holdings_open_at = scheduled_run_utc(hold_open_hhmm)
+    holdings_mid_at  = scheduled_run_utc(hold_mid_hhmm)
+    universe_at      = scheduled_run_utc(universe_hhmm)
 
     return {
         "trading_date": open_at.date().isoformat(),
@@ -104,12 +104,9 @@ def _compute_schedule() -> Dict:
         "mid_utc": fmt_iso_utc(mid_at),
         "close_utc": fmt_iso_utc(close_at),
         "market_close_utc_hint": market_close_hhmm,  # informational only
-        "holdings_after_open_min": int(d_open),
         "holdings_open_utc": fmt_iso_utc(holdings_open_at),
-        "holdings_after_mid_min": int(d_mid),
         "holdings_mid_utc": fmt_iso_utc(holdings_mid_at),
-        "holdings_utc": fmt_iso_utc(holdings_open_at),  # back-compat
-        "universe_after_close_min": int(d_univ),
+        "holdings_utc": fmt_iso_utc(holdings_open_at),  # back-compat alias
         "universe_utc": fmt_iso_utc(universe_at),
     }
 
@@ -266,7 +263,7 @@ from tbot_bot.support.utils_time import (
     now_utc,
     fmt_iso_utc,
     scheduled_run_utc,
-    validate_hhmm,  # new: to validate explicit HH:MM
+    validate_hhmm,  # new: to validate explicit HH:MM (may be unused)
 )
 
 # --- Paths & constants ---
@@ -311,10 +308,10 @@ def _write_bot_state(state: str) -> None:
     (CONTROL_DIR).mkdir(parents=True, exist_ok=True)
     (CONTROL_DIR / "bot_state.txt").write_text(state.strip() + "\n", encoding="utf-8")
 
-def _get_times_and_delays():
+def _get_times() -> Tuple[str, str, str, str, str, str, str]:
     """
-    Pull UTC HH:MM baselines and (legacy) minute offsets from config.
-    Also allow explicit UTC HH:MM for holdings & universe, independent of strategy times.
+    Pull UTC HH:MM baselines and absolute UTC HH:MM for holdings & universe,
+    using new absolute scheduling keys (no legacy minute offsets).
     """
     from tbot_bot.config import env_bot
 
@@ -324,27 +321,14 @@ def _get_times_and_delays():
     close_utc = env_bot.get_close_time_utc()
     market_close_utc = env_bot.get_market_close_utc()
 
-    # Optional explicit UTC HH:MM for holdings/universe
-    # Prefer dedicated getters if they exist; otherwise read raw keys.
-    def _read_raw(key: str) -> str:
-        try:
-            return str(env_bot.load_env_var(key, "") or "").strip()
-        except Exception:
-            return ""
-
-    explicit_hold_open = getattr(env_bot, "get_holdings_open_time_utc", lambda: _read_raw("HOLDINGS_OPEN_UTC"))()
-    explicit_hold_mid  = getattr(env_bot, "get_holdings_mid_time_utc", lambda: _read_raw("HOLDINGS_MID_UTC"))()
-    explicit_universe  = getattr(env_bot, "get_universe_time_utc", lambda: _read_raw("UNIVERSE_UTC"))()
-
-    # Legacy minute offsets (fallback path)
-    sup_open_delay_min = env_bot.get_sup_open_delay_min()
-    sup_mid_delay_min = env_bot.get_sup_mid_delay_min()
-    sup_uni_after_close_min = env_bot.get_sup_universe_after_close_min()
+    # Absolute UTC HH:MM for holdings/universe
+    holdings_open_hhmm = env_bot.get_holdings_open_utc()
+    holdings_mid_hhmm = env_bot.get_holdings_mid_utc()
+    universe_hhmm = env_bot.get_universe_rebuild_start_utc()
 
     return (
         open_utc, mid_utc, close_utc, market_close_utc,
-        sup_open_delay_min, sup_mid_delay_min, sup_uni_after_close_min,
-        explicit_hold_open, explicit_hold_mid, explicit_universe
+        holdings_open_hhmm, holdings_mid_hhmm, universe_hhmm
     )
 
 def _compute_schedule() -> Dict:
@@ -353,35 +337,20 @@ def _compute_schedule() -> Dict:
     No local/DST math anywhere—UTC is authoritative.
 
     Holdings & Universe:
-      - If explicit *_UTC HH:MM is provided, schedule exactly at that time.
-      - Else, fall back to legacy offsets from the strategy baselines.
+      - Scheduled exactly at configured absolute UTC times.
     """
     (open_hhmm, mid_hhmm, close_hhmm, market_close_hhmm,
-     d_open, d_mid, d_univ,
-     hold_open_hhmm, hold_mid_hhmm, universe_hhmm) = _get_times_and_delays()
+     hold_open_hhmm, hold_mid_hhmm, universe_hhmm) = _get_times()
 
     # Absolute UTC datetimes for 'today'
     open_at = scheduled_run_utc(open_hhmm)
     mid_at  = scheduled_run_utc(mid_hhmm)
     close_at = scheduled_run_utc(close_hhmm)
 
-    # Holdings open: explicit time wins; else offset from OPEN
-    if hold_open_hhmm and validate_hhmm(hold_open_hhmm):
-        holdings_open_at = scheduled_run_utc(hold_open_hhmm)
-    else:
-        holdings_open_at = open_at + datetime.timedelta(minutes=int(d_open))
-
-    # Holdings mid: explicit time wins; else offset from MID
-    if hold_mid_hhmm and validate_hhmm(hold_mid_hhmm):
-        holdings_mid_at = scheduled_run_utc(hold_mid_hhmm)
-    else:
-        holdings_mid_at = mid_at + datetime.timedelta(minutes=int(d_mid))
-
-    # Universe: explicit time wins; else offset from CLOSE
-    if universe_hhmm and validate_hhmm(universe_hhmm):
-        universe_at = scheduled_run_utc(universe_hhmm)
-    else:
-        universe_at = close_at + datetime.timedelta(minutes=int(d_univ))
+    # Holdings and Universe: absolute times (no offsets)
+    holdings_open_at = scheduled_run_utc(hold_open_hhmm)
+    holdings_mid_at  = scheduled_run_utc(hold_mid_hhmm)
+    universe_at      = scheduled_run_utc(universe_hhmm)
 
     return {
         "trading_date": open_at.date().isoformat(),
@@ -391,14 +360,10 @@ def _compute_schedule() -> Dict:
         "close_utc": fmt_iso_utc(close_at),
         "market_close_utc_hint": market_close_hhmm,  # informational only
 
-        # holdings/universe — always explicit ISO-UTC instants
-        "holdings_after_open_min": int(d_open),  # preserved for telemetry/back-compat
+        # holdings/universe — explicit ISO-UTC instants
         "holdings_open_utc": fmt_iso_utc(holdings_open_at),
-        "holdings_after_mid_min": int(d_mid),    # preserved for telemetry/back-compat
         "holdings_mid_utc": fmt_iso_utc(holdings_mid_at),
         "holdings_utc": fmt_iso_utc(holdings_open_at),  # back-compat alias
-
-        "universe_after_close_min": int(d_univ), # preserved for telemetry/back-compat
         "universe_utc": fmt_iso_utc(universe_at),
     }
 

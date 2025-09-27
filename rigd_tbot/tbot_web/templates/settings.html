@@ -30,37 +30,85 @@
         {% endif %}
 
         {% if config %}
-        <!-- Render ALL keys from .env_bot/.env_bot.enc with unused marker -->
+        <!-- Render keys grouped by SECTION_TITLES / SECTIONS supplied by settings_web.py; show all keys and mark unused -->
         <form id="settings-form" action="{{ url_for('settings_web.update_settings') }}" method="POST" onsubmit="return submitSettings(event)" novalidate>
-            <h2>All Configuration Keys</h2>
-            <p style="color:#666;margin-top:-6px;">Every key/value from your decrypted config is visible and editable. Entries marked <em>unused</em> are present in the file but not referenced by the current runtime.</p>
 
-            <div style="overflow:auto;">
-                <table class="settings-table" style="width:100%;border-collapse:collapse;">
+            {% set rendered = [] %}
+            {% set SECTS = SECTIONS if SECTIONS is defined and SECTIONS else section_titles.items() if section_titles is defined else [] %}
+
+            {% for title, keys in SECTS %}
+              <section class="settings-section">
+                <h2 style="margin-top:18px;">{{ title }}</h2>
+                <div style="overflow:auto;">
+                  <table class="settings-table" style="width:100%;border-collapse:collapse;">
                     <thead>
-                        <tr>
-                            <th style="text-align:right;border-bottom:1px solid #ddd;padding:8px;">Key</th>
-                            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Value</th>
-                            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Status</th>
-                        </tr>
+                      <tr>
+                        <th style="text-align:right;border-bottom:1px solid #ddd;padding:8px;">Key</th>
+                        <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Value</th>
+                        <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Status</th>
+                      </tr>
                     </thead>
                     <tbody>
-                        {% for k, v in cfg.items()|sort %}
-                        <tr>
+                      {% for k in keys %}
+                        {% if k in cfg %}
+                          {% set _ = rendered.append(k) %}
+                          <tr>
                             <td style="text-align:right;padding:8px 8px;vertical-align:top;"><code>{{ k }}</code></td>
                             <td style="padding:6px 8px;vertical-align:top;">
-                                <input name="{{ k }}" value="{{ v }}" style="width:100%;" autocomplete="off">
+                              <input name="{{ k }}" value="{{ cfg[k] }}" style="width:100%;" autocomplete="off">
                             </td>
                             <td style="padding:6px 8px;vertical-align:top;">
-                                {% if k in unused_keys %}
-                                  <span title="Present in config but not used by runtime">unused</span>
-                                {% else %} — {% endif %}
+                              {% if k in unused_keys %}
+                                <span title="Present in config but not used by runtime">unused</span>
+                              {% else %} — {% endif %}
                             </td>
-                        </tr>
-                        {% endfor %}
+                          </tr>
+                        {% endif %}
+                      {% endfor %}
                     </tbody>
-                </table>
-            </div>
+                  </table>
+                </div>
+              </section>
+            {% endfor %}
+
+            <!-- Any remaining keys not listed in SECTION_TITLES -->
+            {% set other_keys = [] %}
+            {% for k, v in cfg.items() %}
+              {% if k not in rendered %}
+                {% set _ = other_keys.append(k) %}
+              {% endif %}
+            {% endfor %}
+            {% if other_keys %}
+              <section class="settings-section">
+                <h2 style="margin-top:18px;">Other / Uncategorized</h2>
+                <div style="overflow:auto;">
+                  <table class="settings-table" style="width:100%;border-collapse:collapse;">
+                    <thead>
+                      <tr>
+                        <th style="text-align:right;border-bottom:1px solid #ddd;padding:8px;">Key</th>
+                        <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Value</th>
+                        <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for k in other_keys|sort %}
+                        <tr>
+                          <td style="text-align:right;padding:8px 8px;vertical-align:top;"><code>{{ k }}</code></td>
+                          <td style="padding:6px 8px;vertical-align:top;">
+                            <input name="{{ k }}" value="{{ cfg[k] }}" style="width:100%;" autocomplete="off">
+                          </td>
+                          <td style="padding:6px 8px;vertical-align:top;">
+                            {% if k in unused_keys %}
+                              <span title="Present in config but not used by runtime">unused</span>
+                            {% else %} — {% endif %}
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            {% endif %}
 
             <div style="margin-top:14px;">
                 <button type="submit" class="btn primary">Save Changes</button>

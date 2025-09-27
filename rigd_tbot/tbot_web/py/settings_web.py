@@ -49,7 +49,10 @@ SECTION_TITLES = {
         "FAILOVER_ENABLED", "FAILOVER_LOG_TAG"
     ],
     "Global Time & Polling": [
-        "TRADING_DAYS", "SLEEP_TIME"
+        "MARKET_OPEN_UTC", "MARKET_CLOSE_UTC", "TRADING_DAYS", "UNIVERSE_SLEEP_TIME", "STRATEGY_SLEEP_TIME"
+    ],
+    "Universe and Holdings Scheduling": [
+        "HOLDINGS_OPEN", "HOLDINGS_MID", "UNIVERSE_REBUILD_START_TIME"
     ],
     "OPEN Strategy Configuration (20 min trading)": [
         "MAX_GAP_PCT_OPEN", "MIN_MARKET_CAP_OPEN", "MAX_MARKET_CAP_OPEN", "STRAT_OPEN_ENABLED",
@@ -67,7 +70,7 @@ SECTION_TITLES = {
         "STRAT_CLOSE_VIX_THRESHOLD", "SHORT_TYPE_CLOSE"
     ],
     "Notifications": [
-        "NOTIFY_ON_FILL", "NOTIFY_ON_EXIT"
+        "NOTIFY_ON_FILL", "NOTIFY_ON_EXIT", "NOTIFY_ON_FAILURE", "CRITICAL_ALERT_CHANNEL", "ROUTINE_ALERT_CHANNEL"
     ],
     "Reporting & Ledger Export": [
         "LEDGER_EXPORT_MODE"
@@ -79,8 +82,7 @@ SECTION_TITLES = {
         "ENABLE_REBALANCE_NOTIFIER", "REBALANCE_TRIGGER_PCT", "RBAC_ENABLED", "DEFAULT_USER_ROLE",
         "ENABLE_STRATEGY_OPTIMIZER", "OPTIMIZER_BACKTEST_LOOKBACK_DAYS", "OPTIMIZER_ALGORITHM", "OPTIMIZER_OUTPUT_DIR",
         "ENABLE_SLIPPAGE_MODEL", "SLIPPAGE_SIMULATION_TYPE", "SLIPPAGE_MEAN_PCT", "SLIPPAGE_STDDEV_PCT", "SIMULATED_LATENCY_MS",
-        "ENABLE_BSM_FILTER", "MAX_BSM_DEVIATION", "RISK_FREE_RATE", "RISK_FREE_RATE_SOURCE",
-        "NOTIFY_ON_FAILURE", "CRITICAL_ALERT_CHANNEL", "ROUTINE_ALERT_CHANNEL"
+        "ENABLE_BSM_FILTER", "MAX_BSM_DEVIATION", "RISK_FREE_RATE", "RISK_FREE_RATE_SOURCE"
     ]
 }
 
@@ -126,13 +128,15 @@ _CANON_USED_KEYS: Set[str] = set(
         "ENABLE_SLIPPAGE_MODEL", "SLIPPAGE_SIMULATION_TYPE", "SLIPPAGE_MEAN_PCT", "SLIPPAGE_STDDEV_PCT", "SIMULATED_LATENCY_MS",
         "ENABLE_BSM_FILTER", "MAX_BSM_DEVIATION", "RISK_FREE_RATE", "RISK_FREE_RATE_SOURCE",
         "CRITICAL_ALERT_CHANNEL", "ROUTINE_ALERT_CHANNEL",
-        # Common alternates referenced by UI/runtime
+        # Global times / polling
         "MARKET_OPEN_UTC", "MARKET_CLOSE_UTC",
         "STRATEGY_SLEEP_TIME", "UNIVERSE_SLEEP_TIME",
         "TIMEZONE", "SCHEDULE_INPUT_TZ",
+        # Trailing stops
         "TRADING_TRAILING_STOP_PCT", "HOLDINGS_TRAILING_STOP_PCT",
         "TRAIL_PCT_OPEN", "TRAIL_PCT_MID", "TRAIL_PCT_CLOSE",
-        "SUP_OPEN_DELAY_MIN", "SUP_MID_DELAY_MIN", "SUP_UNIVERSE_AFTER_CLOSE_MIN",
+        # ABSOLUTE holdings/universe scheduling (replaces legacy *_DELAY_MIN)
+        "HOLDINGS_OPEN", "HOLDINGS_MID", "UNIVERSE_REBUILD_START_TIME",
         # Screener / universe-related env keys that some adapters depend on
         "SCREENER_UNIVERSE_EXCHANGES", "SCREENER_UNIVERSE_MIN_PRICE", "SCREENER_UNIVERSE_MAX_PRICE",
         "SCREENER_UNIVERSE_MIN_MARKET_CAP", "SCREENER_UNIVERSE_MAX_MARKET_CAP", "SCREENER_UNIVERSE_MAX_SIZE",
@@ -213,7 +217,19 @@ def settings_page():
         # ---- NEW: compute 'unused' by scanning repo + allowlist
         used = _all_config_keys_used_by_codebase(config.keys())
         unused = sorted([k for k in config.keys() if k not in used])
-        return render_template("settings.html", config=config, section_titles=SECTION_TITLES, error=None, cfg=config, unused_keys=unused)
+
+        # Provide both dict and ordered list of sections to the template
+        sections = list(SECTION_TITLES.items())
+
+        return render_template(
+            "settings.html",
+            config=config,
+            section_titles=SECTION_TITLES,
+            SECTIONS=sections,
+            error=None,
+            cfg=config,
+            unused_keys=unused
+        )
     except Exception:
         return render_template("settings.html", config=None, error="Bot identity not available, please complete configuration")
 

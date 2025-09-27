@@ -9,6 +9,7 @@ import logging
 from cryptography.fernet import Fernet
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,8 @@ REQUIRED_KEYS = [
     "MARKET_OPEN_UTC", "MARKET_CLOSE_UTC", "TRADING_DAYS",
     # NEW: Sleep times for universe and strategy API polling
     "UNIVERSE_SLEEP_TIME", "STRATEGY_SLEEP_TIME",
+    # Universe & Holdings Scheduling (ABSOLUTE UTC TIMES; replaces *_DELAY_MIN)
+    "HOLDINGS_OPEN", "HOLDINGS_MID", "UNIVERSE_REBUILD_START_TIME",
     # OPEN Strategy Configuration
     "STRAT_OPEN_ENABLED", "START_TIME_OPEN", "OPEN_ANALYSIS_TIME", "OPEN_BREAKOUT_TIME", "OPEN_MONITORING_TIME",
     "STRAT_OPEN_BUFFER", "SHORT_TYPE_OPEN", "MAX_GAP_PCT_OPEN", "MIN_MARKET_CAP_OPEN", "MAX_MARKET_CAP_OPEN",
@@ -181,11 +184,41 @@ def load_env_bot() -> Dict[str, Any]:
                 logger.debug(f"Key {key}: converted string 'false' to boolean False")
     return config
 
+def _normalize_hhmm_or_hhmmss(value: str, key_name: str) -> str:
+    """
+    Accept 'HH:MM' or 'HH:MM:SS'; normalize to 'HH:MM'.
+    Raise ValueError if neither format is valid.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"{key_name} must be a string in 'HH:MM' format.")
+    s = value.strip()
+    # Try HH:MM first
+    try:
+        dt = datetime.strptime(s, "%H:%M")
+        return dt.strftime("%H:%M")
+    except Exception:
+        pass
+    # Try HH:MM:SS then normalize
+    try:
+        dt = datetime.strptime(s, "%H:%M:%S")
+        return dt.strftime("%H:%M")
+    except Exception:
+        raise ValueError(f"{key_name} must be in 'HH:MM' 24-hour format (UTC). Got: {value!r}")
+
+def _validate_hhmm(value: str, key_name: str) -> None:
+    """
+    Validate 'HH:MM' 24-hour format. Raises ValueError on invalid.
+    """
+    # Use normalizer to allow HH:MM:SS but enforce HH:MM canonical value
+    _ = _normalize_hhmm_or_hhmmss(value, key_name)
+
 def validate_bot_config(config: Dict[str, Any]) -> None:
     missing = [key for key in REQUIRED_KEYS if key not in config]
     if missing:
         logger.error(f"Missing required keys during validation: {missing}")
         raise ValueError(f"Missing required keys: {missing}")
+
+    # Numeric/range validations
     alloc = float(config.get("TOTAL_ALLOCATION", 0))
     if not (0 < alloc <= 1):
         logger.error("TOTAL_ALLOCATION must be between 0 and 1.")
@@ -194,6 +227,19 @@ def validate_bot_config(config: Dict[str, Any]) -> None:
     if export_mode not in ("auto", "off"):
         logger.error("LEDGER_EXPORT_MODE must be 'auto' or 'off'.")
         raise ValueError("LEDGER_EXPORT_MODE must be 'auto' or 'off'.")
+
+    # Time format validations (normalize to HH:MM; no conversions beyond trimming seconds)
+    # Strategy window starts:
+    config["START_TIME_OPEN"]  = _normalize_hhmm_or_hhmmss(str(config.get("START_TIME_OPEN", "")).strip(),  "START_TIME_OPEN")
+    config["START_TIME_MID"]   = _normalize_hhmm_or_hhmmss(str(config.get("START_TIME_MID", "")).strip(),   "START_TIME_MID")
+    config["START_TIME_CLOSE"] = _normalize_hhmm_or_hhmmss(str(config.get("START_TIME_CLOSE", "")).strip(), "START_TIME_CLOSE")
+    # Market hours:
+    config["MARKET_OPEN_UTC"]  = _normalize_hhmm_or_hhmmss(str(config.get("MARKET_OPEN_UTC", "")).strip(),  "MARKET_OPEN_UTC")
+    config["MARKET_CLOSE_UTC"] = _normalize_hhmm_or_hhmmss(str(config.get("MARKET_CLOSE_UTC", "")).strip(), "MARKET_CLOSE_UTC")
+    # NEW absolute scheduling keys (must exist + valid; also normalize seconds if present)
+    config["HOLDINGS_OPEN"]               = _normalize_hhmm_or_hhmmss(str(config.get("HOLDINGS_OPEN", "")).strip(),               "HOLDINGS_OPEN")
+    config["HOLDINGS_MID"]                = _normalize_hhmm_or_hhmmss(str(config.get("HOLDINGS_MID", "")).strip(),                "HOLDINGS_MID")
+    config["UNIVERSE_REBUILD_START_TIME"] = _normalize_hhmm_or_hhmmss(str(config.get("UNIVERSE_REBUILD_START_TIME", "")).strip(), "UNIVERSE_REBUILD_START_TIME")
 
 def get_bot_config() -> Dict[str, Any]:
     logger.debug("Loading bot config from .env_bot.enc")
@@ -277,42 +323,20 @@ def get_close_time_local() -> str:
     return str(v or "").strip()
 
 # ----------------------------------------------------------------------
-# Supervisor delay/after-close getters (numeric with sane defaults)
+# Absolute scheduling getters (strings; no math)
 # ----------------------------------------------------------------------
 
-def get_sup_open_delay_min() -> int:
-    """
-    Minutes to wait AFTER the OPEN strategy **start** before running holdings maintenance.
-    Default: 10.
-    """
-    v = load_env_var("SUP_OPEN_DELAY_MIN", 10)
-    try:
-        return int(v)
-    except Exception:
-        return 10
+def get_holdings_open_utc() -> str:
+    """Return HOLDINGS_OPEN as 'HH:MM' (UTC)."""
+    v = load_env_var("HOLDINGS_OPEN", "")
+    return str(v or "").strip()
 
-def get_sup_mid_delay_min() -> int:
-    """
-    Minutes to wait AFTER the MID strategy **start** before running holdings maintenance.
-    Default: fall back to SUP_OPEN_DELAY_MIN (or 60 if unset).
-    """
-    fallback = load_env_var("SUP_OPEN_DELAY_MIN", 60)
-    v = load_env_var("SUP_MID_DELAY_MIN", fallback)
-    try:
-        return int(v)
-    except Exception:
-        try:
-            return int(fallback)
-        except Exception:
-            return 60
+def get_holdings_mid_utc() -> str:
+    """Return HOLDINGS_MID as 'HH:MM' (UTC)."""
+    v = load_env_var("HOLDINGS_MID", "")
+    return str(v or "").strip()
 
-def get_sup_universe_after_close_min() -> int:
-    """
-    Minutes to wait AFTER the CLOSE strategy **start** before running the universe build.
-    Default: 120.
-    """
-    v = load_env_var("SUP_UNIVERSE_AFTER_CLOSE_MIN", 120)
-    try:
-        return int(v)
-    except Exception:
-        return 120
+def get_universe_rebuild_start_utc() -> str:
+    """Return UNIVERSE_REBUILD_START_TIME as 'HH:MM' (UTC)."""
+    v = load_env_var("UNIVERSE_REBUILD_START_TIME", "")
+    return str(v or "").strip()
