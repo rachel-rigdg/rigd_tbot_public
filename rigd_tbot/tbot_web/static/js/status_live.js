@@ -59,7 +59,9 @@ document.addEventListener("DOMContentLoaded", function () {
         screener_provider: { name: "NONE", enabled: false },
 
         // clocks
-        market_tz: "America/New_York"
+        market_tz: "America/New_York",
+        // (surgical) prefer server-provided canonical clocks if available
+        server_clock: null
     };
 
     let lastData = null;
@@ -83,6 +85,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const schedule = payload.schedule || null;
         const supervisor = payload.supervisor || {};
         const market_tz = payload.market_tz || status.market_tz || DEFAULTS.market_tz;
+        const server_clock = payload.server_clock || status.server_clock || null;
 
         // Merge with DEFAULTS, keeping nested merges safe
         const merged = {
@@ -97,7 +100,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 ...DEFAULTS.supervisor,
                 ...supervisor
             },
-            market_tz
+            market_tz,
+            server_clock
         };
 
         // If supervisor.scheduled is unknown, infer from presence of schedule for today (UTC)
@@ -193,7 +197,6 @@ document.addEventListener("DOMContentLoaded", function () {
             hour12: false
         }).formatToParts(dateObj);
         const get = (t) => parts.find(p => p.type === t)?.value;
-        // Many locales output MM/DD/YYYY — assemble explicitly
         const y = get('year');
         const m = get('month');
         const d = get('day');
@@ -217,7 +220,64 @@ document.addEventListener("DOMContentLoaded", function () {
         return `${h}:${m} ${dayPeriod}`;
     }
 
+    // ---- NEW: Offset helpers (prefer server offsets; otherwise compute best-effort) ----
+    function formatOffsetFromMinutes(minsWestOfUTC) {
+        // JS getTimezoneOffset() returns minutes *west* of UTC; invert sign for UTC±
+        const total = -minsWestOfUTC;
+        const sign = total >= 0 ? "+" : "-";
+        const abs = Math.abs(total);
+        const hh = Math.floor(abs / 60);
+        const mm = abs % 60;
+        return `UTC${sign}${hh}${mm ? ":" + _pad2(mm) : ""}`;
+    }
+
+    function getLocalOffsetString(now) {
+        // Reliable for local zone
+        return formatOffsetFromMinutes(now.getTimezoneOffset());
+    }
+
+    function getOffsetForTZ(now, tz) {
+        // Try Intl with timeZoneName: 'shortOffset' (e.g., "GMT-4"), then normalize to "UTC-4"
+        try {
+            const parts = new Intl.DateTimeFormat('en-US', {
+                timeZone: tz,
+                timeZoneName: 'shortOffset',
+                hour: '2-digit'
+            }).formatToParts(now);
+            const tzName = parts.find(p => p.type === 'timeZoneName')?.value || "";
+            if (tzName) {
+                return tzName.replace(/^GMT/i, 'UTC');
+            }
+        } catch (e) { /* ignore */ }
+        // Fallback: if tz equals local, reuse local offset; else blank
+        try {
+            const guessLocal = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (guessLocal && tz && guessLocal === tz) {
+                return getLocalOffsetString(now);
+            }
+        } catch (e) { /* ignore */ }
+        return "";
+    }
+
     function updateClocks(d) {
+        // Prefer canonical server clocks from utils_time.clock_payload(); fallback to client rendering.
+        const sc = d.server_clock;
+        if (sc && typeof sc === "object") {
+            const marketOffset = sc.market_offset || "";
+            const localOffset = sc.local_offset || "";
+            if (sc.utc_iso) setText('clock-utc', sc.utc_iso);
+            if (sc.market_utc_iso && sc.market_local) {
+                const suffix = marketOffset ? ` (${marketOffset})` : "";
+                setText('clock-market', `${sc.market_utc_iso} UTC, ${sc.market_local}${suffix}`);
+            }
+            if (sc.local_utc_iso && sc.local_local) {
+                const suffix = localOffset ? ` (${localOffset})` : "";
+                setText('clock-local', `${sc.local_utc_iso} UTC, ${sc.local_local}${suffix}`);
+            }
+            return;
+        }
+
+        // Fallback: compute on client (legacy)
         const now = new Date();
         const marketTz = d.market_tz || DEFAULTS.market_tz;
 
@@ -225,17 +285,59 @@ document.addEventListener("DOMContentLoaded", function () {
         const utcStr = fmtYMDHM(now, 'UTC');
         setText('clock-utc', utcStr);
 
-        // #clock-market: "YYYY-MM-DD, HH:MM UTC, h:mm A"
-        // First part: market time expressed in UTC (same instant formatted in UTC)
+        // Derive offsets (best-effort in browser)
+        const marketOffset = getOffsetForTZ(now, marketTz);
+        const localOffset = getLocalOffsetString(now);
+
+        // #clock-market: "YYYY-MM-DD, HH:MM UTC, h:mm A (UTC-4)"
         const marketUtcStr = fmtYMDHM(now, 'UTC');
         const marketLocalStr = fmtHMAm(now, marketTz);
-        setText('clock-market', `${marketUtcStr} UTC, ${marketLocalStr}`);
+        setText('clock-market', `${marketUtcStr} UTC, ${marketLocalStr}${marketOffset ? ` (${marketOffset})` : ""}`);
 
-        // #clock-local: "YYYY-MM-DD, HH:MM UTC, h:mm A"
-        // First part: your local machine time expressed in UTC; Second: pure local wall time
+        // #clock-local: "YYYY-MM-DD, HH:MM UTC, h:mm A (UTC-7)"
         const localUtcStr = fmtYMDHM(now, 'UTC');
         const localLocalStr = fmtHMAm(now, undefined);
-        setText('clock-local', `${localUtcStr} UTC, ${localLocalStr}`);
+        setText('clock-local', `${localUtcStr} UTC, ${localLocalStr}${localOffset ? ` (${localOffset})` : ""}`);
+    }
+
+    // ---- NEW (surgical): render local market time next to UTC for supervisor schedule rows ----
+    function fmtLocalFromUTC(isoStr, tz, includeSeconds) {
+        try {
+            const d = new Date(isoStr);
+            if (isNaN(d.getTime())) return "";
+            const parts = new Intl.DateTimeFormat(undefined, {
+                timeZone: tz,
+                hour: 'numeric',
+                minute: '2-digit',
+                second: includeSeconds ? '2-digit' : undefined,
+                hour12: true
+            }).formatToParts(d);
+            const get = (t) => parts.find(p => p.type === t)?.value || "";
+            const h = get('hour'), m = get('minute'), s = includeSeconds ? get('second') : "";
+            const ap = (parts.find(p => p.type === 'dayPeriod')?.value || '').toUpperCase();
+            return includeSeconds ? `${h}:${m}:${s} ${ap}` : `${h}:${m} ${ap}`;
+        } catch (e) {
+            return "";
+        }
+    }
+    function hasSeconds(isoStr) {
+        return /T\d{2}:\d{2}:\d{2}/.test(String(isoStr || ""));
+    }
+    function updateScheduleLocalConversions() {
+        const cont = document.querySelector('.schedule-grid');
+        if (!cont) return;
+        const tz = cont.getAttribute('data-market-tz') || DEFAULTS.market_tz;
+        const label = cont.getAttribute('data-market-tz-label') || 'ET';
+        cont.querySelectorAll('.utc-local-convert').forEach(function (span) {
+            const iso = span.getAttribute('data-utc');
+            if (!iso) return;
+            const showSeconds = hasSeconds(iso);
+            const local = fmtLocalFromUTC(iso, tz, showSeconds);
+            if (local) {
+                span.textContent = `, ${local} ${label}`;
+                span.style.whiteSpace = 'nowrap';
+            }
+        });
     }
 
     function updateUI(payload) {
@@ -249,6 +351,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // --- Clock bar (new) ---
         updateClocks(d);
+
+        // --- Schedule UTC→local adornments (new) ---
+        updateScheduleLocalConversions();
 
         // --- Primary status grid (ID-based) ---
         const runtimeGrid = document.getElementById('grid-runtime');
@@ -307,4 +412,7 @@ document.addEventListener("DOMContentLoaded", function () {
     setInterval(pollBotStatus, 30000);
     // Initial fetch
     pollBotStatus();
+
+    // Also do a one-time adornment for the schedule that was server-rendered on first load.
+    updateScheduleLocalConversions();
 });

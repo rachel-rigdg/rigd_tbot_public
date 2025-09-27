@@ -35,6 +35,8 @@ from tbot_bot.config.env_bot import get_bot_config  # <-- ensure enabled flags c
 from tbot_bot.support.secrets_manager import load_screener_credentials
 # (surgical) clock payload helper (read-only)
 from tbot_bot.support.utils_time import clock_payload as _clock_payload
+# (surgical) use canonical market tz from runtime config instead of inferring from identity
+from tbot_bot.support.utils_time import get_market_tz_str  # ADDED
 
 status_blueprint = Blueprint("status_web", __name__)
 
@@ -544,13 +546,14 @@ def _enrich_status(base_status: dict) -> dict:
     # ======== NEW: Contract fields ========
     identity = get_bot_identity() or ""
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # Inject market timezone derived from identity/jurisdiction (display-only)
-    market_tz = _market_tz_for_identity(identity)
+    # Inject market timezone from canonical runtime config (instead of inferring from identity)
+    market_tz = get_market_tz_str()  # CHANGED
     enriched["market_tz"] = market_tz
     enriched["market_tz_label"] = _market_tz_label(market_tz)
     # Optional: server-side clock snapshot to aid clients (read-only)
     try:
-        enriched["server_clock"] = _clock_payload(market_tz)
+        # FIX: use canonical utils_time.clock_payload() (config-driven), no local tz argument
+        enriched["server_clock"] = _clock_payload()
     except Exception:
         enriched["server_clock"] = {}
 

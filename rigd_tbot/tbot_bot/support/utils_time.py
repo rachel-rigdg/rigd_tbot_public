@@ -32,21 +32,27 @@ def _safe_zoneinfo(name: Optional[str]) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def get_market_tz_str() -> str:
+    """
+    Return the configured market timezone string from runtime_config.json.enc.
+    Falls back to 'America/New_York' if not set or on error.
+    Uses lazy import of secrets_manager to avoid circular imports.
+    """
+    try:
+        from tbot_bot.support.secrets_manager import load_runtime_config  # lazy import
+        cfg = load_runtime_config()
+        tz_str = (cfg.get("MARKET_TZ") or cfg.get("TIMEZONE")) or "America/New_York"
+    except Exception:
+        tz_str = "America/New_York"
+    return str(tz_str).strip()
+
+
 def get_timezone() -> ZoneInfo:
     """
-    Return the ZoneInfo timezone object from configuration, safely and lazily.
-    - Tries env_bot.load_env_var("TIMEZONE", "UTC") (lazy import to avoid circular deps)
-    - Falls back to OS env TBOT_TIMEZONE
-    - Defaults to UTC
+    Return the ZoneInfo timezone object from runtime configuration.
+    Falls back to 'America/New_York' if missing/invalid.
     """
-    tz_name = None
-    try:
-        # Lazy import to avoid circular dependency on module import
-        from tbot_bot.config.env_bot import load_env_var  # type: ignore
-        tz_name = str(load_env_var("TIMEZONE", "UTC") or "UTC").strip()
-    except Exception:
-        tz_name = os.environ.get("TBOT_TIMEZONE", "UTC")
-    return _safe_zoneinfo(tz_name)
+    return _safe_zoneinfo(get_market_tz_str())
 
 
 def now_utc() -> datetime:
@@ -59,7 +65,7 @@ utc_now = now_utc
 
 
 def now_local() -> datetime:
-    """Return the current local datetime (aware), per configured TIMEZONE."""
+    """Return the current local datetime (aware), per configured market TIMEZONE."""
     return now_utc().astimezone(get_timezone())
 
 
@@ -134,7 +140,24 @@ def _fmt_ampm(dt_obj: datetime) -> str:
     return s.lstrip("0") if s.startswith("0") else s
 
 
-def clock_payload(tz_str: str) -> dict:
+def _fmt_utc_offset(delta: Optional[timedelta]) -> str:
+    """
+    Format a UTC offset timedelta as 'UTC±H' or 'UTC±H:MM' (e.g., 'UTC-4', 'UTC+5:30').
+    Returns 'UTC+0' if delta is zero or None.
+    """
+    if not isinstance(delta, timedelta):
+        return "UTC+0"
+    total_seconds = int(delta.total_seconds())
+    sign = "-" if total_seconds < 0 else "+"
+    total_seconds = abs(total_seconds)
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    if minutes:
+        return f"UTC{sign}{hours}:{minutes:02d}"
+    return f"UTC{sign}{hours}"
+
+
+def clock_payload() -> dict:
     """
     Build read-only clock payload for UI:
       {
@@ -142,7 +165,9 @@ def clock_payload(tz_str: str) -> dict:
         "market_utc_iso": "YYYY-MM-DD, HH:MM",   # market 'now' expressed in UTC
         "market_local": "h:mm AM/PM",            # market local wall time
         "local_utc_iso": "YYYY-MM-DD, HH:MM",    # machine local 'now' expressed in UTC
-        "local_local": "h:mm AM/PM"              # machine local wall time
+        "local_local": "h:mm AM/PM",             # machine local wall time
+        "market_offset": "UTC-4",                # NEW: market tz offset from UTC
+        "local_offset": "UTC-7"                  # NEW: machine tz offset from UTC
       }
     - UTC has no DST conversion.
     - All conversions are via ZoneInfo arithmetic.
@@ -151,7 +176,7 @@ def clock_payload(tz_str: str) -> dict:
     utc_now_dt = now_utc()
 
     # Market zone view
-    market_tz = _safe_zoneinfo(tz_str)
+    market_tz = get_timezone()
     market_local = utc_now_dt.astimezone(market_tz)
     market_utc = market_local.astimezone(timezone.utc)
 
@@ -165,6 +190,9 @@ def clock_payload(tz_str: str) -> dict:
         "market_local": _fmt_ampm(market_local),
         "local_utc_iso": _fmt_date_hhmm(machine_utc),
         "local_local": _fmt_ampm(machine_local),
+        # NEW offset fields
+        "market_offset": _fmt_utc_offset(market_local.utcoffset()),
+        "local_offset": _fmt_utc_offset(machine_local.utcoffset()),
     }
 
 
