@@ -15,9 +15,8 @@ from tbot_bot.support.path_resolver import (
     resolve_status_log_path,
     get_output_path,
     get_bot_state_path,
-    get_schedule_json_path,
+    # get_schedule_json_path,  # removed: schedule.json is resolved via get_output_path
     # NEW helpers used for stamps/snapshots per MVP contract
-    get_status_path,
     get_snapshot_path,
     get_stamp_path,
     get_bot_identity,
@@ -97,71 +96,45 @@ def _parse_iso_utc(s: str):
 
 def _read_schedule():
     """
-    Read logs/schedule.json; if absent, fall back to config HH:MM (UTC) for today.
-    Returns dict with UTC strings the UI can render.
+    Read logs/schedule.json written by the supervisor.
+    NO FALLBACKS. If the file is missing or malformed, return None so the UI
+    surfaces the real state instead of masking problems.
     """
-    sched_path = Path(get_schedule_json_path())
-    if sched_path.exists():
-        try:
-            raw = json.load(open(sched_path, "r", encoding="utf-8"))
-            # Ensure string fields exist (UI-friendly)
-            out = {
-                "trading_date": raw.get("trading_date", ""),
-                "created_at_utc": raw.get("created_at_utc", ""),
-                "open_utc": raw.get("open_utc", ""),
-                "mid_utc": raw.get("mid_utc", ""),
-                "close_utc": raw.get("close_utc", ""),
-                # NEW: explicit holdings windows
-                "holdings_open_utc": raw.get("holdings_open_utc", "") or raw.get("holdings_utc", ""),
-                "holdings_mid_utc": raw.get("holdings_mid_utc", ""),
-                "universe_utc": raw.get("universe_utc", ""),
-                "holdings_after_open_min": raw.get("holdings_after_open_min", 10),
-                "holdings_after_mid_min": raw.get("holdings_after_mid_min", raw.get("holdings_after_open_min", 10)),
-                "universe_after_close_min": raw.get("universe_after_close_min", 120),
-            }
-            # Attach parsed instants (internal use)
-            out["_dt_open"] = _parse_iso_utc(out["open_utc"])
-            out["_dt_mid"] = _parse_iso_utc(out["mid_utc"])
-            out["_dt_close"] = _parse_iso_utc(out["close_utc"])
-            out["_dt_hold_open"] = _parse_iso_utc(out["holdings_open_utc"])
-            out["_dt_hold_mid"] = _parse_iso_utc(out["holdings_mid_utc"])
-            out["_dt_univ"] = _parse_iso_utc(out["universe_utc"])
-            return out
-        except Exception:
-            pass
+    # Use output/logs path; do NOT use get_schedule_json_path here.
+    sched_path = Path(get_output_path("logs", "schedule.json"))
+    if not sched_path.exists():
+        return None
+    try:
+        with open(sched_path, "r", encoding="utf-8") as f:
+            raw = json.load(f) or {}
 
-    # Fallback: build a minimal schedule for today using config HH:MM UTC (strings only)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    def _mk(hhmm: str) -> str:
-        hhmm = (hhmm or "00:00").strip()
-        return f"{today}T{hhmm}:00Z" if len(hhmm) == 5 else f"{today}T{hhmm}Z"
+        out = {
+            "trading_date": raw.get("trading_date", ""),
+            "created_at_utc": raw.get("created_at_utc", ""),
+            "open_utc": raw.get("open_utc", ""),
+            "mid_utc": raw.get("mid_utc", ""),
+            "close_utc": raw.get("close_utc", ""),
+            # Explicit holdings/universe fields only; no legacy minute-offset text
+            "holdings_open_utc": raw.get("holdings_open_utc", "") or raw.get("holdings_utc", ""),
+            "holdings_mid_utc": raw.get("holdings_mid_utc", ""),
+            "universe_utc": raw.get("universe_utc", ""),
+            # Keep any minute metadata if present (purely informational)
+            "holdings_after_open_min": raw.get("holdings_after_open_min"),
+            "holdings_after_mid_min": raw.get("holdings_after_mid_min"),
+            "universe_after_close_min": raw.get("universe_after_close_min"),
+        }
 
-    open_hhmm = (get_open_time_utc() or "13:30").strip()
-    mid_hhmm = (get_mid_time_utc() or "16:00").strip()
-    close_hhmm = (get_close_time_utc() or "19:45").strip()
+        # Attach parsed datetimes (internal use for phase calc)
+        out["_dt_open"] = _parse_iso_utc(out["open_utc"])
+        out["_dt_mid"] = _parse_iso_utc(out["mid_utc"])
+        out["_dt_close"] = _parse_iso_utc(out["close_utc"])
+        out["_dt_hold_open"] = _parse_iso_utc(out["holdings_open_utc"])
+        out["_dt_hold_mid"] = _parse_iso_utc(out["holdings_mid_utc"])
+        out["_dt_univ"] = _parse_iso_utc(out["universe_utc"])
 
-    fallback = {
-        "trading_date": today,
-        "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "open_utc": _mk(open_hhmm),
-        "mid_utc": _mk(mid_hhmm),
-        "close_utc": _mk(close_hhmm),
-        "holdings_utc": "",  # computed by supervisor; leave empty in fallback
-        "holdings_open_utc": "",
-        "holdings_mid_utc": "",
-        "universe_utc": "",
-        "holdings_after_open_min": 10,
-        "holdings_after_mid_min": 10,
-        "universe_after_close_min": 120,
-    }
-    fallback["_dt_open"] = _parse_iso_utc(fallback["open_utc"])
-    fallback["_dt_mid"] = _parse_iso_utc(fallback["mid_utc"])
-    fallback["_dt_close"] = _parse_iso_utc(fallback["close_utc"])
-    fallback["_dt_hold"] = None
-    fallback["_dt_hold_open"] = None
-    fallback["_dt_hold_mid"] = None
-    fallback["_dt_univ"] = None
-    return fallback
+        return out
+    except Exception:
+        return None
 
 def _determine_current_phase(schedule: dict) -> str:
     if not schedule:
@@ -217,6 +190,123 @@ def _compute_supervisor_banner(enriched: dict, schedule: dict) -> tuple[str, str
     if bot_state in {"error", "shutdown_triggered"}:
         return "failed", "Supervisor failed."
     return "scheduled", "Supervisor scheduled."
+
+# ---------------------------
+# NEW: Schedule normalization for template (no legacy delay math)
+# ---------------------------
+def _fmt_hms(dt: datetime | None) -> tuple[str, str]:
+    """
+    Returns (date_str 'YYYY-MM-DD', time_utc 'HH:MM:SS') from an aware UTC datetime.
+    If dt is None, returns ('—','—').
+    """
+    if not dt:
+        return "—", "—"
+    return dt.date().isoformat(), dt.strftime("%H:%M:%S")
+
+def _local_time_str(dt: datetime | None, tz_str: str) -> str:
+    """
+    Convert UTC -> local tz and return 'h:MM:SS AM/PM <LABEL>' (label via tzname or ET mapping).
+    """
+    if not dt:
+        return "—"
+    try:
+        tz = ZoneInfo(tz_str or "America/New_York")
+    except Exception:
+        tz = ZoneInfo("America/New_York")
+    local = dt.astimezone(tz)
+    # Label
+    abbr = (local.tzname() or "").upper()
+    if tz_str == "America/New_York" and abbr in {"EST", "EDT"}:
+        label = "ET"
+    else:
+        label = abbr or "UTC"
+    return local.strftime("%-I:%M:%S %p ") + label if hasattr(local, "strftime") else local.strftime("%I:%M:%S %p ") + label
+
+def _read_holdings_launch_stamp() -> str:
+    """
+    Read last line from stamps/holdings_launch_last.txt and format as 'YYYY-MM-DD HH:MM:SS'.
+    If unavailable, return '—'.
+    """
+    try:
+        p = Path(get_stamp_path("holdings_launch_last.txt"))
+        if not p.exists():
+            return "—"
+        lines = [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        if not lines:
+            return "—"
+        first_token = lines[-1].split()[0]
+        ts = _parse_iso_utc(first_token)
+        if not ts:
+            return "—"
+        return ts.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return "—"
+
+def _build_schedule_view() -> dict:
+    """
+    Build the exact schedule dict required by the template from logs/schedule.json.
+    Uses configured TIMEZONE (fallback America/New_York) for 'local' fields.
+    """
+    raw = _read_schedule() or {}
+    tz_str = None
+    try:
+        tz_str = get_market_tz_str() or "America/New_York"
+    except Exception:
+        tz_str = "America/New_York"
+
+    # Parse instants
+    dt_open = _parse_iso_utc(raw.get("open_utc"))
+    dt_hold_open = _parse_iso_utc(raw.get("holdings_open_utc"))
+    dt_mid = _parse_iso_utc(raw.get("mid_utc"))
+    dt_hold_mid = _parse_iso_utc(raw.get("holdings_mid_utc"))
+    dt_close = _parse_iso_utc(raw.get("close_utc"))
+    dt_univ = _parse_iso_utc(raw.get("universe_utc"))
+    created = _parse_iso_utc(raw.get("created_at_utc"))
+
+    # Assemble
+    open_date, open_utc = _fmt_hms(dt_open)
+    hold_open_date, hold_open_utc = _fmt_hms(dt_hold_open)
+    mid_date, mid_utc = _fmt_hms(dt_mid)
+    hold_mid_date, hold_mid_utc = _fmt_hms(dt_hold_mid)
+    close_date, close_utc = _fmt_hms(dt_close)
+    univ_date, univ_utc = _fmt_hms(dt_univ)
+
+    schedule_view = {
+        "trading_date": (raw.get("trading_date") or "—"),
+        "created_at": created.strftime("%Y-%m-%d %H:%M:%S") if created else "—",
+        "holdings_launched_utc": _read_holdings_launch_stamp(),
+        "open": {
+            "date": open_date,
+            "utc": open_utc,
+            "local": _local_time_str(dt_open, tz_str),
+        },
+        "holdings_open": {
+            "date": hold_open_date,
+            "utc": hold_open_utc,
+            "local": _local_time_str(dt_hold_open, tz_str),
+        },
+        "mid": {
+            "date": mid_date,
+            "utc": mid_utc,
+            "local": _local_time_str(dt_mid, tz_str),
+        },
+        "holdings_mid": {
+            "date": hold_mid_date,
+            "utc": hold_mid_utc,
+            "local": _local_time_str(dt_hold_mid, tz_str),
+        },
+        "close": {
+            "date": close_date,
+            "utc": close_utc,
+            "local": _local_time_str(dt_close, tz_str),
+        },
+        "universe": {
+            "date": univ_date,
+            "utc": univ_utc,
+            "local": _local_time_str(dt_univ, tz_str),
+        },
+    }
+    return schedule_view
 
 # ---------------------------
 # NEW: Read-only helpers for MVP contract
@@ -708,8 +798,10 @@ def status_page():
         candidate_data = []
     except Exception as e:
         candidate_data = [{"error": f"Failed to load candidate status: {e}"}]
-    schedule = status_data.get("schedule")
-    return render_template("status.html", status=status_data, candidate_status=candidate_data, schedule=schedule)
+
+    # (surgical) Build normalized schedule view strictly for the "Supervisor Schedule" section
+    schedule_view = _build_schedule_view()
+    return render_template("status.html", status=status_data, candidate_status=candidate_data, schedule=schedule_view)
 
 @status_blueprint.route("/api/bot_state")
 @login_required

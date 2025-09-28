@@ -68,7 +68,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function pollBotStatus() {
         try {
-            const resp = await fetch('/status/api/full_status', { cache: "no-store" });
+            // FIX: endpoint lives at '/api/full_status' (blueprint route), not '/status/api/full_status'
+            const resp = await fetch('/api/full_status', { cache: "no-store" });
             if (!resp.ok) throw new Error("HTTP not OK");
             const payload = await resp.json();
             if (!payload || Object.keys(payload).length === 0) throw new Error("Empty JSON");
@@ -82,8 +83,9 @@ document.addEventListener("DOMContentLoaded", function () {
     function normalizePayload(payload) {
         // Backend may return either a flat status object or {status, schedule, supervisor}
         const status = payload.status ? payload.status : payload;
-        const schedule = payload.schedule || null;
-        const supervisor = payload.supervisor || {};
+        // TINY: also consider schedule nested under status if top-level is missing
+        const schedule = payload.schedule || status.schedule || null;
+        const supervisor = payload.supervisor || status.supervisor || {};
         const market_tz = payload.market_tz || status.market_tz || DEFAULTS.market_tz;
         const server_clock = payload.server_clock || status.server_clock || null;
 

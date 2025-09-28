@@ -70,6 +70,13 @@
                         {% endif %}
                     {% endif %}
                 {% endif %}
+                <!-- Tiny: placeholders for JS supervisor badges -->
+                <div style="margin-top:6px;color:#ccc;font-size:0.9em;">
+                    <span>Scheduled: <span id="banner-scheduled">—</span></span>
+                    <span style="margin-left:10px;">Launched: <span id="banner-launched">—</span></span>
+                    <span style="margin-left:10px;">Running: <span id="banner-running">—</span></span>
+                    <span style="margin-left:10px;">Failed: <span id="banner-failed">—</span></span>
+                </div>
             </div>
 
             {% if status.error %}
@@ -82,82 +89,47 @@
                     <div><strong>Local:</strong> <span id="clock-local">—</span></div>
                 </div>
 
-                <!-- Daily one-shot supervisor schedule (from logs/schedule.json if present) -->
+                <!-- Daily one-shot supervisor schedule (render normalized server object; no legacy text) -->
                 <hr>
                 <h2>Supervisor Schedule (UTC)</h2>
-                <p style="color:#666;margin-top:-6px;">Times below are in UTC and generated once per day by the supervisor.</p>
+                <p style="color:#666;margin-top:-6px;">Times below are generated once per day by the supervisor. UTC and local are preformatted by the server.</p>
 
                 {% if schedule %}
-                    {% set jobs = status.jobs if status and status.jobs is defined else {} %}
-                    {% set hm_obj = jobs.holdings_manager if jobs and jobs.holdings_manager is defined else None %}
-                    <!-- NOTE: class changed from 'status-grid' to 'schedule-grid' so JS status updater doesn't target this block -->
                     <div class="schedule-grid"
                          data-market-tz="{{ status.market_tz or 'America/New_York' }}"
                          data-market-tz-label="{{ status.market_tz_label or 'ET' }}">
                         <div><strong>Trading Date:</strong> {{ schedule.trading_date }}</div>
-                        <div><strong>Created:</strong> {{ schedule.created_at_utc }}</div>
-                        <!-- NEW: Holdings Launch (UTC) surfaced from jobs.holdings_manager -->
-                        <div><strong>Holdings (Launched UTC):</strong> {{ hm_obj.last_run_utc if hm_obj and hm_obj.last_run_utc else "—" }}</div>
+                        <div><strong>Created:</strong> {{ schedule.created_at }}</div>
+                        <div><strong>Holdings (Launched UTC):</strong> {{ schedule.holdings_launched_utc }}</div>
 
                         <div>
                             <strong>Open:</strong>
-                            {{ schedule.open_utc }}
-                            <span class="utc-local-convert"
-                                  data-utc="{{ schedule.open_utc|e }}"></span>
+                            {{ schedule.open.date }},  UTC: {{ schedule.open.utc }} , {{ schedule.open.local }}
                         </div>
 
-                        {# Holdings after open (fallback to legacy holdings_utc) #}
-                        {% set hold_open = schedule.holdings_open_utc if schedule.holdings_open_utc else schedule.holdings_utc %}
-                        {% set hold_open_min = schedule.holdings_after_open_min %}
                         <div>
                             <strong>Holdings (after open):</strong>
-                            {{ hold_open if hold_open else "—" }}
-                            {% if hold_open and hold_open_min is not none %}
-                                <span style="color:#666;">(+{{ hold_open_min }}m)</span>
-                            {% endif %}
-                            {% if hold_open %}
-                                <span class="utc-local-convert"
-                                      data-utc="{{ hold_open|e }}"></span>
-                            {% endif %}
+                            {{ schedule.holdings_open.date }},  UTC: {{ schedule.holdings_open.utc }} , {{ schedule.holdings_open.local }}
                         </div>
 
                         <div>
                             <strong>Mid:</strong>
-                            {{ schedule.mid_utc }}
-                            <span class="utc-local-convert"
-                                  data-utc="{{ schedule.mid_utc|e }}"></span>
+                            {{ schedule.mid.date }},  UTC: {{ schedule.mid.utc }} , {{ schedule.mid.local }}
                         </div>
 
-                        {# Holdings after mid #}
-                        {% set hold_mid = schedule.holdings_mid_utc %}
-                        {% set hold_mid_min = schedule.holdings_after_mid_min %}
                         <div>
                             <strong>Holdings (after mid):</strong>
-                            {{ hold_mid if hold_mid else "—" }}
-                            {% if hold_mid and hold_mid_min is not none %}
-                                <span style="color:#666;">(+{{ hold_mid_min }}m)</span>
-                            {% endif %}
-                            {% if hold_mid %}
-                                <span class="utc-local-convert"
-                                      data-utc="{{ hold_mid|e }}"></span>
-                            {% endif %}
+                            {{ schedule.holdings_mid.date }},  UTC: {{ schedule.holdings_mid.utc }} , {{ schedule.holdings_mid.local }}
                         </div>
 
                         <div>
                             <strong>Close:</strong>
-                            {{ schedule.close_utc }}
-                            <span class="utc-local-convert"
-                                  data-utc="{{ schedule.close_utc|e }}"></span>
+                            {{ schedule.close.date }}, UTC: {{ schedule.close.utc }} , {{ schedule.close.local }}
                         </div>
 
                         <div>
                             <strong>Universe (after close):</strong>
-                            {{ schedule.universe_utc }}
-                            <span style="color:#666;">(+{{ schedule.universe_after_close_min }}m)</span>
-                            {% if schedule.universe_utc %}
-                                <span class="utc-local-convert"
-                                      data-utc="{{ schedule.universe_utc|e }}"></span>
-                            {% endif %}
+                            {{ schedule.universe.date }},  UTC: {{ schedule.universe.utc }} ,  {{ schedule.universe.local }}
                         </div>
                     </div>
                 {% else %}
@@ -345,7 +317,7 @@
                                     <td>{{ candidate.symbol }}</td>
                                     <td>{{ candidate.strategy }}</td>
                                     <td>{{ candidate.status }}</td>
-                                    <td>{{ candidate.fallback }}</td>}
+                                    <td>{{ candidate.fallback }}</td>
                                     <td>{{ candidate.broker_eligibility }}</td>
                                     <td>{{ candidate.reason }}</td>
                                 </tr>

@@ -321,19 +321,24 @@ def main():
         if child_procs.get("test_runner") is None or child_procs["test_runner"].poll() is not None:
             child_procs["test_runner"] = _launch_integration_test_runner()
 
-    # Self-schedule supervisor (always; TEST_MODE no longer blocks scheduling)
+    # ----------------------------------------------------------------------
+    # Self-schedule supervisor (and ALWAYS launch one run immediately)
+    # ----------------------------------------------------------------------
     next_fire = None
     if SUP_ENABLE:
+        # 1) Launch supervisor immediately on startup (unconditionally)
+        write_system_log("Immediate supervisor launch on startup.")
+        child_procs["supervisor"] = _launch_supervisor()
+
+        # 2) Compute the next daily trigger so we don't double-run today
         now = _utc_now()
-        target = _next_utc_trigger(now)
-        if now >= target:
-            # We're late -> fire immediately today
-            write_system_log(f"Missed {SUP_TRIGGER_HHMM}Z window; starting supervisor now.")
-            child_procs["supervisor"] = _launch_supervisor()
-            # schedule next for tomorrow
-            next_fire = _next_utc_trigger(_utc_now())
+        today_or_next = _next_utc_trigger(now)
+        # If we launched *before* today's trigger, skip today and schedule tomorrow
+        if now < today_or_next:
+            next_fire = _next_utc_trigger(today_or_next + dt.timedelta(minutes=1))
         else:
-            next_fire = target
+            # Launched at/after today's trigger → next is tomorrow's trigger
+            next_fire = _next_utc_trigger(now)
         write_system_log(f"Next supervisor trigger set for {next_fire.isoformat() if next_fire else 'disabled'}")
     else:
         write_system_log("Supervisor disabled by TBOT_SUPERVISOR_ENABLE=0")
