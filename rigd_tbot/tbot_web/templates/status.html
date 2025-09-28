@@ -37,6 +37,8 @@
 
             <!-- Supervisor banner (pure-template logic; no backend change required) -->
             <div style="margin:14px 0;padding:10px 12px;border-radius:6px;background:#222;border:1px solid #999;">
+                <button id="btn-rebuild-schedule" class="btn">Calculate Schedule</button>
+
                 {% set sup_from_status = status.supervisor_state if status and status.supervisor_state is defined else None %}
                 {% if sup_from_status %}
                     {% if sup_from_status|lower == "running" %}

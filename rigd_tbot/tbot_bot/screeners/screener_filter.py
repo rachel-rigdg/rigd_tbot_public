@@ -18,6 +18,93 @@ SECTOR_KEYS         = ("sector", "industry", "finnhubIndustry")
 VOLUME_KEYS         = ("volume", "vol", "v")
 EXCHANGE_KEYS       = ("exchange", "mic")
 
+# ----------------------------
+# Exchange normalization (MIC- and alias-aware)  ——  canonical uppercase tokens
+# ----------------------------
+_MIC_TO_MARKET = {
+    # U.S. primary listing venues
+    "XNYS": "NYSE",
+    "XNAS": "NASDAQ",
+    "XNMS": "NASDAQ",       # NASDAQ Small Cap (legacy)
+    "XNGS": "NASDAQ",       # NASDAQ/NGS (Global Select)
+    "XNCM": "NASDAQ",       # NASDAQ Capital Market
+    "XASE": "NYSE_AMERICAN",
+    "ARCX": "NYSE_ARCA",
+    "BATS": "CBOE_BZX",
+    "EDGX": "CBOE_EDGX",
+    "EDGA": "CBOE_EDGA",
+    "IEXG": "IEX",
+    "XMEX": "MEX",
+    "OTCM": "OTC",
+    "OTCX": "OTC",
+    "PINC": "OTC",          # Pink Current (alias)
+    # Common non-U.S. MICs occasionally present (map to broad)
+    "XTSE": "TSX",
+    "XTSX": "TSXV",
+    "XASETR": "NYSE_AMERICAN",
+}
+
+_ALIAS_TO_MARKET = {
+    # Spelling/spacing variants
+    "NYSE ARCA": "NYSE_ARCA",
+    "NYSE-ARCA": "NYSE_ARCA",
+    "NYSE MKT": "NYSE_AMERICAN",
+    "AMEX": "NYSE_AMERICAN",
+    "NASDAQ GS": "NASDAQ",
+    "NASDAQ GM": "NASDAQ",
+    "NASDAQ CM": "NASDAQ",
+    "CBOE BZX": "CBOE_BZX",
+    "CBOE-BZX": "CBOE_BZX",
+    "CBOE EDGX": "CBOE_EDGX",
+    "CBOE-EDGX": "CBOE_EDGX",
+    "PINK": "OTC",
+    "OTC PINK": "OTC",
+}
+
+def _canon_token(s: str) -> str:
+    """Uppercase, trim, collapse whitespace, replace separators with underscore."""
+    if not s:
+        return ""
+    t = str(s).strip().upper()
+    t = re.sub(r"\s+", " ", t)
+    t = t.replace("-", " ").replace("/", " ")
+    t = re.sub(r"\s+", "_", t)
+    return t
+
+def normalize_exchange(exch: Optional[str]) -> str:
+    """
+    Normalize provider 'exchange' or 'mic' into a canonical market token.
+    Handles:
+      - MIC codes (e.g., XNAS->NASDAQ, XNYS->NYSE, ARCX->NYSE_ARCA, BATS->CBOE_BZX)
+      - Common aliases and label variants (e.g., 'NYSE ARCA' -> 'NYSE_ARCA')
+      - Case/spacing/hyphen differences
+    Returns canonical token suitable for equality comparison against configured allow-list.
+    """
+    if not exch:
+        return ""
+    raw = str(exch).strip().upper()
+    # 1) Direct MIC map
+    if raw in _MIC_TO_MARKET:
+        return _MIC_TO_MARKET[raw]
+    # 2) Alias map (after canonicalization)
+    alias_key = raw
+    if alias_key in _ALIAS_TO_MARKET:
+        return _ALIAS_TO_MARKET[alias_key]
+    # 3) Canonicalized token fallback
+    return _canon_token(raw)
+
+def normalize_exchange_list(exchs: Optional[List[str]]) -> Optional[List[str]]:
+    if exchs is None:
+        return None
+    out = []
+    for e in exchs:
+        if e is None:
+            continue
+        norm = normalize_exchange(e)
+        if norm:
+            out.append(norm)
+    return out
+
 def tofloat(val):
     # Defensive, robust conversion: handles commas, "M"/"B" suffix, string/None, zero
     if val is None:
@@ -105,12 +192,15 @@ def normalize_symbol(raw: Dict) -> Dict:
             except Exception:
                 norm["volume"] = 0
             break
-    # Exchange normalization
+    # Exchange normalization (use MIC/alias-aware canonicalizer)
+    exch_val = None
     for k in EXCHANGE_KEYS:
         v = raw.get(k)
         if v not in (None, "", "None"):
-            norm["exchange"] = str(v).upper().strip()
+            exch_val = v
             break
+    norm["exchange"] = normalize_exchange(exch_val)
+
     # Copy all other unknown fields (keep extra fields for info)
     for k in raw:
         if k not in norm:
@@ -141,7 +231,9 @@ def passes_filter(
     sym = s.get("symbol", "")
     lc  = s.get("lastClose", None)
     mc  = s.get("marketCap", None)
-    exch = s.get("exchange", "").upper()
+    # Normalize exchange defensively even though normalize_symbol already did
+    exch = normalize_exchange(s.get("exchange", ""))
+
     # Explicit logging for skip reasons
     if not sym:
         print(f"[DEBUG] passes_filter: missing_symbol for {s}")
@@ -155,11 +247,13 @@ def passes_filter(
     if not (min_market_cap <= mc <= max_market_cap):
         print(f"[DEBUG] passes_filter: marketCap out of range for {sym} (marketCap: {mc}, min: {min_market_cap}, max: {max_market_cap})")
         return False, "market_cap"
+
     if allowed_exchanges is not None and len(allowed_exchanges) > 0:
         if "*" not in allowed_exchanges:
             if exch not in allowed_exchanges:
-                print(f"[DEBUG] passes_filter: exchange {exch} not in allowed_exchanges for {sym}")
+                print(f"[DEBUG] passes_filter: exchange {exch} not in allowed_exchanges for {sym} (allowed={allowed_exchanges})")
                 return False, "exchange"
+
     if broker_obj and hasattr(broker_obj, "is_symbol_tradable"):
         if not broker_obj.is_symbol_tradable(sym):
             print(f"[DEBUG] passes_filter: not_tradable for {sym}")
@@ -218,6 +312,9 @@ def filter_symbols(
 ) -> List[Dict]:
     normalized = normalize_symbols(symbols)
 
+    # (surgical) Normalize allow-list once for all comparisons (MIC/alias aware)
+    normalized_allowed_exchanges = normalize_exchange_list(allowed_exchanges) if allowed_exchanges else allowed_exchanges
+
     def _run(records: List[Dict]) -> List[Dict]:
         acc = []
         for s in records:
@@ -227,7 +324,7 @@ def filter_symbols(
                 max_price,
                 min_market_cap,
                 max_market_cap,
-                allowed_exchanges,
+                normalized_allowed_exchanges,
                 broker_obj
             )
             if not passed:

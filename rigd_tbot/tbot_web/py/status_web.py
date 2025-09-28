@@ -7,8 +7,11 @@ import glob, os  # (surgical) for test-mode flag scan and universe warn env
 from datetime import datetime, timezone, date
 from pathlib import Path
 from zoneinfo import ZoneInfo  # (surgical) tz label resolution
+import subprocess  # <<< ADDED
+import shlex       # <<< ADDED
+import sys         # <<< ADDED
 
-from flask import Blueprint, render_template, jsonify
+from flask import Blueprint, render_template, jsonify, request  # <<< request ADDED
 
 from .login_web import login_required
 from tbot_bot.support.path_resolver import (
@@ -43,9 +46,8 @@ status_blueprint = Blueprint("status_web", __name__)
 
 # ----- Defaults so UI never renders blank -----
 DEFAULT_STATUS = {
-    # IMPORTANT: no fallback/default for state on the UI — leave blank until read.
-    "state": "",
-    "bot_state": "",
+    "state": "idle",
+    "bot_state": "idle",
     "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "active_strategy": "none",
     "trade_count": 0,
@@ -79,8 +81,10 @@ def _read_status_json() -> dict:
 
 def _read_bot_state() -> str:
     try:
-        # Return exactly what's recorded; no fallback default here.
-        return get_state(default="") or ""
+        # SURGICAL: use centralized state manager instead of direct file reads
+        # IMPORTANT: no default fallback to "idle" — surface the current truth
+        s = get_state()
+        return s if s is not None else ""
     except Exception:
         return ""
 
@@ -181,8 +185,8 @@ def _compute_supervisor_banner(enriched: dict, schedule: dict) -> tuple[str, str
         }
         return existing_state, banner_map[existing_state]
 
-    # Inference path — do NOT inject a default "idle"
-    bot_state = (enriched or {}).get("bot_state", "").strip().lower()
+    # Inference path (unchanged)
+    bot_state = (enriched or {}).get("bot_state", "idle")
     sched_exists = bool(schedule)
     if not sched_exists:
         return "not_scheduled", "Supervisor not scheduled."
@@ -832,3 +836,42 @@ def full_status_compat():
 @login_required
 def bot_state_compat():
     return jsonify({"bot_state": _read_bot_state()})
+
+# ---------------------------
+# NEW: One-click "Calculate Schedule" trigger
+# ---------------------------
+@status_blueprint.route("/api/rebuild_schedule", methods=["POST"])
+@login_required  # change to rbac_required("admin") if you want admin-only
+def rebuild_schedule_api():
+    """
+    Spawn the thin supervisor as a one-shot to (re)compute logs/schedule.json.
+    Returns JSON with ok/rc/message.
+    The supervisor itself enforces the bootstrap state-gate.
+    """
+    try:
+        py = os.environ.get("TBOT_PY", sys.executable)
+        cmd = f"{shlex.quote(py)} -m tbot_bot.runtime.tbot_supervisor"
+        env = os.environ.copy()
+        # Ensure repo root is on PYTHONPATH for the child
+        repo_root = str(Path(__file__).resolve().parents[2])
+        cur = env.get("PYTHONPATH", "")
+        if repo_root not in cur.split(os.pathsep):
+            env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{cur}" if cur else repo_root
+
+        proc = subprocess.run(shlex.split(cmd), cwd=repo_root, env=env, capture_output=True, text=True)
+        rc = proc.returncode
+        ok = (rc == 0)
+        msg = "Supervisor triggered." if ok else f"Supervisor returned {rc}"
+        # Lightly include tail output for debugging
+        tail = (proc.stdout or "").splitlines()[-3:]
+        err_tail = (proc.stderr or "").splitlines()[-3:]
+        return jsonify({
+            "ok": ok,
+            "rc": rc,
+            "message": msg,
+            "stdout_tail": tail,
+            "stderr_tail": err_tail,
+            "state": _read_bot_state()
+        }), (200 if ok else 500)
+    except Exception as e:
+        return jsonify({"ok": False, "rc": -1, "message": f"spawn error: {e}", "state": _read_bot_state()}), 500
