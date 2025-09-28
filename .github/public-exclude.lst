@@ -1,0 +1,6 @@
+.git/
+secrets/**
+*.env
+*_secrets.json
+*.key
+tbot_bot/storage/**
