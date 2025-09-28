@@ -2,6 +2,7 @@
 __pycache__/
 logs/
 backups/
+tools/
 .env
 .env_bot
 *.enc
