@@ -47,25 +47,28 @@ class FinnhubProvider(ProviderBase):
         if resp.status_code == 200:
             return
         # Explicit HTTP/JSON error surfacing for 4xx/5xx (incl. 401/403/429)
-        body = None
         try:
             body = resp.text
         except Exception:
             body = "<unreadable body>"
         msg = f"FINNHUB {ctx}: HTTP {resp.status_code} — {body}"
-        # Always log and raise
         self.log(msg)
         raise RuntimeError(msg)
 
-    def _json_or_error(self, resp: requests.Response, ctx: str):
+    def _json_or_error(self, resp: requests.Response, ctx: str, allow_empty: bool = False):
         try:
             data = resp.json()
         except Exception as e:
             msg = f"FINNHUB {ctx}: invalid JSON — {e}"
             self.log(msg)
             raise RuntimeError(msg)
-        # Treat empty/None payloads as errors
-        if data is None or (isinstance(data, list) and len(data) == 0) or (isinstance(data, dict) and len(data.keys()) == 0):
+        # Treat empty/None payloads as errors unless explicitly allowed
+        is_empty = (
+            data is None or
+            (isinstance(data, list) and len(data) == 0) or
+            (isinstance(data, dict) and len(data.keys()) == 0)
+        )
+        if is_empty and not allow_empty:
             msg = f"FINNHUB {ctx}: empty payload"
             self.log(msg)
             raise RuntimeError(msg)
@@ -112,7 +115,7 @@ class FinnhubProvider(ProviderBase):
     def fetch_quotes(self, symbols: List[str]) -> List[Dict]:
         quotes = []
         for idx, symbol in enumerate(symbols):
-            # --- Quote endpoint ---
+            # --- Quote endpoint (fatal on empty/invalid) ---
             url_quote = f"{self.api_url.rstrip('/')}/quote?symbol={symbol}&token={self.api_key}"
             resp_q = requests.get(url_quote, timeout=self.timeout, auth=self._auth())
             self._raise_for_status(resp_q, f"fetch_quote[{symbol}]")
@@ -121,7 +124,10 @@ class FinnhubProvider(ProviderBase):
             # Require a valid current price "c"
             c_val = data_q.get("c", None)
             if c_val is None or float(c_val) == 0.0:
-                raise RuntimeError(f"FINNHUB fetch_quote[{symbol}]: missing/zero 'c' field in payload: {data_q}")
+                # Non-fatal data miss for this symbol; skip append
+                self.log(f"FINNHUB fetch_quote[{symbol}]: missing/zero 'c' field; skipping symbol.")
+                time.sleep(self.sleep)
+                continue
 
             c = float(c_val)
             o = float(data_q.get("o", 0) or 0)
@@ -131,11 +137,15 @@ class FinnhubProvider(ProviderBase):
             url_profile = f"{self.api_url.rstrip('/')}/stock/profile2?symbol={symbol}&token={self.api_key}"
             resp_p = requests.get(url_profile, timeout=self.timeout, auth=self._auth())
             self._raise_for_status(resp_p, f"fetch_profile2[{symbol}]")
-            data_p = self._json_or_error(resp_p, f"fetch_profile2[{symbol}]")
+            # Allow empty payload here (treat as non-fatal; many non-common classes return {})
+            data_p = self._json_or_error(resp_p, f"fetch_profile2[{symbol}]", allow_empty=True)
 
-            market_cap = data_p.get("marketCapitalization", None)
+            market_cap = None if not isinstance(data_p, dict) else data_p.get("marketCapitalization", None)
             if market_cap in (None, 0, 0.0, "0", "0.0"):
-                raise RuntimeError(f"FINNHUB fetch_profile2[{symbol}]: missing/zero 'marketCapitalization' in payload: {data_p}")
+                # Non-fatal per-symbol data miss: skip append (enrichment will count appropriately)
+                self.log(f"FINNHUB fetch_profile2[{symbol}]: missing/zero 'marketCapitalization'; skipping symbol.")
+                time.sleep(self.sleep)
+                continue
 
             quotes.append({
                 "symbol": symbol,
