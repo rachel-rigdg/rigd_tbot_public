@@ -28,6 +28,7 @@ from tbot_bot.support.path_resolver import (
 from tbot_web.support.auth_web import get_current_user, get_user_role  # DB-backed RBAC
 from tbot_bot.config.env_bot import get_bot_config
 from tbot_web.support.utils_coa_web import load_coa_metadata_and_accounts
+from tbot_bot.support.bot_state_manager import get_state  # ADDED
 
 from tbot_bot.accounting.ledger_modules.ledger_grouping import (
     fetch_grouped_trades,
@@ -41,7 +42,6 @@ from tbot_bot.accounting.ledger_modules.ledger_balance import calculate_account_
 
 ledger_web = Blueprint("ledger_web", __name__)
 
-BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
 
 
@@ -50,8 +50,8 @@ INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
 # ---------------------------
 def get_current_bot_state():
     try:
-        with open(BOT_STATE_PATH, "r", encoding="utf-8") as f:
-            return f.read().strip()
+        s = get_state()
+        return s.strip() if isinstance(s, str) and s.strip() else "unknown"
     except Exception:
         return "unknown"
 

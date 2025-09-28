@@ -28,6 +28,8 @@ from tbot_bot.trading.trailing_stop import (
     get_strategy_trail_pct,
     get_tightened_trailing_pct,
 )
+# --- SURGICAL: centralized state manager for robust state writes ---
+from tbot_bot.support.bot_state_manager import set_state
 
 print("[strategy_mid] module loaded", flush=True)
 
@@ -96,6 +98,9 @@ def _has_mid_run_today(now_dt: datetime) -> bool:
 
 def analyze_vwap_signals(start_time, screener_class):
     log_event("strategy_mid", "Starting VWAP deviation analysis...")
+    # --- SURGICAL: set explicit state on entry to analyze phase ---
+    set_state("analyzing", reason="mid:analyze")
+
     signals = []
     analysis_minutes = 1 if is_test_mode_active() else MID_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
@@ -186,6 +191,9 @@ def analyze_vwap_signals(start_time, screener_class):
 
 def execute_mid_trades(signals, start_time):
     log_event("strategy_mid", "Executing trades...")
+    # --- SURGICAL: set explicit state right before placing orders ---
+    set_state("trading", reason="mid:placing")
+
     trades = []
     monitoring_minutes = 1 if is_test_mode_active() else MID_MONITORING_TIME
     deadline = start_time + timedelta(minutes=monitoring_minutes)
@@ -276,7 +284,14 @@ def execute_mid_trades(signals, start_time):
         except Exception as e:
             handle_error("strategy_mid", "BrokerError", e)
 
+    # --- SURGICAL: enter monitoring phase after order placement pass begins/completes ---
+    set_state("monitoring", reason="mid:monitoring")
+
     log_event("strategy_mid", f"Trades executed: {len(trades)}")
+
+    # --- SURGICAL: immediately before programmed close/stop procedures (end of monitoring window) ---
+    set_state("trading", reason="mid:closing")
+
     return trades
 
 def run_mid_strategy(screener_class):
@@ -315,6 +330,10 @@ def run_mid_strategy(screener_class):
     # Use local time for window logic
     start_time = now_local()
     print(f"[strategy_mid] starting with screener={getattr(screener_class, '__name__', screener_class)}", flush=True)
+
+    # --- SURGICAL: explicit analyze-phase state (redundant guard in case analyze_* is refactored) ---
+    set_state("analyzing", reason="mid:analyze")
+
     signals = analyze_vwap_signals(start_time, screener_class)
     trades = execute_mid_trades(signals, start_time)
     print(f"[strategy_mid] completed with {len(trades)} trades", flush=True)

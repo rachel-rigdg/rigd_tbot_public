@@ -7,6 +7,7 @@ from tbot_web.py.login_web import login_required  # keep existing import path
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from pathlib import Path
 from tbot_bot.support import path_resolver
+from tbot_bot.support.bot_state_manager import set_state  # ADDED
 
 start_stop_blueprint = Blueprint("start_stop_web", __name__)
 
@@ -18,7 +19,6 @@ CONTROL_DIR = Path(os.getenv("CONTROL_DIR", PROJECT_ROOT / "tbot_bot" / "control
 START_FLAG = CONTROL_DIR / "control_start.flag"
 STOP_FLAG  = CONTROL_DIR / "control_stop.flag"
 KILL_FLAG  = CONTROL_DIR / "control_kill.flag"
-BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 # Ensure control directory exists
 CONTROL_DIR.mkdir(parents=True, exist_ok=True)
@@ -38,8 +38,8 @@ def trigger_start():
         STOP_FLAG.unlink(missing_ok=True)
         KILL_FLAG.unlink(missing_ok=True)
         START_FLAG.write_text("start", encoding="utf-8")
-        # Immediate UI feedback; supervisor will also update state on flag detection
-        BOT_STATE_PATH.write_text("running", encoding="utf-8")
+        # State: moving into live scheduling/execution flow
+        set_state("running", reason="ui:start")
         flash("Start signal issued.", "success")
     except Exception as e:
         flash(f"Failed to issue start signal: {e}", "error")
@@ -60,7 +60,7 @@ def trigger_stop():
         START_FLAG.unlink(missing_ok=True)
         KILL_FLAG.unlink(missing_ok=True)
         STOP_FLAG.write_text("stop", encoding="utf-8")
-        BOT_STATE_PATH.write_text("idle", encoding="utf-8")
+        set_state("idle", reason="ui:stop")
         flash("Stop signal issued.", "success")
     except Exception as e:
         flash(f"Failed to issue stop signal: {e}", "error")
@@ -81,7 +81,7 @@ def trigger_kill():
         START_FLAG.unlink(missing_ok=True)
         STOP_FLAG.unlink(missing_ok=True)
         KILL_FLAG.write_text("kill", encoding="utf-8")
-        BOT_STATE_PATH.write_text("idle", encoding="utf-8")
+        set_state("idle", reason="ui:kill")
         flash("Kill signal issued.", "success")
     except Exception as e:
         flash(f"Failed to issue kill signal: {e}", "error")

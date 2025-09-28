@@ -11,7 +11,6 @@ from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 
 users_blueprint = Blueprint("users_web", __name__, url_prefix="/users")
 
-BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
 @users_blueprint.route("/", methods=["GET"])
 @rbac_required("admin")

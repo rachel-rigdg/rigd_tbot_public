@@ -8,6 +8,7 @@ import json
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 import subprocess
 import logging
+from tbot_bot.support.bot_state_manager import get_state, set_state  # ADDED
 
 # ----------------------------
 # [SCHEDULE LOCAL→UTC] minimal additions
@@ -83,7 +84,6 @@ configuration_blueprint = Blueprint("configuration_web", __name__, url_prefix="/
 RUNTIME_CONFIG_KEY_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys" / "runtime_config.key"
 RUNTIME_CONFIG_PATH     = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets" / "runtime_config.json.enc"
 PROVISION_FLAG_PATH     = Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "PROVISION_FLAG"
-BOT_STATE_PATH          = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 SECRETS_TEMPLATE_PATH   = Path(__file__).resolve().parents[2] / "tools"    / "secrets_template.json"
 
 # [SCHEDULE LOCAL→UTC] .env_bot path (no path_resolver dependency to keep changes minimal)
@@ -136,11 +136,10 @@ def save_runtime_config(config: dict):
 def show_configuration():
     """Render the configuration page on first launch or during explicit reconfiguration."""
     state = "initialize"
-    if BOT_STATE_PATH.exists():
-        try:
-            state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        except Exception:
-            state = "initialize"
+    try:
+        state = (get_state() or "initialize").strip()  # CHANGED
+    except Exception:
+        state = "initialize"
     if state in ("provisioning", "bootstrapping"):
         return render_template("wait.html", bot_state=state)
     if state == "registration":
@@ -302,9 +301,8 @@ def save_configuration():
     first_bootstrap = is_first_bootstrap()
     try:
         if first_bootstrap:
-            BOT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with open(BOT_STATE_PATH, "w", encoding="utf-8") as f:
-                f.write("provisioning")
+            # Use state manager instead of writing file directly
+            set_state("provisioning", reason="web:provision")  # CHANGED
             PROVISION_FLAG_PATH.touch(exist_ok=True)
             subprocess.Popen(["python3", str(Path(__file__).resolve().parents[2] / "tbot_bot" / "config" / "provisioning_runner.py")])
             logger.info("[configuration_web] provisioning_runner.py launched")

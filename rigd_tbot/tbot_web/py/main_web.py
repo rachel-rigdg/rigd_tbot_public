@@ -6,19 +6,17 @@ from flask import Blueprint, redirect, url_for, render_template, session, reques
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from ..support.default_config_loader import get_default_config
 from tbot_web.support.auth_web import user_exists
-from pathlib import Path
+from tbot_bot.support.bot_state_manager import get_state  # ADDED
 
 main_blueprint = Blueprint("main", __name__)
-BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
 # States per Document 070 (unchanged semantics)
 PHASE1_STATES = ("initialize", "provisioning", "bootstrapping", "registration")
 
 def get_current_bot_state():
     try:
-        with open(BOT_STATE_PATH, "r", encoding="utf-8") as f:
-            state = f.read().strip()
-            return state
+        state = get_state()
+        return state.strip() if isinstance(state, str) and state.strip() else "unknown"
     except Exception:
         return "unknown"
 

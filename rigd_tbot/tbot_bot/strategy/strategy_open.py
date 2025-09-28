@@ -21,6 +21,8 @@ from tbot_bot.trading.risk_module import validate_trade
 from tbot_bot.config.error_handler_bot import handle as handle_error
 from tbot_bot.support.decrypt_secrets import decrypt_json
 from tbot_bot.support import path_resolver  # ensure control path consistency
+# (surgical) centralized bot-state writes
+from tbot_bot.support.bot_state_manager import set_state
 
 # NEW: central trailing-stop helper import (used for any runtime-managed trailing logic)
 from tbot_bot.trading.trailing_stop import (
@@ -101,6 +103,11 @@ def _has_open_run_today(now_dt: datetime) -> bool:
 
 def analyze_opening_range(start_time, screener_class):
     log_event("strategy_open", "Starting opening range analysis...")
+    # (surgical) state: entering analyze phase
+    try:
+        set_state("analyzing", reason="open:analyze")
+    except Exception:
+        pass
     analysis_minutes = 1 if is_test_mode_active() else OPEN_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
     print(f"[strategy_open] analyze_opening_range start; deadline={deadline.isoformat()}", flush=True)
@@ -207,6 +214,12 @@ def detect_breakouts(start_time, screener_class):
     # DEBUG: log base vs effective to verify wiring at runtime
     log_event("strategy_open", f"Trailing stop pct (base → effective): {base_trail_pct:.6f} → {effective_trail_pct:.6f}")
 
+    # (surgical) state: we are about to start submitting orders for eligible symbols
+    try:
+        set_state("trading", reason="open:placing")
+    except Exception:
+        pass
+
     # Only proceed with eligible
     for entry in eligible_symbols:
         symbol = entry["symbol"]
@@ -294,6 +307,12 @@ def detect_breakouts(start_time, screener_class):
                     except Exception as e:
                         handle_error("strategy_open", "BrokerError", e)
             range_data.pop(symbol, None)
+
+    # (surgical) state: enter monitoring after order placement phase concludes
+    try:
+        set_state("monitoring", reason="open:monitoring")
+    except Exception:
+        pass
 
     return trades
 

@@ -16,16 +16,17 @@ from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import os  # <-- SURGICAL: allow test bypass via env when app.testing not set
+from tbot_bot.support.bot_state_manager import get_state  # ADDED
 
 holdings_web = Blueprint("holdings_web", __name__)
 
 INITIALIZE_STATES = ("initialize", "provisioning", "bootstrapping")
-BOT_STATE_PATH = resolve_holdings_secrets_path().parents[3] / "tbot_bot" / "control" / "bot_state.txt"
 HOLDINGS_SECRET_PATH = resolve_holdings_secrets_path()
 
 def get_current_bot_state():
     try:
-        return BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        state = get_state()
+        return state if state else "unknown"
     except Exception:
         return "unknown"
 

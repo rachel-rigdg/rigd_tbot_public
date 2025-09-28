@@ -30,6 +30,8 @@ from tbot_bot.support.path_resolver import get_bot_state_path, get_output_path
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from tbot_bot.reporting.audit_logger import audit_log_event
 from tbot_bot.accounting.ledger_modules.ledger_compliance_filter import compliance_filter_ledger_entry
+# --- SURGICAL: centralized state management for holdings manager phases ---
+from tbot_bot.support.bot_state_manager import set_state
 
 # --- (surgical) imports for configurable native trailing stops on holdings buys
 from tbot_bot.config.env_bot import get_bot_config  # read HOLDINGS_TRAILING_STOP_PCT
@@ -214,6 +216,9 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
         _warn_or_info("Holdings manager: No broker is configured or provisioned yet.")
         return
 
+    # --- SURGICAL: mark planning start ---
+    set_state("analyzing", reason="holdings:analyze")
+
     broker = get_active_broker()
     holdings_cfg = load_holdings_secrets()
     float_pct = float(holdings_cfg.get("HOLDINGS_FLOAT_TARGET_PCT", 10))
@@ -229,15 +234,20 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
     if _should_rebalance(holdings_cfg):
         holdings = broker.get_etf_holdings()
         if _compliance_preview_or_abort(holdings, etf_targets, account_value):
+            # (placing) rebalance orders handled in perform_rebalance_cycle
             perform_rebalance_cycle(user)
             _mark_rebalance_complete(holdings_cfg)
         else:
             _warn_or_info("Rebalance blocked for compliance, not executed.")
+            # Even if blocked, treat as completion of planning step
+            set_state("running", reason="holdings:done")
             return
 
     # === Step 1: Top-up float (sell ETFs if needed) ===
     deficit = compute_cash_deficit(account_value, float_pct, current_cash)
     if deficit > 1:
+        # --- SURGICAL: mark order submission start for float top-up ---
+        set_state("trading", reason="holdings:placing")
         holdings = broker.get_etf_holdings()
         sorted_by_value = sorted(holdings.items(), key=lambda x: -x[1])
         for symbol, value in sorted_by_value:
@@ -268,6 +278,8 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
     # === Step 3: Reinvest post-reserve remainder into target ETFs ===
     remainder = realized_gains - tax_cut - payroll_cut
     if remainder > 1:
+        # --- SURGICAL: mark order submission start for reinvestment ---
+        set_state("trading", reason="holdings:placing")
         total_pct = sum(etf_targets.values())
         for symbol, pct in etf_targets.items():
             alloc_amt = remainder * (pct / total_pct)
@@ -286,6 +298,8 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
     float_target_value = account_value * (float_pct / 100)
     float_excess = current_cash - float_target_value
     if float_excess > 1:
+        # --- SURGICAL: mark order submission start for float-excess invests ---
+        set_state("trading", reason="holdings:placing")
         total_pct = sum(etf_targets.values())
         for symbol, pct in etf_targets.items():
             alloc_amt = float_excess * (pct / total_pct)
@@ -300,6 +314,9 @@ def perform_holdings_cycle(realized_gains: float = 0.0, user: str = "holdings_ma
                 })
                 audit_log_event("holdings_float_excess_invest", actor=user, reference=symbol, details={"amount": alloc_amt, "reason": "float_excess"})
 
+    # --- SURGICAL: mark cycle completion ---
+    set_state("running", reason="holdings:done")
+
 def perform_rebalance_cycle(user: str = "holdings_manager"):
     if not _is_bot_initialized():
         _warn_or_info("Rebalance cycle: Bot not initialized/provisioned/bootstrapped.")
@@ -308,6 +325,7 @@ def perform_rebalance_cycle(user: str = "holdings_manager"):
         _warn_or_info("Rebalance cycle: No broker is configured or provisioned yet.")
         return
 
+    # --- SURGICAL: planning already marked by caller; mark placing for rebalance batch ---
     broker = get_active_broker()
     holdings_cfg = load_holdings_secrets()
     etf_cfg = holdings_cfg.get("HOLDINGS_ETF_LIST", "SCHD:50,SCHY:50")
@@ -321,6 +339,8 @@ def perform_rebalance_cycle(user: str = "holdings_manager"):
         return
 
     orders = compute_rebalance_orders(holdings, etf_targets, account_value)
+    if orders:
+        set_state("trading", reason="holdings:placing")
     for order in orders:
         if compliance_filter_ledger_entry(order):
             broker.place_order(order['symbol'], order['action'], order['amount'])
@@ -369,6 +389,7 @@ def main():
         _warn_or_info(f"Exception in holdings cycle: {e}")
         log_event("holdings_manager_error", f"Exception: {e}", level="error", extra={"error": str(e)})
         audit_log_event("holdings_manager_error", actor="holdings_manager", reference=None, details={"error": str(e)})
+        set_state("error", reason="holdings:error")
         _write_job_stamp("Failed" if not session_env else f"Failed ({session_env})")
 
     if one_shot or _after_close_exit_if_requested():
@@ -385,6 +406,7 @@ def main():
             _warn_or_info(f"Exception in holdings cycle: {e}")
             log_event("holdings_manager_error", f"Exception: {e}", level="error", extra={"error": str(e)})
             audit_log_event("holdings_manager_error", actor="holdings_manager", reference=None, details={"error": str(e)})
+            set_state("error", reason="holdings:error")
             _write_job_stamp("Failed" if not session_env else f"Failed ({session_env})")
 
 if __name__ == "__main__":

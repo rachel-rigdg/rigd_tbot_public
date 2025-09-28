@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from flask import Flask, render_template, send_from_directory, redirect, url_for, request, jsonify
+from tbot_bot.support.bot_state_manager import get_state  # ADDED
 
 print("[portal_web_main] Starting portal_web_main.py...")
 
@@ -14,7 +15,6 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TEMPLATE_FOLDER = os.path.join(BASE_DIR, "templates")
 STATIC_FOLDER = os.path.join(BASE_DIR, "static")
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
-BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 try:
     from tbot_bot.support.bootstrap_utils import is_first_bootstrap
@@ -23,7 +23,7 @@ except ImportError:
 
 def get_bot_state():
     try:
-        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
+        state = get_state()  # CHANGED: read via bot_state_manager
         print(f"[portal_web_main] get_bot_state: state={state}")
         return state
     except Exception as e:

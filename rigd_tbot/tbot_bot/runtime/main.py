@@ -23,6 +23,9 @@ import socket
 import time
 import signal
 
+# (surgical) centralized state manager
+from tbot_bot.support.bot_state_manager import set_state
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
 BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
@@ -92,13 +95,6 @@ def write_stop_log():
             f.write(f"{ts} [main.py] BOT_STOP\n")
     except Exception as e:
         print(f"[main.py][ERROR][write_stop_log] {e}", flush=True)
-
-def _write_bot_state(state: str) -> None:
-    try:
-        CONTROL_DIR.mkdir(parents=True, exist_ok=True)
-        BOT_STATE_PATH.write_text(state.strip() + "\n", encoding="utf-8")
-    except Exception as e:
-        write_system_log(f"[write_bot_state] failed: {e}")
 
 def _run_build_checks_and_env_decrypt() -> None:
     try:
@@ -261,7 +257,7 @@ def _graceful_shutdown(*_args):
                 proc.kill()
             except Exception:
                 pass
-    _write_bot_state("idle")
+    set_state("idle", reason="main")
     write_stop_log()
     sys.exit(0)
 
@@ -303,7 +299,7 @@ def main():
         first_bootstrap = False
 
     write_start_log()
-    _write_bot_state("analyzing")
+    set_state("analyzing", reason="main")
     _run_build_checks_and_env_decrypt()
 
     # Launch Flask UI (binds to 0.0.0.0 by default)
@@ -316,7 +312,7 @@ def main():
     # --- TEST MODE GATE (startup) -----------------------------------------
     # If test mode is active at startup, do NOT launch supervisor. Run tests instead.
     if _is_test_mode_active():
-        _write_bot_state("analyzing")
+        set_state("analyzing", reason="main")
         # (surgical) do NOT terminate/disable supervisor; allow schedule to run regardless
         if child_procs.get("test_runner") is None or child_procs["test_runner"].poll() is not None:
             child_procs["test_runner"] = _launch_integration_test_runner()

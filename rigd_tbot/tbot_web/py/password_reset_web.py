@@ -4,7 +4,6 @@
 from flask import Blueprint, request, render_template, flash, redirect, url_for, session
 from tbot_web.support.auth_web import upsert_user, get_user_by_email  # <- Use imported get_user_by_email
 from tbot_web.py.login_web import login_required
-from pathlib import Path
 
 from tbot_bot.support.config_fetch import get_live_config_for_rotation
 from tbot_bot.config.provisioning_helper import rotate_all_keys_and_secrets
@@ -12,7 +11,6 @@ from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 
 password_reset_blueprint = Blueprint("password_reset_web", __name__, url_prefix="/password_reset")
 
-BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
 
 @password_reset_blueprint.route("/", methods=["GET", "POST"])
 def request_reset():
@@ -25,6 +23,7 @@ def request_reset():
         session["reset_email"] = email
         return redirect(url_for("password_reset_web.reset_password"))
     return render_template("password_reset_request.html")
+
 
 @password_reset_blueprint.route("/reset", methods=["GET", "POST"])
 def reset_password():
@@ -54,6 +53,7 @@ def reset_password():
             flash(f"Error resetting password: {e}", "error")
             return render_template("password_reset_form.html")
     return render_template("password_reset_form.html")
+
 
 @password_reset_blueprint.route("/cancel", methods=["POST"])
 def cancel_reset():

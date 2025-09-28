@@ -18,6 +18,8 @@ from tbot_bot.support.utils_time import utc_now  # removed parse_time_utc (not p
 from tbot_bot.support.utils_log import log_event
 # --- SURGICAL: use path_resolver for consistent control path resolution ---
 from tbot_bot.support import path_resolver
+# --- SURGICAL: add state manager import (no writes here, but kept for consistency with spec) ---
+from tbot_bot.support.bot_state_manager import set_state  # noqa: F401
 
 config = get_bot_config()
 
@@ -151,7 +153,7 @@ def _ensure_trailing_stop_alias() -> None:
 def route_strategy(current_utc_time=None, override: str = None) -> StrategyResult:
     """
     Router selects a strategy when called.
-    - In TEST_MODE: runs all three sequentially (open→mid→close) once.
+    - In TEST_MODE: runs all three sequentially once.
     - With override: dispatches the named strategy immediately.
     - Otherwise: uses UTC now vs START_TIME_* (UTC) to pick the first eligible in STRATEGY_SEQUENCE.
     The router does NOT launch processes and does NOT stamp per-day guards; supervisor owns scheduling.

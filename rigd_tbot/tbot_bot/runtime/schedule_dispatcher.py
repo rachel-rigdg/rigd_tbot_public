@@ -20,6 +20,9 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Optional
 
+# (surgical) centralized bot-state management
+from tbot_bot.support.bot_state_manager import set_state
+
 def _iso() -> str:
     return datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -33,17 +36,12 @@ STATUS_PATH = _out_path("logs", "status.json")
 SCHEDULE_PATH = _out_path("logs", "schedule.json")
 LOG_PATH = _out_path("logs", "schedule_dispatcher.log")
 CONTROL_DIR = _ROOT / "tbot_bot" / "control"
-BOT_STATE = CONTROL_DIR / "bot_state.txt"
 FLAG_STOP = CONTROL_DIR / "control_stop.flag"
 FLAG_KILL = CONTROL_DIR / "control_kill.flag"
 
 def _log(msg: str):
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(f"{_iso()} [dispatcher] {msg}\n")
-
-def _write_state(state: str):
-    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
-    BOT_STATE.write_text(state.strip() + "\n", encoding="utf-8")
 
 def _write_status(extra: Dict):
     payload = {}
@@ -117,12 +115,12 @@ def _flag() -> Optional[str]:
 def _boundary_check() -> Optional[str]:
     fl = _flag()
     if fl == "kill":
-        _write_state("shutdown_triggered")
+        set_state("shutdown_triggered", reason="dispatcher:kill")
         _log("Kill flag detected. Aborting.")
         _write_status({"dispatcher_status": "aborted", "reason": "kill"})
         return "kill"
     if fl == "stop":
-        _write_state("graceful_closing_positions")
+        set_state("graceful_closing_positions", reason="dispatcher:stop")
         _log("Stop flag detected. Halting further phases.")
         _write_status({"dispatcher_status": "stopped", "reason": "stop"})
         return "stop"
@@ -182,7 +180,7 @@ def main() -> int:
     except Exception as e:
         _log(f"ERROR reading schedule.json: {e}")
         _write_status({"dispatcher_status": "failed", "message": f"schedule read error: {e}"})
-        _write_state("error")
+        set_state("error", reason="dispatcher:error")
         return 1
 
     td = sched.get("trading_date") or datetime.datetime.utcnow().date().isoformat()
@@ -199,58 +197,78 @@ def main() -> int:
     rc_nonzero = False
     _write_status({"dispatcher_status": "running", "trading_date": td})
 
-    # OPEN
+    # ========================= OPEN =========================
     if _boundary_check(): return 0
     if _should_run_or_skip(_dt(sched["open_utc"]), "OPEN"):
-        _write_state("trading")
+        # Enter OPEN analysis
+        set_state("analyzing", reason="open:analyze")
+        # Orders placing begins with strategy launch
+        set_state("trading", reason="open:placing")
         rc = _run(f"{shlex.quote(_py())} -m tbot_bot.strategy.strategy_router --session=open", "open")
         rc_nonzero |= (rc != 0)
+        # Monitoring phase starts after router returns; do not spam
+        set_state("monitoring", reason="open:monitoring")
 
-    # HOLDINGS after open
+    # HOLDINGS after open (serves as close-out enforcement for OPEN)
     if _boundary_check(): return 0
     hold_open_str = sched.get("holdings_open_utc") or sched.get("holdings_utc")
     hold_open_dt = _dt(hold_open_str) if hold_open_str else None
     if _should_run_or_skip(hold_open_dt, "HOLDINGS(open)"):
-        _write_state("updating")
-        # ---- precise launch stamp (open) ----
+        # OPEN close-out window
+        set_state("trading", reason="open:closing")
+        # Analyze + place for holdings
+        set_state("analyzing", reason="holdings:analyze")
+        set_state("trading", reason="holdings:placing")
         _stamp_holdings_launch("open")
         rc = _run(f"{shlex.quote(_py())} -m tbot_bot.runtime.holdings_maintenance --session=open", "holdings_open")
         rc_nonzero |= (rc != 0)
+        # Waiting for MID
+        set_state("running", reason="waiting:mid")
 
-    # MID
+    # ========================= MID =========================
     if _boundary_check(): return 0
     if _should_run_or_skip(_dt(sched["mid_utc"]), "MID"):
-        _write_state("trading")
+        set_state("analyzing", reason="mid:analyze")
+        set_state("trading", reason="mid:placing")
         rc = _run(f"{shlex.quote(_py())} -m tbot_bot.strategy.strategy_router --session=mid", "mid")
         rc_nonzero |= (rc != 0)
+        set_state("monitoring", reason="mid:monitoring")
 
     # HOLDINGS after mid
     if _boundary_check(): return 0
     hold_mid_str = sched.get("holdings_mid_utc")
     hold_mid_dt = _dt(hold_mid_str) if hold_mid_str else None
     if _should_run_or_skip(hold_mid_dt, "HOLDINGS(mid)"):
-        _write_state("updating")
-        # ---- precise launch stamp (mid) ----
+        set_state("trading", reason="mid:closing")
+        set_state("analyzing", reason="holdings:analyze")
+        set_state("trading", reason="holdings:placing")
         _stamp_holdings_launch("mid")
         rc = _run(f"{shlex.quote(_py())} -m tbot_bot.runtime.holdings_maintenance --session=mid", "holdings_mid")
         rc_nonzero |= (rc != 0)
+        set_state("running", reason="waiting:close")
 
-    # CLOSE
+    # ========================= CLOSE =========================
     if _boundary_check(): return 0
     if _should_run_or_skip(_dt(sched["close_utc"]), "CLOSE"):
-        _write_state("trading")
+        set_state("analyzing", reason="close:analyze")
+        set_state("trading", reason="close:placing")
         rc = _run(f"{shlex.quote(_py())} -m tbot_bot.strategy.strategy_router --session=close", "close")
         rc_nonzero |= (rc != 0)
+        set_state("monitoring", reason="close:monitoring")
 
-    # UNIVERSE after close
+    # ========================= UNIVERSE (post-close) =========================
     if _boundary_check(): return 0
     uni_dt = _dt(sched["universe_utc"]) if sched.get("universe_utc") else None
     if _should_run_or_skip(uni_dt, "UNIVERSE"):
-        _write_state("updating")
+        # close-out window for CLOSE strategy ends before universe; mark closing just prior
+        set_state("trading", reason="close:closing")
+        # Universe rebuild
+        set_state("analyzing", reason="universe:rebuild")
         rc = _run(f"{shlex.quote(_py())} -m tbot_bot.screeners.universe_orchestrator", "universe")
         rc_nonzero |= (rc != 0)
+        # Day complete; waiting for nightly trigger
+        set_state("running", reason="waiting:nightly")
 
-    _write_state("idle")
     _write_status({"dispatcher_status": "complete", "rc_nonzero": int(rc_nonzero)})
     _log(f"Dispatcher complete. rc_nonzero={int(rc_nonzero)}")
     return 0 if not rc_nonzero else 1

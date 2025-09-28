@@ -9,22 +9,20 @@ sys.path.insert(0, str(ROOT_DIR))
 sys.path.insert(0, str(ROOT_DIR.parent))  # Project root for full module resolution
 
 from tbot_bot.config.network_config import get_host_ip, get_port
+from tbot_bot.support.bot_state_manager import get_state  # ADDED
 
 # --- Phase detection ---
-BOT_STATE_PATH = ROOT_DIR / "tbot_bot" / "control" / "bot_state.txt"
 def detect_phase():
-    if not BOT_STATE_PATH.exists():
-        return "bootstrap"
     try:
-        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        if state in ("initialize", "provisioning", "bootstrapping"):
-            return "bootstrap"
-        elif state == "registration":
-            return "registration"
-        else:
-            return "main"
+        state = (get_state() or "").strip()
     except Exception:
         return "bootstrap"
+    if state in ("initialize", "provisioning", "bootstrapping", ""):
+        return "bootstrap"
+    elif state == "registration":
+        return "registration"
+    else:
+        return "main"
 
 phase = detect_phase()
 if phase == "bootstrap":

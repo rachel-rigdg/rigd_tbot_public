@@ -25,6 +25,9 @@ from tbot_bot.support.utils_time import (
     scheduled_run_utc,
 )
 
+# (surgical) centralized state manager
+from tbot_bot.support.bot_state_manager import get_state, set_state  # UPDATED: add get_state
+
 # --- Paths & constants ---
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONTROL_DIR = ROOT_DIR / "tbot_bot" / "control"
@@ -62,10 +65,6 @@ def _write_status(extra: Dict) -> None:
             json.dump(payload, f, indent=2, sort_keys=True)
     except Exception as e:
         _write_log(f"[status] write error: {e}")
-
-def _write_bot_state(state: str) -> None:
-    (CONTROL_DIR).mkdir(parents=True, exist_ok=True)
-    (CONTROL_DIR / "bot_state.txt").write_text(state.strip() + "\n", encoding="utf-8")
 
 def _get_times() -> Tuple[str, str, str, str, str, str, str]:
     """
@@ -240,7 +239,16 @@ def _is_non_trading_day(d: datetime.date) -> Tuple[bool, str]:
 # -------------------------------------------------------------------------------
 
 def main() -> int:
-    _write_bot_state("analyzing")
+    # NO-OP UNTIL RUNNING: If the bot isn't in 'running', exit gracefully without writing schedule/status.
+    cur = get_state(default="idle")
+    if cur != "running":
+        _write_log(f"Exiting: bot_state={cur} (supervisor only runs when 'running').")
+        _write_status({
+            "supervisor_status": "not_scheduled",
+            "supervisor_message": f"Supervisor noop; state={cur}."
+        })
+        return 0
+
     _write_log("Supervisor start (thin mode)")
     _write_status({"supervisor_status": "launched", "supervisor_message": "Supervisor launched."})
 
@@ -250,9 +258,11 @@ def main() -> int:
             json.dump(schedule, f, indent=2, sort_keys=True)
         _write_log(f"Schedule written: {json.dumps(schedule, sort_keys=True)}")
         _write_status({"supervisor_status": "scheduled", "schedule": schedule})
+        # schedule is ready; supervisor is ready to spawn dispatcher
+        set_state("running", reason="supervisor")
     except Exception as e:
         _write_log(f"[schedule] ERROR {e}")
-        _write_bot_state("error")
+        set_state("error", reason="supervisor")
         _write_status({"supervisor_status": "failed", "supervisor_message": f"Schedule error: {e}"})
         return 1
 
@@ -263,7 +273,8 @@ def main() -> int:
         skip, reason = _is_non_trading_day(d)
         if skip:
             _write_log(f"Skipping dispatcher for {trading_date}: {reason}")
-            _write_bot_state("idle")
+            # Keep 'running' — do not downgrade state here.
+            set_state("running", reason="supervisor:skip non-trading day")
             _write_status({
                 "supervisor_status": "skipped",
                 "supervisor_message": f"Supervisor skipped {trading_date}: {reason}.",
@@ -284,9 +295,10 @@ def main() -> int:
     rc = _spawn_dispatcher()
     if rc == 0:
         _write_status({"supervisor_status": "running", "supervisor_message": "Dispatcher spawned."})
-        _write_bot_state("monitoring")  # dispatcher will set concrete phase states as it runs
+        # keep 'running' — strategies will drive phase states (analyzing/trading/monitoring/…)
+        set_state("running", reason="supervisor:dispatcher spawned")
     else:
-        _write_bot_state("error")
+        set_state("error", reason="supervisor")
         _write_status({"supervisor_status": "failed", "supervisor_message": "Failed to spawn dispatcher."})
     return rc
 

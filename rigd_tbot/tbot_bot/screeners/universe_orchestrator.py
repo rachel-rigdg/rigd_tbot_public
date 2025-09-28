@@ -22,6 +22,8 @@ from tbot_bot.support.path_resolver import (
 )
 
 from tbot_bot.screeners.screener_utils import get_universe_screener_secrets
+# SURGICAL: centralized bot-state writes
+from tbot_bot.support.bot_state_manager import set_state
 
 print(f"[LAUNCH] universe_orchestrator.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
@@ -362,6 +364,12 @@ def append_to_blocklist(symbol: str, path: Optional[str] = None, reason: Optiona
 # Orchestration entrypoint
 # =========================
 def main():
+    # Mark rebuild start
+    try:
+        set_state("analyzing", reason="universe:rebuild")
+    except Exception:
+        pass
+
     # Step 1: Build raw symbols file from provider API (single API call)
     rc = run_module("tbot_bot.screeners.symbol_universe_raw_builder", tolerate_rcs=(NO_PROVIDER_EXIT,))
     if rc == NO_PROVIDER_EXIT:
@@ -369,10 +377,18 @@ def main():
         # Emit waiting state ONLY if final is missing; otherwise preserve last-good.
         if not os.path.exists(FINAL_PATH):
             _write_waiting_status(FINAL_PATH)
+        try:
+            set_state("running", reason="universe:done")
+        except Exception:
+            pass
         sys.exit(0)
     if rc != 0:
         # Preserve last-good by exiting without touching FINAL_PATH
         log("Raw builder failed; preserving last known good universe.")
+        try:
+            set_state("error", reason="universe:error")
+        except Exception:
+            pass
         sys.exit(rc)
 
     # Step 2: Enrich, filter, blocklist, and build universe files from API adapters
@@ -387,28 +403,49 @@ def main():
             )
             log("CRITICAL: Universe build enrichment failed; keeping last known good.")
         finally:
-            pass
+            try:
+                set_state("error", reason="universe:error")
+            except Exception:
+                pass
         sys.exit(rc)
 
     # Step 3: Finalize — inject timestamp and atomically publish staged -> final
     if not os.path.exists(PARTIAL_PATH):
         log(f"ERROR: Missing partial universe: {PARTIAL_PATH}")
+        try:
+            set_state("error", reason="universe:error")
+        except Exception:
+            pass
         sys.exit(1)
 
     try:
         data = _stage_with_timestamp(PARTIAL_PATH)
         if not _final_payload_is_valid(data):
             log("ERROR: Final payload validation failed; refusing to publish.")
+            try:
+                set_state("error", reason="universe:error")
+            except Exception:
+                pass
             sys.exit(4)
         _atomic_publish_json(data, FINAL_PATH)
         log(f"Universe orchestration completed successfully. Published {FINAL_PATH}")
     except Exception as e:
         log(f"ERROR: Failed to publish universe: {e}")
+        try:
+            set_state("error", reason="universe:error")
+        except Exception:
+            pass
         sys.exit(3)
 
     # Step 4: Poll for blocklist/manual recovery flag
     if poll_blocklist_recovery():
         log("Blocklist/manual recovery event logged during universe orchestration.")
+
+    # Success terminal state
+    try:
+        set_state("running", reason="universe:done")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

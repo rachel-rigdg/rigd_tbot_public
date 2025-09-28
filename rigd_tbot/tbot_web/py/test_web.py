@@ -14,8 +14,8 @@ from tbot_bot.support.path_resolver import (
     resolve_control_path,
     get_output_path,
     get_project_root,
-    get_bot_state_path,  # fallback for clear route
 )
+from tbot_bot.support.bot_state_manager import set_state, get_state  # ADDED
 
 CONTROL_DIR = resolve_control_path()
 PROJECT_ROOT = get_project_root()
@@ -352,16 +352,12 @@ def clear_test_mode():
             pass
         except Exception:
             pass
-    # Reset bot_state to 'idle'
+    # Reset bot_state to 'idle' via manager (no direct file writes)
     try:
-        from tbot_bot.runtime.supervisor_common import write_bot_state  # preferred helper
-        write_bot_state("idle")
+        set_state("idle", reason="test:clear")
     except Exception:
-        # Fallback: write directly to bot_state.txt
-        try:
-            Path(get_bot_state_path()).write_text("idle\n", encoding="utf-8")
-        except Exception:
-            pass
+        # Best-effort; swallow errors to keep UI responsive
+        pass
     return redirect(url_for("status_web.status_page"))
 
 @test_web.route("/start", methods=["POST"])

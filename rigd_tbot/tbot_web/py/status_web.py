@@ -36,6 +36,8 @@ from tbot_bot.support.secrets_manager import load_screener_credentials
 from tbot_bot.support.utils_time import clock_payload as _clock_payload
 # (surgical) use canonical market tz from runtime config instead of inferring from identity
 from tbot_bot.support.utils_time import get_market_tz_str  # ADDED
+# SURGICAL: centralized state manager
+from tbot_bot.support.bot_state_manager import get_state  # ADDED
 
 status_blueprint = Blueprint("status_web", __name__)
 
@@ -76,9 +78,10 @@ def _read_status_json() -> dict:
 
 def _read_bot_state() -> str:
     try:
-        return Path(get_bot_state_path()).read_text(encoding="utf-8").strip() or "idle"
+        # Return exactly what's recorded; no fallback default here.
+        return get_state(default="") or ""
     except Exception:
-        return "idle"
+        return ""
 
 def _parse_iso_utc(s: str):
     if not s:
@@ -785,7 +788,9 @@ def _enrich_status(base_status: dict) -> dict:
 
     return enriched
 
+# Serve the status page. Keep existing route and add "/" for prefix-friendly access.
 @status_blueprint.route("/status")
+@status_blueprint.route("/")
 @login_required
 def status_page():
     status_data = _enrich_status(_read_status_json())
@@ -803,6 +808,7 @@ def status_page():
     schedule_view = _build_schedule_view()
     return render_template("status.html", status=status_data, candidate_status=candidate_data, schedule=schedule_view)
 
+# API routes (existing)
 @status_blueprint.route("/api/bot_state")
 @login_required
 def bot_state_api():
@@ -814,3 +820,14 @@ def bot_state_api():
 def full_status_api():
     # Extended JSON including contract fields
     return jsonify(_enrich_status(_read_status_json()))
+
+# Compatibility routes expected by status_live.js (relative fetch('full_status'))
+@status_blueprint.route("/full_status")
+@login_required
+def full_status_compat():
+    return jsonify(_enrich_status(_read_status_json()))
+
+@status_blueprint.route("/bot_state")
+@login_required
+def bot_state_compat():
+    return jsonify({"bot_state": _read_bot_state()})

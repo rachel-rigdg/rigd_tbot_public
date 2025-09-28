@@ -3,11 +3,11 @@
 # All subsequent provisioning is gated on this file.
 
 from pathlib import Path
+from tbot_bot.support.bot_state_manager import get_state  # ADDED
 
 KEYS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "keys"
 SECRETS_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "storage" / "secrets"
 CONTROL_DIR = Path(__file__).resolve().parents[2] / "tbot_bot" / "control"
-BOT_STATE_PATH = CONTROL_DIR / "bot_state.txt"
 
 CONFIG_REQUIRED_FILES = [
     KEYS_DIR / "bot_identity.key",
@@ -31,26 +31,20 @@ def is_first_bootstrap(quiet_mode: bool = False) -> bool:
         if not quiet_mode:
             print(msg)
 
-    #debug_print(f"[DEBUG] BOT_STATE_PATH: {BOT_STATE_PATH} (exists: {BOT_STATE_PATH.exists()})")
-    if not BOT_STATE_PATH.exists():
-        debug_print("[DEBUG] bot_state.txt missing")
-        return True
     try:
-        state = BOT_STATE_PATH.read_text(encoding="utf-8").strip()
-        state = state.splitlines()[0].strip() if state else ""
+        state = get_state()
+        state = (state or "").splitlines()[0].strip()
         debug_print(f"[DEBUG] bot_state.txt state: {state}")
         if state in INITIALIZE_STATES:
-          #  debug_print(f"[DEBUG] bot_state.txt state is {state}")
             return True
     except Exception as e:
         debug_print(f"[DEBUG] Exception reading bot_state.txt: {e}")
         return True
+
     for file_path in CONFIG_REQUIRED_FILES:
-      #  debug_print(f"[DEBUG] Checking existence: {file_path} ({file_path.exists()})")
         if not file_path.exists():
             debug_print(f"[DEBUG] Required file missing: {file_path}")
             return True
-   # debug_print("[DEBUG] is_first_bootstrap returning False")
     return False
 
 def get_boot_identity_string():

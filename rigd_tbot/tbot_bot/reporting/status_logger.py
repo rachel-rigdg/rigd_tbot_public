@@ -25,6 +25,8 @@ from tbot_bot.config.env_bot import (
     get_mid_time_utc,
     get_close_time_utc,
 )
+# SURGICAL: use centralized state manager instead of raw file reads
+from tbot_bot.support.bot_state_manager import get_state
 
 BOT_IDENTITY = get_bot_identity()
 SUMMARY_STATUS_FILE = resolve_status_summary_path(BOT_IDENTITY)
@@ -128,13 +130,9 @@ def write_status():
     status_data = bot_status.to_dict()
     status_data["written_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    # Force state to match bot_state.txt on disk (always freshest)
+    # SURGICAL: Force state using centralized manager (freshest source of truth)
     try:
-        bot_state_path = CONTROL_DIR / "bot_state.txt"
-        if bot_state_path.exists():
-            status_data["state"] = bot_state_path.read_text(encoding="utf-8").strip()
-        else:
-            status_data["state"] = "unknown"
+        status_data["state"] = get_state(default="unknown") or "unknown"
     except Exception:
         status_data["state"] = "unknown"
 

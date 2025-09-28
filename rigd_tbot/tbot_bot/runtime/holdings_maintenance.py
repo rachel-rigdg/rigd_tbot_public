@@ -12,7 +12,6 @@ import sys
 
 from tbot_bot.trading.holdings_manager import perform_holdings_cycle
 from tbot_bot.support.path_resolver import (
-    get_bot_state_path,
     get_output_path,
     get_holdings_lock_path,
 )
@@ -21,6 +20,8 @@ from tbot_bot.support.path_resolver import get_stamp_path
 
 from tbot_bot.support.bootstrap_utils import is_first_bootstrap
 from tbot_bot.support.utils_log import get_logger
+# SURGICAL: centralized bot state access
+from tbot_bot.support.bot_state_manager import set_state, get_state
 
 log = get_logger(__name__)
 
@@ -35,9 +36,8 @@ def _is_bot_ready() -> bool:
         if is_first_bootstrap():
             return False
 
-    state_path = Path(get_bot_state_path())
     try:
-        state = state_path.read_text(encoding="utf-8").strip()
+        state = (get_state() or "").strip().lower()
         # Avoid running while still initializing/provisioning
         return state not in ("initialize", "provisioning", "bootstrapping")
     except Exception:
@@ -119,6 +119,8 @@ def main() -> int:
     try:
         log.info(f"{session_tag}Starting holdings maintenance cycle (single-run).")
         _write_local_log(f"{session_tag}Starting holdings maintenance cycle.")
+        # Mark pre-cycle state (analyze)
+        set_state("analyzing", reason=f"holdings:{session}:analyze")
         perform_holdings_cycle()
         # Success → stamp lock
         lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -133,6 +135,8 @@ def main() -> int:
             )
         except Exception:
             pass
+        # Mark post-cycle state (running; dispatcher will schedule next)
+        set_state("running", reason="holdings:done (maintenance)")
         return 0
     except Exception as e:
         # Failure → do NOT create lock; allow external retry policy if desired
@@ -146,6 +150,8 @@ def main() -> int:
             )
         except Exception:
             pass
+        # Reflect error state
+        set_state("error", reason="holdings:error (maintenance)")
         return 1
 
 

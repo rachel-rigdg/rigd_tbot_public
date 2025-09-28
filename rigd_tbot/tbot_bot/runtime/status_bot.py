@@ -19,6 +19,8 @@ from tbot_bot.support.utils_log import log_event, get_log_settings
 from tbot_bot.support.path_resolver import resolve_status_log_path
 from pathlib import Path
 from datetime import datetime, timezone
+# SURGICAL: centralize state reads via manager
+from tbot_bot.support.bot_state_manager import get_state
 
 print(f"[LAUNCH] status_bot.py launched @ {datetime.now(timezone.utc).isoformat()}", flush=True)
 
@@ -136,13 +138,9 @@ class BotStatus:
 
     def to_dict(self):
         with self.lock:
+            # SURGICAL: read bot state via manager (no direct file I/O)
             try:
-                bot_state_path = Path(__file__).resolve().parents[2] / "tbot_bot" / "control" / "bot_state.txt"
-                if bot_state_path.exists():
-                    state_val = bot_state_path.read_text(encoding="utf-8").strip()
-                    state = state_val if state_val else self.state
-                else:
-                    state = self.state
+                state = get_state(default=self.state) or self.state
             except Exception:
                 state = self.state
             return {

@@ -9,6 +9,7 @@ import sys
 import traceback
 import os
 from cryptography.fernet import Fernet
+from tbot_bot.support.bot_state_manager import set_state, get_state  # <-- added
 
 if "RIGD_TBOT_ROOT" in os.environ:
     ROOT = Path(os.environ["RIGD_TBOT_ROOT"]).resolve()
@@ -27,7 +28,6 @@ CONTROL_DIR = ROOT / "tbot_bot" / "control"
 CONTROL_START_PATH = CONTROL_DIR / "control_start.flag"
 STATUS_PATH_TEMPLATE = OUTPUT_BASE / "{bot_identity}" / "logs" / "provisioning_status.json"
 STATUS_BOOTSTRAP_PATH = BOOTSTRAP_LOGS_PATH / "provisioning_status.json"
-BOT_STATE_FILE = CONTROL_DIR / "bot_state.txt"
 
 sys.path.insert(0, str(CONFIG_PATH))
 from tbot_bot.config.key_manager import main as key_manager_main
@@ -75,11 +75,6 @@ def create_control_start_flag():
     CONTROL_START_PATH.touch(exist_ok=True)
     print(f"[provisioning_runner] Created control start flag: {CONTROL_START_PATH}")
 
-def set_bot_state(state):
-    BOT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(BOT_STATE_FILE, "w", encoding="utf-8") as f:
-        f.write(state)
-
 def main():
     print("[provisioning_runner] Runner started; monitoring provisioning flag.")
     already_provisioned = False
@@ -91,30 +86,40 @@ def main():
             else:
                 status_path = STATUS_BOOTSTRAP_PATH
             try:
-                set_bot_state("provisioning")
+                # Provisioning start -> move to an active/working state
+                set_state("analyzing", reason="provision:begin")
                 write_status(status_path, "pending", "Provisioning started.")
                 write_status(status_path, "running", "Key generation.")
                 key_manager_main()
+
                 write_status(status_path, "running", "Provisioning secrets and minimal config.")
+                set_state("analyzing", reason="provision:secrets")
                 provisioning_helper_main()
+
                 write_status(status_path, "running", "Running bootstrapping helper.")
+                set_state("analyzing", reason="provision:bootstrapping")
                 bootstrapping_helper_main()
+
                 write_status(status_path, "running", "Database initialization.")
                 db_bootstrap_main()
+
                 time.sleep(0.5)
                 clear_provision_flag()
                 write_status(status_path, "running", "Creating control_start.flag to launch bot via systemd.")
                 create_control_start_flag()
-                set_bot_state("bootstrapping")
+
+                # Immediately after successful bootstrap, we're still in an active phase
+                set_state("analyzing", reason="provision:bootstrapped")
+
                 write_status(status_path, "bootstrapping", "Provisioning and bootstrapping complete, initializing core databases before registration.")
-                # Wait for database bootstrap completion, then registration
+                # Hand off to registration phase so the UI shows wait/registration correctly
                 time.sleep(1)
-                set_bot_state("registration")
-                write_status(status_path, "waiting_registration", "Bootstrapping complete, registration required before bot launch.")
+                set_state("registration", reason="provision:ready_for_registration")
+                write_status(status_path, "waiting_registration", "Bootstrapping complete, ready for user registration/login.")
                 already_provisioned = True
             except Exception as e:
                 tb = traceback.format_exc()
-                set_bot_state("error")
+                set_state("error", reason="provision:error")
                 write_status(status_path, "error", f"Error: {e}\nTraceback:\n{tb}")
                 clear_provision_flag()
         elif not PROVISION_FLAG_PATH.exists():

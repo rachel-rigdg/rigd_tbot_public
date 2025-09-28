@@ -29,6 +29,8 @@ from tbot_bot.trading.trailing_stop import (
     get_strategy_trail_pct,
     get_tightened_trailing_pct,
 )
+# --- SURGICAL: centralized state manager for robust state writes ---
+from tbot_bot.support.bot_state_manager import set_state
 
 print("[strategy_close] module loaded", flush=True)
 
@@ -97,6 +99,9 @@ def _has_close_run_today(now_dt: datetime) -> bool:
 
 def analyze_closing_signals(start_time, screener_class):
     log_event("strategy_close", "Starting EOD momentum/fade analysis...")
+    # --- SURGICAL: set explicit state on entry to analyze phase ---
+    set_state("analyzing", reason="close:analyze")
+
     analysis_minutes = 1 if is_test_mode_active() else CLOSE_ANALYSIS_TIME
     deadline = start_time + timedelta(minutes=analysis_minutes)
     print(f"[strategy_close] analyze_closing_signals start; deadline={deadline.isoformat()}", flush=True)
@@ -194,12 +199,15 @@ def analyze_closing_signals(start_time, screener_class):
         SESSION_LOGS.clear()
         SESSION_LOGS.extend(candidate_status)
         log_event("strategy_close", f"EOD eligible signals: {eligible_signals}")
-        print(f"[strategy_close] eligible_signals={len(eligible_signals)}", flush=True)
+        print(f("[strategy_close] eligible_signals={len(eligible_signals)}"), flush=True)
         return eligible_signals
     return []
 
 def monitor_closing_trades(signals, start_time):
     log_event("strategy_close", "Monitoring EOD trades...")
+    # --- SURGICAL: set explicit state right before placing orders ---
+    set_state("trading", reason="close:placing")
+
     trades = []
     monitoring_minutes = 1 if is_test_mode_active() else CLOSE_MONITORING_TIME
     deadline = start_time + timedelta(minutes=monitoring_minutes)
@@ -289,7 +297,14 @@ def monitor_closing_trades(signals, start_time):
         except Exception as e:
             handle_error("strategy_close", "BrokerError", e)
 
+    # --- SURGICAL: enter monitoring phase after order placement pass begins/completes ---
+    set_state("monitoring", reason="close:monitoring")
+
     log_event("strategy_close", f"Trades completed: {len(trades)}")
+
+    # --- SURGICAL: immediately before programmed close/stop procedures (end of monitoring window) ---
+    set_state("trading", reason="close:closing")
+
     return trades
 
 def run_close_strategy(screener_class):
@@ -329,10 +344,15 @@ def run_close_strategy(screener_class):
     # Use local time for window logic
     start_time = now_local()
     print(f"[strategy_close] starting with screener={getattr(screener_class, '__name__', screener_class)}", flush=True)
+
+    # --- SURGICAL: explicit analyze-phase state (redundant guard in case analyze_* is refactored) ---
+    set_state("analyzing", reason="close:analyze")
+
     signals = analyze_closing_signals(start_time, screener_class)
     if not signals:
         print("[strategy_close] no signals — exiting", flush=True)
         return StrategyResult(skipped=True)
+
     trades = monitor_closing_trades(signals, start_time)
     print(f"[strategy_close] completed with {len(trades)} trades", flush=True)
     return StrategyResult(trades=trades, skipped=False)
