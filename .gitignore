@@ -11,3 +11,17 @@ tools/
 *.sqlite
 *.log
 IBKR/ibgateway-stable-standalone-linux-x64.sh
+.env
+.env.*
+*.enc
+*.pem
+*.p12
+*.crt
+**/keys/**
+**/secrets/**
+support/.env*
+tbot_bot/storage/keys/**
+tbot_bot/support/*.key
+tbot_bot/output/**
+tbot_web/output/**
+output/**

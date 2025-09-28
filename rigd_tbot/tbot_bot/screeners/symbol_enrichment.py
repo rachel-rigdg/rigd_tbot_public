@@ -28,6 +28,9 @@ LOG_PATH = resolve_universe_log_path()
 UNFILTERED_PATH = resolve_universe_unfiltered_path()
 RAW_PATH = resolve_universe_raw_path()
 
+# Instrument suffixes to pre-skip (rights/warrants/units/preferreds/foreign forms)
+_EXCLUDED_SUFFIXES = (".RT", ".WS", ".W", ".U", ".PR", ".F")
+
 def log_progress(msg, details=None):
     now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     record = f"[{now}] {msg}"
@@ -100,6 +103,19 @@ def _atomic_write_json(path: str, payload) -> None:
     except Exception:
         pass
 
+def _has_excluded_suffix(symbol: str) -> bool:
+    sym = (symbol or "").upper()
+    return any(sym.endswith(suf) for suf in _EXCLUDED_SUFFIXES)
+
+def _is_fatal_provider_error(err: Exception) -> bool:
+    msg = str(err).lower()
+    # Treat credential/HTTP/transport/JSON failures as fatal; allow data-miss to continue
+    fatal_markers = (
+        "http 401", "http 403", "http 429", "invalid json",
+        "missing screener_api_key", "cannot initialize provider"
+    )
+    return any(m in msg for m in fatal_markers)
+
 def main():
     env = load_env_bot_config()
     try:
@@ -150,78 +166,88 @@ def main():
     missed_api_count = 0         # API/quote misses (not blocklisted)
     skipped_missing_financials = 0
     preskipped_exchange = 0
+    preskipped_suffix = 0
 
     # Accumulate into memory and write ONE JSON per file (not NDJSON)
     unfiltered_records = []
 
-    # --- Enrichment phase (pre-skip by exchange; abort on provider error) ---
-    try:
-        for s in all_symbols:
-            sym = s.get("symbol")
-            if not sym:
-                continue
+    # --- Enrichment phase (pre-skip by exchange & instrument suffix; abort only on fatal provider errors) ---
+    for s in all_symbols:
+        sym = s.get("symbol")
+        if not sym:
+            continue
 
-            if sym in blocklist:
-                blocklisted_count += 1
-                continue
+        if sym in blocklist:
+            blocklisted_count += 1
+            continue
 
-            # Pre-skip by normalized exchange allow-list (avoid OTC/foreign hits)
-            exch = normalize_exchange(s.get("exchange"))
-            if allowed_exchanges and "*" not in allowed_exchanges and exch not in allowed_exchanges:
-                preskipped_exchange += 1
-                continue
+        # Pre-skip by normalized exchange allow-list (avoid OTC/foreign hits)
+        exch = normalize_exchange(s.get("exchange"))
+        if allowed_exchanges and "*" not in allowed_exchanges and exch not in allowed_exchanges:
+            preskipped_exchange += 1
+            continue
 
-            quotes = provider.fetch_quotes([sym])  # may raise; we allow it to abort the run
+        # Pre-skip by instrument suffixes
+        if _has_excluded_suffix(sym):
+            preskipped_suffix += 1
+            continue
 
-            if not quotes or not any(q.get("symbol", "") == sym for q in quotes):
-                missed_api_count += 1
-                log_progress("No data from API", {"symbol": sym, "provider": name})
-                continue
+        try:
+            quotes = provider.fetch_quotes([sym])  # provider now treats profile2-empty as non-fatal (skips symbol)
+        except Exception as e:
+            if _is_fatal_provider_error(e):
+                log_progress("Provider error during enrichment — aborting", {"provider": name, "error": str(e)})
+                sys.exit(1)
+            # Non-fatal data miss: log and continue
+            missed_api_count += 1
+            log_progress("Non-fatal provider data miss", {"symbol": sym, "provider": name, "error": str(e)})
+            continue
 
-            quote_map = {q["symbol"]: q for q in quotes if "symbol" in q}
-            q = quote_map.get(sym)
-            if not q:
-                missed_api_count += 1
-                log_progress("No quote found in provider response", {"symbol": sym})
-                continue
+        if not quotes or not any(q.get("symbol", "") == sym for q in quotes):
+            missed_api_count += 1
+            log_progress("No data from API", {"symbol": sym, "provider": name})
+            continue
 
-            # Only use previous close (c) and previous close volume if available; never real-time
-            price_raw = q.get("pc") or q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
-            cap_raw = q.get("marketCap") or q.get("market_cap")
-            volume = q.get("volume") or q.get("v")
+        quote_map = {q["symbol"]: q for q in quotes if "symbol" in q}
+        q = quote_map.get(sym)
+        if not q:
+            missed_api_count += 1
+            log_progress("No quote found in provider response", {"symbol": sym})
+            continue
 
-            price = tofloat(price_raw)
-            cap_val = tofloat(cap_raw)
-            cap_norm = normalize_market_cap(cap_val) if cap_val is not None else None
+        # Only use previous close (c) and previous close volume if available; never real-time
+        price_raw = q.get("pc") or q.get("c") or q.get("close") or q.get("lastClose") or q.get("price")
+        cap_raw = q.get("marketCap") or q.get("market_cap")
+        volume = q.get("volume") or q.get("v")
 
-            # Skip record if values could not be parsed (do NOT add to blocklist)
-            if price is None or cap_norm is None or price <= 0 or cap_norm <= 0:
-                skipped_missing_financials += 1
-                log_progress(
-                    "Missing/invalid financials during enrichment",
-                    {
-                        "symbol": sym,
-                        "provider": name,
-                        "raw_price": [q.get('c'), q.get('pc'), q.get('close'), q.get('lastClose'), q.get('price')],
-                        "raw_cap": [q.get('marketCap'), q.get('market_cap')],
-                    },
-                )
-                continue
+        price = tofloat(price_raw)
+        cap_val = tofloat(cap_raw)
+        cap_norm = normalize_market_cap(cap_val) if cap_val is not None else None
 
-            record = dict(s)
-            record["lastClose"] = price
-            record["marketCap"] = cap_norm
-            if volume is not None:
-                record["volume"] = volume
-            for k in q:
-                if k not in record:
-                    record[k] = q[k]
+        # Skip record if values could not be parsed (do NOT add to blocklist)
+        if price is None or cap_norm is None or price <= 0 or cap_norm <= 0:
+            skipped_missing_financials += 1
+            log_progress(
+                "Missing/invalid financials during enrichment",
+                {
+                    "symbol": sym,
+                    "provider": name,
+                    "raw_price": [q.get('c'), q.get('pc'), q.get('close'), q.get('lastClose'), q.get('price')],
+                    "raw_cap": [q.get('marketCap'), q.get('market_cap')],
+                },
+            )
+            continue
 
-            unfiltered_records.append(record)
-    except Exception as e:
-        # Abort entire enrichment on provider/auth/quota error (single explicit error)
-        log_progress("Provider error during enrichment — aborting", {"provider": name, "error": str(e)})
-        raise
+        record = dict(s)
+        record["lastClose"] = price
+        record["marketCap"] = cap_norm
+        if volume is not None:
+            record["volume"] = volume
+        for k in q:
+            if k not in record:
+                record[k] = q[k]
+
+        unfiltered_records.append(record)
 
     # --- Centralized filtering step (single pass) ---
     partial_records = filter_symbols(
@@ -248,6 +274,7 @@ def main():
         "missed_api": missed_api_count,
         "skipped_missing_financials": skipped_missing_financials,
         "pre_skipped_exchange": preskipped_exchange,
+        "pre_skipped_suffix": preskipped_suffix,
         "unfiltered_count": len(unfiltered_records),
         "partial_count": len(partial_records),
         "partial_path": PARTIAL_PATH,
