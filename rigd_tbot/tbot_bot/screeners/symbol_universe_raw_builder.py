@@ -71,14 +71,16 @@ def _atomic_write_ndjson(lines, out_path: str) -> None:
         pass
 
 def get_raw_provider_creds():
+    def _truthy(v) -> bool:
+        return str(v).strip().lower() in ("1", "true", "yes", "y", "on")
+
     all_creds = load_screener_credentials() or {}
     provider_indices = []
     for k, v in all_creds.items():
         if k.startswith("PROVIDER_"):
             idx = k.split("_")[-1]
-            universe_enabled = str(all_creds.get(f"UNIVERSE_ENABLED_{idx}", "")).strip().lower()
             screener_name = str(all_creds.get(f"SCREENER_NAME_{idx}", "")).strip()
-            if universe_enabled == "true" and screener_name and not screener_name.upper().endswith("_TXT"):
+            if _truthy(all_creds.get(f"UNIVERSE_ENABLED_{idx}", "")) and screener_name and not screener_name.upper().endswith("_TXT"):
                 provider_indices.append(idx)
 
     if not provider_indices:

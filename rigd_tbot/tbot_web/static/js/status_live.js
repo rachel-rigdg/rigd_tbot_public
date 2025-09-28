@@ -68,8 +68,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function pollBotStatus() {
         try {
-            // FIX: endpoint lives at '/api/full_status' (blueprint route), not '/status/api/full_status'
-            const resp = await fetch('/api/full_status', { cache: "no-store" });
+            // FIX: blueprint mounted under /status — use that path
+            const resp = await fetch('/status/full_status', { cache: "no-store" });
             if (!resp.ok) throw new Error("HTTP not OK");
             const payload = await resp.json();
             if (!payload || Object.keys(payload).length === 0) throw new Error("Empty JSON");

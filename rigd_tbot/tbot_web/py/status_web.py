@@ -43,8 +43,9 @@ status_blueprint = Blueprint("status_web", __name__)
 
 # ----- Defaults so UI never renders blank -----
 DEFAULT_STATUS = {
-    "state": "idle",
-    "bot_state": "idle",
+    # IMPORTANT: no fallback/default for state on the UI — leave blank until read.
+    "state": "",
+    "bot_state": "",
     "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "active_strategy": "none",
     "trade_count": 0,
@@ -180,8 +181,8 @@ def _compute_supervisor_banner(enriched: dict, schedule: dict) -> tuple[str, str
         }
         return existing_state, banner_map[existing_state]
 
-    # Inference path (unchanged)
-    bot_state = (enriched or {}).get("bot_state", "idle")
+    # Inference path — do NOT inject a default "idle"
+    bot_state = (enriched or {}).get("bot_state", "").strip().lower()
     sched_exists = bool(schedule)
     if not sched_exists:
         return "not_scheduled", "Supervisor not scheduled."

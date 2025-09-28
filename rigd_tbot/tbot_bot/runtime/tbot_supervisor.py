@@ -239,10 +239,11 @@ def _is_non_trading_day(d: datetime.date) -> Tuple[bool, str]:
 # -------------------------------------------------------------------------------
 
 def main() -> int:
-    # NO-OP UNTIL RUNNING: If the bot isn't in 'running', exit gracefully without writing schedule/status.
-    cur = get_state(default="idle")
-    if cur != "running":
-        _write_log(f"Exiting: bot_state={cur} (supervisor only runs when 'running').")
+    # GATE: no-op during bootstrap states to prevent premature schedule/build & banners.
+    blocked = {"initialize", "initializing", "provisioning", "bootstrapping", "registration"}
+    cur = get_state(default="analyzing")
+    if cur in blocked:
+        _write_log(f"Exiting (noop): bot_state={cur} is in bootstrap set; schedule not created.")
         _write_status({
             "supervisor_status": "not_scheduled",
             "supervisor_message": f"Supervisor noop; state={cur}."

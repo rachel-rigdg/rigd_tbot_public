@@ -67,7 +67,7 @@ def register_page():
             try:
                 state = (get_state() or "").strip()  # CHANGED
                 if state == "registration":
-                    set_state("idle", reason="web:registration")  # CHANGED
+                    set_state("running", reason="web:registration")  # CHANGED
             except Exception:
                 pass
             session.clear()

@@ -124,6 +124,20 @@ def create_unified_app():
         state = get_bot_state()
         return jsonify({"bot_state": state})
 
+    # --------- SURGICAL FORWARDERS / ROUTING COMPAT ---------
+    # 1) Keep legacy JS working: forward /api/full_status -> /status/full_status
+    @app.route("/api/full_status")
+    def forward_full_status():
+        # Use a 307 to preserve method if this ever becomes POST, but GET is fine.
+        return redirect("/status/full_status", code=307)
+
+    # 2) Accept trailing-slash variant: /main/ -> /main
+    @app.route("/main/")
+    def main_trailing_slash():
+        # Permanent redirect to canonical /main
+        return redirect("/main", code=308)
+    # --------------------------------------------------------
+
     return app
 
 if __name__ == "__main__":
